@@ -9,6 +9,11 @@ agent, your own models and your own keys.
 
 [jonna.dev](https://jonna.dev) · [Why Jonna](https://jonna.dev/why) · [Download](https://jonna.dev/download) · [Pricing](https://jonna.dev/pricing)
 
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/jonna-light.png" />
+  <img src="docs/images/jonna-dark.png" alt="Jonna with a chat open: the list of chats, the agent's answer to a bug report, and panels for the environment, context use, changes and the plan" width="100%" />
+</picture>
+
 ---
 
 ## What it is
