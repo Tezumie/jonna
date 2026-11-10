@@ -1,0 +1,129 @@
+// D195: m6.96. Subagents (delegate, in the foreground and the background, each on its own model),
+// plan and build models, custom subagent files, and the Agents page.
+{
+  "name": "m6-96",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    // A second model to tell the roles apart: the mock's Anthropic routes.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          {
+            "id": "claude",
+            "name": "Claude",
+            "kind": "anthropic",
+            "baseUrl": "http://127.0.0.1:11999"
+          }
+        ]
+      }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    // ---- The tree as data ----
+    {
+      "state": "ide://agent/subagents",
+      "expect": {
+        "subagents": { "$contains": "reviewer" }
+      }
+    },
+    // ---- A subagent in the foreground, on its own model ----
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "subagent:reviewer", "model": "claude/claude-mock" },
+      "expect": { "model": "claude/claude-mock" }
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "subagents": { "$contains": "claude/claude-mock" } }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate a review", "wait": true },
+      "expect": { "answer": "Delegated: Reviewer report on claude-mock: looks fine" },
+      "timeoutMs": 60000
+    },
+    // ---- In the background: the report comes back as a message and the agent answers it ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate a background review", "wait": true },
+      "expect": { "answer": { "$contains": "in the background" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Got the report: fine" }, "status": "idle" },
+      "timeoutMs": 60000
+    },
+    // A subagent turned off isn't offered.
+    {
+      "run": "agent.setSubagent",
+      "input": { "name": "general", "enabled": false },
+      "expect": { "enabled": false }
+    },
+    // ---- Plan on the planner's model, build on the main agent's (D288: no plan or build model) ----
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "subagent:planner", "model": "claude/claude-mock" },
+      "expect": { "model": "claude/claude-mock" }
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.setChatAgent", "input": { "agent": "planner" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "which model answers", "wait": true },
+      "expect": { "answer": "Answered by claude-mock" },
+      "timeoutMs": 60000
+    },
+    { "run": "agent.build", "timeoutMs": 10000 },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Answered by mock-coder:1b" }, "status": "idle" },
+      "timeoutMs": 60000
+    },
+    // ---- A custom subagent from a file ----
+    {
+      "run": "agent.newSubagent",
+      "input": { "name": "helper", "description": "Helps with tests.", "scope": "project" },
+      "expect": { "name": "helper", "created": { "$contains": "agents" } }
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "subagents": { "$contains": "helper" } },
+      "timeoutMs": 5000
+    },
+    // ---- The subagents (D288: in the main agent's page) ----
+    { "run": "agent.editAgent", "input": { "name": "agent" } },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "subagents": { "$contains": "claude-mock" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-subagents [data-subagent='helper']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "delegable": { "$not": { "$contains": "\"general\"" } } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+    // Back to the chat's model.
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "subagent:planner", "model": "" },
+      "expect": { "model": "inherit" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.providers", "value": [] } }
+  ]
+}

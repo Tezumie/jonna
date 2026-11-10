@@ -1,0 +1,205 @@
+// D206: agent skills. A workspace skill made with agent.newSkill, one in .claude/skills with a
+// supporting file, an invalid one; Customize → Skills lists them; the agent sees them in its
+// prompt and loads one with use_skill; /checker runs one; turned off, it's gone from new chats;
+// deleted, it's gone from the page. Against tests/fixtures/mock-ollama.mjs.
+{
+  "name": "skills-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- Make skills: one from the template, one by hand in .claude/skills, a broken one ----
+    {
+      "run": "agent.newSkill",
+      "input": {
+        "name": "Release Notes",
+        "scope": "workspace",
+        "description": "Use when writing release notes"
+      },
+      "expect": { "created": true, "name": "release-notes", "scope": "workspace" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "release-notes" } },
+      "timeoutMs": 5000
+    },
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": ".claude" } },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude", "name": "skills" } },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude/skills", "name": "checker" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/checker", "name": "SKILL.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\nname: checker\ndescription: >\n  Checks the project\n  before a release\nargument-hint: [version]\n---\n\n# Checker\n\nchecker-body-marker: read ref.md, then $ARGUMENTS\n"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/checker", "name": "ref.md" }
+    },
+    { "run": "editor.insertText", "input": { "text": "Reference notes" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude/skills", "name": "broken" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/broken", "name": "SKILL.md" }
+    },
+    { "run": "editor.insertText", "input": { "text": "---\nname: broken\n---\nNo description." } },
+    { "run": "editor.save" },
+    {
+      "run": "agent.listSkills",
+      "input": { "pick": false },
+      "expect": {
+        "skills": {
+          "$contains": "\"name\":\"checker\",\"description\":\"Checks the project before a release\""
+        }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": {
+        "$contains": "\"name\":\"release-notes\",\"description\":\"Use when writing release notes\",\"scope\":\"workspace\""
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "problems": { "$contains": "No description" } }
+    },
+
+    // ---- Customize → Skills: the groups and rows ----
+    { "run": "agent.showSkills" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-chip.is-active[data-section='skills']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page [data-group='workspace'] [data-skill='release-notes']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page [data-group='workspace'] [data-skill='checker']" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page [data-group='problems'] .mcp-row" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page [data-group='user'] .skills-new" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- The agent sees them (a new chat's prompt) and loads one; /checker runs one ----
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please use the checker skill" },
+      "expect": { "answer": { "$contains": "Skill loaded: body/files" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Now use the release-notes skill" },
+      "expect": { "answer": { "$contains": "Skill loaded: body/-" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "commands": { "$contains": "\"name\":\"checker\"" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/checker args are v2" },
+      "expect": { "answer": { "$contains": "Skill run: body/args" } },
+      "timeoutMs": 60000
+    },
+
+    // ---- Turned off: marked on the page, not in a new chat's prompt, use_skill refuses ----
+    { "run": "agent.setSkillEnabled", "input": { "name": "checker", "enabled": false } },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"enabled\":false" } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page .skills-row.is-off[data-skill='checker']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please use the checker skill" },
+      "expect": { "answer": { "$contains": "Skill not listed: checker" } },
+      "timeoutMs": 60000
+    },
+    { "run": "agent.setSkillEnabled", "input": { "name": "checker", "enabled": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page .skills-row.is-off[data-skill='checker']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+
+    // ---- Delete: the folder goes, and the row ----
+    {
+      "run": "agent.deleteSkill",
+      "input": { "name": "release-notes" },
+      "expect": { "deleted": "release-notes" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".skills-page [data-skill='release-notes']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$not": { "$contains": "\"name\":\"release-notes\"" } } }
+    },
+    {
+      "run": "agent.deleteSkill",
+      "input": { "name": "checker" },
+      "expect": { "deleted": "checker" }
+    },
+    // D277: a built-in skill has no file; clicking it opens its text read-only (it failed with
+    // "filename syntax is incorrect" on Windows).
+    { "run": "agent.showSkills" },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".skills-page [data-skill='build-extension']" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editors",
+      "expect": { "$contains": "build-extension (built in) SKILL.md" },
+      "timeoutMs": 5000
+    }
+  ]
+}

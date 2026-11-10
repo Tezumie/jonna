@@ -1,0 +1,164 @@
+// D201: tasks detected from build files (tsc per tsconfig with a fake project-local tsc and its
+// matcher read from the task's folder, Make, Cargo, Gradle with the application plugin, Maven,
+// gulp; quick access "task "; Configure default build task for a detected task), continuous
+// test runs (the whole run, a file, the view's toggle), and the agent's background commands
+// (run_command background → bg id, process_output with a filter, kill_process, the chat's list,
+// ide://agent/processes). Against tests/fixtures/mock-ollama.mjs. The build files are written
+// here, in subfolders, so other scripts' fixture stays as it is.
+{
+  "name": "tasks-m7-2",
+  "fakeMake": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node ../setup/tasks-m7-2.cjs",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+
+    // ---- Task detection ----
+    {
+      "run": "tasks.list",
+      "expect": {
+        "tasks": {
+          "$contains": "\"label\":\"make: hello - native\",\"command\":\"make hello\""
+        }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"make: test - native\"" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"cargo: run - rusty\"" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"tsc: watch - web/tsconfig.json\"" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"gradle: run - jvm\"" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"maven: package - jvm\"" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"gulp: build - web\"" } }
+    },
+    // A file target (out/app.o, not phony) isn't a task.
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$not": { "$contains": "out/app.o" } } }
+    },
+    // The project's own tsc, run from the tsconfig's folder: the error's path is read from there.
+    {
+      "run": "tasks.run",
+      "input": { "label": "tsc: build - web/tsconfig.json" },
+      "expect": { "exitCode": 2, "problems": 1, "output": { "$contains": "TS2322" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "problems.list",
+      "input": { "path": "web/src/app.ts" },
+      "expect": { "$contains": "Web type is wrong" },
+      "timeoutMs": 3000
+    },
+    // Quick access "task ".
+    { "run": "quickOpen.show", "input": { "query": "task make" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": ": hello - native" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    // Configure default build task: the detected task gets its own entry (its folder and matcher)
+    // in .vscode/tasks.json; Run build task runs it.
+    {
+      "run": "tasks.configureDefaultBuild",
+      "input": { "label": "tsc: build - web/tsconfig.json" },
+      "expect": { "label": "tsc: build - web/tsconfig.json", "path": ".vscode/tasks.json" }
+    },
+    {
+      "run": "tasks.list",
+      "expect": {
+        "tasks": {
+          "$contains": "\"label\":\"tsc: build - web/tsconfig.json\",\"command\""
+        }
+      }
+    },
+    {
+      "run": "tasks.runBuild",
+      "expect": { "label": "tsc: build - web/tsconfig.json", "exitCode": 2, "problems": 1 },
+      "timeoutMs": 30000
+    },
+
+    // ---- Continuous run ----
+    {
+      "run": "tests.refresh",
+      "expect": { "tests": 1, "frameworks": ["node"] },
+      "timeoutMs": 20000
+    },
+    { "run": "tests.showView" },
+    {
+      "run": "tests.toggleContinuousRun",
+      "expect": { "on": true, "all": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-continuous-toggle[aria-pressed=\"true\"]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // Saving the source file runs the test named after it.
+    { "run": "editor.openFile", "input": { "path": "ct/math.mjs" } },
+    { "wait": 800 },
+    { "run": "editor.insertText", "input": { "text": "// touched\n" } },
+    { "run": "editor.save" },
+    {
+      "state": "ide://tests",
+      "expect": {
+        "continuous": {
+          "runs": 1,
+          "lastRun": { "targets": [{ "files": ["ct/math.test.mjs"] }], "passed": 1 }
+        },
+        "passed": 1
+      },
+      "timeoutMs": 60000
+    },
+    // A file only; the view marks it.
+    { "run": "tests.toggleContinuousRun", "expect": { "on": false, "all": false } },
+    {
+      "run": "tests.toggleContinuousRun",
+      "input": { "file": "ct/math.test.mjs" },
+      "expect": { "on": true, "files": ["ct/math.test.mjs"] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-tree .test-watching" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // A file that isn't code runs nothing.
+    { "run": "explorer.newFile", "input": { "parent": "ct", "name": "notes.md" } },
+    { "run": "editor.insertText", "input": { "text": "Notes" } },
+    { "run": "editor.save" },
+    { "wait": 2000 },
+    { "state": "ide://tests", "expect": { "continuous": { "runs": 1 } } },
+    // The view's toggle, then everything off.
+    { "run": "dev.click", "input": { "selector": ".test-continuous-toggle" } },
+    { "state": "ide://tests", "expect": { "continuous": { "all": true } }, "timeoutMs": 3000 },
+    {
+      "run": "tests.stopContinuousRun",
+      "expect": { "all": false, "files": { "$length": 0 }, "tests": { "$length": 0 } }
+    }
+  ]
+}

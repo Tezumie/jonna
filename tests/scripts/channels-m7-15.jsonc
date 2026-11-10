@@ -1,0 +1,166 @@
+// D237, D238: channels and direct messages are conversations. #general and the team are there with
+// no agent files; you talk in a channel and its agents answer there. D291: the side bar is a plain
+// Chats list and a channel's conversation opens as a chat in the chat panel (no channel tab, no
+// "Reply in thread"); channels still work underneath (posting, memory, reading another
+// conversation, task channels) and the Inbox keeps its board. D272: the team is Plato (planner)
+// and Gabby (chat).
+{
+  "name": "channels-m7-15",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // ---- The team and #general, with no agent files ----
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:planner" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/channels",
+      "expect": {
+        "channels": [{ "id": "general", "members": ["agent", "planner", "chat"] }],
+        "directMessages": { "$length": 3 }
+      },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/mainAgent", "expect": { "name": { "$not": "Agent" } } },
+
+    // ---- The side bar: a plain Chats list, no channel rows ----
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "nav.ch-body[aria-label='Chats']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-row[data-room]" },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- A channel is a conversation: it opens as a chat, and its agents answer there ----
+    { "run": "agent.openChannel", "input": { "channel": "general" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='agent.room']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.postToChannel",
+      "input": { "channel": "#general", "message": "@Gabby say hi", "wait": true },
+      "expect": { "channel": "general" },
+      "save": "post",
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/channels",
+      "expect": { "channels": [{ "session": "${post.session}" }] },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-speaker[data-speaker='chat']" },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 20000
+    },
+    // D415: its first message doesn't rename it (it took the message, then the model's title).
+    { "state": "ide://agent/session", "expect": { "title": "#general" } },
+    // A plain chat: no "Reply in thread" on its messages.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-msg-actions button[aria-label='Reply in thread']" },
+      "expect": { "$length": 0 }
+    },
+    // The conversation is in the Chats list.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${post.session}']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+
+    // ---- Channel memory; reading another conversation ----
+    {
+      "run": "agent.rememberInChannel",
+      "input": { "channel": "general", "note": "We use tabs." },
+      "expect": { "notes": 1 }
+    },
+    {
+      "state": "ide://agent/channels",
+      "expect": { "channels": [{ "memory": ["We use tabs."] }] }
+    },
+    {
+      "run": "agent.readThread",
+      "input": { "channel": "general" },
+      "expect": { "text": { "$contains": "say hi" } }
+    },
+
+    // ---- A task channel still opens and closes (for agents and scripts) ----
+    {
+      "run": "agent.createTaskChannel",
+      "input": { "task": "Add a hello function", "open": false },
+      "expect": { "name": "task-add-a-hello-function" },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.closeTaskChannel",
+      "input": { "channel": "task-add-a-hello-function", "summary": "Added hello()." },
+      "expect": { "closed": true }
+    },
+
+    // ---- The Inbox as a board ----
+    { "run": "agent.showInbox" },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".inbox [data-show='board']" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inbox-column", "limit": 10 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inbox-card", "limit": 20 },
+      "expect": { "$not": { "$length": 0 } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- A direct message opens as a chat too, with its agent answering ----
+    {
+      "run": "agent.openChannel",
+      "input": { "channel": "Gabby" },
+      "expect": { "channel": "dm:chat" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:chat" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-room='dm:chat']" },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- A new channel ----
+    {
+      "run": "agent.createChannel",
+      "input": { "name": "Front End", "members": ["chat", "planner"], "purpose": "The web UI." },
+      "expect": { "channel": "front-end", "members": ["chat", "planner"] }
+    },
+    {
+      "run": "agent.createChannel",
+      "input": { "name": "front-end" },
+      "expectError": "already exists"
+    }
+  ]
+}

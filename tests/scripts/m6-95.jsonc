@@ -1,0 +1,47 @@
+// D194: m6.95. Picking an external agent with one of its models in one step (the model menu's
+// submenus); the welcome page's "Coming from VS Code?" link can be hidden.
+{
+  "name": "m6-95",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.selectModel",
+      "input": { "model": "acp/Mock agent", "agentModel": "smart" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "agentSettings": { "agent": "Mock agent", "settings": [{ "current": "smart" }] }
+      },
+      "timeoutMs": 20000
+    },
+    { "state": "ide://settings", "expect": { "$contains": "\"model\":\"smart\"" } },
+    // ---- The welcome page's import link hides with its × ----
+    { "run": "layout.openView", "input": { "viewType": "welcome" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".welcome-import:not([hidden])" },
+      "expect": { "$contains": "Coming from VS Code" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.hideImportLink", "expect": { "hidden": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".welcome-import:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+// D229: a notebook's breadcrumbs (the file, then the selected cell's heading and code cell),
+// Format cell with no formatter (nothing changes, nothing breaks), and inline HTML in Markdown
+// prose nested by the browser's parser (`<b>a <i>b</b> c</i>`: the `<i>` goes on after `</b>`).
+{
+  "name": "notebook-m7-8",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "notebook.new",
+      "input": { "path": "nb/crumbs.ipynb" },
+      "expect": { "path": { "$contains": "crumbs.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "x = 1" } },
+    {
+      "run": "notebook.insertCell",
+      "input": {
+        "index": 0,
+        "kind": "markdown",
+        "source": "# Setup\n\nSome <b>bold <i>both</b> italic</i> text."
+      }
+    },
+    { "run": "notebook.revealCell", "input": { "index": 1 } },
+    // The breadcrumbs: the file, then the heading the code cell is under.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".notebook-editor .nb-breadcrumbs .breadcrumbs-item", "limit": 10 },
+      "expect": { "$contains": "crumbs.ipynb" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".notebook-editor .nb-breadcrumbs .breadcrumbs-item", "limit": 10 },
+      "expect": { "$contains": "Setup" },
+      "timeoutMs": 5000
+    },
+    // The browser's parser: `both` is in <b><i>, and " italic" in an <i> of its own after it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-markdown .nb-markdown b i" },
+      "expect": { "$contains": "both" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-markdown .nb-markdown b + i" },
+      "expect": { "$contains": "italic" }
+    },
+    // Format cell: formatted by a Python server when one is installed, else it says so; the
+    // code stays.
+    {
+      "run": "notebook.formatCell",
+      "input": { "index": 1 },
+      "expect": { "formatted": { "$exists": true } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$contains": "x = 1" } } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

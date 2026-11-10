@@ -1,0 +1,90 @@
+// D288: one of your agents on an external agent with a model of its own (Scout on the mock ACP
+// agent's "smart" model) while the main agent stays on the one remembered for it ("fast"): each
+// answers on its own, on one connection, and the model isn't overwritten for the other.
+{
+  "name": "agent-external-model-m7-36",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\ndescription: Finds things.\\n---\\n\\nFind it.\\n' > .vscode/agents/scout.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "\"custom:scout\"" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    // The main agent on the mock agent, its model remembered as "fast".
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" }
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "external:Mock agent", "model": "fast" }
+    },
+    // Scout: the same external agent, its own model. The subagent list loads on its own, after
+    // the chat modes (slower runners got "No subagent named scout").
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "subagents": { "$contains": "\"name\":\"scout\"" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.setSubagent",
+      "input": { "name": "scout", "model": "acp/Mock agent", "agentModel": "smart" },
+      "expect": { "model": "acp/Mock agent" }
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "subagents": { "$contains": "\"agentModel\":\"smart\"" } }
+    },
+    { "run": "agent.setChatAgent", "input": { "agent": "scout" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "just answer", "wait": true },
+      "expect": { "answer": { "$contains": "ACP done on smart" } },
+      "timeoutMs": 60000
+    },
+    // Back to the main agent: its own model again, not Scout's.
+    { "run": "agent.setChatAgent", "input": { "agent": "agent" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "just answer", "wait": true },
+      "expect": { "answer": { "$contains": "ACP done on fast" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill", "html": 300 },
+      "expect": { "$contains": "Fast model" },
+      "timeoutMs": 5000
+    },
+    // The chat switched to Scout: the pill says Scout's model before it answers.
+    { "run": "agent.setChatAgent", "input": { "agent": "scout" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill", "html": 300 },
+      "expect": { "$contains": "Smart model" },
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+// D223: an external agent that takes only stdio MCP servers gets the IDE's tools through the
+// IDE's own executable (`--mcp-stdio-proxy`, the token in the environment); an external agent's
+// step shows its changed file on its card while the turn goes on (a git-ignored file that
+// existed is an edit, not a new file); a file the user saves during the turn isn't credited to
+// the agent; the turn's tokens are split by model (`_meta.quota.model_usage`).
+{
+  "name": "mcp-acp-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git add -A && git -c user.email=t@example.com -c user.name=T commit -qm init && echo committed",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "committed" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo TERMINAL-MARKER-42", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "TERMINAL-MARKER-42" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] },
+          "Mock stdio agent": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-acp.mjs"],
+            "env": { "MOCK_ACP_STDIO_MCP": "1" }
+          }
+        }
+      }
+    },
+    // ---- stdio only: the IDE's executable as the agent's MCP server ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock stdio agent" },
+      "expect": { "model": "acp/Mock stdio agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please read my terminal", "wait": true },
+      "expect": { "answer": { "$contains": "Terminal check: saw the marker over stdio" } },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://agent/session", "expect": { "ideTools": "on" } },
+    { "state": "ide://agent/ideTools", "expect": { "$contains": "stdio" }, "print": true },
+    // Still lent, not turned on for everyone.
+    {
+      "state": "ide://settings",
+      "expect": { "$not": { "$contains": "\"key\":\"mcp.enabled\",\"value\":true" } }
+    },
+    // ---- A step's change shows while the turn goes on ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.send", "input": { "message": "Go step by step", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "pending": { "$contains": "step-a.txt" },
+        "items": { "$contains": "step-a.txt\"]" }
+      },
+      "timeoutMs": 4000
+    },
+    // The turn isn't over yet.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "Steps done" } } },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+    // The user edits and saves a file of their own meanwhile.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "editor.insertText", "input": { "text": "My own line.\n" } },
+    { "run": "editor.save", "input": { "path": "notes.txt" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Steps done" } },
+      "timeoutMs": 15000
+    },
+    // After the answer the turn's files are compared again: the ignored file that existed is an
+    // edit (one line added); the user's own save gets a "Changed files" note ("compared from your
+    // own save on") and isn't the agent's change.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": { "$not": "running" },
+        "pending": { "$contains": "step-a.txt" },
+        "items": { "$contains": "Changed files" }
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$not": { "$contains": "notes.txt" } } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$contains": "\"added\":1,\"removed\":0" } }
+    },
+    // Tokens by model: the second model's share is logged too.
+    {
+      "state": "ide://agent/usage/history",
+      "expect": { "byModel": { "$contains": "mock-haiku" } },
+      "timeoutMs": 5000,
+      "print": true
+    }
+  ]
+}

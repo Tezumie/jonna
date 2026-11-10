@@ -1,0 +1,109 @@
+// D377: several chats selected in the Chats list, as in the explorer: Ctrl+click adds one (the
+// chat on screen counts as picked first), Shift+click takes a range, Escape lets go; selected
+// chats are deleted together (agent.deleteSessions, asked once). Against
+// tests/fixtures/mock-ollama.mjs. Dragging rows onto the dock is checked by hand (no drag helper).
+{
+  "name": "agent-chats-select-m7-108",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    { "run": "agent.newSession", "save": "a" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello", "session": "${a.session}" },
+      "expect": { "answer": "Hello from mock." },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.newSession", "save": "b" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello", "session": "${b.session}" },
+      "expect": { "answer": "Hello from mock." },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.newSession", "save": "c" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello", "session": "${c.session}" },
+      "expect": { "answer": "Hello from mock." },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${a.session}']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    // A plain click opens A; Ctrl+click on C picks A and C.
+    { "run": "dev.click", "input": { "selector": ".ch-recent[data-session='${a.session}']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-current[data-session='${a.session}']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-recent[data-session='${c.session}']", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-selected", "html": 0 },
+      "expect": { "$length": 2 }
+    },
+    // Ctrl+click again takes C out.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-recent[data-session='${c.session}']", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-selected[data-session='${c.session}']" },
+      "expect": { "$length": 0 }
+    },
+    // Shift+click from C (the anchor) to A: all three, listed newest first.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-recent[data-session='${a.session}']", "shift": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-selected", "html": 0 },
+      "expect": { "$length": 3 },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Escape lets go.
+    { "run": "dev.type", "input": { "selector": ".ch-body", "key": "Escape" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-selected" },
+      "expect": { "$length": 0 }
+    },
+    // Several deleted at once.
+    {
+      "run": "agent.deleteSessions",
+      "input": { "sessions": ["${a.session}", "${b.session}"] },
+      "expect": { "deleted": { "$length": 2 } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${a.session}']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${c.session}']" },
+      "expect": { "$length": 1 }
+    }
+  ]
+}

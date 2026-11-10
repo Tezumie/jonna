@@ -1,0 +1,72 @@
+{
+  "id": "builtin.bookmarks",
+  "version": "0.1.0",
+  "displayName": "Bookmarks",
+  "description": "Mark lines and jump between them across files (like the popular Bookmarks extension): a mark in the margin, labels, a list, next and previous.",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "bookmarks.toggle",
+        "title": "Toggle bookmark",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.toggleLabeled",
+        "title": "Toggle labeled bookmark\u2026",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.next",
+        "title": "Next bookmark",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.previous",
+        "title": "Previous bookmark",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.list",
+        "title": "List bookmarks\u2026",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.clear",
+        "title": "Clear bookmarks",
+        "category": "Bookmarks"
+      },
+      {
+        "id": "bookmarks.clearFile",
+        "title": "Clear bookmarks in this file",
+        "category": "Bookmarks"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "command": "bookmarks.toggle",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l",
+        "command": "bookmarks.next",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+alt+j",
+        "mac": "cmd+alt+j",
+        "command": "bookmarks.previous",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+alt+shift+k",
+        "mac": "cmd+alt+shift+k",
+        "command": "bookmarks.list"
+      }
+    ]
+  }
+}

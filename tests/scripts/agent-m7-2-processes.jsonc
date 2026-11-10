@@ -1,0 +1,149 @@
+// D201: the agent's background commands (run_command background → bg id, process_output with a
+// filter, kill_process, the chat's list, ide://agent/processes). Against mock-ollama.
+{
+  "name": "agent-m7-2-processes",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // ---- The agent's background commands ----
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    // `node -e` is on the default ask list (it runs any code): approved once.
+    {
+      "run": "agent.send",
+      "input": { "message": "start the background ticker" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "node -e" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Background: bg1" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/processes",
+      "expect": {
+        "processes": [{ "id": "bg1", "status": "running", "command": { "$contains": "tick" } }]
+      }
+    },
+    // The chip under the conversation counts it (D326; it replaced the list above the message box).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-detail", "html": 300 },
+      "expect": [{ "html": { "$contains": "1 running" } }],
+      "timeoutMs": 5000
+    },
+    // D286: the step that started it links to its output, live in a panel tab (the turn's steps
+    // fold when it ends: opened first).
+    { "run": "dev.click", "input": { "selector": ".agent-work-header[aria-expanded='false']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step-output" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-step-output" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-procout .agent-procout-cmd", "html": 300 },
+      "expect": [{ "html": { "$contains": "tick" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-procout .agent-procout-text", "html": 2000 },
+      "expect": [{ "html": { "$contains": "tick" } }],
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // New output since the run_command result, only the matching lines.
+    { "wait": 3000 },
+    {
+      "run": "agent.send",
+      "input": { "message": "read the ticker output" },
+      "expect": { "answer": "Ticker said: tick" },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "stop the background ticker" },
+      "expect": { "answer": { "$contains": "Kill said: Stopped bg1" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/processes",
+      "expect": { "processes": [{ "id": "bg1", "status": "killed" }] },
+      "timeoutMs": 5000
+    },
+    // Nothing running: the chip says it was stopped (D326).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-detail", "html": 300 },
+      "expect": [{ "html": { "$contains": "1 stopped" } }],
+      "timeoutMs": 5000
+    },
+    // Its output view says it ended, without Stop.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-procout .agent-procout-status", "html": 300 },
+      "expect": [{ "html": { "$contains": "killed" } }],
+      "timeoutMs": 5000
+    },
+    // Started again, stopped from the chat's list.
+    {
+      "run": "agent.send",
+      "input": { "message": "start the background ticker" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "node -e" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Background: bg2" } },
+      "timeoutMs": 30000
+    },
+    // Stopped from the Background tasks view (D326).
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask[data-task=\"bg2\"] .agent-bgtask-stop" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask[data-task=\"bg2\"] .agent-bgtask-stop" }
+    },
+    {
+      "state": "ide://agent/processes",
+      "expect": { "processes": { "$contains": "\"id\":\"bg2\",\"session\"" } }
+    },
+    {
+      "run": "agent.listProcesses",
+      "expect": { "processes": { "$contains": "\"status\":\"killed\"" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.listProcesses",
+      "expect": { "processes": { "$not": { "$contains": "\"status\":\"running\"" } } },
+      "timeoutMs": 5000
+    }
+  ]
+}

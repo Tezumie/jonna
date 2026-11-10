@@ -1,0 +1,106 @@
+// D270: a new agent shows its model's logo (icon: model).
+// D230: agents with faces. The agent editor: an empty draft can't be created and Esc puts it
+// away; a draft from a template, renamed in the form and created, writes the file (role, face,
+// access read back through ide://agent/agents); editing the role writes the file again; the Agents
+// page shows it as a card; Delete (confirmed) removes the file and closes its tab.
+{
+  "name": "agents-m7-9",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- An empty draft: Create stays off, Esc closes it ----
+    { "run": "agent.newAgent", "expect": { "tabId": { "$exists": true } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-create[disabled]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".ae-scroll", "key": "Escape" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // ---- From a template, renamed, created ----
+    {
+      "run": "agent.newAgent",
+      "input": { "template": "tests", "scope": "project" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-template[data-template='tests'][aria-pressed='true']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".ae-page [data-field='label']", "text": "Spec writer" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-id" },
+      "expect": [{ "html": { "$contains": "spec-writer.md" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".ae-page .ae-create:not([disabled])" } },
+    {
+      "state": "ide://agent/agents",
+      "expect": {
+        "$contains": "\"name\":\"spec-writer\",\"label\":\"Spec writer\",\"role\":\"Tests\",\"icon\":\"model\""
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/agents",
+      "expect": { "$contains": "\"access\":\"edit\",\"source\":\"project\"" }
+    },
+    // The draft became the agent's tab: no Create button, a Delete one.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-delete" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // ---- Editing writes the file ----
+    {
+      "run": "dev.type",
+      "input": { "selector": ".ae-page [data-field='role']", "text": "Test author" }
+    },
+    {
+      "state": "ide://agent/agents",
+      "expect": { "$contains": "\"label\":\"Spec writer\",\"role\":\"Test author\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-note" },
+      "expect": [{ "html": { "$contains": "Saved" } }],
+      "timeoutMs": 3000
+    },
+    // ---- The Agents page: a card ----
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ag-card[data-node='subagent:spec-writer'] .ag-role" },
+      "expect": [{ "html": { "$contains": "Test author" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+    // ---- Delete from the editor ----
+    { "run": "agent.editAgent", "input": { "name": "spec-writer" } },
+    { "run": "dev.click", "input": { "selector": ".ae-page .ae-delete" }, "timeoutMs": 5000 },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-danger" }, "timeoutMs": 3000 },
+    {
+      "state": "ide://agent/agents",
+      "expect": { "$not": { "$contains": "spec-writer" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "bundled.todo-tree",
+  "version": "1.0.0",
+  "displayName": "TODO tree",
+  "description": "Lists every TODO, FIXME, HACK, XXX, BUG and NOTE comment in the folder, grouped by file, in a sidebar view. Click one to jump to it. Bundled as an example: turn it on, or uninstall it.",
+  "authors": [
+    { "name": "Claude", "url": "https://claude.ai", "avatar": "brand:anthropic" },
+    { "name": "Tezumie", "github": "Tezumie" }
+  ],
+  "license": "MIT",
+  "main": "main.js",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      { "id": "todoTree.refresh", "title": "TODO tree: Refresh" },
+      { "id": "todoTree.list", "title": "TODO tree: List all" },
+      { "id": "todoTree.goTo", "title": "TODO tree: Go to a TODO…" }
+    ],
+    "settings": {
+      "todoTree.tags": {
+        "type": "array",
+        "default": ["TODO", "FIXME", "HACK", "XXX", "BUG", "NOTE"],
+        "description": "Words that mark a comment to list (matched as whole words, case-sensitive)."
+      },
+      "todoTree.exclude": {
+        "type": "array",
+        "default": ["node_modules", "dist", "build", "*.min.js", "*.lock"],
+        "description": "Globs or folders to leave out (besides .gitignore)."
+      },
+      "todoTree.groupByTag": {
+        "type": "boolean",
+        "default": false,
+        "description": "Group by tag (TODO, FIXME…) instead of by file."
+      }
+    },
+    "views": [
+      {
+        "id": "todoTree.view",
+        "title": "TODO tree",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "circle-check"
+      }
+    ]
+  }
+}

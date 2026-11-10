@@ -1,0 +1,18 @@
+{
+  "name": "pkgs-test-market",
+  "owner": { "name": "Test" },
+  "metadata": { "description": "A local marketplace for agent-plugins-m7-100 (D358)" },
+  "plugins": [
+    {
+      "name": "pkgs-hello",
+      "source": "./plugins/hello",
+      "description": "Greets: a command, a skill, a subagent, a hook and an MCP server",
+      "version": "1.0.0"
+    },
+    {
+      "name": "pkgs-elsewhere",
+      "source": { "source": "github", "repo": "example/not-cloned-in-tests" },
+      "description": "Listed only (from GitHub)"
+    }
+  ]
+}

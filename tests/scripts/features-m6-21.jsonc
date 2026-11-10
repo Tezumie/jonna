@@ -1,0 +1,86 @@
+// D122: compact folders in the explorer, git stash, Apply on a chat code block.
+{
+  "name": "features-m6-21",
+  "steps": [
+    // a/b/c holds one file: the explorer shows "deep/nest/inner" as one row.
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": "deep" } },
+    { "run": "explorer.newFolder", "input": { "parent": "deep", "name": "nest" } },
+    { "run": "explorer.newFolder", "input": { "parent": "deep/nest", "name": "inner" } },
+    { "run": "explorer.newFile", "input": { "parent": "deep/nest/inner", "name": "leaf.txt" } },
+    { "run": "explorer.refresh" },
+    {
+      "state": "ide://workspace",
+      "expect": { "compactFolders": { "$contains": "deep/nest/inner" } },
+      "timeoutMs": 10000
+    },
+    // Git stash round trip.
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@example.com && git config user.name T && git config commit.gpgsign false",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.stage" },
+    { "run": "git.commit", "input": { "message": "first" } },
+    { "run": "editor.openFile", "input": { "path": "deep/nest/inner/leaf.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "leaf.txt" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.insertText", "input": { "text": "stashed edit\n" } },
+    { "run": "editor.save" },
+    {
+      "run": "git.stash",
+      "input": { "message": "wip leaf" },
+      "expect": { "stashed": true, "stashes": 1 }
+    },
+    { "run": "git.stashList", "expect": [{ "index": 0, "message": { "$contains": "wip leaf" } }] },
+    { "run": "git.status", "expect": { "changes": { "$length": 0 } } },
+    { "run": "git.stashPop", "input": { "index": 0 }, "expect": { "applied": true } },
+    { "run": "git.status", "expect": { "changes": { "$length": 1 } } },
+    { "run": "git.stashList", "expect": { "$length": 0 } },
+    // Blame (its command wasn't allowed before D122).
+    {
+      "run": "git.blameLine",
+      "input": { "path": "README.md", "line": 1 },
+      "expect": { "committed": true, "summary": "first" }
+    },
+    // Apply a code block: a function replaced between its first and last lines.
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".", "name": "calc.js" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "calc.js" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "// calc\nfunction add(a, b) {\n  return a - b;\n}\n\nfunction mul(a, b) {\n  return a * b;\n}\n\nmodule.exports = { add, mul };\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.applyCode",
+      "input": { "path": "calc.js", "code": "function add(a, b) {\n  return a + b; // fixed\n}" },
+      "expect": { "path": "calc.js", "how": "range", "from": 2, "to": 4, "pending": true }
+    },
+    { "run": "agent.acceptAll" },
+    { "run": "search.run", "input": { "query": "a + b; // fixed" }, "expect": { "matches": 1 } },
+    { "run": "search.run", "input": { "query": "return a - b" }, "expect": { "matches": 0 } },
+    { "run": "search.run", "input": { "query": "return a * b" }, "expect": { "matches": 1 } },
+    {
+      "run": "agent.applyCode",
+      "input": { "path": "calc.js", "code": "function div(a, b) {\n  return a / b;\n}" },
+      "expectError": "Couldn't tell where"
+    }
+  ]
+}

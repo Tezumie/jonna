@@ -1,0 +1,96 @@
+// D319-D321 (pkgE): the echo MCP server's tools deferred (agent.deferTools: always): a call of one
+// not loaded says how to load it, a keyword tool_search loads it, then it runs, and the next
+// request no longer lists it as deferred; the chat's state says what's deferred and loaded. Then
+// web_search with domains (SearXNG served by the mock: the site: syntax reaches it, a blocked
+// domain's result is filtered out, the Sources rule comes with the results) and web_fetch with a
+// question (the mock model answers from the page). Against tests/fixtures/mock-ollama.mjs and
+// tests/fixtures/sample/tools/mock-mcp.mjs.
+{
+  "name": "agent-deferred-m7-62",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    { "run": "settings.set", "input": { "key": "agent.deferTools", "value": "always" } },
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "echo",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp.mjs"]
+      },
+      "expect": { "added": true }
+    },
+
+    // ---- Deferred tools ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgE deferred tools: load and use echo" },
+      "expect": {
+        "answer": "pkgE deferred: first=helpful search=loaded echo=HELLO listed=ask echoListed=no"
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "loadedTools": ["mcp__echo__echo"],
+        "deferredTools": { "$contains": "mcp__echo__ask" }
+      },
+      "print": true
+    },
+    // The rows: the call that wasn't loaded, then the search that loaded it.
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "\"summary\":\"not loaded\"" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "\"summary\":\"1 loaded\"" }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // ---- web_search with domains, web_fetch with a question ----
+    {
+      "run": "agent.setupWebSearch",
+      "input": { "provider": "searxng", "url": "http://127.0.0.1:11999" },
+      "expect": { "provider": "searxng", "changed": true }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.webFetch.autoApprove", "value": true }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgE web: search and ask a page" },
+      "expect": {
+        "answer": "pkgE web: search=sources-rule syntax=site blocked=hidden fetch=answered"
+      },
+      "timeoutMs": 60000
+    },
+    // The command: a blocked domain's results are left out.
+    {
+      "run": "web.search",
+      "input": { "query": "tauri", "blockedDomains": ["example.com"] },
+      "expect": { "results": { "$length": 0 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "web.search",
+      "input": { "query": "tauri", "allowedDomains": ["example.com"] },
+      "expect": { "results": [{ "url": "https://example.com/mock" }, {}] },
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.deferTools", "value": "auto" } },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

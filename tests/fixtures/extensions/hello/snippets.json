@@ -1,0 +1,4 @@
+{
+  // Comments are allowed (JSONC), like VS Code snippet files.
+  "Greeting": { "prefix": ["hi", "greet"], "body": ["hello ${1:world}", "$0"], "description": "Say hello" }
+}

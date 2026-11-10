@@ -1,0 +1,179 @@
+/* Reset and element defaults. Colors, sizes and type come from tokens.css (semantic tokens only). */
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+  button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  [hidden] {
+    /* biome-ignore lint/complexity/noImportantStyles: `hidden` must win over component display rules. */
+    display: none !important;
+  }
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+}
+
+@layer base {
+  html {
+    background: var(--bg-app);
+  }
+  body {
+    font: var(--text-md-font);
+    color: var(--fg-default);
+    background: var(--bg-app);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  :focus {
+    outline: none;
+  }
+  /* DESIGN.md §11: 2px ring, 1px offset; keyboard focus only; never removed. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  /* Text fields show focus with their own border (D245): the ring is for buttons, rows, toggles. */
+  textarea:focus-visible,
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus-visible,
+  [contenteditable="true"]:focus-visible {
+    outline: none;
+  }
+  .vlist:focus-visible,
+  .vlist-row:focus-visible {
+    outline-offset: -2px;
+  }
+  /* Keybinding chips (§12.7). */
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 var(--space-2);
+    font: 400 var(--text-xs) / var(--text-xs-lh) var(--font-ui);
+    color: var(--fg-muted);
+    background: var(--bg-chip);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+  }
+  mark {
+    background: none;
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  svg.icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    flex: none;
+  }
+  /* Overlay scrollbars (§10): thin thumb, no track or arrows; `workbench.scrollbarSize` wide
+     (D128). Only the ::-webkit-scrollbar rules: in Chromium (WebView2), setting scrollbar-width
+     or scrollbar-color on an element switches these off and its width can't be chosen. */
+  /* A search field's clear (×) is a button. */
+  input[type="search"]::-webkit-search-cancel-button {
+    cursor: pointer;
+  }
+  ::-webkit-scrollbar {
+    width: var(--size-scrollbar, 9px);
+    height: var(--size-scrollbar, 9px);
+  }
+  /* A styled scrollbar takes its element's cursor: in a text field (the commit message) that's
+     the text cursor over the thumb. A scrollbar is a control: the arrow (D174). */
+  ::-webkit-scrollbar,
+  ::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    cursor: default;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius-full);
+    /* A little inset, so the thumb reads as an overlay rather than a gutter. */
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  /* background-color, never the shorthand: it resets background-clip, and the thumb's transparent
+     border would fill in — the thumb grew 2px under the pointer (D191). */
+  :hover::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb-near);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-active);
+  }
+  /* Chromium keeps a scrollbar's painted colors when only a variable changes: a theme change
+     flips this for one frame so every scrollbar repaints with the new ones (D138). */
+  :root.is-retheming ::-webkit-scrollbar-thumb {
+    background-color: transparent;
+  }
+  .muted {
+    color: var(--fg-muted);
+  }
+  .fatal-error {
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    padding: var(--space-8);
+    color: var(--status-danger-fg);
+    background: var(--bg-app);
+    white-space: pre-wrap;
+    font-family: var(--font-mono);
+    user-select: text;
+  }
+  body.is-resizing-vertical {
+    cursor: ew-resize;
+  }
+  body.is-resizing-horizontal {
+    cursor: ns-resize;
+  }
+  body.is-resizing-vertical *,
+  body.is-resizing-horizontal *,
+  body.is-dragging * {
+    pointer-events: none;
+  }
+  body.is-dragging {
+    cursor: grabbing;
+  }
+  @media (prefers-contrast: more) {
+    :root {
+      --border-subtle: var(--border-strong);
+      --border-default: var(--border-strong);
+      --fg-muted: var(--fg-default);
+    }
+  }
+}

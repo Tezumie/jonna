@@ -1,0 +1,100 @@
+// D322: the monitor tool. A monitor's output lines come back to the chat as automatic messages
+// (lines within 200 ms as one), a turn of their own when the chat is idle; its exit is one more
+// message. It shows in the chat's background commands, the details panel and
+// ide://agent/monitors. A monitor that never ends expires after its timeout with one message.
+// Against tests/fixtures/mock-ollama.mjs (pkgFScripted).
+{
+  "name": "agent-monitor-m7-66",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // `node -e` asks even in automatic mode: full access, nothing waits on the user.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgF monitor" },
+      "expect": { "answer": "PkgF monitor started: yes" },
+      "timeoutMs": 30000
+    },
+    // It runs as one of the chat's background commands, marked as a monitor.
+    {
+      "state": "ide://agent/monitors",
+      "expect": {
+        "monitors": [{ "description": "pkgf events", "status": "running", "timeoutMs": 60000 }]
+      },
+      "print": true
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": {
+        "background": {
+          "running": [{ "kind": "command", "label": "pkgf events", "monitor": true }]
+        }
+      }
+    },
+    // And in the Background tasks view (D326), by what it watches.
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-monitor", "limit": 2, "html": 3000 },
+      "expect": [{ "html": { "$contains": "pkgf events" } }],
+      "timeoutMs": 5000
+    },
+    // Its two lines arrive as one message (a turn of its own), then its exit as another.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "PkgF events: 2" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgF monitor ended; events seen: yes" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/monitors",
+      "expect": { "monitors": [{ "status": "exited", "events": 2 }] }
+    },
+    // The chat shows them as quiet lines.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-auto.is-news", "limit": 4, "html": 300 },
+      "expect": [
+        { "html": { "$contains": "(pkgf events): 2 new lines" } },
+        { "html": { "$contains": "(pkgf events) ended" } }
+      ],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // ---- A monitor that never ends expires ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgF expire" },
+      "expect": { "answer": "PkgF expiring monitor started" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgF saw the expiry" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/monitors",
+      "expect": { "monitors": [{ "description": "pkgf events" }, { "status": "killed" }] }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

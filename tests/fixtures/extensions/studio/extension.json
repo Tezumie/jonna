@@ -1,0 +1,43 @@
+{
+  "id": "acme.studio",
+  "version": "1.2.0",
+  "displayName": "Studio",
+  "description": "Test extension for D176: the editor API, status bar, menus, an editor-area page, a file viewer, MCP server, agent and provider contributions.",
+  "icon": "box",
+  "author": "Acme tests",
+  "repository": "https://github.com/acme/studio",
+  "license": "MIT",
+  "categories": ["Testing"],
+  "keywords": ["fixture", "studio"],
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "permissions": ["fs.read", "fs.write", "shell", "agent"],
+  "contributes": {
+    "commands": [
+      { "id": "studio.mark", "title": "Studio: mark the file" },
+      { "id": "studio.edit", "title": "Studio: change line 1", "effects": ["write"] },
+      { "id": "studio.providers", "title": "Studio: register providers" },
+      { "id": "studio.languageProviders", "title": "Studio: register the other language providers" },
+      { "id": "studio.lensClicked", "title": "Studio: a code lens was clicked" },
+      { "id": "studio.refreshTokens", "title": "Studio: refresh the semantic tokens" },
+      { "id": "studio.providerStats", "title": "Studio: how often the providers were asked" },
+      { "id": "studio.progress", "title": "Studio: long work with progress" },
+      { "id": "studio.progressResult", "title": "Studio: how the long work ended" },
+      { "id": "studio.lastFile", "title": "Studio: last file the viewer got" },
+      { "id": "studio.pageToWindow", "title": "Studio: page into its own window" }
+    ],
+    "views": [
+      { "id": "studio.page", "title": "Studio page", "location": "editor", "type": "webview", "path": "page.html" }
+    ],
+    "viewers": [
+      { "id": "studio.viewer", "title": "Studio board", "extensions": [".studio"], "path": "viewer.html" }
+    ],
+    "menus": {
+      "explorer/context": [{ "command": "studio.mark", "when": "!explorerResourceIsFolder" }],
+      "editor/title": [{ "command": "studio.mark", "icon": "zap", "when": "resourceExtname == .txt" }]
+    },
+    "mcpServers": [{ "name": "studio-db", "command": "node", "args": ["server.js"] }],
+    "agents": [{ "name": "Studio agent", "command": "node", "args": ["agent.js"], "description": "A test agent" }],
+    "modelProviders": [{ "id": "studio", "name": "Studio models", "baseUrl": "https://models.studio.example/v1" }]
+  }
+}

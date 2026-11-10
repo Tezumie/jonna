@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Outputs</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--fg-default);
+        font-family: var(--font-ui, system-ui, sans-serif);
+        font-size: 13px;
+        overflow: hidden;
+      }
+      /* Each output sits over the slot its cell keeps for it (notebookPage.ts places them). */
+      .output {
+        position: absolute;
+        top: 0;
+        left: 0;
+        box-sizing: border-box;
+        padding: 0 8px;
+        overflow-x: auto;
+        visibility: hidden;
+      }
+      .output.is-visible {
+        visibility: visible;
+      }
+      .note {
+        color: var(--fg-subtle);
+        font-style: italic;
+        margin: 2px 0;
+      }
+      pre.text {
+        margin: 0;
+        font-family: var(--font-mono, ui-monospace, monospace);
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: var(--accent-text);
+      }
+      /* What VS Code's webviews define, from the IDE's colors: extensions' renderers and Jupyter's
+         widgets read these. */
+      :root {
+        --vscode-font-family: var(--font-ui);
+        --vscode-font-size: 13px;
+        --vscode-editor-font-family: var(--font-mono);
+        --vscode-editor-font-size: 12px;
+        --vscode-foreground: var(--fg-default);
+        --vscode-descriptionForeground: var(--fg-muted);
+        --vscode-errorForeground: var(--fg-error, var(--fg-default));
+        --vscode-editor-foreground: var(--fg-default);
+        --vscode-editor-background: var(--bg-surface);
+        --vscode-notebook-outputContainerBackgroundColor: transparent;
+        --vscode-input-background: var(--bg-input-raised);
+        --vscode-input-foreground: var(--fg-default);
+        --vscode-input-border: var(--border-strong);
+        --vscode-dropdown-background: var(--bg-input-raised);
+        --vscode-dropdown-foreground: var(--fg-default);
+        --vscode-dropdown-border: var(--border-strong);
+        --vscode-button-background: var(--accent);
+        --vscode-button-foreground: var(--fg-on-accent, var(--fg-default));
+        --vscode-button-hoverBackground: var(--accent);
+        --vscode-focusBorder: var(--accent);
+        --vscode-textLink-foreground: var(--accent-text);
+        --vscode-panel-border: var(--border-subtle);
+        --vscode-widget-border: var(--border-subtle);
+        --vscode-list-hoverBackground: var(--bg-hover);
+        --vscode-scrollbarSlider-background: var(--bg-hover);
+        --jp-widgets-color: var(--fg-default);
+        --jp-widgets-label-color: var(--fg-default);
+        --jp-widgets-readout-color: var(--fg-default);
+        --jp-widgets-font-size: 13px;
+        --jp-widgets-input-color: var(--fg-default);
+        --jp-widgets-input-background-color: var(--bg-input-raised);
+        --jp-widgets-input-border-color: var(--border-strong);
+        --jp-widgets-input-focus-border-color: var(--accent);
+        --jp-widgets-slider-active-handle-color: var(--accent);
+        --jp-widgets-slider-handle-border-color: var(--border-strong);
+        --jp-widgets-slider-handle-background-color: var(--bg-surface-raised);
+        --jp-widgets-slider-track-color: var(--border-strong);
+        --jp-layout-color0: var(--bg-surface);
+        --jp-layout-color1: var(--bg-surface);
+        --jp-layout-color2: var(--bg-surface-raised);
+        --jp-layout-color3: var(--bg-hover);
+        --jp-ui-font-color0: var(--fg-default);
+        --jp-ui-font-color1: var(--fg-default);
+        --jp-ui-font-color2: var(--fg-muted);
+        --jp-ui-font-color3: var(--fg-subtle);
+        --jp-content-font-color1: var(--fg-default);
+        --jp-border-color0: var(--border-strong);
+        --jp-border-color1: var(--border-strong);
+        --jp-border-color2: var(--border-subtle);
+        --jp-brand-color1: var(--accent);
+        --jp-ui-font-family: var(--font-ui);
+        --jp-code-font-family: var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="outputs"></div>
+    <script src="harden.js"></script>
+    <script src="notebook.js"></script>
+  </body>
+</html>

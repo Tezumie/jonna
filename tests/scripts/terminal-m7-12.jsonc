@@ -1,0 +1,84 @@
+// m7.12: hidden terminals are saved with the folder. Reopening the folder goes through the same
+// save / restore as a restart (a window reload isn't scriptable: the runner lives in the page),
+// so the processes end with the folder and the hidden tab comes back hidden, with its output
+// above a new shell. The reload itself (processes taken back) is covered by the Rust test
+// `pty::tests::a_detached_terminal_is_reattached_or_reaped` and docs/manual-test.md.
+{
+  "name": "terminal-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.create",
+      "save": "t",
+      "expect": { "id": { "$gte": 1 } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${t.id}", "command": "echo hidden-before-$((6*7))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "hidden-before-42" } },
+      "timeoutMs": 30000
+    },
+    // Its pane state carries the process for a reload (id and key), and ide://terminals says it
+    // started as a new shell, not taken back.
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"reattached\":false" } }
+    },
+    {
+      "run": "terminal.hide",
+      "input": { "id": "${t.id}" },
+      "expect": { "ids": ["${t.id}"], "hiddenCount": 1 }
+    },
+
+    // ---- The folder closes (its state saved) and opens again ----
+    // By path: the recent-folders pick closes when a terminal takes the focus (as VS Code's
+    // does on blur), which a starting shell can do before a scripted Enter reaches it.
+    { "state": "ide://workspace", "save": "ws" },
+    { "run": "workspace.openRecent", "input": { "path": "${ws.root}" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://terminals",
+      "save": "after",
+      "expect": {
+        // Once its shell runs, the hidden tab lists its terminal's id.
+        "hidden": [{ "ids": { "$length": 1 } }],
+        "terminals": { "$contains": "\"hidden\":true" }
+      },
+      "timeoutMs": 20000
+    },
+    // A new shell (the old one ended with the folder) under the hidden tab's saved output.
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"restored\":true,\"reattached\":false" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${after.hidden.0.ids.0}" },
+      "expect": { "text": { "$contains": "hidden-before-42" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "id": "${after.hidden.0.ids.0}",
+        "command": "echo still-hidden-$((5+5))",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "still-hidden-10" } },
+      "timeoutMs": 30000
+    },
+    // Shown again: a tab with the same terminal.
+    {
+      "run": "terminal.showHidden",
+      "input": { "id": "${after.hidden.0.ids.0}" },
+      "expect": { "shown": [{ "ids": ["${after.hidden.0.ids.0}"] }], "hiddenCount": 0 }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

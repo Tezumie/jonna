@@ -1,0 +1,29 @@
+{
+  "id": "acme.tasklist",
+  "version": "1.0.0",
+  "displayName": "Task list",
+  "description": "Test extension: a tree view's row menus (view/item/context with viewItem, groups, inline buttons) and its own output channel.",
+  "main": "main.js",
+  "activation": ["*"],
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      { "id": "tasklist.done", "title": "Mark done", "input": { "type": "object", "properties": { "quiet": { "type": "boolean" } } } },
+      { "id": "tasklist.rename", "title": "Rename task" },
+      { "id": "tasklist.copyName", "title": "Copy name" },
+      { "id": "tasklist.last", "title": "Last task acted on" },
+      { "id": "tasklist.log", "title": "Write to the task log" }
+    ],
+    "views": [
+      { "id": "tasklist.tree", "title": "Tasks", "location": "sidebar", "type": "tree", "icon": "list-checks" }
+    ],
+    "menus": {
+      "view/item/context": [
+        { "command": "tasklist.copyName", "when": "view == tasklist.tree" },
+        { "command": "tasklist.rename", "group": "2_edit", "when": "viewItem == task" },
+        { "command": "tasklist.done", "group": "navigation", "when": "viewItem == task" },
+        { "command": "tasklist.done", "group": "inline", "icon": "check", "when": "view == tasklist.tree && viewItem == task" }
+      ]
+    }
+  }
+}

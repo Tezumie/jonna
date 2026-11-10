@@ -1,0 +1,19 @@
+// D211: a right-click that something other than a row element caught (here the list's spacer, as
+// an overlay or a row between renders would) opens the menu of the row under the pointer, not the
+// root's; below the last row it's still the root's menu.
+{
+  "name": "explorer-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1200, "height": 800 } },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    { "run": "dev.click", "input": { "selector": ".explorer-tree .vlist-spacer", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Rename" } }],
+      "timeoutMs": 3000
+    }
+  ]
+}

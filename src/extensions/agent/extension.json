@@ -1,0 +1,1715 @@
+{
+  "id": "builtin.agent",
+  "version": "0.1.0",
+  "displayName": "Agent",
+  "description": "The built-in coding agent: local models through Ollama (found automatically) or any OpenAI-compatible endpoint; reads, searches, proposes edits for review, runs approved commands, uses IDE commands.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write", "shell", "network"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "agent.newSession",
+        "title": "New agent session",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.send",
+        "title": "Send to agent",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.stop",
+        "title": "Stop agent",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.unqueue",
+        "title": "Take back a queued message",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.sendNow",
+        "title": "Send queued messages now",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showHistory",
+        "title": "Sessions…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.selectModel",
+        "title": "Select agent model…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setAgentModel",
+        "title": "Select the external agent's model…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.mcpServers",
+        "title": "MCP servers",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.addMcpServer",
+        "title": "Add MCP server",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openReviewDiff",
+        "title": "Open an agent change for review",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.acceptHunk",
+        "title": "Keep this agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.rejectHunk",
+        "title": "Undo this agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.nextHunk",
+        "title": "Go to the next agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.previousHunk",
+        "title": "Go to the previous agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.acceptFile",
+        "title": "Keep the agent's changes in this file",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.rejectFile",
+        "title": "Undo the agent's changes in this file",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.customize",
+        "title": "Customize…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.newMcpServer",
+        "title": "New MCP server…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showAgentConfig",
+        "title": "Configure agents…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showUsage",
+        "title": "Show usage",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showRules",
+        "title": "Rules…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showAutoApprove",
+        "title": "Auto-approve…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showMcpPage",
+        "title": "MCP servers",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.installMcpServer",
+        "title": "Install an MCP server…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.registry.browse",
+        "title": "Browse agents from the ACP registry",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.registry.refresh",
+        "title": "Refresh the ACP agent registry",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.registry.install",
+        "title": "Install an agent from the ACP registry…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.registry.uninstall",
+        "title": "Remove an agent installed from the ACP registry…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showDocs",
+        "title": "Docs for @docs…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.addDocs",
+        "title": "Add documentation for @docs…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.worktreeAgents",
+        "title": "Worktree agents",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.bestOfN",
+        "title": "Best of N: one task, several agents…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.clearUsageHistory",
+        "title": "Clear usage history…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.refreshUsageLimits",
+        "title": "Refresh provider limits",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.chooseModel",
+        "title": "Choose a model for part of the agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setSubagent",
+        "title": "Configure a subagent",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.newSubagent",
+        "title": "New subagent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.editSubagent",
+        "title": "Edit subagent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.newAgent",
+        "title": "New agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.editAgent",
+        "title": "Edit agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.stopSubagents",
+        "title": "Stop background subagents",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.toggleDetails",
+        "title": "Toggle chat details",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.listProcesses",
+        "title": "Agent background commands",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.killProcess",
+        "title": "Stop an agent background command",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showProcessOutput",
+        "title": "Show an agent background command's output",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.startInWorktree",
+        "title": "New agent in a worktree…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.worktrees",
+        "title": "Agent worktrees",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.helpers",
+        "title": "Helpers in worktrees",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.stopHelper",
+        "title": "Stop a helper in a worktree",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.reviewChanges",
+        "title": "Review changes with the agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.refreshModels",
+        "title": "Refresh agent models",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setMode",
+        "title": "Set agent edit mode",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setCommandMode",
+        "title": "Set agent command approval",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openAppliedDiff",
+        "title": "Show an applied agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.startInFolder",
+        "title": "Start the agent in a folder",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.showChats",
+        "title": "Show chats",
+        "category": "View"
+      },
+      {
+        "id": "agent.renameSession",
+        "title": "Rename chat…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.pinSession",
+        "title": "Pin chat",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openChatFolder",
+        "title": "Open the chat's folder",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.moveChatHere",
+        "title": "Continue chat in this folder",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.clearChats",
+        "title": "Clear chats…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.applyCode",
+        "title": "Apply code block to its file",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openSession",
+        "title": "Open agent session",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.acceptAll",
+        "title": "Accept all agent changes",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.rejectAll",
+        "title": "Reject all agent changes",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.reviewChange",
+        "title": "Accept or reject an agent change",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.review",
+        "title": "Review agent changes",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.restoreCheckpoint",
+        "title": "Restore agent checkpoint…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.deleteSession",
+        "title": "Delete agent session",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.addProvider",
+        "title": "Add model provider…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setApiKey",
+        "title": "Set model provider API key…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openLink",
+        "title": "Open link",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openStatusLineLink",
+        "title": "Open status line link",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.retry",
+        "title": "Retry the last answer",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.continue",
+        "title": "Continue the agent's turn",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.addContext",
+        "title": "Add to chat",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.compact",
+        "title": "Summarize the conversation",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.dream",
+        "title": "Tidy up agent memory",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.openMemory",
+        "title": "Show agent memory",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.closeOpened",
+        "title": "Close what the agent opened",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.listOpened",
+        "title": "List what the agent opened",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setChatMode",
+        "title": "Set agent mode",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setChatAgent",
+        "title": "Switch the chat's agent",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.chatWith",
+        "title": "Chat with an agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.newGroupChat",
+        "title": "New group chat…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.setGroupMembers",
+        "title": "Agents in this chat…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.handoff",
+        "title": "Hand the chat to another agent…",
+        "category": "Agent"
+      },
+      {
+        "id": "agent.aiFeatures",
+        "title": "AI features…",
+        "category": "AI"
+      },
+      {
+        "id": "agent.build",
+        "title": "Build the plan",
+        "category": "Agent"
+      }
+    ],
+    "settings": {
+      "agent.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Model for new sessions, as provider/model (e.g. ollama/qwen3:8b). Empty: the first local model.",
+        "order": 0,
+        "section": "Models and context",
+        "title": "Default model"
+      },
+      "agent.favoriteModels": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Models starred in the model picker, listed first: provider/model, acp/<agent>, or acp/<agent>#<its model>.",
+        "order": 0.1,
+        "section": "Models and context",
+        "title": "Favorite models"
+      },
+      "agent.recentModels": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Models picked lately, newest first (kept by the model picker; at most 6).",
+        "order": 0.2,
+        "section": "Models and context",
+        "title": "Recent models"
+      },
+      "agent.effort": {
+        "type": "string",
+        "enum": ["default", "low", "medium", "high", "xhigh", "max"],
+        "default": "default",
+        "scope": "user",
+        "description": "Reasoning effort for models that take it (Anthropic): lower is faster and uses fewer tokens.",
+        "order": 1,
+        "section": "Models and context",
+        "title": "Reasoning effort"
+      },
+      "agent.thinking": {
+        "type": "string",
+        "enum": ["auto", "on", "off"],
+        "default": "auto",
+        "scope": "user",
+        "description": "Let reasoning models think before answering (auto: when the model supports it).",
+        "order": 2,
+        "section": "Models and context",
+        "title": "Thinking"
+      },
+      "agent.cloudContextLength": {
+        "type": "integer",
+        "default": 200000,
+        "minimum": 8192,
+        "maximum": 2000000,
+        "scope": "user",
+        "description": "Most context to use with hosted models (Anthropic, OpenAI, OpenRouter…; capped at the model's own window). Older messages are summarized beyond 80 % of it. Smaller is cheaper per request.",
+        "order": 3,
+        "section": "Models and context",
+        "title": "Hosted context length"
+      },
+      "agent.contextLength": {
+        "type": "integer",
+        "default": 16384,
+        "minimum": 2048,
+        "maximum": 1048576,
+        "scope": "user",
+        "description": "Context window to request from local models (Ollama num_ctx; capped at the model's maximum). Bigger uses more memory.",
+        "order": 4,
+        "section": "Models and context",
+        "title": "Local context length"
+      },
+      "agent.cacheTtl": {
+        "type": "string",
+        "enum": ["5m", "1h"],
+        "enumDescriptions": [
+          "5 minutes (cache writes cost 1.25× input)",
+          "1 hour (writes cost 2×; pays off when you pause between messages)"
+        ],
+        "default": "5m",
+        "scope": "user",
+        "description": "How long Anthropic keeps the cached prompt between requests. Reads from the cache cost a fraction of normal input.",
+        "order": 5,
+        "section": "Models and context",
+        "title": "Prompt cache TTL"
+      },
+      "agent.ollama.enabled": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Look for Ollama on this machine and list its models.",
+        "order": 6,
+        "section": "Models and context",
+        "title": "Ollama"
+      },
+      "agent.ollama.url": {
+        "type": "string",
+        "default": "http://127.0.0.1:11434",
+        "scope": "user",
+        "description": "Where Ollama listens.",
+        "order": 7,
+        "section": "Models and context",
+        "title": "Ollama URL"
+      },
+      "agent.ollama.keepAlive": {
+        "type": "string",
+        "default": "30m",
+        "scope": "user",
+        "description": "How long Ollama keeps the model loaded after a request (Ollama's keep_alive, e.g. \"30m\", \"2h\", \"-1\" for always). A loaded model reuses its prompt cache, so the next message starts faster.",
+        "order": 8,
+        "section": "Models and context",
+        "title": "Ollama keep alive"
+      },
+      "agent.providers": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "OpenAI-compatible providers: [{ \"id\": \"lmstudio\", \"name\": \"LM Studio\", \"kind\": \"openai\", \"baseUrl\": \"http://127.0.0.1:1234/v1\" }]. API keys: \"Set model provider API key…\" (stored outside settings).",
+        "order": 9,
+        "section": "Models and context",
+        "title": "OpenAI-compatible providers"
+      },
+      "agent.textSize": {
+        "type": "string",
+        "enum": ["small", "default", "large"],
+        "enumDescriptions": [
+          "Smaller text in the chat",
+          "The IDE's text size",
+          "Larger text in the chat"
+        ],
+        "default": "default",
+        "title": "Text size",
+        "description": "The chat's text size.",
+        "scope": "user",
+        "section": "Conversation",
+        "order": 10
+      },
+      "agent.detailsPanel": {
+        "type": "string",
+        "enum": ["auto", "always", "never"],
+        "enumDescriptions": [
+          "Beside the conversation when the chat tab is wide enough for both; a button otherwise",
+          "Beside the conversation unless the tab is very narrow",
+          "Only when asked (Toggle chat details)"
+        ],
+        "default": "auto",
+        "title": "Chat details",
+        "description": "The panel on the right of a chat: where it runs, how full its context is, its changes and background work.",
+        "scope": "user",
+        "section": "Conversation",
+        "order": 10.5
+      },
+      "agent.outputStyle": {
+        "type": "string",
+        "default": "default",
+        "title": "Output style",
+        "description": "How the agent talks while it works (Claude Code's output styles): default, explanatory (adds insights about the code's choices), learning (asks you to write small parts yourself at TODO(human) markers), or the name of a style file of your own: <config>/output-styles/*.md or a trusted folder's <workspace folder>/output-styles/*.md, Markdown with name, description and keep-coding-instructions front matter. /output-style picks one. A change rebuilds the chats' prompts on their next message.",
+        "section": "Conversation",
+        "order": 10.6
+      },
+      "agent.statusLine": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "title": "Status line command",
+        "description": "A command ({} for none) whose first line of output shows in the status bar beside the agent's model, as Claude Code's statusLine: { \"type\": \"command\", \"command\": \"node ~/statusline.mjs\", \"padding\": 0 }. It gets the active chat as JSON on stdin (session_id, transcript_path, cwd, model { id, display_name }, workspace { current_dir, project_dir }, version, output_style { name }, cost { total_cost_usd, total_duration_ms, total_api_duration_ms, total_lines_added, total_lines_removed }) and runs in the open folder (PowerShell on Windows), in trusted folders only, again when the conversation changes (at most every 300 ms). ANSI colors are shown in the theme's terminal colors.",
+        "section": "Conversation",
+        "order": 10.7
+      },
+      "agent.submitWithCtrlEnter": {
+        "type": "boolean",
+        "default": false,
+        "title": "Send with Ctrl+Enter",
+        "description": "Ctrl+Enter sends the message and Enter adds a new line (off: Enter sends, Shift+Enter adds a line).",
+        "scope": "user",
+        "section": "Conversation",
+        "order": 11
+      },
+      "agent.whileWorking": {
+        "type": "string",
+        "enum": ["queue", "interrupt"],
+        "enumDescriptions": [
+          "The message waits and joins the agent's next step",
+          "The agent stops what it's doing and answers the new message"
+        ],
+        "default": "queue",
+        "title": "Messages while it works",
+        "description": "What a message sent while the agent is working does.",
+        "scope": "user",
+        "section": "Conversation",
+        "order": 12
+      },
+      "agent.codeBlockWordWrap": {
+        "type": "boolean",
+        "default": false,
+        "title": "Wrap code blocks",
+        "description": "Wrap long lines in the chat's code blocks instead of scrolling them sideways.",
+        "scope": "user",
+        "section": "Conversation",
+        "order": 13
+      },
+      "agent.streamText": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show answers as they arrive. Off: the answer appears all at once when it's complete (the work line shows progress meanwhile).",
+        "section": "Conversation",
+        "order": 14,
+        "title": "Stream answers"
+      },
+      "agent.autoTitle": {
+        "type": "boolean",
+        "default": true,
+        "description": "Let the model name each new chat: in its first reply, or, when it doesn't, with one short request to the chat's model after it.",
+        "order": 15,
+        "section": "Conversation",
+        "title": "Name chats"
+      },
+      "agent.richBlocks": {
+        "type": "boolean",
+        "default": true,
+        "description": "Give the agent tools that show cards in the chat: link and file cards (show_links) and a question with choices to click (ask_user), like the widgets in Claude and ChatGPT (D171). Charts and diagrams are Mermaid in the answer, drawn in any case (D172). Off: the tools aren't offered.",
+        "section": "Conversation",
+        "order": 16,
+        "title": "Cards in the chat"
+      },
+      "agent.computerUse.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Let the agent see your desktop and use other apps with the mouse and keyboard (the computer tool, like Claude Code's computer use; Windows only). The first action on each app asks you; browsers can only be looked at, terminals and IDEs only clicked, password managers and banking apps are refused. A banner with Stop shows while it works, and Esc stops it (D353).",
+        "section": "Context and tools",
+        "order": 60,
+        "title": "Computer use"
+      },
+      "agent.computerUse.allowedApps": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Apps the computer tool may use in every chat without asking, by their key (the program's name without .exe, e.g. notepad). The approval card's \"Remember in every chat\" adds one. Apps asked every time (system settings, the IDE itself) or refused stay so (D374).",
+        "section": "Context and tools",
+        "order": 61,
+        "title": "Computer use: apps allowed in every chat"
+      },
+      "agent.notifyWhenDone": {
+        "type": "boolean",
+        "default": true,
+        "description": "When the IDE window isn't focused, show a notification when the agent finishes or needs your answer.",
+        "order": 17,
+        "section": "Conversation",
+        "title": "Notify when done"
+      },
+      "agent.projectsFolder": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Where new projects go when you ask the agent to build something with no folder open (default: Projects in your home folder).",
+        "order": 18,
+        "section": "Conversation",
+        "title": "Projects folder"
+      },
+      "agent.repoMap.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Start each chat with a map of the project: the code files that matter most and the functions, classes and types they define, ranked by how much other code uses them (like Aider's repo map, D174). Helps small local models find their way. Off: the agent explores with its tools.",
+        "order": 19,
+        "section": "Context and tools",
+        "title": "Repository map"
+      },
+      "agent.repoMap.maxChars": {
+        "type": "integer",
+        "default": 4000,
+        "minimum": 500,
+        "maximum": 40000,
+        "description": "Size of the repository map in characters (about 4 per token). More helps big projects; less leaves more room for small models.",
+        "order": 20,
+        "section": "Context and tools",
+        "title": "Repository map size"
+      },
+      "agent.prices": {
+        "type": "object",
+        "default": {},
+        "description": "Prices of models you pay for, in dollars per million tokens, by \"provider/model\" (or the model id): { \"input\": 3, \"output\": 15, \"cacheRead\": 0.3, \"cacheWrite\": 3.75 }. These override OpenRouter's listed prices and the built-in list of common hosted models (approximate). The cost shows under each answer, next to the context meter and in ide://agent/usage.",
+        "order": 22,
+        "section": "Context and tools",
+        "title": "Model prices"
+      },
+      "agent.budget.perChat": {
+        "type": "number",
+        "default": 0,
+        "minimum": 0,
+        "description": "A spending limit per chat, in dollars (0: none). The agent warns at 80 % and asks before going on past it.",
+        "order": 23,
+        "section": "Context and tools",
+        "title": "Budget per chat"
+      },
+      "agent.usage.keepHistory": {
+        "type": "boolean",
+        "default": true,
+        "description": "Keep a log of each model request's tokens and cost on this computer (90 days at most) for the Usage page. It never leaves the computer.",
+        "order": 24,
+        "section": "Context and tools",
+        "title": "Keep a usage history"
+      },
+      "agent.ignoreDefaults": {
+        "type": "boolean",
+        "default": true,
+        "description": "Keep secrets away from the agent: .env, .env.*, *.pem, *.key, id_rsa*, credentials files. Its read, search, list and find tools and @-mentions skip them (run_command is not blocked).",
+        "order": 24,
+        "section": "Context and tools",
+        "title": "Exclude secrets from the agent"
+      },
+      "agent.ignoreFiles": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "More patterns (gitignore syntax) the agent's tools skip, on top of .aiignore and .cursorignore at the folder root.",
+        "order": 25,
+        "section": "Context and tools",
+        "title": "Files excluded from the agent"
+      },
+      "agent.smallModelProfile": {
+        "type": "string",
+        "enum": ["auto", "on", "off"],
+        "enumDescriptions": ["For a model with a context under 8k tokens", "Always", "Never"],
+        "default": "auto",
+        "description": "A shorter system prompt and fewer tools (no explore, rich cards or browser tools), with the commands to try first, so a small local model isn't swamped.",
+        "order": 20,
+        "section": "Context and tools",
+        "title": "Small model profile"
+      },
+      "agent.delegate": {
+        "type": "boolean",
+        "default": true,
+        "description": "Let agents run subagents (the delegate tool), as in Claude Code: Plan, Review, General purpose and your own from .claude/agents. Each works privately in its own context and returns a report. The agent editor's Subagents section lists them, with a model each.",
+        "order": 21.1,
+        "section": "Context and tools",
+        "title": "Let agents run subagents"
+      },
+      "agent.handOff": {
+        "type": "boolean",
+        "default": true,
+        "description": "Let agents hand the conversation to each other (the hand_off tool): the agent handed to joins the chat and answers next, in the open, and can hand it back.",
+        "order": 21.11,
+        "section": "Context and tools",
+        "title": "Let agents hand work to each other"
+      },
+      "agent.workflows.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Let the agent run workflow scripts (the run_workflow tool), as Claude Code's Workflow tool: a script that runs several subagents in parallel or in stages, in the background, when you ask for a workflow or to fan out agents. You're asked before each one runs (with its name, description and phases), its progress shows in the chat, and its result comes back as a message. Off also when subagents are off.",
+        "order": 21.12,
+        "section": "Context and tools",
+        "title": "Let the agent run workflows"
+      },
+      "agent.workflows.maxAgents": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 200,
+        "description": "The most agents one workflow run may start (results reused from an earlier run don't count). A script that asks for more gets an error at that call.",
+        "order": 21.13,
+        "section": "Context and tools",
+        "title": "Agents per workflow"
+      },
+      "agent.workflows.concurrency": {
+        "type": "integer",
+        "default": 4,
+        "minimum": 1,
+        "maximum": 16,
+        "description": "How many of a workflow's agents work at the same time; the others wait. Lower it for a local model.",
+        "order": 21.14,
+        "section": "Context and tools",
+        "title": "Workflow agents at once"
+      },
+      "agent.workflows.timeoutMinutes": {
+        "type": "integer",
+        "default": 30,
+        "minimum": 1,
+        "maximum": 1440,
+        "description": "A workflow still running after this many minutes is stopped, with its agents, and the agent is told.",
+        "order": 21.15,
+        "section": "Context and tools",
+        "title": "Workflow time limit"
+      },
+      "agent.workflows.maxEditingAgents": {
+        "type": "integer",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 10,
+        "description": "The most agents one workflow run may start with isolation: \"worktree\" (each edits in a git worktree of its own; you review and merge their changes). A script that asks for more gets an error at that call.",
+        "order": 21.16,
+        "section": "Context and tools",
+        "title": "Editing agents per workflow"
+      },
+      "agent.fallbackModel": {
+        "type": "string",
+        "default": "",
+        "description": "A model to go on with when the chat's model hits a usage limit (a free tier's daily cap, a quota, credits run out): provider/model, or a Claude alias such as sonnet. The turn moves to it after one retry and says so. One of your agents can name its own in its file (`fallbackModel:`). Empty: the turn stops at the limit.",
+        "order": 21.03,
+        "section": "Models and context",
+        "title": "Backup model at a usage limit"
+      },
+      "agent.notifyWhenAway": {
+        "type": "boolean",
+        "default": true,
+        "description": "When the window is in the background and a chat asks a question, needs an approval, or finishes its turn (or stops on an error), flash the taskbar button (bounce the Dock icon on macOS) and leave a notification in the window. A group round counts once.",
+        "order": 21.04,
+        "section": "Context and tools",
+        "title": "Notify when the agent needs you"
+      },
+      "agent.notify.webhook": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Where the agent's notify messages also go when the window isn't focused, so they reach your phone: { \"kind\": \"ntfy\" | \"discord\" | \"slack\" | \"json\", \"url\": \"…\" }. Set it with the command Send agent notifications to my phone: a URL anyone could post to (an ntfy topic, a Discord or Slack webhook) is then kept in the secret store and this says only where it goes. https only (http to localhost). Empty: none.",
+        "order": 21.041,
+        "section": "Context and tools",
+        "title": "Notifications to your phone"
+      },
+      "agent.parallelToolCalls": {
+        "type": "boolean",
+        "default": true,
+        "description": "Run the calls the agent makes together at the same time when they only read: files, searches, explore, subagents (up to 8 at once). Edits and commands still run one at a time, in order, and two edits of one file never overlap.",
+        "order": 21.05,
+        "section": "Context and tools",
+        "title": "Parallel tool calls"
+      },
+      "agent.isolatedHelpers.max": {
+        "type": "integer",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 10,
+        "description": "How many helpers may work at once in git worktrees of their own (the agent's delegate with isolated, or an agent whose file says isolation: worktree). Each gets a branch of its own; you review and merge its changes.",
+        "order": 21.15,
+        "section": "Context and tools",
+        "title": "Helpers in worktrees at once"
+      },
+      "agent.isolatedHelpers.window": {
+        "type": "boolean",
+        "default": false,
+        "description": "Give each helper in a worktree a window of its own. Off: helpers run in this window without one (open a helper's chat from the chat that started it, or the worktree overview, to watch it); their tools work in their worktree.",
+        "order": 21.16,
+        "section": "Context and tools",
+        "title": "Helpers in windows of their own"
+      },
+      "agent.groupChat.maxAutoTurns": {
+        "type": "integer",
+        "default": 4,
+        "minimum": 0,
+        "maximum": 20,
+        "description": "In a group chat, how many times agents may answer each other on their own (a reply that starts a line with @Name hands the next turn to that agent) per message of yours, before the chat waits for you. 0: only the agents you mention answer.",
+        "order": 21.15,
+        "section": "Context and tools",
+        "title": "Group chat: replies between agents"
+      },
+      "agent.channels.contextTokens": {
+        "type": "integer",
+        "default": 32000,
+        "minimum": 0,
+        "description": "How much of a channel's or a direct message's conversation is sent with each message, in tokens: past it, the older part is summarized. Channels are mostly talk that keeps growing, and each reply between agents sends it again; threads keep the model's full context. 0: the model's full context.",
+        "order": 21.16,
+        "section": "Context and tools",
+        "title": "Channels: conversation size"
+      },
+      "agent.groupChat.answerTogether": {
+        "type": "boolean",
+        "default": false,
+        "description": "In a group chat, when your message mentions several agents, they answer at the same time (the first with its tools, the others read-only, without seeing each other's answers) instead of one after another. @all always asks every agent at once.",
+        "order": 21.16,
+        "section": "Context and tools",
+        "title": "Group chat: mentioned agents answer together"
+      },
+      "agent.mainAgent.name": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The main agent's name in chats, group chats and @mentions (empty: the IDE's own name). Set on the Agents page; its id stays `agent`.",
+        "order": 21.16,
+        "section": "Context and tools",
+        "title": "Main agent: name"
+      },
+      "agent.mainAgent.icon": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The main agent's face, as `shape-color-eyes` (like an agent file's icon:, e.g. blob-3-dots). Empty: the default face. Set on the Agents page.",
+        "order": 21.17,
+        "section": "Context and tools",
+        "title": "Main agent: face"
+      },
+      "agent.subagents": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Per agent the main agent hands work to: its model and whether it's used: { \"planner\": { \"model\": \"ollama/qwen3:32b\" }, \"general\": { \"enabled\": false } }. Your agents' are set on their cards; Explore model and Review model win for those two.",
+        "order": 21.2,
+        "section": "Context and tools",
+        "title": "Subagent choices"
+      },
+      "agent.autoReview": {
+        "type": "boolean",
+        "default": false,
+        "description": "After a turn that changes files, the Review subagent looks at them in the background and its report comes back to the agent.",
+        "order": 21.3,
+        "section": "Context and tools",
+        "title": "Review changes automatically"
+      },
+      "agent.explore": {
+        "type": "boolean",
+        "default": true,
+        "description": "Give the agent an explore tool: a read-only helper with its own context that looks through the code and returns a short report (keeps the main conversation small).",
+        "order": 21,
+        "section": "Context and tools",
+        "title": "Explore tool"
+      },
+      "agent.webFetch.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Web fetch",
+        "description": "Let the agent read web pages (web.fetch): docs, issues, error explanations.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 22
+      },
+      "agent.webFetch.autoApprove": {
+        "type": "boolean",
+        "default": false,
+        "title": "Fetch without asking",
+        "description": "The agent reads web pages and searches without asking first (off: it asks, unless the run mode is full access).",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23
+      },
+      "agent.webFetch.model": {
+        "type": "string",
+        "default": "",
+        "title": "Model for questions about pages",
+        "description": "The model that reads a page when the agent's web_fetch asks a question about it (only the answer goes back to the chat): provider/model, or a Claude alias such as haiku. Empty: the Explore agent's model if you chose one, else the chat's.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.05
+      },
+      "agent.webSearch.provider": {
+        "type": "string",
+        "enum": ["off", "brave", "tavily", "exa", "searxng"],
+        "default": "off",
+        "title": "Web search",
+        "description": "Where the agent's web_search tool and @web search look: Brave Search API, Tavily or Exa (each needs an API key, stored on this computer by \"Agent: Set up web search\"), or a SearXNG address. Off: the agent can only read pages it knows.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.1
+      },
+      "agent.imageGeneration.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Image generation",
+        "description": "Give the agent the generate_image tool: when you ask for a picture, it uses an image model (the one below, else the chat's model when it makes images, else one of your providers' image models, else OpenAI's gpt-image-1). Each image is billed by the provider.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.96
+      },
+      "agent.imageGeneration.model": {
+        "type": "string",
+        "default": "",
+        "title": "Image model",
+        "description": "The model generate_image uses: provider/model, such as openrouter/google/gemini-2.5-flash-image or openai/gpt-image-1. Empty: picked as described above.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.97
+      },
+      "agent.webSearch.searxngUrl": {
+        "type": "string",
+        "default": "",
+        "title": "SearXNG address",
+        "description": "Your SearXNG instance (for example http://localhost:8080), when web search uses SearXNG. Its settings.yml must allow the json format.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.2
+      },
+      "agent.webSearch.maxResults": {
+        "type": "integer",
+        "default": 8,
+        "minimum": 1,
+        "maximum": 20,
+        "title": "Search results",
+        "description": "How many results a web search returns at most.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 23.3
+      },
+      "agent.thirdPartyConfigs": {
+        "type": "boolean",
+        "default": true,
+        "title": "Other tools' configs",
+        "description": "Use other AI tools' project files: CLAUDE.md, .cursorrules and .cursor/rules, .github/copilot-instructions.md, and slash commands in .claude/commands and .cursor/commands. AGENTS.md is always read.",
+        "scope": "user",
+        "section": "Context and tools",
+        "order": 24
+      },
+      "agent.autoCompact": {
+        "type": "boolean",
+        "default": true,
+        "description": "When the conversation nears the model's context, summarize the older part (instead of dropping it) so the agent keeps the thread.",
+        "order": 25,
+        "section": "Context and tools",
+        "title": "Summarize long chats"
+      },
+      "agent.maxSteps": {
+        "type": "integer",
+        "default": 150,
+        "minimum": 1,
+        "maximum": 1000,
+        "scope": "user",
+        "description": "Most model calls per message before the agent pauses (it says so, with Continue). Large builds take many.",
+        "order": 26,
+        "section": "Context and tools",
+        "title": "Steps per message"
+      },
+      "agent.memory.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Let the agent keep notes about the project in the project's memory folder (commands that work, conventions, your preferences) and read them in later sessions. Tidy them up with \"Tidy up agent memory\".",
+        "order": 27,
+        "section": "Memory",
+        "title": "Project memory"
+      },
+      "agent.memory.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The model that tidies up the agent's memory (provider/model); empty: the chat's default model.",
+        "order": 27.6,
+        "section": "Memory",
+        "title": "Memory tidy-up model"
+      },
+      "agent.memory.autoTidyUp": {
+        "type": "boolean",
+        "default": true,
+        "description": "Tidy up the agent's memory by itself, in the background: at most once a day, after five sessions. It looks for corrections and things you asked it to remember, merges duplicates and drops notes the sessions contradict. You review the result before anything changes. Uses the chat's model.",
+        "order": 27.5,
+        "section": "Memory",
+        "title": "Tidy up automatically"
+      },
+      "agent.memory.suggestTidyUp": {
+        "type": "boolean",
+        "default": true,
+        "description": "Suggest tidying up the agent's memory after several sessions.",
+        "order": 28,
+        "section": "Memory",
+        "title": "Suggest tidying up"
+      },
+      "agent.runCommands": {
+        "type": "string",
+        "enum": ["ask", "auto", "full"],
+        "enumDescriptions": [
+          "Ask before each command, except those in agent.allowedCommands",
+          "Run commands without asking, except risky ones (deleting, killing, downloading, git push…, plus agent.deniedCommands)",
+          "Full access: never ask — every command (risky ones too), IDE command, browser action, MCP tool and external agent request is allowed, so the agent can work while you're away. Checkpoints still let you undo file changes."
+        ],
+        "default": "ask",
+        "scope": "user",
+        "description": "Whether the agent asks before running terminal commands. Also in the agent's mode menu.",
+        "order": 29,
+        "section": "Execution and approvals",
+        "title": "Run mode"
+      },
+      "agent.sandbox": {
+        "type": "string",
+        "enum": ["auto", "off"],
+        "enumDescriptions": [
+          "Run the agent's commands in the system's sandbox where there is one: writes only in the folder and a temp folder, your secrets (agent.sandbox.denyRead) hidden, and no network except localhost and the allowed hosts on macOS (sandbox-exec) and Linux (bubblewrap, when installed); on Windows (low integrity) only tools that use the proxy settings are held to those hosts",
+          "Run the agent's commands with your full rights"
+        ],
+        "default": "off",
+        "scope": "user",
+        "description": "Whether the agent's commands run sandboxed. The agent can ask to run one outside the sandbox: that always asks you first. On Windows the folder is marked writable for low-integrity programs the first time.",
+        "order": 29,
+        "section": "Execution and approvals",
+        "title": "Command sandbox"
+      },
+      "agent.sandbox.denyRead": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [
+          "~/.ssh",
+          "~/.aws",
+          "~/.azure",
+          "~/.config/gcloud",
+          "~/.config/gh",
+          "~/.docker/config.json",
+          "~/.kube",
+          "~/.gnupg",
+          "~/.netrc",
+          "~/.git-credentials",
+          "${secrets}",
+          "${keychains}",
+          "${browserProfiles}",
+          "${envFiles}"
+        ],
+        "scope": "user",
+        "description": "What sandboxed commands can't read: paths (~/ is your home folder) and ${secrets} (the IDE's own keys), ${keychains}, ${browserProfiles}, ${envFiles} (.env files outside the folder). On Windows each gets a label once that hides it from low-integrity programs (your own programs still read it); \"Let sandboxed commands read my secrets again\" takes the labels off. Windows has no keychain or browser-profile files to hide.",
+        "order": 29.1,
+        "section": "Execution and approvals",
+        "title": "Sandbox: hidden from commands"
+      },
+      "agent.sandbox.allowWrite": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Folders outside the project that sandboxed commands may write, in every project (absolute or ~/…; a drive's root or your home folder is refused). On Windows each is marked writable for low-integrity programs the first time.",
+        "order": 29.2,
+        "section": "Execution and approvals",
+        "title": "Sandbox: writable folders"
+      },
+      "agent.sandbox.allowHosts": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Hosts sandboxed commands may connect to, in every project: registry.npmjs.org, *.pythonhosted.org (its subdomains), or * (any). Localhost is always allowed.",
+        "order": 29.3,
+        "section": "Execution and approvals",
+        "title": "Sandbox: allowed hosts"
+      },
+      "agent.sandbox.projects": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Per project (by folder): { \"allowWrite\": [...], \"allowHosts\": [...] } on top of the lists above. Allow on the agent's sandbox card adds here. Kept in your settings, not the folder's, so a repository can't widen its own sandbox.",
+        "order": 29.4,
+        "section": "Execution and approvals",
+        "title": "Sandbox: per project"
+      },
+      "agent.allowedCommands": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Commands the agent may run without asking (prefixes, e.g. \"npm test\", \"git status\"; \"*\" at the end for a raw prefix). \"Always allow\" adds here.",
+        "order": 30,
+        "section": "Execution and approvals",
+        "title": "Allowed commands"
+      },
+      "agent.codebaseIndex.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Index the open folder's source files with an embedding model so the agent can find code by meaning (its codebase_search tool, Cursor's). The files' text goes to the embedding model's provider; with Ollama it stays on this computer. The index is kept in the IDE's data folder, one per folder, and updated after files are saved.",
+        "order": 2.6,
+        "section": "Models and context",
+        "title": "Codebase index"
+      },
+      "agent.codebaseIndex.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The embedding model for the codebase index, as provider/model: ollama/nomic-embed-text (ollama pull nomic-embed-text), openai/text-embedding-3-small, or another provider's OpenAI-compatible embedding model. Changing it builds the index again.",
+        "order": 2.7,
+        "section": "Models and context",
+        "title": "Codebase index model"
+      },
+      "agent.customModes": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Your own chat modes beside Agent, Plan and Ask: [{ \"name\": \"Review\", \"description\": \"…\", \"instructions\": \"…\", \"tools\": [\"read\"], \"model\": \"provider/model\" }]. tools: tool names or groups (read, edit, run, mcp; Copilot's and Claude Code's names work too); none listed: every tool. A trusted folder's .github/chatmodes/*.chatmode.md and .github/agents/*.agent.md are modes too (Create chat mode… writes one).",
+        "order": 2.5,
+        "section": "Models and context",
+        "title": "Custom chat modes"
+      },
+      "agent.readOnlyPaths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["/.git", "/.git/**", "/.vscode/settings.json", "/.idea", "/.idea/**"],
+        "scope": "user",
+        "description": "Paths the agent may read but never write, as gitignore-style patterns (relative to the open folder; ~/ for your home): its file tools and IDE commands that write files are refused without a question, and it's told not to try another way. The IDE's own folder settings are always read-only to it. Commands it runs aren't parsed for these paths (agent config files and git hooks ask anyway, D213).",
+        "order": 31.6,
+        "section": "Execution and approvals",
+        "title": "Read-only paths"
+      },
+      "agent.hooks": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Commands that run on the agent's events, in Claude Code's hooks format: { \"PreToolUse\": [{ \"matcher\": \"Bash\", \"hooks\": [{ \"type\": \"command\", \"command\": \"…\", \"timeout\": 30 }] }] }. Events: PreToolUse and PostToolUse (matcher: a tool, by the IDE's name or Claude Code's: Bash, Read, Write, Edit, Grep, Glob), UserPromptSubmit, Stop, SessionStart (matcher: startup, resume, clear, compact; its output is context for the chat's first message), SessionEnd, PreCompact (matcher: manual, auto), Notification (the agent waits for you), SubagentStart and SubagentStop (matcher: the subagent's name). The event comes as JSON on stdin; exit code 2 blocks (a tool call, a message, the agent stopping) with the output as the reason. A trusted folder's .claude/settings.json hooks run too, once you approve them. Hooks run in the open folder (PowerShell on Windows) with CLAUDE_PROJECT_DIR set.",
+        "order": 31.5,
+        "section": "Execution and approvals",
+        "title": "Hooks"
+      },
+      "agent.deniedCommands": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Commands that still ask when agent.runCommands is \"auto\" (prefixes, like agent.allowedCommands), in addition to the built-in list (rm, del, Remove-Item, kill, curl, wget, sudo, git push, git reset --hard, npm publish…).",
+        "order": 31,
+        "section": "Execution and approvals",
+        "title": "Commands that always ask"
+      },
+      "agent.ideControl": {
+        "type": "boolean",
+        "default": true,
+        "title": "Ask before changing the IDE",
+        "description": "The agent asks before it changes the IDE itself (layout, views, windows, theme, settings, extensions), even with full access; \"Always allow this chat\" covers the rest of that chat.",
+        "scope": "user",
+        "section": "Execution and approvals",
+        "order": 32
+      },
+      "agent.closeOpenedOnStop": {
+        "type": "boolean",
+        "default": false,
+        "title": "Close what it opened on Stop",
+        "description": "Stopping the agent also closes the tabs and windows it opened in that chat (always available as \"Close what the agent opened\", Ctrl+Shift+Alt+W).",
+        "scope": "user",
+        "section": "Execution and approvals",
+        "order": 33
+      },
+      "agent.browserProtection": {
+        "type": "boolean",
+        "default": false,
+        "title": "Browser protection",
+        "description": "Clicking, typing and navigating in the browser always ask, even with full access.",
+        "scope": "user",
+        "section": "Execution and approvals",
+        "order": 34
+      },
+      "agent.mcpProtection": {
+        "type": "boolean",
+        "default": false,
+        "title": "MCP tools protection",
+        "description": "Every MCP tool call asks (read-only tools too), even with full access.",
+        "scope": "user",
+        "section": "Execution and approvals",
+        "order": 35
+      },
+      "agent.deleteProtection": {
+        "type": "boolean",
+        "default": false,
+        "title": "Deletion protection",
+        "description": "Commands that delete files (rm, del, Remove-Item, git clean…) always ask, even with full access.",
+        "scope": "user",
+        "section": "Execution and approvals",
+        "order": 36
+      },
+      "agent.checkEdits": {
+        "type": "boolean",
+        "default": true,
+        "description": "After each file edit the agent makes, check the new text with the language services (TS/JS, JSON, CSS) and tell the agent about errors it introduced.",
+        "order": 37,
+        "section": "Applying changes",
+        "title": "Check edits for errors"
+      },
+      "agent.verify": {
+        "type": "string",
+        "enum": ["auto", "off"],
+        "enumDescriptions": [
+          "After the agent changes files (with edits applied automatically), run the project's check and send failures back to it (twice at most)",
+          "Don't run a check"
+        ],
+        "default": "auto",
+        "description": "Check the agent's work with the project's tests before it's done.",
+        "order": 38,
+        "section": "Applying changes",
+        "title": "Check with tests"
+      },
+      "agent.verifyCommand": {
+        "type": "string",
+        "default": "",
+        "description": "The check to run (e.g. npm test, cargo test). Empty: the project's test script, else typecheck / check / lint script, cargo check or go build.",
+        "order": 39,
+        "section": "Applying changes",
+        "title": "Test command"
+      },
+      "agent.verifyTimeoutSeconds": {
+        "type": "integer",
+        "default": 180,
+        "minimum": 10,
+        "description": "How long the check may run.",
+        "order": 40,
+        "section": "Applying changes",
+        "title": "Test timeout (seconds)"
+      },
+      "agent.formatOnFinish": {
+        "type": "boolean",
+        "default": false,
+        "title": "Format when done",
+        "description": "When the agent finishes, run the project's formatter (Prettier, Biome, Ruff, Black, rustfmt, gofmt, clang-format) on the files it changed. Applies to changes already written (auto-apply); open files with unsaved edits are left alone.",
+        "scope": "user",
+        "section": "Applying changes",
+        "order": 41
+      },
+      "agent.reloadBrowser": {
+        "type": "boolean",
+        "default": true,
+        "description": "After the agent writes files, reload browser tabs showing a local server's page (servers without live reload keep showing the old version otherwise).",
+        "order": 42,
+        "section": "Applying changes",
+        "title": "Reload previews"
+      },
+      "agent.openServers": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "When the agent starts a dev server, open its address in a browser tab (reusing one already showing it).",
+        "order": 43,
+        "section": "Applying changes",
+        "title": "Open dev servers"
+      },
+      "agent.followEdits": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "title": "Follow the agent",
+        "description": "Open each file the agent edits, at the change, while you watch the chat (a preview tab; focus stays in the chat, and nothing moves while you're typing in an editor).",
+        "order": 43.5,
+        "section": "Applying changes"
+      },
+      "agent.mcpServers": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "MCP servers the agent can use, in VS Code's format: { \"name\": { \"command\": \"npx\", \"args\": [\"-y\", \"@modelcontextprotocol/server-…\"], \"env\": {}, \"envFile\": \".env\" } } for a local server, { \"name\": { \"url\": \"https://…/mcp\", \"headers\": { \"Authorization\": \"Bearer ${input:token}\" } } } for a remote one. ${input:id} is asked once and kept as a secret; ${env:NAME}, ${workspaceFolder} and ${userHome} work too. A folder's .vscode/mcp.json and .mcp.json are read as well. Their tools ask before running.",
+        "order": 44,
+        "section": "Integrations",
+        "title": "MCP servers"
+      },
+      "agent.externalAgents.ideTools": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Give external agents (Codex, Claude Code, Gemini CLI…) the IDE's tools with their session: read terminals, open editors, diagnostics, git and the IDE's commands, through the built-in MCP server. Only for agents that take HTTP MCP servers. Actions that change things still ask first."
+      },
+      "agent.externalAgents": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "External agents spoken to over ACP (in addition to the presets Claude Code, Gemini CLI, Codex): { \"name\": { \"command\": \"…\", \"args\": [], \"env\": {} } }, or { \"enabled\": false } to hide a preset. Pick one in the model menu.",
+        "order": 45,
+        "section": "Integrations",
+        "title": "External agents"
+      },
+      "agent.mcp.discovery": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Also use the MCP servers configured in other tools on this computer: Claude Desktop, Claude Code (~/.claude.json), Cursor and VS Code's user mcp.json. A folder's .vscode/mcp.json and .mcp.json are always read (in a trusted folder, each server approved once).",
+        "order": 44.5,
+        "section": "Integrations",
+        "title": "Use other tools' MCP servers"
+      },
+      "agent.externalAgentChoices": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "The model and reasoning level last picked for each external agent, applied when it starts: { \"Claude Code\": { \"model\": \"opus\", \"thought_level\": \"high\" } }. Set from the model menu.",
+        "order": 45.5,
+        "section": "Integrations",
+        "title": "External agents' models"
+      },
+      "agent.voice.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show a microphone at the end of the message box: speak, and the words are added to your message. It runs on this computer once its speech model is downloaded (the first click offers it), or uses a speech service with a key.",
+        "order": 46,
+        "section": "Voice",
+        "title": "Voice input"
+      },
+      "agent.voice.provider": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "What turns speech into text. Empty: the speech model on this computer if it's downloaded, else Groq if it has a key, else OpenAI. \"device\": always this computer's model. Or a provider id (an OpenAI-compatible /audio/transcriptions endpoint).",
+        "order": 47,
+        "section": "Voice",
+        "title": "Speech provider"
+      },
+      "agent.voice.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The speech service's model. Empty: whisper-large-v3-turbo on Groq, gpt-4o-mini-transcribe on OpenAI. Required for another provider (a Whisper server, say).",
+        "order": 48,
+        "section": "Voice",
+        "title": "Speech model"
+      },
+      "agent.voice.localModel": {
+        "type": "string",
+        "enum": ["base", "small"],
+        "enumDescriptions": [
+          "Standard: a 60 MB download, about two seconds for a sentence",
+          "More accurate (accents, other languages): 190 MB, about three times slower"
+        ],
+        "default": "base",
+        "scope": "user",
+        "description": "The speech model dictation downloads and runs on this computer (Whisper, 99 languages, offline).",
+        "order": 48.5,
+        "section": "Voice",
+        "title": "Speech model on this computer"
+      },
+      "agent.voice.language": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The language you speak, as a code like en or de. Empty: detected each time.",
+        "order": 49,
+        "section": "Voice",
+        "title": "Spoken language"
+      },
+      "agent.voice.submitWords": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": ["submit"],
+        "scope": "user",
+        "description": "Say one of these last (\"…, submit\") to send the message as soon as it's typed in. Empty: never sends by itself.",
+        "order": 50,
+        "section": "Voice",
+        "title": "Words that send"
+      },
+      "agent.rules.disabled": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [],
+        "description": "Rules files the agent ignores (paths as the Rules page shows them). Turned on and off on the Rules page.",
+        "order": 24.5,
+        "section": "Context and tools",
+        "title": "Rules turned off"
+      },
+      "agent.skills.disabled": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [],
+        "description": "Agent skills turned off, by name: the agent isn't told of them and /name doesn't run them. Turned on and off in Customize → Skills.",
+        "order": 24.6,
+        "section": "Context and tools",
+        "title": "Skills turned off"
+      },
+      "agent.docs.sources": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Documentation sites for @docs mentions: [{ \"name\": \"next\", \"url\": \"https://nextjs.org/docs\", \"maxPages\": 80 }]. Added, refreshed and removed on the Docs page.",
+        "order": 23.4,
+        "section": "Context and tools",
+        "title": "Docs sources"
+      },
+      "agent.docs.maxPages": {
+        "type": "integer",
+        "default": 60,
+        "minimum": 1,
+        "maximum": 500,
+        "scope": "user",
+        "description": "Most pages read from a documentation site (each source may set its own).",
+        "order": 23.5,
+        "section": "Context and tools",
+        "title": "Docs: pages per site"
+      },
+      "agent.docs.delayMs": {
+        "type": "integer",
+        "default": 500,
+        "minimum": 0,
+        "maximum": 10000,
+        "scope": "user",
+        "description": "Pause between two pages while reading a documentation site (robots.txt's Crawl-delay wins when longer).",
+        "order": 23.6,
+        "section": "Context and tools",
+        "title": "Docs: pause between pages (ms)"
+      },
+      "agent.docs.refreshDays": {
+        "type": "integer",
+        "default": 7,
+        "minimum": 0,
+        "maximum": 365,
+        "scope": "user",
+        "description": "Read each documentation site again when its index is this many days old (checked a minute after start, then every few hours; one site at a time, no AI involved). 0 turns it off: Refresh on the Docs page only.",
+        "order": 23.7,
+        "section": "Context and tools",
+        "title": "Docs: refresh after (days)"
+      },
+      "agent.docs.embeddings.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Find @docs passages by meaning as well as by their words: each source's passages are embedded with an embedding model when it's read (Refresh on the Docs page embeds an existing source), and a question is matched against both. The passages and questions go to the embedding model's provider; with Ollama they stay on this computer. Off, or when the model can't be reached, @docs matches words only.",
+        "order": 23.8,
+        "section": "Context and tools",
+        "title": "Docs: search by meaning"
+      },
+      "agent.docs.embeddings.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The embedding model for @docs, as provider/model: ollama/nomic-embed-text, openai/text-embedding-3-small, or another provider's OpenAI-compatible embedding model. Empty: the codebase index's (agent.codebaseIndex.model). Changing it embeds the sources again on their next refresh; until then they're matched by words.",
+        "order": 23.9,
+        "section": "Context and tools",
+        "title": "Docs: embedding model"
+      },
+      "agent.docs.renderJavaScript": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Read documentation pages that show nothing without JavaScript by loading them in a hidden window (no cookies or storage shared with the IDE, a time limit per page) and taking the text it shows. Off: such pages are counted and skipped. The site's own scripts run in that window.",
+        "order": 23.95,
+        "section": "Context and tools",
+        "title": "Docs: render JavaScript pages"
+      },
+      "agent.autoApprove": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "What the agent may do without asking, by kind: { \"reads\": { \"**/.env*\": false }, \"edits\": { \"**/.vscode/*.json\": false }, \"commands\": { \"npm test\": true, \"git push\": false }, \"browser\": { \"localhost\": true }, \"web\": { \"docs.rs\": true }, \"mcp\": { \"github\": true, \"github/create_issue\": false } }. true goes ahead, false always asks (even with full access); the most specific pattern wins. Edited on the Auto-approve page.",
+        "order": 30.5,
+        "section": "Execution and approvals",
+        "title": "Auto-approve"
+      },
+      "agent.mcp.disabledServers": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "MCP servers turned off: listed in Customize → MCP servers, never started. Set with a server's switch there.",
+        "order": 44.5,
+        "section": "Integrations",
+        "title": "MCP servers turned off"
+      },
+      "agent.mcp.disabledTools": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "MCP tools turned off, per server: { \"server\": [\"tool\", …] }. The agent doesn't see them. Set in a server's Configure dialog (Customize → MCP servers).",
+        "order": 44.55,
+        "section": "Integrations",
+        "title": "MCP tools turned off"
+      },
+      "agent.mcp.sampling": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Whether an MCP server may run prompts on your model (sampling): { \"server\": \"allow\" | \"deny\" | \"ask\", \"*\": … }. Without an entry it asks each time. Set on the MCP servers page.",
+        "order": 44.6,
+        "section": "Integrations",
+        "title": "MCP sampling"
+      },
+      "agent.deferTools": {
+        "type": "string",
+        "enum": ["auto", "always", "never"],
+        "enumDescriptions": [
+          "Defer the IDE's rarely used tools, and MCP tools once there are more than 30 of them or their definitions pass about 6,000 tokens",
+          "Defer the IDE's rarely used tools and every MCP tool: the agent sees their names and loads the ones it needs with tool_search",
+          "Send every tool's full definition with every request"
+        ],
+        "default": "auto",
+        "scope": "user",
+        "description": "How tools the agent rarely needs reach the model. Deferred, a chat's requests carry only their names, and the agent loads a tool's definition with tool_search when it needs it; loaded tools stay for the rest of the chat. The IDE's own rarely used tools (scheduling, workflows, other chats, worktrees, images, suggestions) are deferred unless this is never. Keeps tokens free for the conversation.",
+        "order": 44.7,
+        "section": "Integrations",
+        "title": "Defer tools"
+      },
+      "agent.mcp.registryUrl": {
+        "type": "string",
+        "default": "https://registry.modelcontextprotocol.io",
+        "scope": "user",
+        "description": "The MCP registry New MCP server searches (the official one by default; its API is /v0.1/servers). Empty: don't search, use the built-in list only.",
+        "order": 44.8,
+        "section": "Integrations",
+        "title": "MCP registry"
+      },
+      "agent.worktree.setupScript": {
+        "type": "string",
+        "default": "",
+        "description": "A command run in each new agent worktree before its agent starts (in the agent's shell), e.g. \"npm ci\" or \"pnpm install && pnpm build\". Set it for this project in its workspace settings.",
+        "order": 45.6,
+        "section": "Integrations",
+        "title": "Worktree setup script"
+      },
+      "agent.worktree.copyFiles": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [".env", ".env.local", ".env.development.local"],
+        "description": "Files git doesn't track to copy from this folder into each new agent worktree (relative paths; * in the file name, like config/*.local.json).",
+        "order": 45.7,
+        "section": "Integrations",
+        "title": "Worktree: files to copy"
+      },
+      "agent.worktree.setupTimeoutSeconds": {
+        "type": "integer",
+        "default": 600,
+        "minimum": 5,
+        "maximum": 3600,
+        "description": "How long the worktree setup script may run.",
+        "order": 45.8,
+        "section": "Integrations",
+        "title": "Worktree setup time limit (s)"
+      },
+      "agent.worktree.basePort": {
+        "type": "integer",
+        "default": 3000,
+        "minimum": 1024,
+        "maximum": 60000,
+        "scope": "user",
+        "description": "Worktree agents' windows get PORT = basePort + n × portStep (n = 1, 2, 3… per worktree), and WORKTREE_INDEX / WORKTREE_PORT_BASE / WORKTREE_PORT_STEP, so their dev servers don't collide.",
+        "order": 45.9,
+        "section": "Integrations",
+        "title": "Worktree ports: base"
+      },
+      "agent.worktree.portStep": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 1000,
+        "scope": "user",
+        "description": "Ports per worktree (each one's block starts at its PORT).",
+        "order": 45.95,
+        "section": "Integrations",
+        "title": "Worktree ports: block size"
+      }
+    },
+    "keybindings": [
+      {
+        "key": "ctrl+shift+alt+w",
+        "mac": "cmd+shift+alt+w",
+        "command": "agent.closeOpened"
+      },
+      {
+        "key": "ctrl+alt+y",
+        "mac": "cmd+alt+y",
+        "command": "agent.acceptHunk",
+        "when": "agentReviewActive && editorTextFocus"
+      },
+      {
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "command": "agent.rejectHunk",
+        "when": "agentReviewActive && editorTextFocus"
+      },
+      {
+        "key": "alt+f5",
+        "command": "agent.nextHunk",
+        "when": "agentReviewActive && editorTextFocus"
+      },
+      {
+        "key": "shift+alt+f5",
+        "command": "agent.previousHunk",
+        "when": "agentReviewActive && editorTextFocus"
+      }
+    ]
+  }
+}

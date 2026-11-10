@@ -1,0 +1,140 @@
+/* The turn tools in the chat (D301–D304): a chapter's divider, a proposed task's card, the Plan
+   mode question and the wrap-up box at the end of the latest turn. Quiet like the plan card:
+   hairline borders on the surface, no accent edges; the recommended button is the primary one. */
+@layer extensions {
+  /* A chapter: its title between two hairlines, small and muted. */
+  .agent-chapter {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-5) 0 var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .agent-chapter::before,
+  .agent-chapter::after {
+    content: "";
+    flex: 1 1 0;
+    min-width: var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .agent-chapter-title {
+    min-width: 0;
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-chapter.is-revealed {
+    color: var(--fg-default);
+  }
+
+  /* A proposed task, and the Plan mode question: a small card in the conversation. */
+  .agent-task,
+  .agent-consent,
+  .agent-wrapup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-md);
+    min-width: 0;
+  }
+  .agent-task-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-task-head .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-task-title {
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .agent-consent .agent-task-title {
+    font-weight: 400;
+  }
+  .agent-task-brief {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-turn-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+  }
+  .agent-turn-actions:empty {
+    display: none;
+  }
+  .agent-task-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-task-state .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+
+  /* The wrap-up box: where things stand, then the one question and its buttons. */
+  .agent-wrapup-recap {
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+  }
+  .agent-wrapup-ask {
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+
+  /* The chat's worktree branch in the header (D337): a quiet chip that shortens first. */
+  .agent-worktree-chip {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    max-width: 40%;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+    cursor: pointer;
+  }
+  .agent-worktree-chip[hidden] {
+    display: none;
+  }
+  .agent-worktree-chip:hover {
+    color: var(--fg-default);
+  }
+  .agent-worktree-chip .icon {
+    flex: none;
+  }
+  .agent-worktree-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

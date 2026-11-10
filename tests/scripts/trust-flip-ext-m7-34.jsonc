@@ -1,0 +1,107 @@
+// D285: a VS Code extension's code stopped for an untrusted folder and resumed right away (the
+// folder's trust flipping as it opens) comes back with what it set up at activation: the old
+// worker's clean-up used to finish after the new one started and wiped its status items and
+// context keys (Claude Code's icon and status item gone, "Not started yet"; Live Server
+// "failed"). Also D284: its `$(broadcast)` draws the IDE's radio-tower, not a dot. Needs Node.
+{
+  "name": "trust-flip-ext-m7-34",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "${ws.root}/../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.linked" },
+      "expect": { "result": "" },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item:has(.icon-radio-tower)", "limit": 5, "html": 400 },
+      "expect": { "$contains": "Hello live" }
+    },
+    // Untrusted, then trusted at once: the code stops and starts again by itself.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "wait": 6000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 20000
+    },
+    // The owner's case: close the folder, open it again.
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "wait": 3000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 20000
+    },
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}" } },
+    { "state": "ide://workspace", "expect": { "root": { "$exists": true } }, "timeoutMs": 10000 },
+    { "wait": 6000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$not": { "$contains": "\"status\":\"failed\"" } }
+    },
+    // The race itself: trust flips while its Node process is still starting (its
+    // onStartupFinished start comes 2 s after loading): it must still come up.
+    { "run": "extensions.reload", "input": { "id": "acme.vscode-hello" } },
+    { "wait": 2300 },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 25000
+    },
+    // The owner's logs: another version of the IDE removed this one's Node host script, and
+    // the next Node start failed ("Cannot find module"). It's written again before each start.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "ls \"${ws.root}/../profile/data/extension-host/\" && rm -f \"${ws.root}/../profile/data/extension-host/\"node-host-*.cjs && echo removed",
+        "timeoutMs": 15000
+      },
+      "expect": { "exitCode": 0 },
+      "print": true
+    },
+    { "run": "extensions.reload", "input": { "id": "acme.vscode-hello" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Hello live" } }],
+      "timeoutMs": 25000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$not": { "$contains": "Node ended" } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

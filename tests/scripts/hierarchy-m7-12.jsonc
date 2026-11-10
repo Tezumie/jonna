@@ -1,0 +1,139 @@
+// m7.12: the hierarchy tab's Refresh, "Show hierarchy of this item" (re-rooting on a row), the
+// row menu, and the "Results may be outdated" bar after an edit in a file the tree points into.
+// Against tests/fixtures/setup/mock-hierarchy-lsp.mjs ("a calls b" lines are calls; it reads the
+// open document's text, so an edit shows after Refresh).
+{
+  "name": "hierarchy-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'alpha calls beta\\nbeta calls gamma\\ngamma returns\\n' > hier12.md && echo WROTE",
+        "timeoutMs": 10000
+      },
+      "expect": { "output": { "$contains": "WROTE" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "hier": {
+            "command": "node",
+            "args": ["${workspaceFolder}/../setup/mock-hierarchy-lsp.mjs"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "hier12.md", "line": 2, "column": 1 } },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"state\":\"running\"" },
+      "timeoutMs": 15000
+    },
+    // Callers of beta: alpha. Rows carry ids; nothing is outdated yet.
+    {
+      "run": "lsp.showCallHierarchy",
+      "input": { "path": "hier12.md", "line": 2, "column": 2 },
+      "expect": { "opened": true, "direction": "incoming" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "outdated": false,
+        "items": [{ "id": "0", "name": "beta", "children": [{ "id": "0/0", "name": "alpha" }] }]
+      },
+      "timeoutMs": 10000
+    },
+    // Re-rooted on alpha: its callers (none), same direction.
+    {
+      "run": "lsp.showHierarchyOfItem",
+      "input": { "id": "0/0" },
+      "expect": { "direction": "incoming", "roots": [{ "name": "alpha" }] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-view", "html": 6000 },
+      "expect": { "$contains": "Callers of alpha" },
+      "timeoutMs": 5000
+    },
+    { "run": "lsp.showHierarchyOfItem", "input": { "id": "7/7" }, "expectError": true },
+    // Back to beta, outgoing: beta → gamma.
+    {
+      "run": "lsp.showCallHierarchy",
+      "input": { "path": "hier12.md", "line": 2, "column": 2, "direction": "outgoing" },
+      "expect": { "opened": true, "direction": "outgoing" }
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": { "items": [{ "name": "beta", "children": [{ "name": "gamma" }] }] },
+      "timeoutMs": 10000
+    },
+    // The row menu.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".hierarchy-row[aria-level=\"2\"]", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Show call hierarchy of this item" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Copy path" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Go to definition" }
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    // An edit in the file: the tree is marked outdated, not rebuilt.
+    { "run": "editor.openFile", "input": { "path": "hier12.md", "line": 3, "column": 1 } },
+    { "run": "editor.insertText", "input": { "text": "beta calls delta\n" } },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "outdated": true,
+        "items": [{ "name": "beta", "children": [{ "name": "gamma" }] }]
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-outdated:not([hidden])", "html": 2000 },
+      "expect": { "$contains": "Results may be outdated" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Refresh: asked again, the bar goes, the new call shows.
+    {
+      "run": "lsp.refreshHierarchy",
+      "input": {},
+      "expect": { "direction": "outgoing", "roots": [{ "name": "beta" }] }
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "outdated": false,
+        "items": [{ "name": "beta", "children": { "$length": 2 } }]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-outdated:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "editor.save" },
+    { "run": "lsp.stop", "input": { "all": true } }
+  ]
+}

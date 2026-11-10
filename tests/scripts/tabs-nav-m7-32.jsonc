@@ -1,0 +1,225 @@
+// D279: Go back / Go forward (the history, the title bar's buttons, the tab strips' instead);
+// tab options from VS Code (pinned tabs and their own row, the close button's side and
+// visibility, the tab limit, the most recent tab after closing, problem colors and counts on
+// tabs) and tabs on a group's side; the theme following the system's mode.
+{
+  "name": "tabs-nav-m7-32",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 800 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'const x: number = \"s\";\n' > bad.ts && for i in $(seq 1 60); do echo \"line $i\"; done > long.txt",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+
+    // ---- Go back / Go forward ----
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "wait": 400 },
+    { "run": "editor.openFile", "input": { "path": "long.txt", "line": 5 } },
+    { "wait": 400 },
+    { "run": "editor.openFile", "input": { "path": "long.txt", "line": 50 } },
+    { "wait": 400 },
+    {
+      "state": "ide://navigation",
+      "expect": { "canGoBack": true, "canGoForward": false, "entries": { "$length": 3 } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".titlebar-nav:not([hidden]) .titlebar-nav-button:not([disabled])" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "workbench.navigateBack",
+      "expect": { "moved": true, "path": "long.txt", "line": 5 }
+    },
+    { "wait": 400 },
+    { "run": "workbench.navigateBack", "expect": { "moved": true, "path": "README.md" } },
+    { "wait": 400 },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-group.is-focused .dock-tab.is-active .dock-tab-text",
+        "html": 80
+      },
+      "expect": [{ "html": { "$contains": "README.md" } }]
+    },
+    { "run": "workbench.navigateForward", "expect": { "moved": true, "path": "long.txt" } },
+    { "wait": 400 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The buttons at the start of each tab strip instead.
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.navigationControl.location", "value": "tabBar" }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".titlebar-nav:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-nav:not([hidden])" },
+      "expect": { "$length": 1 }
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.navigationControl.location", "value": "titleBar" }
+    },
+
+    // ---- Pinned tabs, on their own row ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "wait": 300 },
+    { "run": "layout.pinEditor", "expect": { "pinned": { "$exists": true } } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab", "html": 300 },
+      "expect": [
+        { "className": { "$contains": "is-pinned" }, "html": { "$contains": "notes.txt" } }
+      ]
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.pinnedTabsOnSeparateRow", "value": true }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tabs-row.is-pinned-row .dock-tab" },
+      "expect": { "$length": 1 }
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Close others leaves the pinned tab.
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "run": "layout.closeOtherTabs" },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab" },
+      "expect": { "$length": 2 }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.pinnedTabsOnSeparateRow", "value": false }
+    },
+
+    // ---- The close button on the left; no close button ----
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.tabActionLocation", "value": "left" }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab.is-active .dock-tab-close" },
+      "expect": [{ "box": [{ "$lte": 470 }] }]
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.tabActionLocation", "value": "right" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.tabActionCloseVisibility", "value": false }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab.is-active .dock-tab-close" },
+      "expect": [{ "display": "none" }]
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.editor.tabActionCloseVisibility", "value": true }
+    },
+    { "run": "layout.unpinEditor", "input": {} },
+
+    // ---- The most recent tab after closing ----
+    { "run": "editor.openFile", "input": { "path": ".gitignore" } },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "wait": 300 },
+    { "run": "layout.closeTab" },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-group.is-focused .dock-tab.is-active .dock-tab-text",
+        "html": 80
+      },
+      "expect": [{ "html": { "$contains": ".gitignore" } }]
+    },
+
+    // ---- Problems on tabs ----
+    { "run": "editor.openFile", "input": { "path": "bad.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-group.is-focused .dock-tab.is-active .dock-tab-badge",
+        "html": 80
+      },
+      "expect": [{ "html": { "$contains": "1" } }],
+      "timeoutMs": 20000
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- The tab limit ----
+    { "run": "settings.set", "input": { "key": "workbench.editor.limit.value", "value": 2 } },
+    { "run": "settings.set", "input": { "key": "workbench.editor.limit.enabled", "value": true } },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='editor']" },
+      "expect": { "$length": 2 }
+    },
+    { "run": "settings.set", "input": { "key": "workbench.editor.limit.enabled", "value": false } },
+
+    // ---- Tabs on the side ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "settings.set", "input": { "key": "workbench.editor.tabPlacement", "value": "left" } },
+    { "wait": 400 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused[data-tab-placement='left'] .dock-strip" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$gte": 0 }, 200] }]
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "settings.set", "input": { "key": "workbench.editor.tabPlacement", "value": "top" } },
+
+    // ---- The theme follows the system (both preferred themes the same: the OS's mode doesn't matter) ----
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.preferredDarkColorTheme", "value": "Light+" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.preferredLightColorTheme", "value": "Light+" }
+    },
+    { "run": "settings.set", "input": { "key": "window.autoDetectColorScheme", "value": true } },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "html[data-theme='light']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "settings.set", "input": { "key": "window.autoDetectColorScheme", "value": false } },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "html[data-theme='dark']" },
+      "expect": { "$length": 1 }
+    }
+  ]
+}

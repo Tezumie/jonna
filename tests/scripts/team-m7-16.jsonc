@@ -1,0 +1,76 @@
+// D245: the team is the planner, the builder and Chat (D272: Plato and Gabby, no builder); @all has every member of #general answer at
+// once; the members menu shows faces; the sidebar's Recent list; the Extensions filter is a plain
+// field like the other side bar searches.
+{
+  "name": "team-m7-16",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // ---- The team ----
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:chat" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/channels",
+      "expect": {
+        "channels": [{ "id": "general", "members": ["agent", "planner", "chat"] }]
+      },
+      "timeoutMs": 10000
+    },
+
+    // ---- @all: every member answers, the others at the same time as the first ----
+    { "run": "agent.openChannel", "input": { "channel": "general" } },
+    {
+      "run": "agent.postToChannel",
+      "input": { "channel": "#general", "message": "@all say hi", "wait": true },
+      "expect": { "channel": "general" },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-speaker[data-speaker]", "limit": 10 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 30000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- The members pill's menu shows each agent's face ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-members-pill" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-icon .agent-face", "limit": 10 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-members-pill" } },
+
+    // ---- The Chats list: the conversation shows in the sidebar (D291) ----
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent", "limit": 10 },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- The Extensions filter is a plain field ----
+    { "run": "view.show", "input": { "id": "extensions.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-filter > input.input.ext-filter-input" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    }
+  ]
+}

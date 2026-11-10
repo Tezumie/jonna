@@ -1,0 +1,50 @@
+// D113: compare with saved and two files, duplicate, zen mode, the Outline view and its state,
+// copy as Markdown.
+{
+  "name": "features-m6-12",
+  "steps": [
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "notes.txt" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.insertText", "input": { "text": "unsaved " }, "timeoutMs": 5000 },
+    { "run": "editor.compareWithSaved", "expect": { "tabId": { "$exists": true } } },
+    {
+      "state": "ide://layout",
+      "expect": { "groups": { "$contains": "unsaved" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.compareFiles",
+      "input": { "path": "notes.txt", "against": "README.md" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "run": "explorer.selectForCompare", "input": { "path": "README.md" } },
+    {
+      "run": "explorer.compareWithSelected",
+      "input": { "path": "src/util.ts" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "explorer.duplicate",
+      "input": { "paths": ["src/util.ts"] },
+      "expect": { "created": [{ "$contains": "util copy.ts" }] }
+    },
+    // Zen mode hides the sidebar and brings it back.
+    { "run": "layout.toggleZenMode", "expect": { "zen": true } },
+    { "state": "ide://layout", "expect": { "sidebar": { "visible": false } } },
+    { "run": "layout.toggleZenMode", "expect": { "zen": false } },
+    { "state": "ide://layout", "expect": { "sidebar": { "visible": true } } },
+    // The Outline: symbols of the active editor.
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    { "run": "outline.show" },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "symbols": [{ "name": "add", "kind": "function", "line": 1 }] },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.copyAsMarkdown", "expect": { "chars": { "$gte": 20 } } }
+  ]
+}

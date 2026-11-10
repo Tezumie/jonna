@@ -1,0 +1,50 @@
+// Audit (D261): the Extensions view, an extension's page and a VS Code extension's webview view
+// hold up in a small window, in the light theme and back in the dark one: nothing overflows the
+// window, the page's header wraps, the webview view isn't a white or black sheet. Screenshots for
+// review. Needs Node on PATH (the fixture's code).
+{
+  "name": "extensions-small-light",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 640, "height": 480 } },
+    { "wait": 800 },
+    { "run": "ui.setTheme", "input": { "theme": "light" } },
+    { "run": "extensions.show", "input": { "query": "" } },
+    { "wait": 800 },
+    // Nothing in the view is wider than the window.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-view", "limit": 1 },
+      "expect": {},
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "extensions.showDetails", "input": { "id": "acme.vscode-hello" } },
+    { "wait": 1200 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-name", "limit": 1 },
+      "expect": { "$contains": "VS Code hello" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Its webview view (a page its code writes) in the light theme, then the dark one.
+    { "run": "view.show", "input": { "id": "vscodeHello.page" } },
+    { "wait": 2500 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "ui.setTheme", "input": { "theme": "dark" } },
+    { "wait": 1200 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 800 } }
+  ]
+}

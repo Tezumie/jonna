@@ -1,0 +1,183 @@
+// D146: settings open on "All settings"; VS Code's editor line height and word wrap, terminal
+// font 13; browser DevTools — resizable panes, editable styles (value, checkbox), DOM search,
+// find in a source, Performance and the Application panel's IndexedDB.
+{
+  "name": "features-m6-45",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // Settings: every setting on one page by default, page by page (D179's pages).
+    { "run": "settings.open" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-item.is-selected", "html": 400 },
+      "expect": [{ "html": { "$contains": "All settings" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-section-title", "limit": 20, "html": 200 },
+      "expect": { "$contains": "Appearance" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-item[aria-label=\"Run and debug\"] use", "html": 200 },
+      "expect": [{ "html": { "$contains": "bug-play" } }]
+    },
+
+    // Editor: 14 px at VS Code's line height (19 px on Linux / Windows), wrapping on.
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-line", "limit": 1 },
+      "expect": [{ "box": [{ "$exists": true }, { "$exists": true }, { "$exists": true }, 19] }],
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.wordWrap\",\"value\":\"on\"" }
+    },
+    // The terminal's text is 13 px (its rows 17 px high with Linux's monospace font, 18 px with
+    // Windows' Consolas), measured on the DOM renderer's rows (WebGL draws on a canvas, D204).
+    { "run": "settings.set", "input": { "key": "terminal.gpuAcceleration", "value": "off" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".xterm-rows > div", "limit": 1 },
+      "expect": [
+        {
+          "box": [
+            { "$exists": true },
+            { "$exists": true },
+            { "$exists": true },
+            { "$gte": 16, "$lte": 18 }
+          ]
+        }
+      ],
+      "timeoutMs": 10000
+    },
+
+    // Browser DevTools on a static page.
+    { "run": "browser.open", "input": { "url": "site/index.html" }, "timeoutMs": 20000 },
+    { "run": "browser.devtools", "input": { "panel": "elements" } },
+    { "run": "browser.reveal", "input": { "selector": "h1" } },
+    // Resizable: a divider between the DOM and the styles.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-elements .dt-split > .dt-sash" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    // Edit h1's color in place: the page follows.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-rule[data-rule^=\"r\"] .dt-prop[data-prop=\"color\"]" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".dt-rule[data-rule^=\"r\"] .dt-prop[data-prop=\"color\"] .dt-prop-value"
+      }
+    },
+    { "run": "dev.type", "input": { "selector": ".dt-edit", "text": "green", "key": "Enter" } },
+    {
+      "run": "browser.eval",
+      "input": { "code": "getComputedStyle(document.querySelector('h1')).color" },
+      "expect": { "$contains": "128" },
+      "timeoutMs": 5000
+    },
+    // The checkbox switches it off (and back on).
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".dt-rule[data-rule^=\"r\"] .dt-prop[data-prop=\"color\"] .dt-prop-check"
+      }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "getComputedStyle(document.querySelector('h1')).color" },
+      "expect": { "$not": { "$contains": "128" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-prop.is-off[data-prop=\"color\"]" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dt-prop.is-off[data-prop=\"color\"] .dt-prop-check" }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "getComputedStyle(document.querySelector('h1')).color" },
+      "expect": { "$contains": "128" },
+      "timeoutMs": 5000
+    },
+    // Find in the DOM.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dt-dom-search", "text": "button", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-dom-count", "html": 200 },
+      "expect": [{ "html": { "$contains": "1 of 1" } }],
+      "timeoutMs": 5000
+    },
+
+    // Sources: find in a file.
+    { "run": "browser.devtools", "input": { "panel": "sources" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dt-src-row:not(.is-folder)" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dt-src-find", "text": "site", "key": "Enter" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-src-findbar .dt-note", "html": 200 },
+      "expect": [{ "html": { "$contains": " of " } }],
+      "timeoutMs": 5000
+    },
+
+    // Performance: load metrics for agents and in the panel.
+    {
+      "run": "browser.performance",
+      "input": { "recordMs": 500 },
+      "expect": {
+        "navigation": { "load": { "$gte": 0 } },
+        "dom": { "nodes": { "$gte": 5 } },
+        "recording": { "averageFps": { "$exists": true } }
+      }
+    },
+    { "run": "browser.devtools", "input": { "panel": "performance" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-metric", "limit": 20, "html": 300 },
+      "expect": { "$contains": "Time to first byte" },
+      "timeoutMs": 5000
+    },
+
+    // Application: IndexedDB next to storage.
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "new Promise((ok) => { const r = indexedDB.open('notes', 1); r.onupgradeneeded = (e) => e.target.result.createObjectStore('items', { keyPath: 'id' }).add({ id: 1, text: 'hello' }); r.onsuccess = () => { r.result.close(); ok('ready'); }; })"
+      }
+    },
+    { "run": "browser.devtools", "input": { "panel": "application" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-app-nav", "html": 4000 },
+      "expect": [{ "html": { "$contains": "items" } }],
+      "timeoutMs": 5000
+    }
+  ]
+}

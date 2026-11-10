@@ -1,0 +1,110 @@
+// D164/D166: AI setup. No model: an empty chat offers one button to the AI models page. Connecting
+// a provider checks its key first (a rejected key saves nothing), then the chat is ready. The page
+// lists it; a settings reset keeps it unless asked; the prompt can be previewed any time.
+{
+  "name": "agent-m6-62",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": false } },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.newSession" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-prompt .ai-start", "html": 300 },
+      "expect": [{ "html": { "$contains": "Set up AI models" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // The button opens the page; a tile opens its key form in place.
+    { "run": "dev.click", "input": { "selector": ".ai-prompt .ai-start" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=anthropic]" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-form[data-form=anthropic] input", "html": 300 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A rejected key: a plain reason, nothing saved.
+    {
+      "run": "agent.connectProvider",
+      "input": { "name": "Mock", "baseUrl": "http://127.0.0.1:11999/v1", "apiKey": "bad-key" },
+      "expect": { "ok": false, "error": { "$contains": "rejected" } }
+    },
+    { "state": "ide://agent", "expect": { "models": { "$length": 0 } } },
+    {
+      "run": "agent.connectProvider",
+      "input": { "name": "Mock", "baseUrl": "http://127.0.0.1:11999/v1", "apiKey": "good-key" },
+      "expect": { "ok": true, "models": 1 }
+    },
+    { "state": "ide://agent", "expect": { "models": { "$contains": "mock/claude-mock" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-prompt" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // The page, from the Agent settings' first row (D165): the provider is listed; removing it
+    // takes it away.
+    { "run": "settings.open", "input": { "category": "Agent" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".settings-link-row[data-command='agent.customize']" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-row[data-provider=mock]", "html": 400 },
+      "expect": [{ "html": { "$contains": "1 model" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A reset of the Agent settings keeps the provider (Settings passes `except` unless the
+    // option is checked); the option's command removes it and its key. Ollama stays off: a reset
+    // turns it back on, and a real Ollama on this computer would add its own models.
+    {
+      "run": "settings.reset",
+      "input": { "category": "Agent", "except": ["agent.providers", "agent.ollama.enabled"] }
+    },
+    { "state": "ide://agent", "expect": { "models": { "$contains": "mock/claude-mock" } } },
+    { "run": "agent.forgetProviders" },
+    { "state": "ide://agent", "expect": { "models": { "$length": 0 } } },
+    // Connected again, then removed from the page's command.
+    {
+      "run": "agent.connectProvider",
+      "input": { "name": "Mock", "baseUrl": "http://127.0.0.1:11999/v1", "apiKey": "good-key" },
+      "expect": { "ok": true }
+    },
+    { "run": "agent.removeProvider", "input": { "id": "mock" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-row[data-provider=mock]" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // The first-run card on demand.
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.previewSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-prompt" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.closeSetupPreview" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-prompt" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    }
+  ]
+}

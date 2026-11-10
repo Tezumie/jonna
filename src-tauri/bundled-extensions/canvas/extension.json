@@ -1,0 +1,175 @@
+{
+  "id": "bundled.canvas",
+  "version": "1.3.0",
+  "displayName": "Canvas",
+  "description": "An infinite canvas you and the agent share: cards of Markdown, files and links, groups and arrows between them. Sketch an architecture, plan a feature, map a codebase, or ask the agent to lay something out. Saved as .canvas files (JSON Canvas, the open format Obsidian uses). Bundled to try: turn it on, or uninstall it.",
+  "main": "main.js",
+  "activation": ["*"],
+  "icon": "layout-dashboard",
+  "authors": [
+    { "name": "Claude", "url": "https://claude.ai", "avatar": "brand:anthropic" },
+    { "name": "Tezumie", "github": "Tezumie" }
+  ],
+  "license": "MIT",
+  "categories": ["Visualization", "AI"],
+  "keywords": ["canvas", "whiteboard", "diagram", "board", "json canvas", "obsidian"],
+  "permissions": ["fs.read", "fs.write", "browser", "web.embed"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "canvas.open",
+        "title": "Canvas: Open",
+        "description": "Opens a canvas (a .canvas file) beside the editor, creating it when missing. Input: { path?: string } (default: the project's main canvas, <workspace folder>/canvas/main.canvas). Returns { path }.",
+        "effects": ["write"]
+      },
+      {
+        "id": "canvas.new",
+        "title": "Canvas: New canvas",
+        "description": "Creates an empty canvas and opens it. Input: { path?: string } (default: a new file in <workspace folder>/canvas). Returns { path }.",
+        "effects": ["write"]
+      },
+      {
+        "id": "canvas.newNamed",
+        "title": "Canvas: New canvas…",
+        "description": "Asks for a name and creates that canvas (in the canvas folder, or at a path with a /), then opens it. For the user; agents use canvas.new with a path.",
+        "effects": ["write"]
+      },
+      {
+        "id": "canvas.read",
+        "title": "Canvas: Read",
+        "description": "What's on a canvas: its cards (id, type text/file/link/group, x, y, width, height, color, and text / file / url / label), its arrows (id, from, to, label) and the cards the user has selected in it. Input: { path?: string }. Read it before changing a canvas the user worked on.",
+        "effects": ["read"]
+      },
+      {
+        "id": "canvas.edit",
+        "title": "Canvas: Edit",
+        "description": "Changes a canvas the user can see, in one step (it opens beside the editor and the changed cards light up). Input: { path?: string, reveal?: boolean (default true), ops: [...] }, applied in order. Ops: {op:'add', type?:'text'|'file'|'link'|'group', text?: Markdown, file?: workspace path, url?, label?, color?: '1'..'6' (red, orange, yellow, green, cyan, purple) or '#hex', ref?: a name later ops in the same call can use instead of an id, near?: id or ref to place it next to, side?: 'right'|'below'|'left'|'above', x?, y?, width?, height?} (no position: placed in free space; no size: fitted to the text); {op:'update', id, ...fields}; {op:'remove', ids}; {op:'connect', from, to, label?, color?, fromSide?, toSide?, toEnd?: 'arrow'|'none'}; {op:'disconnect', ids?: edge ids, from?, to?}; {op:'group', ids, label?} (a group around those cards); {op:'layout', style: 'tree'|'grid'|'row'|'column', ids?} (tree follows the arrows left to right); {op:'clear'}. Returns { path, added: {ref or index: id}, changed, removed }.",
+        "effects": ["write"]
+      },
+      {
+        "id": "canvas.focus",
+        "title": "Canvas: Show cards",
+        "description": "Opens a canvas and zooms to cards so the user sees them. Input: { path?: string, ids?: string[] } (no ids: everything).",
+        "effects": ["read"]
+      },
+      {
+        "id": "canvas.list",
+        "title": "Canvas: List canvases",
+        "description": "The .canvas files in the project's canvas folder and at the top of the project. Returns { canvases: string[] }.",
+        "effects": ["read"]
+      },
+      {
+        "id": "canvas.refresh",
+        "title": "Canvas: Refresh the list",
+        "description": "Looks for the project's canvases again (the Canvases view).",
+        "effects": ["read"]
+      },
+      {
+        "id": "canvas.addFiles",
+        "title": "Canvas: Add to canvas",
+        "description": "Puts file cards on the canvas in use (else the main canvas): a file, or a folder's files. Input: { path?: string, paths?: string[] }.",
+        "effects": ["write"]
+      },
+      {
+        "id": "canvas.export",
+        "title": "Canvas: Export as image",
+        "description": "Saves a picture of a canvas next to it (opening it if needed). Input: { path?, format?: 'png'|'svg' (default png), area?: 'all'|'view', scale?: 1|2|3 (PNG, default 2), privacy?: boolean (grey bars instead of text) }. Returns { path } of the image.",
+        "effects": ["write"]
+      }
+    ],
+    "settings": {
+      "canvas.snapToGrid": {
+        "type": "boolean",
+        "default": true,
+        "description": "Cards snap to a 20 px grid when you move or resize them."
+      },
+      "canvas.showGrid": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show a dot grid behind the cards."
+      },
+      "canvas.folder": {
+        "type": "string",
+        "default": "",
+        "description": "Where new canvases go and the Canvases list looks first, relative to the project. Empty: canvas in the IDE's own workspace folder; a .vscode or legacy canvas folder is listed too."
+      },
+      "canvas.cardWidth": {
+        "type": "integer",
+        "default": 260,
+        "minimum": 120,
+        "maximum": 1200,
+        "description": "Width of a new card, in pixels."
+      },
+      "canvas.arrowStyle": {
+        "type": "string",
+        "default": "curved",
+        "enum": ["curved", "straight", "elbow"],
+        "description": "How arrows are drawn: curved, straight, or elbow (right angles)."
+      },
+      "canvas.showImages": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show images on image file cards (off: just their names, for very large images)."
+      },
+      "canvas.embedPages": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show web pages inside link cards (YouTube and Vimeo as players). Some sites refuse to be shown inside another page: use the card's Show as a link."
+      },
+      "canvas.snapToObjects": {
+        "type": "boolean",
+        "default": true,
+        "description": "While you move cards, line them up with other cards' edges and centres (guides show where). Hold Space to move freely."
+      }
+    },
+    "viewers": [
+      {
+        "id": "canvas.viewer",
+        "title": "Canvas",
+        "extensions": [".canvas"],
+        "path": "viewer.html",
+        "default": true,
+        "icon": "layout-dashboard"
+      }
+    ],
+    "menus": [
+      {
+        "location": "menubar/view",
+        "command": "canvas.open",
+        "title": "Main canvas",
+        "icon": "layout-dashboard"
+      },
+      {
+        "location": "explorer/context",
+        "command": "canvas.newNamed",
+        "when": "explorerResourceIsFolder"
+      },
+      {
+        "location": "view/title",
+        "command": "canvas.newNamed",
+        "icon": "plus",
+        "when": "view == canvas.list"
+      },
+      {
+        "location": "view/title",
+        "command": "canvas.refresh",
+        "icon": "refresh-cw",
+        "when": "view == canvas.list"
+      },
+      {
+        "location": "explorer/context",
+        "command": "canvas.addFiles",
+        "title": "Add to canvas"
+      }
+    ],
+    "views": [
+      {
+        "id": "canvas.list",
+        "title": "Canvases",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "layout-dashboard"
+      }
+    ]
+  }
+}

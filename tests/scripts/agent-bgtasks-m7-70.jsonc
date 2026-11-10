@@ -1,0 +1,220 @@
+// D326, D327: the Background tasks view. A background subagent (delegate with a description) and
+// a background command run; the chip under the conversation counts them and opens the view:
+// Running (2), the command opens to `$ command` and its output, the subagent to its own tool
+// calls (one failed); its title opens its transcript (brief, model, work) and back; Stop on each.
+// Against tests/fixtures/mock-ollama.mjs (pkgGScripted: the subagent's last answer waits 90 s,
+// so it's still running while the test looks).
+{
+  "name": "agent-bgtasks-m7-70",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // `node -e` asks even in automatic mode: full access, nothing waits on the user.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgG start work" },
+      "expect": { "answer": "PkgG started both." },
+      "timeoutMs": 30000
+    },
+    // Both run; the subagent has made its two calls (one failed) and waits on its model.
+    {
+      "state": "ide://agent/background",
+      "expect": {
+        "running": {
+          "$contains": "\"kind\":\"subagent\",\"id\""
+        }
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$contains": "\"title\":\"Pkgg probe task\"" } }
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$contains": "\"steps\":2,\"failedSteps\":1" } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$contains": "\"kind\":\"command\"" } }
+    },
+    // The chip under the conversation: what they are, how they stand.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-title", "html": 300 },
+      "expect": [{ "html": { "$contains": "2 background tasks" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-detail", "html": 300 },
+      "expect": [{ "html": { "$contains": "2 running" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-column .agent-bgchip" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtasks .agent-bgtasks-section-title", "html": 200 },
+      "expect": [{ "html": { "$contains": "Running (2)" } }],
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/background", "expect": { "open": true } },
+    // A command row opens to its line and what it printed (live).
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-command .agent-bgtask-chevron" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-command .agent-bgtask-output", "html": 2000 },
+      "expect": [{ "html": { "$contains": "pkgg-tick" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-command .agent-bgtask-output", "html": 400 },
+      "expect": [{ "html": { "$contains": "$ node -e" } }]
+    },
+    // The subagent's "2 tasks · 1 failed" opens to its own calls.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-steps", "html": 400 },
+      "expect": [{ "html": { "$contains": "1 failed" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-steps" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-step", "limit": 3 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-step.is-error", "limit": 2 },
+      "expect": { "$length": 1 }
+    },
+    // A call opens to its arguments and output.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask-step.is-error .agent-bgtask-step-row" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-step.is-error .agent-bgtask-output", "html": 600 },
+      "expect": [{ "html": { "$contains": "pkgg-missing-file.txt" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Its title opens its transcript: the brief, the model, its work as a turn.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-title" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-bgtasks-head.is-transcript .agent-bgtasks-title",
+        "html": 200
+      },
+      "expect": [{ "html": { "$contains": "Pkgg probe task" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-brief-text", "html": 300 },
+      "expect": [{ "html": { "$contains": "pkgg-sub: look at the folder" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-facts", "html": 300 },
+      "expect": [{ "html": { "$contains": "mock-coder" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-transcript .agent-work-header", "limit": 3 },
+      "expect": [{}],
+      "timeoutMs": 5000
+    },
+    // Its work group opens to the rows the chat shows.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask-transcript .agent-work-header" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-transcript .agent-work-body .agent-step", "limit": 4 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Back to the list.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtasks-head [data-action=\"back\"]" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtasks .agent-bgtasks-section-title", "html": 200 },
+      "expect": [{ "html": { "$contains": "Running (2)" } }],
+      "timeoutMs": 5000
+    },
+    // A narrow window: the rows still fit (titles ellipsize, times and Stop keep their room).
+    { "run": "dev.setWindowSize", "input": { "width": 760, "height": 600 } },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Stop the subagent from its row.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-stop" }
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": {
+        "finished": { "$contains": "\"kind\":\"subagent\"" }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "finished": [{ "kind": "subagent", "status": "stopped" }] }
+    },
+    // And the command.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-command .agent-bgtask-stop" }
+    },
+    {
+      "state": "ide://agent/processes",
+      "expect": { "processes": [{ "status": "killed" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-detail", "html": 300 },
+      "expect": [{ "html": { "$contains": "2 stopped" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

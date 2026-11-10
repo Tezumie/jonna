@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "browser-external",
+  "description": "External browser windows and sites shown inside a browser tab: the injected bridge may only post its reports to the IDE.",
+  "windows": ["browser-*"],
+  "webviews": ["browser-*"],
+  "remote": { "urls": ["https://*", "https://*:*", "http://*", "http://*:*"] },
+  "permissions": ["allow-browser-bridge-post"]
+}

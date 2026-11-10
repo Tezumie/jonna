@@ -1,0 +1,268 @@
+// D221: skills with `paths` and nested `<folder>/.claude/skills` offered with a read's result
+// (not in the prompt up front, once per chat); a user's own skill pre-approving its
+// allowed-tools while a project's asks; `context: fork` running in a subagent; a command's
+// `Read(secrets.txt)` refusing that read; get_state asking before the selection in a protected
+// file; the user skills folder watched (a skill written there from outside shows at once).
+// Against tests/fixtures/mock-ollama.mjs (skills221Scripted). Writes two skills into the user
+// skills folder and deletes them at the end.
+{
+  "name": "agent-skills-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- The workspace: a skill for *.ts, a nested one in pkg/web, some files ----
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": ".claude" } },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude", "name": "skills" } },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude/skills", "name": "ts-style" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/ts-style", "name": "SKILL.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\nname: ts-style\ndescription: TypeScript house style\npaths: \"*.ts\"\n---\nUse tabs.\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude/skills", "name": "d221-fork" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/d221-fork", "name": "SKILL.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\nname: d221-fork\ndescription: Audits in a subagent\ncontext: fork\nagent: general\n---\nD221 fork body: $ARGUMENTS\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".claude/skills", "name": "d221-proj" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".claude/skills/d221-proj", "name": "SKILL.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\nname: d221-proj\ndescription: A project skill that lists a command\nallowed-tools: Bash(echo d221-pre-ok)\n---\nRun it.\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": "pkg" } },
+    { "run": "explorer.newFolder", "input": { "parent": "pkg", "name": "web" } },
+    { "run": "explorer.newFolder", "input": { "parent": "pkg/web", "name": ".claude" } },
+    { "run": "explorer.newFolder", "input": { "parent": "pkg/web/.claude", "name": "skills" } },
+    {
+      "run": "explorer.newFolder",
+      "input": { "parent": "pkg/web/.claude/skills", "name": "web-deploy" }
+    },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": "pkg/web/.claude/skills/web-deploy", "name": "SKILL.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\nname: web-deploy\ndescription: Deploys the web app\n---\nDeploy.\n" }
+    },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": "pkg/web", "name": "app.js" } },
+    { "run": "editor.insertText", "input": { "text": "console.log(1);\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": "lib" } },
+    { "run": "explorer.newFile", "input": { "parent": "lib", "name": "a.ts" } },
+    { "run": "editor.insertText", "input": { "text": "export const a = 1;\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": "lib", "name": "b.ts" } },
+    { "run": "editor.insertText", "input": { "text": "export const b = 2;\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "notes.md" } },
+    { "run": "editor.insertText", "input": { "text": "Notes\n" } },
+    { "run": "editor.save" },
+
+    // ---- Offered with the result of a read of a file they cover; once per chat ----
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please use the ts-style skill" },
+      "expect": { "answer": { "$contains": "Skill not listed: ts-style" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "skills221 read notes.md" },
+      "expect": { "answer": { "$contains": "Offered: none" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "skills221 read lib/a.ts" },
+      "expect": { "answer": { "$contains": "Offered: ts-style" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "skills221 read lib/b.ts" },
+      "expect": { "answer": { "$contains": "Offered: none" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "skills221 read pkg/web/app.js" },
+      "expect": { "answer": { "$contains": "Offered: web-deploy" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"nested\":\"pkg/web\"" } }
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"fork\":true" } }
+    },
+
+    // ---- allowed-tools: a user's own skill pre-approves, a project's asks ----
+    {
+      "run": "agent.newSkill",
+      "input": { "name": "d221-pre", "scope": "user", "description": "D221 pre" },
+      "expect": { "created": true }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\nname: d221-pre\ndescription: Runs a check without asking\nallowed-tools: Bash(echo d221-pre-ok)\n---\nRun it.\n"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"preApproves\":true" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/d221-pre" },
+      "expect": { "answer": { "$contains": "d221-pre: ran" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.send", "input": { "message": "/d221-proj" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "echo d221-pre-ok" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "d221-proj: denied" } },
+      "timeoutMs": 20000
+    },
+
+    // ---- context: fork: the skill runs in a subagent, its report comes back ----
+    {
+      "run": "agent.send",
+      "input": { "message": "/d221-fork the deps" },
+      "expect": { "answer": { "$contains": "Fork: ok/args" } },
+      "timeoutMs": 60000
+    },
+
+    // ---- A command's disallowed-tools Read(secrets.txt) refuses that read ----
+    { "run": "explorer.newFolder", "input": { "parent": ".vscode", "name": "commands" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode/commands", "name": "d221-nosecret.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\ndisallowed-tools: Read(secrets.txt)\n---\nRead the secrets.\n" }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "agent.send",
+      "input": { "message": "/d221-nosecret" },
+      "expect": { "answer": { "$contains": "Nosecret: refused" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- get_state asks before showing the selection in a protected file ----
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "guarded.txt" } },
+    { "run": "editor.insertText", "input": { "text": "d221-secret-selection\n" } },
+    { "run": "editor.save" },
+    { "run": "editor.select", "input": { "startLine": 1, "endLine": 1 } },
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "reads", "pattern": "guarded.txt", "allow": false }
+    },
+    { "run": "agent.send", "input": { "message": "skills221 state" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "selection in guarded.txt" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Selection: hidden" } },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.send", "input": { "message": "skills221 state again" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "selection in guarded.txt" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Selection: shown" } },
+      "timeoutMs": 20000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- The user skills folder is watched: a skill written from outside shows at once ----
+    {
+      "state": "ide://agent/skills",
+      "expect": { "watching": true },
+      "timeoutMs": 5000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    // It writes into the user skills folder, outside the workspace: not in the sandbox (D336).
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "off" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "skills221 make a watched skill" },
+      "expect": { "answer": { "$contains": "Made: ok" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"name\":\"d221-watch\"" } },
+      "timeoutMs": 8000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+
+    // ---- Clean up the user folder ----
+    {
+      "run": "agent.deleteSkill",
+      "input": { "name": "d221-watch" },
+      "expect": { "deleted": "d221-watch" }
+    },
+    {
+      "run": "agent.deleteSkill",
+      "input": { "name": "d221-pre" },
+      "expect": { "deleted": "d221-pre" }
+    }
+  ]
+}

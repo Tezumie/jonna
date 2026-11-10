@@ -1,0 +1,444 @@
+{
+  "id": "builtin.debug",
+  "version": "0.1.0",
+  "displayName": "Run and debug",
+  "description": "Debugging with breakpoints, stepping, the call stack, variables and a debug console: Node through its inspector, Python (debugpy), C/C++/Rust (lldb-dap, GDB) and any debug adapter, configured by launch.json like VS Code.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "terminal"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "debug.start",
+        "title": "Start debugging",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.runWithoutDebugging",
+        "title": "Run without debugging",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.continue",
+        "title": "Continue",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.pause",
+        "title": "Pause",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stepOver",
+        "title": "Step over",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stepInto",
+        "title": "Step into",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stepOut",
+        "title": "Step out",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stop",
+        "title": "Stop debugging",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.restart",
+        "title": "Restart debugging",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.toggleBreakpoint",
+        "title": "Toggle breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.setBreakpoint",
+        "title": "Add breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.editBreakpointCondition",
+        "title": "Edit breakpoint condition…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeBreakpoint",
+        "title": "Remove breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeAllBreakpoints",
+        "title": "Remove all breakpoints",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.setBreakpointEnabled",
+        "title": "Enable or disable a breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.toggleAllBreakpoints",
+        "title": "Enable or disable all breakpoints",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.toggleUncaughtExceptions",
+        "title": "Toggle pausing on uncaught exceptions",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.selectFrame",
+        "title": "Select stack frame",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.evaluate",
+        "title": "Evaluate in debug console",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.variables",
+        "title": "Variables",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.listConfigurations",
+        "title": "List launch configurations",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.openLaunchJson",
+        "title": "Open launch.json",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.showView",
+        "title": "Show run and debug",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.showConsole",
+        "title": "Show debug console",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.clearConsole",
+        "title": "Clear debug console",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.selectConsole",
+        "title": "Select debug console…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.editBreakpoint",
+        "title": "Edit breakpoint…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addConditionalBreakpoint",
+        "title": "Add conditional breakpoint…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addLogpoint",
+        "title": "Add logpoint…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.toggleCaughtExceptions",
+        "title": "Toggle pausing on caught exceptions",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.runToCursor",
+        "title": "Run to cursor",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.setVariable",
+        "title": "Set variable value…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addWatch",
+        "title": "Add watch expression…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.editWatch",
+        "title": "Edit watch expression…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeWatch",
+        "title": "Remove watch expression",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeAllWatches",
+        "title": "Remove all watch expressions",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.focusSession",
+        "title": "Focus debug session",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.selectThread",
+        "title": "Select thread",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stopAll",
+        "title": "Stop all debug sessions",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addFunctionBreakpoint",
+        "title": "Add function breakpoint…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeFunctionBreakpoint",
+        "title": "Remove function breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addDataBreakpoint",
+        "title": "Break on value change",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.removeDataBreakpoint",
+        "title": "Remove data breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.setExceptionFilter",
+        "title": "Set an exception filter",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.exceptionInfo",
+        "title": "Exception details",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.createJavaScriptDebugTerminal",
+        "title": "JavaScript debug terminal",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addConfiguration",
+        "title": "Add configuration…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.listProcesses",
+        "title": "List processes",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.pickProcess",
+        "title": "Attach to Node process…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.installAdapter",
+        "title": "Install debug adapter…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.loadedScripts",
+        "title": "Loaded scripts…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.openDisassembly",
+        "title": "Open disassembly view",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.toggleInstructionBreakpoint",
+        "title": "Toggle instruction breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.setInstructionBreakpointEnabled",
+        "title": "Enable or disable an instruction breakpoint",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.attachToBrowserPane",
+        "title": "Debug the browser pane",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.addTriggeredBreakpoint",
+        "title": "Add triggered breakpoint…",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.stepIntoTarget",
+        "title": "Step into target",
+        "category": "Debug"
+      },
+      {
+        "id": "debug.restartFrame",
+        "title": "Restart frame",
+        "category": "Debug"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "f5",
+        "command": "debug.start",
+        "when": "!inDebugMode && !browserFocus"
+      },
+      {
+        "key": "f5",
+        "command": "debug.continue",
+        "when": "debugState == 'stopped' && !browserFocus"
+      },
+      {
+        "key": "ctrl+f5",
+        "mac": "cmd+f5",
+        "command": "debug.runWithoutDebugging",
+        "when": "!inDebugMode && !browserFocus"
+      },
+      {
+        "key": "shift+f5",
+        "command": "debug.stop",
+        "when": "inDebugMode"
+      },
+      {
+        "key": "ctrl+shift+f5",
+        "mac": "cmd+shift+f5",
+        "command": "debug.restart",
+        "when": "inDebugMode"
+      },
+      {
+        "key": "f6",
+        "command": "debug.pause",
+        "when": "debugState == 'running'"
+      },
+      {
+        "key": "f10",
+        "command": "debug.stepOver",
+        "when": "debugState == 'stopped'"
+      },
+      {
+        "key": "f11",
+        "command": "debug.stepInto",
+        "when": "debugState == 'stopped'"
+      },
+      {
+        "key": "shift+f11",
+        "command": "debug.stepOut",
+        "when": "debugState == 'stopped'"
+      },
+      {
+        "key": "f9",
+        "command": "debug.toggleBreakpoint",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "command": "debug.showView"
+      },
+      {
+        "key": "ctrl+shift+y",
+        "mac": "cmd+shift+y",
+        "command": "debug.showConsole"
+      },
+      {
+        "key": "ctrl+f10",
+        "mac": "cmd+f10",
+        "command": "debug.runToCursor",
+        "when": "debugState == 'stopped' && editorFocus"
+      }
+    ],
+    "settings": {
+      "debug.pythonPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The Python that runs debugpy (default: python3, or python on Windows). A configuration's \"python\" wins.",
+        "order": 1
+      },
+      "debug.lldbDapPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The lldb-dap program (default: lldb-dap on the PATH).",
+        "order": 2
+      },
+      "debug.gdbPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The GDB program, version 14 or newer (default: gdb on the PATH).",
+        "order": 3
+      },
+      "debug.openDebugConsole": {
+        "type": "string",
+        "enum": ["openOnSessionStart", "openOnFirstOutput", "neverOpen"],
+        "default": "openOnFirstOutput",
+        "description": "When the debug console opens.",
+        "order": 4
+      },
+      "debug.toolBarLocation": {
+        "type": "string",
+        "enum": ["floating", "docked", "hidden"],
+        "default": "floating",
+        "description": "Where the debug toolbar is while debugging: floating over the top of the window (drag its grip to move it), docked in Run and debug, or hidden.",
+        "order": 5
+      },
+      "debug.dlvPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Delve, for Go (default: dlv on the PATH; install with go install github.com/go-delve/delve/cmd/dlv@latest).",
+        "order": 6
+      },
+      "debug.netcoredbgPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "netcoredbg, for .NET (\"type\": \"coreclr\"; default: netcoredbg on the PATH).",
+        "order": 7
+      },
+      "debug.javascript.autoAttachFilter": {
+        "type": "string",
+        "enum": ["smart", "always"],
+        "default": "smart",
+        "description": "Which Node processes a debugged program's children and a JavaScript debug terminal's programs attach: \"smart\" skips scripts in node_modules (npm, yarn, bundlers' internals) except tools that run your code (Jest, Mocha, Vitest, ts-node, tsx, Vite, Next…); \"always\" attaches every one.",
+        "order": 8
+      },
+      "debug.browserPane.debuggingPort": {
+        "type": "number",
+        "default": 0,
+        "scope": "user",
+        "description": "Windows only: opens the browser pane's DevTools port (WebView2's --remote-debugging-port) so \"Debug the browser pane\" can attach. Takes effect after a restart. Any program on this computer can then control the IDE's webviews through that port; 0 turns it off.",
+        "order": 9
+      },
+      "debug.inlineValues": {
+        "type": "string",
+        "enum": ["on", "off", "auto"],
+        "default": "auto",
+        "description": "Show variable values inline in the editor while debugging: \"on\" always, \"off\" never, \"auto\" for the languages the built-in debuggers debug (JavaScript and TypeScript, Python, Go, Rust, C and C++, C#).",
+        "order": 10
+      }
+    }
+  }
+}

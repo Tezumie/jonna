@@ -1,0 +1,208 @@
+// D145: logpoints, hit counts, caught exceptions, watch expressions, changing a variable, run to
+// cursor and expandable results in the debug console (Node). The hover's token classes are Dark+'s
+// (the default theme became Claude Dark in D271, with other class numbers).
+{
+  "name": "debug-m6-44",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Dark+" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbg && printf 'function add(a, b) {\\n  const sum = a + b;\\n  return sum;\\n}\\nconst user = { name: \"Ada\", tags: [\"x\"] };\\nlet total = 0;\\nfor (let i = 0; i < 4; i++) {\\n  total = add(total, i);\\n}\\ntry { throw new Error(\"boom\"); } catch (e) {}\\nconsole.log(\"total\", total, user.name);\\n' > dbg/kinds.js",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "editor.openFile", "input": { "path": "dbg/kinds.js" } },
+
+    // A logpoint prints and doesn't stop; a hit count stops on the third call.
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg/kinds.js", "line": 3, "logMessage": "sum={sum} ({a}+{b})" },
+      "expect": { "logMessage": "sum={sum} ({a}+{b})" }
+    },
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg/kinds.js", "line": 2, "hitCondition": "3" },
+      "expect": { "hitCondition": "3" }
+    },
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg/kinds.js", "line": 4, "hitCondition": "often" },
+      "expectError": "isn't a hit count"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .debug-bp.is-log" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "debug.toggleCaughtExceptions",
+      "input": { "on": true },
+      "expect": { "caught": true }
+    },
+    { "run": "debug.addWatch", "input": { "expression": "b * 10" } },
+    { "run": "debug.start", "input": { "program": "dbg/kinds.js" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "name": "add", "line": 2 }],
+        "console": { "$contains": "sum=1 (0+1)" },
+        "watches": [{ "expression": "b * 10", "value": "20" }]
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "b" }, "expect": { "value": "2" } },
+
+    // Hovering a variable while paused shows its value.
+    { "run": "editor.openFile", "input": { "path": "dbg/kinds.js", "line": 2, "column": 16 } },
+    { "run": "editor.runAction", "input": { "action": "editor.action.showHover" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".code-hover-contents .monaco-tokenized-source", "html": 2000 },
+      "expect": [
+        {
+          "html": { "$contains": ">a</span><span class=\"mtk1\">: </span><span class=\"mtk7\">1<" }
+        }
+      ],
+      "timeoutMs": 5000
+    },
+
+    // Change a variable: the program sees the new value.
+    {
+      "run": "debug.setVariable",
+      "input": { "name": "b", "value": "50" },
+      "expect": { "changed": true }
+    },
+    { "run": "debug.evaluate", "input": { "expression": "b" }, "expect": { "value": "50" } },
+    {
+      "state": "ide://debug",
+      "expect": { "watches": [{ "value": "500" }] },
+      "timeoutMs": 5000
+    },
+
+    // Run to cursor: the caught exception (line 10) stops it first, then line 11.
+    { "run": "debug.removeAllBreakpoints" },
+    { "run": "debug.runToCursor", "input": { "path": "dbg/kinds.js", "line": 11 } },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "stopped": { "reason": "exception" },
+        "frames": [{ "line": 10 }]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.toggleCaughtExceptions", "input": { "on": false } },
+    { "run": "debug.runToCursor", "input": { "path": "dbg/kinds.js", "line": 11 } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 11 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "total" }, "expect": { "value": "54" } },
+
+    // An object in the console opens to its properties.
+    { "run": "debug.showConsole" },
+    { "run": "debug.evaluate", "input": { "expression": "user" } },
+    { "run": "dev.click", "input": { "selector": ".debug-console-toggle" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-console-children", "html": 1000 },
+      "expect": [{ "html": { "$contains": "\"Ada\"" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "debug.continue" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    { "run": "debug.removeAllWatches" },
+    // Source maps: a breakpoint in TypeScript stops the compiled JavaScript at the right line,
+    // and the stack shows the .ts file.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"const fs=require('fs');fs.mkdirSync('smap/src',{recursive:true});fs.mkdirSync('smap/dist',{recursive:true});fs.writeFileSync('smap/src/app.ts',\\\"interface P { x: number }\\\\n\\\\nfunction area(p: P): number {\\\\n  const twice = p.x * 2;\\\\n  return twice;\\\\n}\\\\n\\\\nconsole.log(area({ x: 3 }));\\\\n\\\");fs.writeFileSync('smap/dist/app.js',\\\"function area(p) {\\\\n  const twice = p.x * 2;\\\\n  return twice;\\\\n}\\\\nconsole.log(area({ x: 3 }));\\\\n//# sourceMappingURL=app.js.map\\\\n\\\");fs.writeFileSync('smap/dist/app.js.map',\\\"{\\\\\\\"version\\\\\\\": 3, \\\\\\\"sources\\\\\\\": [\\\\\\\"../src/app.ts\\\\\\\"], \\\\\\\"mappings\\\\\\\": \\\\\\\"AAEA,SAAS,KAAK,GAAc;AAC1B,QAAM,QAAQ,EAAE,IAAI;AACpB,SAAO;AACT;AAEA,QAAQ,IAAI,KAAK,EAAE,GAAG,EAAE,CAAC,CAAC;\\\\\\\", \\\\\\\"names\\\\\\\": []}\\\");\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "debug.setBreakpoint", "input": { "path": "smap/src/app.ts", "line": 4 } },
+    { "run": "debug.start", "input": { "program": "smap/dist/app.js" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "name": "area", "path": "smap/src/app.ts", "line": 4 }],
+        "breakpoints": [{ "line": 4, "verified": true }]
+      },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://editors/active", "expect": { "path": "smap/src/app.ts" }, "timeoutMs": 5000 },
+    { "run": "debug.evaluate", "input": { "expression": "p.x" }, "expect": { "value": "3" } },
+    { "run": "debug.runToCursor", "input": { "path": "smap/src/app.ts", "line": 5 } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "path": "smap/src/app.ts", "line": 5 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.stepOut" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "path": "smap/src/app.ts", "line": 8 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.stop" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    // Attach to a running Node program (started with --inspect); detaching leaves it running.
+    // `command node`: Git for Windows aliases node to winpty under TERM=xterm*, which refuses a
+    // background job's redirected input ("stdin is not a tty") and never starts it.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"const fs=require('fs');fs.mkdirSync('dbg',{recursive:true});fs.mkdirSync('.vscode',{recursive:true});fs.writeFileSync('dbg/loop.js',\\\"let n = 0;\\\\nfunction tick() {\\\\n  n += 1;\\\\n}\\\\nsetInterval(tick, 50);\\\\n\\\");fs.writeFileSync('.vscode/launch.json',\\\"{\\\\\\\"version\\\\\\\": \\\\\\\"0.2.0\\\\\\\", \\\\\\\"configurations\\\\\\\": [{\\\\\\\"name\\\\\\\": \\\\\\\"Attach\\\\\\\", \\\\\\\"type\\\\\\\": \\\\\\\"node\\\\\\\", \\\\\\\"request\\\\\\\": \\\\\\\"attach\\\\\\\", \\\\\\\"port\\\\\\\": 9339}]}\\\");\" && (command node --inspect=127.0.0.1:9339 dbg/loop.js > /dev/null 2>&1 &) && node ../setup/wait-port.mjs 9339",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "debug.setBreakpoint", "input": { "path": "dbg/loop.js", "line": 3 } },
+    { "run": "debug.start", "input": { "name": "Attach" }, "timeoutMs": 20000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "name": "tick", "path": "dbg/loop.js", "line": 3 }]
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "typeof n" },
+      "expect": { "value": "\"number\"" }
+    },
+    // The floating toolbar is over the window while debugging.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-float" },
+      "expect": [{ "display": "flex" }]
+    },
+    { "run": "debug.stop" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-float" },
+      "expect": [{ "display": "none" }]
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "sleep 0.5; node ../setup/kill-matching.mjs inspect=127.0.0.1:9339",
+        "timeoutMs": 20000
+      },
+      // Exit code 0: it was still running (the printed "was-running" can be missing from the
+      // output where Git Bash runs node through winpty, see kill-matching.mjs).
+      "expect": { "exitCode": 0 }
+    }
+  ]
+}

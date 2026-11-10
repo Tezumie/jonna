@@ -1,0 +1,54 @@
+// D112: the native Anthropic provider against tests/fixtures/mock-ollama.mjs (its /v1 routes):
+// streaming, adaptive thinking whose signed blocks go back, tool calls, prompt caching (breakpoints,
+// a system prompt that stays the same across requests, the IDE state in the messages), usage.
+{
+  "name": "anthropic",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": false } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          {
+            "id": "claude",
+            "name": "Claude",
+            "kind": "anthropic",
+            "baseUrl": "http://127.0.0.1:11999"
+          }
+        ]
+      }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "claude/claude-mock" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock.", "error": null }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "plan the work" },
+      "expect": { "answer": "Planned." }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "cache report" },
+      "expect": {
+        "answer": "Cache: auto=true system=true stableSystem=true thinkingBack=1 temperature=false state=true"
+      }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "usage": { "cached": 1000 },
+        "totals": { "requests": { "$gte": 4 }, "cacheRead": { "$gte": 4000 } }
+      }
+    }
+  ]
+}

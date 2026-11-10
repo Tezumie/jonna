@@ -1,0 +1,117 @@
+/* Keyboard shortcuts reference tab and its printout (extensions/keybindings/referenceView.ts). */
+@layer extensions {
+  .shortcuts-view {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    background: var(--bg-surface);
+    overflow: auto;
+  }
+  .shortcuts-toolbar {
+    position: absolute;
+    top: var(--space-5);
+    right: var(--space-6);
+  }
+  .shortcuts-print {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .shortcuts-body {
+    padding: var(--space-6);
+  }
+  .shortcuts-sheet-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+    padding-right: var(--space-12);
+  }
+  .shortcuts-sheet-title {
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .shortcuts-sheet-platform {
+    color: var(--fg-muted);
+  }
+  .shortcuts-columns {
+    columns: 3 280px;
+    column-gap: var(--space-8);
+  }
+  .shortcuts-section {
+    break-inside: avoid;
+    margin-bottom: var(--space-6);
+  }
+  .shortcuts-section-title {
+    margin: 0 0 var(--space-3);
+    padding-bottom: var(--space-2);
+    font-size: var(--text-md);
+    line-height: var(--text-md-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .shortcuts-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-2) var(--space-4);
+    margin: 0;
+    align-items: center;
+  }
+  .shortcuts-keys {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .shortcuts-or {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .shortcuts-label {
+    margin: 0;
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .shortcuts-print-page {
+    display: none;
+  }
+  @media print {
+    body.is-printing-shortcuts > :not(.shortcuts-print-page) {
+      display: none;
+    }
+    body.is-printing-shortcuts {
+      overflow: visible;
+      height: auto;
+      background: Canvas;
+    }
+    /* Paper is light whatever the theme: the system's light colors, not the theme's tokens. */
+    body.is-printing-shortcuts .shortcuts-print-page {
+      display: block;
+      padding: var(--space-4);
+      color-scheme: light;
+      background: Canvas;
+      color: CanvasText;
+    }
+    .shortcuts-print-page :is(h1, h2, dd, span, kbd) {
+      color: CanvasText;
+    }
+    .shortcuts-print-page .shortcuts-sheet-platform,
+    .shortcuts-print-page .shortcuts-or {
+      color: GrayText;
+    }
+    .shortcuts-print-page kbd {
+      background: Canvas;
+      border-color: GrayText;
+    }
+    .shortcuts-print-page .shortcuts-section-title {
+      border-bottom-color: GrayText;
+    }
+  }
+}

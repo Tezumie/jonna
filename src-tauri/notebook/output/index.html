@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Output</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--fg-default);
+        font-family: var(--font-ui, system-ui, sans-serif);
+        font-size: 13px;
+        overflow: hidden;
+      }
+      body {
+        padding: 4px 8px;
+      }
+      #out {
+        overflow-x: auto;
+      }
+      .note {
+        color: var(--fg-subtle);
+        font-style: italic;
+        margin: 2px 0;
+      }
+      pre.text {
+        margin: 0;
+        font-family: var(--font-mono, ui-monospace, monospace);
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: var(--accent-text);
+      }
+      table {
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border: 1px solid var(--border-subtle);
+        padding: 2px 6px;
+      }
+      /* Jupyter widgets' own variables, from the IDE's colors (they default to a light theme). */
+      :root {
+        --jp-widgets-color: var(--fg-default);
+        --jp-widgets-label-color: var(--fg-default);
+        --jp-widgets-readout-color: var(--fg-default);
+        --jp-widgets-font-size: 13px;
+        --jp-widgets-input-color: var(--fg-default);
+        --jp-widgets-input-background-color: var(--bg-input-raised);
+        --jp-widgets-input-border-color: var(--border-strong);
+        --jp-widgets-input-focus-border-color: var(--accent);
+        --jp-widgets-slider-active-handle-color: var(--accent);
+        --jp-widgets-slider-handle-border-color: var(--border-strong);
+        --jp-widgets-slider-handle-background-color: var(--bg-surface-raised);
+        --jp-widgets-slider-track-color: var(--border-strong);
+        --jp-layout-color0: var(--bg-surface);
+        --jp-layout-color1: var(--bg-surface);
+        --jp-layout-color2: var(--bg-surface-raised);
+        --jp-layout-color3: var(--bg-hover);
+        --jp-ui-font-color0: var(--fg-default);
+        --jp-ui-font-color1: var(--fg-default);
+        --jp-ui-font-color2: var(--fg-muted);
+        --jp-ui-font-color3: var(--fg-subtle);
+        --jp-content-font-color1: var(--fg-default);
+        --jp-border-color0: var(--border-strong);
+        --jp-border-color1: var(--border-strong);
+        --jp-border-color2: var(--border-subtle);
+        --jp-brand-color1: var(--accent);
+        --jp-ui-font-family: var(--font-ui);
+        --jp-code-font-family: var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="out"></div>
+    <script src="harden.js"></script>
+    <script src="output.js"></script>
+  </body>
+</html>

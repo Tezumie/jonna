@@ -1,0 +1,37 @@
+// m7.12: a shell task run through cmd.exe gets its command line as written (`/d /s /c "<line>"`,
+// passed verbatim by the IDE's own ConPTY spawner): double quotes reach cmd as quotes, a quoted
+// program and a quoted argument stay whole. Before, each `"` arrived as `\"`.
+{
+  "name": "tasks-m7-12",
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/tasks-m7-12.cjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "tasks.run",
+      "input": { "label": "cmd quotes" },
+      "expect": {
+        "exitCode": 0,
+        "output": { "$contains": "\"two words\"" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "tasks.run",
+      "input": { "label": "cmd quotes" },
+      "expect": { "output": { "$not": { "$contains": "\\\"two" } } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "tasks.run",
+      "input": { "label": "cmd quoted program" },
+      "expect": { "exitCode": 0, "output": { "$contains": "arg with spaces" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

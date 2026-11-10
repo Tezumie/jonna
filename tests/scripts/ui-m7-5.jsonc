@@ -1,0 +1,134 @@
+// D204, D237, D249: the Chats view's pages (its title bar's ⋯; D291: Agents and Usage are rows,
+// Sessions… is in ⋯), the main status bar's editor info (Ln/Col, indentation, encoding, EOL, language) and its setting.
+{
+  "name": "ui-m7-5",
+  "steps": [
+    { "run": "agent.showChats" },
+    // No pages under the lists any more, and no "+ Add …" rows: the headers' + adds.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-view .ch-row-add", "limit": 9, "html": 200 },
+      "expect": { "$not": { "$contains": "Add agent" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".view-actions button[aria-label='More']" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 12, "html": 3000 },
+      "expect": { "$length": 7 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 12, "html": 3000 },
+      "expect": { "$contains": "Tidy up memory" }
+    },
+    { "run": "dev.click", "input": { "selector": ".menu button.menu-item:nth-of-type(1)" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'one\\r\\ntwo\\r\\n' > status.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "status.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar .statusbar-item[data-id='editor.cursor']", "limit": 1 },
+      "expect": { "$contains": "Ln 1, Col 1" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar .statusbar-item[data-id='editor.eol']", "limit": 1 },
+      "expect": { "$contains": "CRLF" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar .statusbar-item[data-id='editor.encoding']", "limit": 1 },
+      "expect": { "$contains": "UTF-8" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar .statusbar-item[data-id='editor.indentation']",
+        "limit": 1
+      },
+      "expect": { "$contains": "Spaces: " }
+    },
+    {
+      "run": "editor.selectIndentation",
+      "input": { "path": "status.txt", "choice": "tabs" },
+      "expect": { "indentation": { "insertSpaces": false } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar .statusbar-item[data-id='editor.indentation']",
+        "limit": 1
+      },
+      "expect": { "$contains": "Tab size: " },
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "workbench.statusBar.editorInfo", "value": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar .statusbar-item[data-id='editor.cursor']", "limit": 1 },
+      "expect": { "$contains": "\"display\":\"none\"" },
+      "timeoutMs": 3000
+    },
+    { "run": "settings.reset", "input": { "key": "workbench.statusBar.editorInfo" } },
+    // D205: one Customize tab for the agent's set-up pages; every way in opens it at its section.
+    { "run": "agent.customize", "input": { "section": "rules" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize .customize-chip", "limit": 10 },
+      // Models, Agents, Rules, Skills, Commands, Plugins (D358), Auto-approve, MCP, Docs.
+      "expect": { "$length": 9 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-chip.is-active[data-section='rules']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "agent.showSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-chip.is-active[data-section='models']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-body[data-section='agents'] .ac-page" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.setValue",
+      "input": { "selector": ".customize-search-input", "value": "openai" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-chip:not([hidden])", "limit": 10 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"agent.customize\"" } },
+    { "run": "settings.open", "input": { "category": "Agent" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-link-row[data-command]", "limit": 10 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    }
+  ]
+}

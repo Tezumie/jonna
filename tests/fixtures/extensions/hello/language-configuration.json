@@ -1,0 +1,6 @@
+// VS Code's language configuration format (D200): comments, brackets, auto-closing pairs.
+{
+  "comments": { "lineComment": "--" },
+  "brackets": [["{", "}"]],
+  "autoClosingPairs": [["{", "}"]]
+}

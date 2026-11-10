@@ -1,0 +1,136 @@
+// D246: helpers without a window (headless, the default; agent.isolatedHelpers.window off): delegate
+// with isolated starts the helper in a git worktree of its own, but its chat runs here in this
+// window. The mock helper (tests/fixtures/mock-ollama.mjs, headlessScripted) writes a file,
+// searches and finds it, is refused an IDE command on the window's folder, commits with
+// run_command and checks its PORT; its report says whether every tool worked in its worktree, and
+// it comes back to the chat that started it. Then: the main folder is untouched, the branch has
+// the commit, the worktree overview and ide://agent/helpers show it as headless, its chat opens
+// here, Review / Merge work, and the window mode still refuses in a test run (no windows).
+// Against tests/fixtures/mock-ollama.mjs. Needs git.
+{
+  "name": "helpers-headless-m7-16",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    // Starting a helper asks first; full access answers for the user here.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+
+    // ---- A headless helper: started, works in its worktree, reports back ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate headless work", "wait": true },
+      "expect": { "answer": { "$contains": "it runs in this window" } },
+      "timeoutMs": 90000
+    },
+    {
+      "state": "ide://agent/helpers",
+      "expect": {
+        "helpers": [
+          {
+            "agent": "general",
+            "headless": true,
+            "branch": "agent/general-headless-task-write-helper",
+            "state": "done",
+            "files": 1
+          }
+        ]
+      },
+      "timeoutMs": 90000
+    },
+    // Its report reached the chat that started it, and every tool worked in the worktree.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Helper reported: ok" } },
+      "timeoutMs": 90000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Report from helper General purpose" } }
+    },
+    // The main folder never saw its file; the branch has its commit.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test ! -e helper.txt && git log -1 --format=%s agent/general-headless-task-write-helper",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "helper-commit" } },
+      "timeoutMs": 30000
+    },
+    // The worktree overview knows it as headless (no window).
+    {
+      "state": "ide://agent/worktrees",
+      "expect": {
+        "agents": [{ "branch": "agent/general-headless-task-write-helper", "headless": true }]
+      },
+      "timeoutMs": 10000
+    },
+    // Its chat opens here (a thread tab), with the helper's own report in it.
+    {
+      "run": "agent.helpers",
+      "input": { "helper": "agent/general-headless-task-write-helper", "action": "open" },
+      "expect": { "session": { "$exists": true } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "helper-ok" } },
+      "timeoutMs": 10000
+    },
+    // Review its changes (the compare page) and merge them (staged in this folder).
+    {
+      "run": "agent.helpers",
+      "input": { "helper": "agent/general-headless-task-write-helper", "action": "review" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "agent.helpers",
+      "input": { "helper": "agent/general-headless-task-write-helper", "action": "merge" },
+      "expect": { "applied": ["helper.txt"] },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.stopHelper",
+      "input": { "helper": "agent/general-headless-task-write-helper" },
+      "expect": { "stopped": false }
+    },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/general-headless-task-write-helper", "action": "delete" },
+      "expect": { "deleted": "agent/general-headless-task-write-helper" },
+      "timeoutMs": 20000
+    },
+
+    // ---- The window mode: a window per helper (none opens in a test run, so it's removed) ----
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.window", "value": true } },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate isolated work", "wait": true },
+      "expect": { "answer": { "$contains": "window didn't open" } },
+      "timeoutMs": 90000
+    },
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.window", "value": false } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } }
+  ]
+}

@@ -1,0 +1,130 @@
+// D222: worktree agents' liveness from the window registry (a window this one didn't start, or
+// can't know since it restarted: no running window has the worktree's folder → Stopped, not
+// "Setting up"), the overview reading only the chats that were saved since; Claude Code's /ide:
+// Send selection in the editor's menu and on a key while the integration runs, the editor's file
+// sent with its selection. Against tests/fixtures/mock-ollama.mjs. Needs git.
+{
+  "name": "agent-worktrees-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- Worktree agents: no window has the worktree open → Stopped ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Check the liveness", "model": "ollama/mock-coder:1b", "setup": false },
+      // Test runs don't start windows.
+      "expect": { "branch": "agent/check-the-liveness", "spawned": false },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/worktrees",
+      "expect": {
+        "agents": [{ "branch": "agent/check-the-liveness", "progress": { "state": "stopped" } }]
+      },
+      "timeoutMs": 10000
+    },
+    // Read again at once: the chat's stamp hasn't moved, the answer stays.
+    {
+      "state": "ide://agent/worktrees",
+      "expect": {
+        "agents": [{ "branch": "agent/check-the-liveness", "progress": { "state": "stopped" } }]
+      }
+    },
+    { "run": "agent.worktreeAgents" },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".worktree-agents-page [data-branch='agent/check-the-liveness'] .ai-row-detail"
+      },
+      "expect": { "$contains": "Stopped" },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/check-the-liveness", "action": "delete" },
+      "expect": { "deleted": "agent/check-the-liveness" },
+      "timeoutMs": 20000
+    },
+
+    // ---- Claude Code /ide: Send selection in the editor's menu and on a key ----
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "wait": 500 },
+    // Off: no menu entry, the key's condition doesn't hold.
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .view-lines", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 8000 },
+      "expect": { "$not": { "$contains": "Send selection to Claude Code" } }
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "run": "mcp.claudeCodeIntegration",
+      "input": { "enabled": true },
+      "expect": { "enabled": true }
+    },
+    { "run": "editor.select", "input": { "startLine": 2, "endLine": 3 } },
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .view-lines", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 8000 },
+      "expect": { "$contains": "Send selection to Claude Code" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    // What the menu runs: the editor's file, so its selection (not line 1).
+    { "run": "editor.select", "input": { "startLine": 2, "endLine": 3 } },
+    {
+      "run": "mcp.sendSelectionToClaudeCode",
+      "input": { "path": "README.md" },
+      "expect": {
+        "sent": 0,
+        "lineStart": 1,
+        "lineEnd": 2,
+        "filePath": { "$contains": "README.md" }
+      }
+    },
+    // Another file named with lines: those lines.
+    {
+      "run": "mcp.sendSelectionToClaudeCode",
+      "input": { "path": "notes.txt", "startLine": 1, "endLine": 1 },
+      "expect": { "sent": 0, "lineStart": 0, "lineEnd": 0 }
+    },
+    // The key: Ctrl+K Alt+K (Cmd+K Alt+K on macOS), only while the integration runs.
+    {
+      "state": "ide://keybindings",
+      "expect": { "$not": { "conflicts": { "$contains": "mcp.sendSelectionToClaudeCode" } } }
+    },
+    {
+      "run": "mcp.claudeCodeIntegration",
+      "input": { "enabled": false },
+      "expect": { "enabled": false }
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+/* A turn's file changes as one card (D154; extensions/agent/view/changes.ts). Moved out of
+   agent.css as it was (D394); the bar above the message box stays there. */
+@layer extensions {
+  /* A turn's file changes as one card (D154): a header line, one row per file when open. */
+  .agent-changes-card {
+    display: flex;
+    flex-direction: column;
+    margin-top: -12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    overflow: hidden;
+    font-size: var(--text-md);
+  }
+  .agent-changes-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 36px;
+  }
+  .agent-changes-toggle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    align-self: stretch;
+    padding: 0 var(--space-3) 0 var(--space-5);
+    color: var(--fg-default);
+    text-align: left;
+  }
+  .agent-changes-toggle:hover {
+    background: var(--bg-hover);
+  }
+  .agent-changes-toggle > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-muted);
+  }
+  .agent-changes-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-changes-stat {
+    flex: none;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-changes-chevron {
+    flex: none;
+    display: inline-flex;
+    margin-left: auto;
+    color: var(--fg-subtle);
+  }
+  .agent-changes-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* The toggle's hover reaches the card's edge; the buttons keep their own room (D160). */
+  .agent-changes-actions {
+    flex: none;
+    display: flex;
+    gap: var(--space-1);
+    padding-right: var(--space-2);
+  }
+  .agent-changes-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--space-1) 0;
+  }
+  .agent-changes-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 30px;
+    padding: 0 var(--space-3) 0 var(--space-5);
+  }
+  .agent-changes-row:hover {
+    background: var(--bg-hover);
+  }
+  .agent-changes-file {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 0;
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+  }
+  .agent-changes-file > .icon {
+    flex: none;
+    align-self: center;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-changes-name {
+    flex: none;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-changes-dir {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-changes-file:hover .agent-changes-name {
+    text-decoration: underline;
+  }
+  .agent-changes-tag {
+    flex: none;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-changes-tag.is-deleted {
+    color: var(--diff-removed-fg);
+  }
+  .agent-changes-row-actions {
+    flex: none;
+    display: flex;
+  }
+  .agent-changes-act {
+    width: 24px;
+    height: 24px;
+    color: var(--fg-muted);
+  }
+  .agent-changes-act:hover {
+    color: var(--fg-default);
+  }
+}

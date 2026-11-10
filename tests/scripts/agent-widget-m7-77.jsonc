@@ -1,0 +1,150 @@
+// D334: inline widgets, as Claude Code's show_widget. The agent reads widget_guide, then draws an
+// SVG chart and an HTML widget whose button calls sendPrompt. Each is a sandboxed frame on the
+// output origin, sized to its content; a click inside the HTML one sends its message to the chat
+// as the user's (marked as from the widget), and a second click right after is refused (rate
+// limit). The chart opens full size in a tab from its card's button, once.
+{
+  "name": "agent-widget-m7-77",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgI widgets", "wait": false }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgI drew two widgets." } },
+      "timeoutMs": 30000
+    },
+    // The guide was read first; both widgets are cards, not rows of the work group.
+    { "state": "ide://agent/session", "expect": { "items": { "$contains": "widget_guide" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-widget", "limit": 5, "html": 300 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-widget.is-svg iframe.agent-widget-frame",
+        "html": 300
+      },
+      "expect": [{ "html": { "$contains": "sandbox=\"allow-scripts\"" } }]
+    },
+    // Both frames drew and took their content's height.
+    {
+      "state": "ide://agent/widgets",
+      "expect": {
+        "widgets": [
+          { "title": "pkgi_chart", "mode": "svg", "rendered": true, "height": { "$gte": 40 } },
+          { "title": "pkgi_counter", "mode": "html", "rendered": true, "height": { "$gte": 20 } }
+        ]
+      },
+      "timeoutMs": 15000,
+      "save": "w",
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- sendPrompt: a click in the HTML widget sends its message as the user's ----
+    {
+      "run": "dev.clickInWidget",
+      "input": { "session": "${chat.session}", "item": "${w.widgets.1.item}", "selector": "#ask" },
+      "expect": { "clicked": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "PkgI got the widget's message." } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "From Pkgi counter" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-user-wrap .agent-chip",
+        "limit": 5,
+        "html": 300
+      },
+      "expect": [{ "html": { "$contains": "From Pkgi counter" } }],
+      "timeoutMs": 3000
+    },
+    { "state": "ide://agent/widgets", "expect": { "widgets": [{}, { "prompts": 1 }] } },
+    // Two clicks in a row: the second is refused (one message per 1.5 s). After the first
+    // message's 1.5 s, so the first of them counts.
+    { "wait": 1600 },
+    {
+      "run": "dev.clickInWidget",
+      "input": { "session": "${chat.session}", "item": "${w.widgets.1.item}", "selector": "#ask" },
+      "expect": { "clicked": true }
+    },
+    {
+      "run": "dev.clickInWidget",
+      "input": { "session": "${chat.session}", "item": "${w.widgets.1.item}", "selector": "#ask" },
+      "expect": { "clicked": true }
+    },
+    { "wait": 500 },
+    { "state": "ide://agent/widgets", "expect": { "widgets": [{}, { "prompts": 2 }] } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle" },
+      "timeoutMs": 30000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- Open in a tab: the card's button, then the command again reuses the tab ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .agent-widget.is-svg .agent-widget-action" }
+    },
+    {
+      "state": "ide://agent/widgets",
+      "expect": { "tabs": [{ "item": "${w.widgets.0.item}", "title": "pkgi_chart" }] },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.openWidget",
+      "input": { "session": "${chat.session}", "item": "${w.widgets.0.item}" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "state": "ide://agent/widgets", "expect": { "tabs": { "$length": 1 } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-widget-page iframe.agent-widget-frame.is-fill" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- Copy and save: the code as it was, a .svg file ----
+    {
+      "run": "agent.copyWidgetCode",
+      "input": { "session": "${chat.session}", "item": "${w.widgets.0.item}" },
+      "expect": { "chars": { "$gte": 100 } }
+    },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "agent.saveWidget",
+      "input": {
+        "session": "${chat.session}",
+        "item": "${w.widgets.0.item}",
+        "path": "${ws.root}/../pkgi_chart.svg"
+      },
+      "expect": { "path": { "$contains": "pkgi_chart.svg" } }
+    }
+  ]
+}

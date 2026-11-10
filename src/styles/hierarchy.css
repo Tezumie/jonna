@@ -1,0 +1,85 @@
+@layer extensions {
+  /* The hierarchy tab (call and type hierarchies): a one-line header over a lazy tree. */
+  .hierarchy-view {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .hierarchy-header {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-3) var(--space-4);
+  }
+  .hierarchy-header:empty {
+    display: none;
+  }
+  .hierarchy-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .hierarchy-server {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  /* "Results may be outdated" (m7.12): a quiet bar with Refresh, as VS Code shows. */
+  .hierarchy-outdated {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-surface-raised);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .hierarchy-outdated[hidden] {
+    display: none;
+  }
+  .hierarchy-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .hierarchy-body[hidden] {
+    display: none;
+  }
+  .hierarchy-row {
+    padding-left: calc(var(--depth, 0) * 18px + var(--space-2));
+  }
+  .hierarchy-row .icon {
+    flex: none;
+  }
+  .hierarchy-name {
+    flex: none;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hierarchy-name.is-deprecated {
+    text-decoration: line-through;
+  }
+  .hierarchy-detail {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .hierarchy-row .search-count {
+    margin-right: var(--space-2);
+  }
+  .hierarchy-view > .empty-state {
+    flex: 1;
+  }
+}

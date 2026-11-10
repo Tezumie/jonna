@@ -1,0 +1,181 @@
+// D215: external agents from the ACP agent registry. A local registry (tests/fixtures/setup/
+// acp-registry-m7-6.mjs) lists a binary agent (a tiny archive around tools/mock-acp.mjs, with its
+// SHA-256), one whose SHA-256 is wrong, an npx one and a GPL one (left out). The gallery on the
+// Models page shows them with the bundled agents; Install asks first (the dialog names where it
+// comes from and its license), downloads, checks and unpacks it; then it's acp/<name> in the
+// model menu and answers in a chat. A wrong checksum installs nothing; Remove deletes it.
+{
+  "name": "acp-registry-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // The bundled list before any fetch: Athas's set and more.
+    {
+      "run": "agent.registry.list",
+      "expect": {
+        "source": { "$exists": true },
+        "agents": { "$contains": "\"id\":\"cursor\"" }
+      }
+    },
+    {
+      "run": "agent.registry.list",
+      "input": { "query": "kimi" },
+      "expect": { "agents": { "$contains": "Kimi CLI" } }
+    },
+    {
+      "run": "terminal.start",
+      "input": { "command": "node ../setup/acp-registry-m7-6.mjs 11994", "waitMs": 15000 },
+      "expect": { "running": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.registry.refresh",
+      "input": { "url": "http://127.0.0.1:11994/registry.json" },
+      "expect": { "ok": true, "source": "registry", "agents": 3 },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/registry",
+      "expect": {
+        "skipped": { "$contains": "copyleft" },
+        "agents": { "$contains": "\"checksumVerified\":true" }
+      }
+    },
+    // ---- The gallery ----
+    { "run": "agent.registry.browse" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-card[data-agent-id='mock-binary']" },
+      "expect": { "$contains": "Mock binary agent" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-card[data-agent-id='mock-binary'] .acp-card-state" },
+      "expect": { "$contains": "checksum verified" }
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".acp-gallery-search", "text": "tampered" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-card" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".acp-gallery-search", "text": "" }
+    },
+    // Details: repository, license, authors.
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".acp-card[data-agent-id='mock-binary'] .acp-card-actions .button:last-child"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".acp-card[data-agent-id='mock-binary'] .acp-card-details dd",
+        "limit": 10
+      },
+      "expect": { "$contains": "Test Authors" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".acp-card[data-agent-id='mock-binary'] .acp-card-details dd",
+        "limit": 10
+      },
+      "expect": { "$contains": "SHA-256 listed" }
+    },
+    // Scrolled to the gallery, in the dark and the light theme.
+    { "run": "agent.registry.browse" },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-gallery-search:focus" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "ui.toggleTheme" },
+    { "run": "agent.registry.browse" },
+    { "wait": 800 },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "ui.toggleTheme" },
+    // ---- Install from the card: the dialog first ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".acp-card[data-agent-id='mock-binary'] .button-primary" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$contains": "127.0.0.1:11994" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$contains": "checked against the registry's SHA-256" },
+      "print": true
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog-actions .button-primary" } },
+    {
+      "state": "ide://agent/registry",
+      "expect": {
+        "installed": { "$contains": "\"model\":\"acp/Mock binary agent\",\"verified\":true" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-row[data-registry-id='mock-binary']" },
+      "expect": { "$contains": "Installed 1.0.0" },
+      "timeoutMs": 5000
+    },
+    // ---- A wrong checksum installs nothing ----
+    {
+      "run": "agent.registry.install",
+      "input": { "id": "mock-bad-sha" },
+      "expectError": "SHA-256",
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/registry",
+      "expect": { "installed": { "$not": { "$contains": "mock-bad-sha" } } }
+    },
+    // ---- It answers in a chat, like the presets ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock binary agent" },
+      "expect": { "model": "acp/Mock binary agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Answer with the text only, please", "wait": true },
+      "expect": { "answer": { "$contains": "Write it with the mock agent" } },
+      "timeoutMs": 60000
+    },
+    // ---- Remove: gone from the list and the disk ----
+    {
+      "run": "agent.registry.uninstall",
+      "input": { "id": "mock-binary" },
+      "expect": { "removed": true }
+    },
+    {
+      "state": "ide://agent/registry",
+      "expect": { "installed": { "$length": 0 } }
+    },
+    {
+      "run": "agent.registry.list",
+      "input": { "query": "mock binary" },
+      "expect": { "agents": { "$contains": "\"installed\":null" } }
+    }
+  ]
+}

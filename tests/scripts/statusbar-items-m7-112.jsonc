@@ -1,0 +1,72 @@
+// D383: status bar items hidden one by one from the bar's right-click menu (VS Code's). Every item
+// is listed by name with a check; right-clicking an item offers to hide it; the choice is kept in
+// workbench.statusBar.hidden and shows in ide://statusbar.
+{
+  "name": "statusbar-items-m7-112",
+  "steps": [
+    { "run": "editor.openFile", "input": { "path": "README.md" }, "timeoutMs": 10000 },
+    { "wait": 500 },
+    {
+      "state": "ide://statusbar",
+      "expect": {
+        "$contains": "\"id\":\"editor.cursor\",\"name\":\"Line and column\""
+      },
+      "print": true
+    },
+    // Right-click the cursor item: "Hide "Line and column"" first, then the checklist.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "limit": 1, "html": 6000 },
+      "expect": [{ "html": { "$contains": "Hide \"Line and column\"" } }],
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".menu button.menu-item" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "html": 10 },
+      "expect": [{ "display": "none" }],
+      "print": true
+    },
+    {
+      "state": "ide://settings",
+      "expect": {
+        "$contains": "\"key\":\"workbench.statusBar.hidden\",\"value\":[\"editor.cursor\"]"
+      }
+    },
+    // Hidden items stay listed, unchecked; Show all brings them back.
+    { "run": "dev.click", "input": { "selector": ".statusbar", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "limit": 1, "html": 6000 },
+      // The hidden item is listed (to bring it back); items showing nothing now aren't.
+      "expect": [
+        {
+          "html": {
+            "$contains": "Line and column",
+            "$not": { "$contains": "Dev container progress" }
+          }
+        }
+      ],
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    { "run": "statusBar.setItemHidden", "input": { "all": true, "hidden": false } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "html": 10 },
+      "expect": [{ "display": { "$not": "none" } }]
+    },
+    // The command needs an id or all.
+    { "run": "statusBar.setItemHidden", "input": { "hidden": true }, "expectError": true }
+  ]
+}

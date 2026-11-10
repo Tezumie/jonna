@@ -1,0 +1,186 @@
+// D201: per-language settings ("[markdown]": {…}) applied to that language's editors and saves,
+// edited through settings.set / settings.reset `language` and the settings search's @lang:;
+// files.associations feeding language detection; explorer file nesting.
+{
+  "name": "settings-m7-2",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# Title\\nplain line\\n' > doc.mdx && printf 'export const a = 1;\\n' > nest-a.ts && printf 'exports.a = 1;\\n' > nest-a.js && printf '{}\\n' > nest-a.js.map",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    // ---- files.associations: *.mdx opens as Markdown ----
+    { "run": "editor.openFile", "input": { "path": "doc.mdx" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "doc.mdx", "language": "plaintext" },
+      "timeoutMs": 5000
+    },
+    // Changing the setting switches the open file too.
+    {
+      "run": "settings.set",
+      "input": { "key": "files.associations", "value": { "*.mdx": "markdown" } }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "doc.mdx", "language": "markdown" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "associations": { "*.mdx": "markdown" } }
+    },
+    // ---- A language's own tab size: Markdown 3; everything else the folder's (2, .vscode) ----
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.tabSize", "value": 3, "language": "markdown" },
+      "expect": { "key": "editor.tabSize", "value": 3, "language": "markdown" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "doc.mdx", "indentation": { "tabSize": 3 } },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "languages": { "markdown": { "editor.tabSize": 3 } } }
+    },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "notes.txt", "indentation": { "tabSize": 2 } },
+      "timeoutMs": 5000
+    },
+    // ---- A save-time setting per language: trailing whitespace trimmed in Markdown only ----
+    {
+      "run": "settings.set",
+      "input": { "key": "files.trimTrailingWhitespace", "value": true, "language": "markdown" }
+    },
+    { "run": "editor.openFile", "input": { "path": "doc.mdx" } },
+    { "run": "editor.insertText", "input": { "text": "trailing   \n" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -q 'trailing   ' doc.mdx && echo KEPT || echo TRIMMED",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "TRIMMED" } },
+      "timeoutMs": 20000
+    },
+    // ---- The settings search's @lang: shows and edits the language's block ----
+    { "run": "settings.open", "input": { "query": "@lang:markdown tab size" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-page-title", "html": 400 },
+      "expect": [{ "html": { "$contains": "for markdown files" } }],
+      "timeoutMs": 4000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row.is-modified[data-key='editor.tabSize']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    // Typing a value in the row writes the block, not the plain setting.
+    {
+      "run": "dev.setValue",
+      "input": { "selector": ".setting-row[data-key='editor.tabSize'] input", "value": "6" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "languages": { "markdown": { "editor.tabSize": 6 } } },
+      "timeoutMs": 4000
+    },
+    {
+      "run": "settings.reset",
+      "input": { "key": "editor.tabSize", "language": "markdown" },
+      "expect": { "reset": ["editor.tabSize"], "language": "markdown" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": {
+        "languages": {
+          "markdown": {
+            "editor.tabSize": { "$exists": false },
+            "files.trimTrailingWhitespace": true
+          }
+        }
+      }
+    },
+    {
+      "run": "settings.reset",
+      "input": { "key": "files.trimTrailingWhitespace", "language": "markdown" }
+    },
+    { "run": "settings.reset", "input": { "key": "files.associations" } },
+
+    // ---- Explorer file nesting: nest-a.js and nest-a.js.map under nest-a.ts ----
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "settings.set", "input": { "key": "explorer.fileNesting.enabled", "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-nest-parent[data-path$='nest-a.ts']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 6000
+    },
+    // explorer.fileNesting.expand (on): the nested files show at once, one level in.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".explorer-tree .vlist-row[data-path$='nest-a.js.map'][aria-level='2']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    // A click on the name opens the file; the chevron folds the nested files away.
+    {
+      "run": "dev.click",
+      // The row (it's kept on re-render; the name inside is replaced on mousedown).
+      "input": { "selector": ".explorer-tree .vlist-row[data-path$='nest-a.ts']", "x": 0.6 }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "nest-a.ts" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".explorer-tree .vlist-row[data-path$='nest-a.ts'] [data-tree-twistie]"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row[data-path$='nest-a.js.map']" },
+      "expect": []
+    },
+    // Revealing a nested file opens its parent.
+    { "run": "explorer.reveal", "input": { "path": "nest-a.js.map" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected[data-path$='nest-a.js.map']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    // Off again: the files are listed side by side.
+    { "run": "settings.set", "input": { "key": "explorer.fileNesting.enabled", "value": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".explorer-tree .vlist-row[data-path$='nest-a.js.map'][aria-level='1']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 6000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-nest-parent" },
+      "expect": []
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

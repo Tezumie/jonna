@@ -1,0 +1,38 @@
+{
+  // Read like VS Code's: "Run task…" lists these.
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "say done", "type": "shell", "command": "echo", "args": ["task-ran"] },
+    {
+      "label": "serve",
+      "type": "shell",
+      "command": "node tools/serve.mjs 11995",
+      "isBackground": true
+    },
+    {
+      "label": "check",
+      "type": "shell",
+      "command": "node tools/fake-tsc.mjs",
+      "problemMatcher": "$tsc",
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "env",
+      "type": "process",
+      "command": "node",
+      "args": ["-e", "console.log('env:' + process.env.IDE_T)"],
+      "options": { "env": { "IDE_T": "from-env" } }
+    },
+    { "label": "chain", "dependsOn": ["say done", "env"], "dependsOrder": "sequence" },
+    {
+      "label": "greet",
+      "type": "process",
+      "command": "node",
+      "args": ["-e", "console.log('greetings ' + process.argv[1])", "${input:who}"],
+      "presentation": { "panel": "dedicated" }
+    }
+  ],
+  "inputs": [
+    { "id": "who", "type": "promptString", "description": "Who to greet", "default": "world" }
+  ]
+}

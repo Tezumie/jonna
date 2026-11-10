@@ -1,0 +1,265 @@
+// D210: Source control's Graph as its own resizable section (below Changes, above the Git tools
+// sections; the only one with Git tools off), VS Code's Outgoing / Incoming changes rows with
+// their counts (a dashed node, expanding to the files, a file opening its diff), the lanes in the
+// current branch's / upstream's colors, ref chips by kind, and the activity bar badge past 99.
+// A local bare repository is the remote; another clone pushes to it so the branch is 1 behind
+// and 1 ahead. Needs `git` on PATH.
+{
+  "name": "scm-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && git add -A && git commit -qm Base && rm -rf ../scm76-remote.git ../scm76-other && git init -q --bare ../scm76-remote.git && git remote add origin ../scm76-remote.git && git push -q -u origin main && git clone -q -b main ../scm76-remote.git ../scm76-other && (cd ../scm76-other && git config user.email up@example.com && git config user.name Up && git config commit.gpgsign false && echo up > up.txt && git add up.txt && git commit -qm 'Upstream change' && git push -q) && echo mine > mine.txt && git add mine.txt && git commit -qm 'Local change' && git fetch -q",
+        "timeoutMs": 40000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 50000
+    },
+    { "run": "git.refresh" },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "head": "main", "ahead": 1, "behind": 1 } },
+      "timeoutMs": 10000
+    },
+    { "run": "git.showView" },
+
+    // The Graph is a section of Source control, open by default, first of the sections (the Git
+    // tools extension's come after it), and never an activity bar icon.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".view[data-view='scm.view'] > .view-section",
+        "limit": 2,
+        "html": 120
+      },
+      "expect": [
+        { "html": { "$contains": "data-section-id=\"scm.graph\"" } },
+        { "html": { "$contains": "data-section-id=\"git." } }
+      ],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'].is-collapsed" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-item[data-view-id='scm.graph']" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .view-section-title" },
+      "expect": [{ "html": { "$contains": "Graph" } }]
+    },
+    // The Changes tree no longer holds the history.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] > .view-main .scm-row[data-commit]" },
+      "expect": { "$length": 0 }
+    },
+
+    // Outgoing and incoming changes: rows with their counts, dashed nodes.
+    {
+      "state": "ide://git/graph",
+      "expect": { "shown": true, "outgoing": 1, "incoming": 1, "commits": { "$gte": 3 } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-sync='outgoing']", "html": 3000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Outgoing changes</span><span class=\"search-count scm-sync-badge\">1"
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-sync='incoming']", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Incoming changes" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .scm-dot.is-sync" },
+      "expect": { "$length": 2 }
+    },
+    // The outgoing row sits right above HEAD's commit, in the current branch's color; the
+    // upstream's commit and the fork are in the remote's.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".scm-row[data-sync='outgoing'] + .scm-row[data-commit]",
+        "html": 4000
+      },
+      "expect": [{ "html": { "$contains": "Local change" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-sync='outgoing'] .scm-dot.scm-lane-ref" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-sync='incoming'] .scm-dot.scm-lane-remote" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-commit] .scm-dot.is-head.scm-lane-ref" },
+      "expect": { "$length": 1 }
+    },
+    // Ref chips by kind: the current branch, the remote branch.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-commit] .scm-ref.is-head" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-commit] .scm-ref.is-remote" },
+      "expect": { "$length": 1 }
+    },
+
+    // Expanded, a sync row lists the files; the commands say the same and open a file's diff.
+    { "run": "dev.click", "input": { "selector": ".scm-row[data-sync='outgoing']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .scm-file-name" },
+      "expect": [{ "html": { "$contains": "mine.txt" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.showOutgoingChanges",
+      "expect": {
+        "upstream": "origin/main",
+        "commits": [{ "subject": "Local change" }],
+        "files": [{ "path": "mine.txt", "status": "A" }]
+      }
+    },
+    {
+      "run": "git.showIncomingChanges",
+      "input": { "path": "up.txt" },
+      "expect": { "commits": [{ "subject": "Upstream change" }], "files": [{ "path": "up.txt" }] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-active", "html": 600 },
+      "expect": { "$contains": "up.txt" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.showIncomingChanges",
+      "input": { "path": "nope.txt" },
+      "expectError": "don't change"
+    },
+
+    // Resizable: the section's height is the command's (the sash runs it); collapsed, it stays so.
+    { "run": "view.resizeSection", "input": { "id": "scm.graph", "height": 200 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] > .view-section-body" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$gte": 0 }, { "$gte": 1 }, 200] }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] > .sash" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "view.toggleSection",
+      "input": { "id": "scm.graph", "collapsed": true },
+      "expect": { "collapsed": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'].is-collapsed" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "git.revealHeadInGraph", "expect": { "revealed": true }, "timeoutMs": 5000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'].is-collapsed" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": false, "inline": true } },
+
+    // Git tools off: the Graph is the only section below Changes.
+    { "run": "extensions.disable", "input": { "id": "bundled.gittools" } },
+    {
+      "state": "ide://extensions?id=bundled.gittools",
+      "expect": { "extensions": [{ "status": "disabled" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] > .view-section", "html": 120 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "extensions.enable", "input": { "id": "bundled.gittools" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] > .view-section", "limit": 6 },
+      "expect": { "$length": 5 },
+      "timeoutMs": 8000
+    },
+
+    // In sync after a pull and a push: no sync rows.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git pull -q --rebase && git push -q", "timeoutMs": 30000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    { "run": "git.refresh" },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "ahead": 0, "behind": 0 } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://git/graph",
+      "expect": { "outgoing": null, "incoming": null },
+      "timeoutMs": 8000
+    },
+
+    // Activity bar badge: four digits fit, then 9999+ (the badge counts every pending change).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p many && for i in $(seq 1 1234); do echo $i > many/f$i.txt; done",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    { "run": "git.refresh" },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-item[data-view-id='scm.view'] .activitybar-badge" },
+      "expect": [
+        {
+          "html": { "$contains": ">1234<" },
+          "className": { "$contains": "is-wide" },
+          // Inside the 36px icon.
+          "box": [{ "$gte": 0 }, { "$gte": 0 }, { "$lte": 34 }, 16]
+        }
+      ],
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-item[data-view-id='scm.view']" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$gte": 0 }, 36, 36] }]
+    }
+  ]
+}

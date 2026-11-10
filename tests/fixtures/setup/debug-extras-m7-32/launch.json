@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "App",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg32/app.js"
+    },
+    {
+      "name": "Mock targets",
+      "type": "mock",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg32/app.js",
+      "debugAdapter": { "command": "node", "args": ["${workspaceFolder}/../setup/mock-dap.mjs"] }
+    }
+  ]
+}

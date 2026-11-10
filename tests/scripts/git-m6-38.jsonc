@@ -1,0 +1,132 @@
+// D139: commit graph, worktrees, interactive rebase (the editor tab) and sign-in prompts (askpass,
+// against the mock dev server's /git/ remote). Needs `git` on PATH.
+{
+  "name": "git-m6-38",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git add -A && git commit -qm 'Initial commit' && for n in a b c; do echo $n > $n.txt && git add $n.txt && git commit -qm \"add $n\"; done && git switch -qc side && echo s > s.txt && git add s.txt && git commit -qm 'on side' && git switch -q -",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.refresh" },
+
+    // The Commits section draws the graph (current branch: 4 commits).
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-graph .scm-dot", "limit": 20 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 5000
+    },
+    // All branches: the side branch's commit too, in a second lane.
+    {
+      "run": "git.toggleGraphAllBranches",
+      "input": { "value": true },
+      "expect": { "allBranches": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-graph .scm-dot", "limit": 20 },
+      "expect": { "$length": 5 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-graph-tree", "html": 20000 },
+      "expect": [{ "html": { "$contains": "on side" } }]
+    },
+    { "run": "git.toggleGraphAllBranches", "input": { "value": false } },
+
+    // Worktrees: one for a new branch next to the repository, listed, then removed.
+    {
+      "run": "git.createWorktree",
+      "input": { "branch": "hotfix" },
+      "expect": { "branch": "hotfix", "created": { "$contains": "sample.hotfix" } }
+    },
+    {
+      "run": "git.worktrees",
+      "expect": { "worktrees": [{ "main": true }, { "branch": "hotfix" }] }
+    },
+    {
+      "run": "git.deleteWorktree",
+      "input": { "path": "../sample.hotfix" },
+      "expect": { "deleted": "../sample.hotfix" }
+    },
+    { "run": "git.worktrees", "expect": { "worktrees": { "$length": 1 } } },
+
+    // Interactive rebase in its tab: reword the oldest of the last three, drop the newest.
+    { "run": "git.rebaseInteractive", "input": { "base": "HEAD~3" }, "expect": { "opened": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rebase-row" },
+      "expect": { "$length": 3 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".rebase-row:nth-child(3)", "key": "d" } },
+    { "run": "dev.type", "input": { "selector": ".rebase-row:nth-child(1)", "key": "r" } },
+    { "run": "dev.type", "input": { "selector": ".rebase-message", "text": "add a (reworded)" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rebase-status" },
+      "expect": [{ "html": { "$contains": "1 reword, 1 drop" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".rebase-actions .button-primary" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dialog-actions button:last-child" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git log --format=%s | head -3 | tr '\\n' '|'", "timeoutMs": 15000 },
+      "expect": { "output": { "$contains": "add b|add a (reworded)|Initial commit|" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test ! -e c.txt" },
+      "expect": { "exitCode": 0 }
+    },
+
+    // Sign-in prompts: an HTTP remote that wants credentials asks in the quick input.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git remote add origin http://127.0.0.1:11998/git/repo.git" },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.fetch", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden]) .quick-input-message" },
+      "expect": [{ "html": { "$contains": "Username for" } }],
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "tester", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden]) .quick-input-box[type=password]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "s3cret", "key": "Enter" }
+    },
+    // Answered: the prompt closes (the server then says "not found": the right credentials got
+    // through, see the background step's log).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input[hidden]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    }
+  ]
+}

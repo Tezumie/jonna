@@ -1,0 +1,87 @@
+// D174: Generate commit message gets a structured prompt; a reply that reviews the diff instead
+// of being a message is rewritten into one; each AI feature can have its own model.
+{
+  "name": "git-m6-74",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'please-review\\n' >> notes.txt", "timeoutMs": 10000 },
+      "timeoutMs": 20000
+    },
+    { "run": "git.stage" },
+    { "run": "git.cancelCommitMessage", "expectError": "No commit message is being written" },
+    // Its own model for commit messages (here the same mock, picked by name).
+    {
+      "run": "agent.selectFeatureModel",
+      "input": { "feature": "commit", "model": "ollama/mock-coder:1b" },
+      "expect": { "model": "ollama/mock-coder:1b" }
+    },
+    {
+      "run": "agent.selectFeatureModel",
+      "input": { "feature": "commit", "model": "ollama/nope" },
+      "expectError": "isn't available"
+    },
+    {
+      "run": "git.generateCommitMessage",
+      "expect": { "message": "Update the review notes\n\n- Add a line asking for a review" },
+      "timeoutMs": 15000
+    },
+    // D207: an external agent you have writes it (one prompt, nothing else allowed).
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    {
+      "run": "agent.selectFeatureModel",
+      "input": { "feature": "commit", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" }
+    },
+    {
+      "run": "agent.selectFeatureModel",
+      "input": { "feature": "edit", "model": "acp/Mock agent" },
+      "expectError": "isn't available"
+    },
+    {
+      "run": "git.generateCommitMessage",
+      "expect": { "message": "Write it with the mock agent" },
+      "timeoutMs": 30000
+    },
+    { "run": "settings.reset", "input": { "key": "git.aiCommitMessage.model" } },
+    // The feature model picker takes an external agent for commit messages, not for Edit with AI
+    // (the features left the Agents page in D230: Settings and the status bar have them).
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "feature:commit", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" }
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "feature:edit", "model": "acp/Mock agent" },
+      "expectError": "external agents only"
+    },
+    { "run": "settings.reset", "input": { "key": "git.aiCommitMessage.model" } },
+    { "run": "agent.showSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-row[data-feature]" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

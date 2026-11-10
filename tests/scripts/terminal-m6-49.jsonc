@@ -1,0 +1,149 @@
+// D150: the terminal pass — a failed command's quiet "Fix" on hover, the dot's menu, actions on a
+// given command, command navigation, Run recent command, the sticky line's dot, a large output
+// (flow control), wide characters, and the activity bar scrolling in a small window.
+{
+  "name": "terminal-m6-49",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo first-command", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "ls /definitely/not/here", "timeoutMs": 20000 },
+      "expect": { "exitCode": { "$not": 0 } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-command-mark.is-error" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    // Hidden until the pointer is on the failed command's line, then shown there.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-fix", "html": 400 },
+      "expect": [{ "html": { "$contains": "hidden" } }]
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    // The lines settle first (Windows' ConPTY redraws them just after a command ends, moving the
+    // failed one's row under a hover sent at once; a real pointer moves again, the test doesn't).
+    { "wait": 1000 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".terminal-command-mark.is-error", "hover": true }
+    },
+    { "wait": 150 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-fix:not([hidden])" },
+      "expect": [{ "tag": "button" }],
+      "timeoutMs": 3000
+    },
+    // The dot's menu.
+    { "run": "dev.click", "input": { "selector": ".terminal-command-mark.is-error" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 10 },
+      "expect": { "$contains": "Rerun command" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu-label", "key": "Escape" } },
+    // Actions on a given command (its number) rather than the last one.
+    {
+      "run": "terminal.copyLastCommand",
+      "input": { "command": 1 },
+      "expect": { "command": { "$contains": "echo" } }
+    },
+    // Up to the first command (a small terminal, or Git Bash's three-row prompt, doesn't show them
+    // all): nothing above it to scroll to. Then back down, so new output is followed again.
+    { "run": "terminal.scrollToPreviousCommand" },
+    { "run": "terminal.scrollToPreviousCommand" },
+    { "run": "terminal.scrollToPreviousCommand" },
+    { "run": "terminal.scrollToPreviousCommand" },
+    { "run": "terminal.scrollToPreviousCommand", "expect": { "scrolled": false } },
+    { "run": "terminal.scrollToNextCommand" },
+    { "run": "terminal.scrollToNextCommand" },
+    { "run": "terminal.scrollToNextCommand" },
+    { "run": "terminal.scrollToNextCommand" },
+    { "run": "terminal.scrollToNextCommand", "expect": { "scrolled": false } },
+    // Run recent command: history from the commands finished above.
+    {
+      "run": "terminal.runRecentCommand",
+      "input": { "command": "echo again-from-history" },
+      "expect": { "ran": "echo again-from-history" }
+    },
+
+    // A large output: 200k numbered lines, then the next command still runs (flow control).
+    // Windows' ConPTY passes on only part of such a flood (what scrolls by between its frames is
+    // skipped: about 4000 of the lines reach the terminal), so the scrollback is 1000 lines here:
+    // the command line scrolls off it on every OS.
+    { "run": "settings.set", "input": { "key": "terminal.scrollback", "value": 1000 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"let s='';for(let i=0;i<200000;i++){s+='line '+i+'\\n';if(s.length>65536){process.stdout.write(s);s=''}}process.stdout.write(s)\"",
+        "timeoutMs": 120000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 130000
+    },
+    {
+      "run": "terminal.copyLastOutput",
+      "expect": { "lines": { "$gte": 900 } },
+      "timeoutMs": 5000
+    },
+    // Its command line was trimmed off the scrollback (1000 lines), yet it's still known: the
+    // sticky line shows it with its dot, and Ctrl+Up goes back to where its output starts.
+    { "run": "terminal.scrollToPreviousCommand", "expect": { "scrolled": true } },
+    { "wait": 200 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-sticky:not([hidden]) .terminal-sticky-dot.is-success" },
+      "expect": [{ "tag": "span" }],
+      "timeoutMs": 5000
+    },
+    // Wide characters, empty and repeated lines.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"console.log('漢字 ok 🙂 done');console.log('');console.log('');console.log('same');console.log('same')\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "same" } },
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.clear" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo after-clear", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "after-clear" } },
+      "timeoutMs": 30000
+    },
+
+    // The activity bar's view buttons scroll in a short window; accounts and settings stay.
+    // Outline and Timeline get icons too, so there are enough to overflow (D199 hides both).
+    { "run": "view.setHidden", "input": { "id": "outline.view", "hidden": false } },
+    { "run": "view.setHidden", "input": { "id": "timeline.view", "hidden": false } },
+    { "run": "dev.setWindowSize", "input": { "width": 900, "height": 240 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-top.is-overflowing" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-bottom" },
+      "expect": [{ "tag": "div" }]
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 800 } }
+  ]
+}

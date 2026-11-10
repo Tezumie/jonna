@@ -1,0 +1,57 @@
+// D201: a click on a change bar opens the file's changes at that line; the welcome page's recent
+// folders give the path the room of the hidden pin / remove buttons.
+{
+  "name": "editor-m7-2",
+  "steps": [
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@example.com && git config user.name T && git config commit.gpgsign false && git add -A && git commit -qm base && printf '\\n\\n\\n\\n\\n\\n\\n\\nchanged line nine\\n' >> notes.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .quick-diff", "limit": 1 },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 8000
+    },
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .quick-diff" } },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "\"viewType\":\"diff\"" },
+      "timeoutMs": 5000
+    },
+    // The same through the command, at a line: the diff tab is reused.
+    {
+      "run": "editor.openDiff",
+      "input": { "path": "notes.txt", "line": 9 },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    // Welcome: a recent folder's pin and remove take no room until hovered. The open folder isn't
+    // listed (D254): another one is opened, so this one is a recent folder there.
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "mkdir -p ../editor-m7-2-other && echo done", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "workspace.openRecent",
+      "input": { "path": "${ws.root}/../editor-m7-2-other" },
+      "timeoutMs": 30000
+    },
+    { "wait": 1500 },
+    { "run": "layout.openView", "input": { "viewType": "welcome" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".welcome-recent-remove", "limit": 1 },
+      "expect": [{ "display": "none" }],
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "acme.nodehost",
+  "version": "1.0.0",
+  "displayName": "Node host",
+  "description": "Test extension for D255: code that runs in Node (its own modules, Node's built-ins) and still talks to the IDE through ide.",
+  "icon": "terminal",
+  "main": "main.js",
+  "host": "node",
+  "activationEvents": ["onStartupFinished"],
+  "permissions": ["node", "fs.read"],
+  "contributes": {
+    "commands": [
+      { "id": "nodehost.info", "title": "Node host: what it runs on" },
+      { "id": "nodehost.readme", "title": "Node host: read a file with fs and with ide" }
+    ]
+  }
+}

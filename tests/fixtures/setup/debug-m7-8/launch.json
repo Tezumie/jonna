@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Mock parent",
+      "type": "mock",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg8/out.js",
+      "spawnChild": true,
+      "debugAdapter": { "command": "node", "args": ["${workspaceFolder}/../setup/mock-dap.mjs"] }
+    },
+    {
+      "name": "Output",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg8/out.js",
+      "console": "internalConsole"
+    }
+  ]
+}

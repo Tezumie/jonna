@@ -1,0 +1,38 @@
+// Resetting settings: one key, a section (category), or everything in a scope.
+{
+  "name": "settings reset",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "editor.fontSize", "value": 15 } },
+    { "run": "settings.set", "input": { "key": "editor.tabSize", "value": 8 } },
+    { "run": "settings.set", "input": { "key": "workbench.density", "value": "compact" } },
+    {
+      "run": "settings.reset",
+      "input": { "category": "Editor" },
+      "expect": { "reset": { "$length": 2 } }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.fontSize\",\"value\":14" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.density\",\"value\":\"compact\"" }
+    },
+    {
+      "run": "settings.reset",
+      "input": { "all": true },
+      "expect": { "reset": { "$contains": "workbench.density" } }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.density\",\"value\":\"default\"" }
+    },
+    { "run": "settings.reset", "input": {}, "expectError": "Give `key`" },
+    { "run": "settings.open" },
+    {
+      "run": "settings.reset",
+      "input": { "key": "editor.fontSize" },
+      "expect": { "reset": ["editor.fontSize"] }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+// D207 audit: git is off in restricted mode (it would run the repository's own config:
+// core.fsmonitor, filters, hooks), like VS Code; trusting the folder turns it back on.
+{
+  "name": "git-restricted-m7-6",
+  "steps": [
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    { "run": "git.status", "expect": { "branch": { "$exists": true } } },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "wait": 500 },
+    { "run": "git.status", "expectError": "restricted mode" },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "git.status", "expect": { "branch": { "$exists": true } }, "timeoutMs": 5000 }
+  ]
+}

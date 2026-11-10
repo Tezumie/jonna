@@ -1,0 +1,157 @@
+// More of VS Code's extension API (tests/fixtures/extensions/hooks): applyEdit across files (files
+// created, text edited in two places), the `type` override (letters typed in the editor reach the
+// extension, which types them upper case through default:type) and turning it off, a URI handler,
+// will-save edits, a comment thread and its reply, a chat participant, tree checkboxes and
+// workbench.colorCustomizations with VS Code's ids.
+{
+  "name": "extensions-hooks",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/hooks" },
+      "expect": { "id": "acme.hooks" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.hooks", "grant": true },
+      "expect": { "granted": true }
+    },
+
+    // ---- applyEdit: two files created, one edited twice (in order) ----
+    { "run": "hooks.applyEdit", "expect": { "applied": true }, "timeoutMs": 10000 },
+    {
+      "run": "editor.getText",
+      "input": { "path": "hooks-out/a.txt" },
+      "expect": { "text": "zero\none\nTWO\n" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Everything else registers ----
+    // Saved: the IDE's link scheme (ide.env.uriScheme), for the link below.
+    { "run": "hooks.setup", "expect": { "ok": true }, "save": "setup", "timeoutMs": 10000 },
+    {
+      "state": "ide://extensions/hooks",
+      "expect": {
+        "typing": { "owner": "acme.hooks" },
+        "cursorStyle": { "style": "block" },
+        "uriHandlers": { "$contains": "acme.hooks" },
+        "chatParticipants": { "$length": 1 },
+        "commentThreads": { "$length": 1 },
+        "languageModelAccess": false
+      },
+      "timeoutMs": 5000
+    },
+
+    // ---- The type override: typed letters come back upper case ----
+    { "run": "editor.openFile", "input": { "path": "hooks-out/a.txt" }, "timeoutMs": 10000 },
+    { "wait": 500 },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".editor-view:not([hidden]) .monaco-editor :is(.native-edit-context, textarea.inputarea)",
+        "text": "q"
+      }
+    },
+    { "wait": 500 },
+    { "run": "hooks.stats", "expect": { "typed": { "$contains": "q" } }, "timeoutMs": 5000 },
+    {
+      "run": "editor.getText",
+      "input": { "path": "hooks-out/a.txt" },
+      "expect": { "text": { "$contains": "Q" } },
+      "timeoutMs": 5000
+    },
+    { "run": "extensions.turnOffTypeOverride", "expect": { "turnedOff": "acme.hooks" } },
+    { "state": "ide://extensions/hooks", "expect": { "typing": null, "cursorStyle": null } },
+    {
+      "run": "settings.set",
+      "input": { "key": "extensions.typeOverride.blocked", "value": [], "scope": "user" }
+    },
+
+    // ---- A link to the extension ----
+    // A link from outside (the user's, as the OS would hand it over; extensions can't run it).
+    {
+      "run": "extensions.openUri",
+      "input": { "uri": "${setup.scheme}://acme.hooks/open?x=1" },
+      "expect": { "handledBy": "acme.hooks" },
+      "timeoutMs": 10000
+    },
+    { "run": "hooks.stats", "expect": { "uris": { "$contains": "/open?x=1" } } },
+
+    // ---- Will-save: the extension's edit goes in before the write ----
+    {
+      "run": "editor.openFile",
+      "input": { "path": "hooks-out/will-save.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.replaceRange",
+      "input": { "path": "hooks-out/will-save.txt", "startLine": 1, "text": "changed" }
+    },
+    { "run": "editor.save", "timeoutMs": 10000 },
+    {
+      "run": "editor.getText",
+      "input": { "path": "hooks-out/will-save.txt" },
+      "expect": { "text": { "$contains": "// saved\nchanged" } },
+      "timeoutMs": 5000
+    },
+
+    // ---- Comments: the thread shows as a lens; a reply reaches the controller ----
+    {
+      "run": "extensions.replyToComment",
+      "input": { "thread": "acme.hooks/notes/t1", "text": "Looks right" },
+      "expect": { "replied": true },
+      "timeoutMs": 10000
+    },
+    { "run": "hooks.stats", "expect": { "replies": { "$contains": "Looks right" } } },
+    {
+      "state": "ide://extensions/hooks",
+      "expect": { "commentThreads": { "$contains": "acme.hooks/notes/t1" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .codelens-decoration", "html": 2000 },
+      "expect": { "$contains": "You: Looks right" },
+      "timeoutMs": 8000
+    },
+
+    // ---- A chat participant answers ----
+    {
+      "run": "extensions.askChatParticipant",
+      "input": { "name": "helper", "prompt": "why" },
+      "expect": { "markdown": "You asked: why" },
+      "timeoutMs": 10000
+    },
+
+    // ---- Tree checkboxes ----
+    { "run": "hooks.list.show" },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ext-tree-row[data-item=\"a\"] .ext-tree-check" },
+      "timeoutMs": 8000
+    },
+    { "run": "hooks.stats", "expect": { "checks": { "$contains": "a:true" } }, "timeoutMs": 5000 },
+
+    // ---- Peacock's keys: the status bar gets its own color ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "workbench.colorCustomizations",
+        "value": { "statusBar.background": "#42b883" },
+        "scope": "workspace"
+      }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar" },
+      "expect": { "$contains": "rgb(66, 184, 131)" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.colorCustomizations", "value": {}, "scope": "workspace" }
+    }
+  ]
+}

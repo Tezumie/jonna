@@ -1,0 +1,12 @@
+{
+  "id": "acme.stamper",
+  "version": "1.0.0",
+  "displayName": "Stamper",
+  "description": "Test extension: types a timestamp into the active editor.",
+  "main": "main.js",
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [{ "id": "stamper.insert", "title": "Insert timestamp", "effects": ["write"] }],
+    "views": [{ "id": "stamper.items", "title": "Stamper", "location": "sidebar", "type": "tree", "icon": "clock" }]
+  }
+}

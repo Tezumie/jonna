@@ -1,0 +1,40 @@
+// D163: full access never asks (a denylisted command runs); <result> wrappers aren't shown;
+// closing the folder gives the base layout (explorer, welcome, agent, no terminal).
+{
+  "name": "agent-m6-61",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "agent.setCommandMode", "input": { "mode": "full" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please tidy the scratch folder", "wait": true },
+      "expect": { "answer": { "$contains": "Tidied" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": { "$length": 0 }, "items": { "$contains": "rm -rf scratch-d163" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-prose", "html": 400 },
+      "expect": [{ "html": { "$not": { "$contains": "&lt;result&gt;" } } }],
+      "timeoutMs": 3000
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "ask" } },
+    { "run": "workspace.closeFolder" },
+    { "wait": 600 },
+    {
+      "state": "ide://layout",
+      "expect": {
+        "regions": { "bottom": { "$length": 0 } },
+        "sidebar": { "visible": true, "width": 260, "activeView": "agent.chats" }
+      }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

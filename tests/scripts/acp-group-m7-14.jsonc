@@ -1,0 +1,84 @@
+// D235: a group chat on an external agent (the mock ACP agent) with a member whose agent file names
+// a model of its own: that member answers on its model (mock Ollama), not the external agent, and
+// the external agent is told what it said when its own turn comes.
+{
+  "name": "acp-group-m7-14",
+  "steps": [
+    // A name the test can @mention (the default is the IDE's name, D237).
+    { "run": "agent.setMainAgent", "input": { "name": "Main" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: rev\\nlabel: Rev\\nrole: Reviewer\\nmodel: ollama/mock-coder:1b\\ndescription: Reviews changes.\\n---\\n\\nReview it.\\n' > .vscode/agents/rev.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "\"custom:rev\"" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["agent", "rev"] },
+      "expect": { "members": ["agent", "rev"] }
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    // Rev answers on its own model (the mock Ollama model), not as the external agent.
+    {
+      "run": "agent.send",
+      "input": { "message": "@Rev acpmixed one", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Rev on its own model." } },
+      "timeoutMs": 10000
+    },
+    // The chat stays on the external agent.
+    { "state": "ide://agent/session", "expect": { "model": "acp/Mock agent" } },
+    // The main agent (the external agent) hears what Rev said.
+    {
+      "run": "agent.send",
+      "input": { "message": "@Main acpmixed two", "wait": true },
+      "expect": { "answer": { "$contains": "saw what Rev said" } },
+      "timeoutMs": 30000
+    },
+    // Again, now that the external agent has a session: it's told what Rev said since its turn.
+    {
+      "run": "agent.send",
+      "input": { "message": "@Rev acpmixed three", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "@Main acpmixed four", "wait": true },
+      "expect": { "answer": { "$contains": "saw what Rev said" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.setMainAgent", "input": { "name": "" } }
+  ]
+}

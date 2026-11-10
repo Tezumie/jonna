@@ -1,0 +1,52 @@
+// D203: staged lines show as dimmed change bars beside unstaged ones; a click on a staged bar
+// opens the staged diff; the file's preview tab stays open when a bar opens the diff.
+{
+  "name": "editor-m7-4",
+  "steps": [
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@example.com && git config user.name T && git config commit.gpgsign false && printf 'one\\ntwo\\nthree\\nfour\\nfive\\nsix\\nseven\\neight\\n' > staged.txt && git add -A && git commit -qm base && sed -i 's/two/TWO staged/' staged.txt && git add staged.txt && sed -i 's/seven/SEVEN unstaged/' staged.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "staged.txt", "preview": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .quick-diff.is-staged", "limit": 2 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .quick-diff:not(.is-staged)", "limit": 2 },
+      "expect": { "$length": 1 }
+    },
+    // The unstaged bar: the working-tree diff in a tab of its own; the preview tab stays.
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .quick-diff:not(.is-staged)" } },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "\"viewType\":\"diff\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "\"viewType\":\"editor\",\"title\":\"staged.txt\"" }
+    },
+    // The staged bar: the staged diff (HEAD ↔ index).
+    { "run": "editor.openFile", "input": { "path": "staged.txt" } },
+    { "wait": 500 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".editor-view:not(.diff-view) .monaco-editor .quick-diff.is-staged" }
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "staged.txt (staged)" },
+      "timeoutMs": 5000
+    }
+  ]
+}

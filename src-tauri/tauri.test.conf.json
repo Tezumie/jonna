@@ -1,0 +1,4 @@
+{
+  "mainBinaryName": "ide",
+  "build": { "beforeBuildCommand": "node build.mjs --with-dev" }
+}

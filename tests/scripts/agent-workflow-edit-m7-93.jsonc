@@ -1,0 +1,137 @@
+// D351: a workflow agent that edits. The script's one agent() call has isolation: 'worktree': the
+// permission card names it as an agent that may edit; it runs as a headless helper in a git
+// worktree of its own (it writes pkgp.txt there); agent() returns its branch and changes; the
+// run's card lists its worktree's change with Review / Merge; the end message names the branch.
+// Nothing is merged into the folder. Against tests/fixtures/mock-ollama.mjs (pkgPScripted).
+// Needs git.
+{
+  "name": "agent-workflow-edit-m7-93",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // Asked as a tool is: not in full access.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgP run an editing workflow" },
+      "background": true
+    },
+    // The permission card names the agent that may edit.
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Run workflow pkgp-edit" }] },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-cards .agent-permission", "limit": 1, "html": 4000 },
+      "expect": [{ "html": { "$contains": "Agents that may edit" } }],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-cards .agent-permission", "limit": 1, "html": 4000 },
+      "expect": [{ "html": { "$contains": "pkgp editor" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    // The editing agent works in its worktree; the run's end comes back as a message.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgP workflow: branch=yes, changed=yes, said=yes" }
+      },
+      "timeoutMs": 90000
+    },
+    {
+      "state": "ide://agent/workflows",
+      "expect": {
+        "workflows": [
+          {
+            "id": "wf1",
+            "name": "pkgp-edit",
+            "status": "done",
+            "agents": [
+              {
+                "label": "pkgp editor",
+                "status": "done",
+                "worktree": {
+                  "branch": { "$contains": "agent/general-pkgp-editor" },
+                  "ended": true,
+                  "files": ["pkgp.txt"],
+                  "changes": { "$contains": "1 file changed" }
+                }
+              }
+            ],
+            "result": { "$contains": "agent/general-pkgp-editor" }
+          }
+        ]
+      },
+      "print": true
+    },
+    // A helper of the run's, finished; its report went to the run, not the chat.
+    {
+      "state": "ide://agent/helpers",
+      "expect": { "helpers": [{ "workflow": true, "state": "done", "files": 1 }] }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "Report from helper" } } }
+    },
+    // The run's card: the worktree's change with Review / Merge.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-workflow .agent-workflow-worktree",
+        "limit": 2,
+        "html": 2000
+      },
+      "expect": [{ "html": { "$contains": "1 file changed" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-workflow .agent-workflow-worktree button",
+        "limit": 3
+      },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Nothing was merged into the folder: no pkgp.txt here, nothing changed.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test ! -e pkgp.txt && test -z \"$(git status --porcelain)\" && echo clean",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "clean" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

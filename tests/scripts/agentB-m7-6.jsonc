@@ -1,0 +1,260 @@
+// D207: the MCP client's remote side (a standing GET stream with reconnect, OAuth step-up on 403
+// insufficient_scope), sampling answers reviewed (sent edited, rejected) and with images, the
+// MCP registry search from New MCP server (and the offline fallback), Claude Code's
+// at_mentioned, and @docs seeded by sitemap.xml with a page that needs JavaScript. Against
+// tests/fixtures/mock-ollama.mjs (its docs sites, registry and mock-remote-mcp.mjs) and
+// tests/fixtures/sample/tools/mock-mcp-extra.mjs.
+{
+  "name": "agentB-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    // The mock model has 8 k tokens: no summary in the middle of these checks.
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+
+    // ---- Sampling: the user approves, reviews the answer, edits it ----
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "extra",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp-extra.mjs"]
+      },
+      "expect": { "added": true }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.sampling", "value": { "extra": "ask" } }
+    },
+    { "run": "agent.send", "input": { "message": "Please summarize via MCP" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])" },
+      "expect": { "$contains": "wants to use your model" },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://agent/mcp/sampling",
+      "expect": { "reviews": [{ "server": "extra", "model": "ollama/mock-coder:1b" }] },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$contains": "Send this answer to extra?" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.reviewMcpSampling",
+      "input": { "action": "send", "text": "Edited answer" },
+      "expect": { "server": "extra", "action": "send", "edited": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Extra said: sampled: Edited answer" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/mcp/sampling",
+      "expect": { "recent": [{ "server": "extra", "outcome": "answered", "edited": true }] }
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".dialog" }, "expect": { "$length": 0 } },
+
+    // Rejected with the dialog's own button: the server hears "user rejected".
+    { "run": "agent.send", "input": { "message": "Please summarize via MCP" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])" },
+      "expect": { "$contains": "wants to use your model" },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .button-danger" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-danger" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Extra said: sampling refused (-1)" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/mcp/sampling",
+      "expect": { "recent": [{ "server": "extra", "outcome": "rejected" }], "reviews": [] }
+    },
+
+    // An image in the request: the mock model doesn't read images, so it's refused, saying why.
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.sampling", "value": { "extra": "allow" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please look via MCP" },
+      "expect": { "answer": { "$contains": "doesn't read images" } },
+      "timeoutMs": 60000
+    },
+
+    // ---- A remote server: the standing GET stream, reconnect, step-up sign-in ----
+    {
+      "run": "agent.addMcpServer",
+      "input": { "name": "remote", "url": "http://127.0.0.1:11999/remote-mcp/mcp" },
+      "expect": { "added": true }
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please call remote ping" },
+      "expect": { "answer": { "$contains": "MCP said: pong" } },
+      "timeoutMs": 60000
+    },
+    // The stream told of a new tool while no request was open, ended, and was opened again.
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"streamReconnects\":1" },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://agent/mcp", "expect": { "$contains": "\"stream\":\"open\"" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please call remote late" },
+      "expect": { "answer": { "$contains": "MCP said: late ok" } },
+      "timeoutMs": 60000
+    },
+    // 403 insufficient_scope: sign in again for the admin scope, then the call goes through.
+    { "run": "agent.send", "input": { "message": "Please call remote admin" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])" },
+      "expect": { "$contains": "needs more access (admin)" },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "MCP said: admin ok" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.mcpSignOut", "input": { "server": "remote" } },
+
+    // ---- The MCP registry from New MCP server, and the built-in list offline ----
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.registryUrl", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.searchMcpRegistry",
+      "input": { "query": "weather" },
+      "expect": {
+        "source": "registry",
+        "servers": [
+          {
+            "id": "weather",
+            "registryName": "io.github.mock/weather",
+            "kind": "local",
+            "runs": "npx -y @mock/weather-mcp@1.0.0"
+          }
+        ]
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "agent.installMcpServer",
+      "input": { "id": "weather", "scope": "folder" },
+      "expect": { "installed": true, "name": "weather" }
+    },
+    { "state": "ide://agent/mcp", "expect": { "$contains": "@mock/weather-mcp@1.0.0" } },
+    {
+      "run": "agent.removeMcpServer",
+      "input": { "name": "weather" },
+      "expect": { "removed": true }
+    },
+    { "run": "agent.newMcpServer", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])", "html": 20000 },
+      "expect": { "$contains": "Search the MCP registry" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.registryUrl", "value": "http://127.0.0.1:1" }
+    },
+    {
+      "run": "agent.searchMcpRegistry",
+      "input": { "query": "browser" },
+      "expect": { "source": "builtin", "servers": { "$contains": "playwright" } },
+      "timeoutMs": 20000
+    },
+
+    // ---- Claude Code /ide: Send selection to Claude Code (at_mentioned) ----
+    {
+      "run": "mcp.claudeCodeIntegration",
+      "input": { "enabled": true },
+      "expect": { "enabled": true }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "wait": 500 },
+    {
+      "run": "mcp.sendSelectionToClaudeCode",
+      "expect": {
+        "sent": 0,
+        "lineStart": 0,
+        "lineEnd": 0,
+        "filePath": { "$contains": "README.md" }
+      }
+    },
+    {
+      "run": "mcp.sendSelectionToClaudeCode",
+      "input": { "path": "README.md", "startLine": 3, "endLine": 5 },
+      "expect": { "sent": 0, "lineStart": 2, "lineEnd": 4 }
+    },
+    {
+      "run": "mcp.claudeCodeIntegration",
+      "input": { "enabled": false },
+      "expect": { "enabled": false }
+    },
+
+    // ---- @docs: sitemap.xml finds a page no link reaches; a page that needs JavaScript ----
+    { "run": "settings.set", "input": { "key": "agent.docs.delayMs", "value": 0 } },
+    {
+      "run": "agent.addDocs",
+      "input": { "url": "http://127.0.0.1:11999/docs-site2/", "name": "second" },
+      "expect": { "added": "second", "state": "ready", "pages": 2, "needsJavaScript": 1 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.searchDocs",
+      "input": { "name": "second", "query": "do gizmos hum" },
+      "expect": { "text": { "$contains": "Gizmos hum quietly" } }
+    },
+    { "state": "ide://agent/docs", "expect": { "$contains": "docs-site2/app.html" } },
+    { "run": "agent.refreshStaleDocs", "expect": { "refreshed": [] } },
+    { "run": "agent.showDocs" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-page [data-docs='second']" },
+      "expect": { "$contains": "1 needs JavaScript" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "agent.removeDocs", "input": { "name": "second" } }
+  ]
+}

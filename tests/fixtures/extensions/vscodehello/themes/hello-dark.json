@@ -1,0 +1,11 @@
+{
+  "name": "Hello Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0b1a2a",
+    "editor.foreground": "#d6deeb",
+    "editorWidget.background": "#021320",
+    "focusBorder": "#7e57c2"
+  },
+  "tokenColors": []
+}

@@ -1,0 +1,178 @@
+// D249: the composer's menu picks who answers (the agents, with their faces) and how (Agent, Plan,
+// Ask), apart: Plan on Builder keeps Builder with read-only tools. One of the user's agents can
+// run on an external agent (the mock ACP agent) and answers through it in a chat on a model.
+// The Channels view has no "+ Add …" rows or pages under its lists: its ⋯ has the pages.
+{
+  "name": "agent-modes-m7-17",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // A builder of the user's own (D272: no longer one of the default agents).
+    {
+      "run": "agent.createAgent",
+      "input": {
+        "label": "Builder",
+        "description": "Builds what was planned.",
+        "access": "edit",
+        "scope": "user"
+      },
+      "expect": { "name": "builder" },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:builder" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": { "$contains": "ollama/mock-coder:1b" },
+      "timeoutMs": 10000
+    },
+
+    // ---- Who and how, apart ----
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.setChatAgent",
+      "input": { "agent": "builder" },
+      "expect": { "agent": "custom:builder", "mode": "agent" }
+    },
+    {
+      "run": "agent.setChatMode",
+      "input": { "mode": "plan" },
+      "expect": { "agent": "custom:builder", "mode": "plan" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:builder", "work": "plan" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-chat-mode > span:not(.agent-face)" },
+      "expect": { "$contains": "Builder · Plan" },
+      "timeoutMs": 3000
+    },
+    // Builder in Plan mode: read-only tools and the plan, not its edits or commands.
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have", "wait": true },
+      "expect": {
+        "answer": {
+          "$contains": "update_plan",
+          "$not": { "$contains": "edit_file" }
+        }
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Plan ready" } },
+      "timeoutMs": 5000
+    },
+    // The menu: two headings (Agent, Mode), the agents with faces.
+    { "run": "dev.click", "input": { "selector": ".agent-chat-mode" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-heading", "limit": 5 },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-icon .agent-face", "limit": 10 },
+      "expect": { "$not": { "$length": 0 } }
+    },
+    // D292: Mode (Agent, Plan, Ask) for whichever agent answers, its current one beside it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item", "limit": 12, "html": 600 },
+      "expect": { "$contains": "Mode" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "wait": 200 },
+    { "run": "dev.click", "input": { "selector": ".agent-chat-mode" } },
+    // Each agent starts in its own mode: the planner plans, Chat answers, the main agent works.
+    {
+      "run": "agent.setChatAgent",
+      "input": { "agent": "planner" },
+      "expect": { "agent": "custom:planner", "mode": "plan" }
+    },
+    {
+      "run": "agent.setChatAgent",
+      "input": { "agent": "chat" },
+      "expect": { "agent": "custom:chat", "mode": "ask" }
+    },
+    {
+      "run": "agent.setChatAgent",
+      "input": { "agent": "agent" },
+      "expect": { "agent": "agent", "mode": "agent" }
+    },
+    // The editor offers it: Starts in.
+    { "run": "agent.editAgent", "input": { "name": "planner" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-option[data-start='plan'][aria-checked='true']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+
+    // ---- One of your agents on an external agent ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "subagent:chat", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" }
+    },
+    { "run": "agent.chatWith", "input": { "agent": "chat" }, "expect": { "mode": "custom:chat" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "acpagent check", "wait": true },
+      "expect": { "answer": { "$contains": "Chat via acp: answered." } },
+      "timeoutMs": 60000
+    },
+    // The chat itself stays on its model.
+    {
+      "state": "ide://agent/session",
+      "expect": { "model": { "$not": { "$contains": "acp/" } } }
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "subagent:chat", "model": "" }
+    },
+
+    // ---- The Chats view (D291): its action rows (D406: no Agents row), More with the pages ----
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-actions .ch-action", "limit": 10, "html": 300 },
+      "expect": [
+        { "html": { "$contains": "New chat" } },
+        { "html": { "$contains": "Usage" } },
+        { "html": { "$contains": "Customize" } }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".view-actions button[aria-label='More']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 12, "html": 3000 },
+      "expect": { "$contains": "MCP servers" },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

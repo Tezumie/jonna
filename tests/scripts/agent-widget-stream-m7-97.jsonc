@@ -1,0 +1,87 @@
+// D355: a widget drawn while the model writes it, as Claude Code's show_widget. The mock's Anthropic
+// route streams the call's arguments in 70-character pieces every 150 ms (pkgR). While they come
+// in, a draft card sits under the turn: its frame paints the code so far (no scripts) and grows.
+// When the call is complete the tool's card takes over the same card and frame (no reload): the
+// finished widget is drawn once, and its script runs (it adds 420 px, so the frame grows past it).
+{
+  "name": "agent-widget-stream-m7-97",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": false } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          {
+            "id": "claude",
+            "name": "Claude",
+            "kind": "anthropic",
+            "baseUrl": "http://127.0.0.1:11999"
+          }
+        ]
+      }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "claude/claude-mock" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr widget stream", "wait": false }
+    },
+    // While the call is written: a draft with its title, painted more than once.
+    {
+      "state": "ide://agent/widgets",
+      "expect": { "drafts": [{ "title": "pkgr_stream", "paints": { "$gte": 2 } }] },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-widget.is-draft", "limit": 2, "html": 200 },
+      "expect": { "$length": 1 },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgR widget streamed." } },
+      "timeoutMs": 30000
+    },
+    // The finished widget took over the draft's frame: one page load, drawn, its script ran.
+    {
+      "state": "ide://agent/widgets",
+      "expect": {
+        "widgets": [
+          {
+            "title": "pkgr_stream",
+            "mode": "html",
+            "rendered": true,
+            "streamed": true,
+            "loads": 1,
+            "paints": { "$gte": 2 },
+            "errors": { "$length": 0 },
+            "height": { "$gte": 420 }
+          }
+        ],
+        "drafts": { "$length": 0 }
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-widget", "limit": 3, "html": 200 },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-widget.is-draft", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

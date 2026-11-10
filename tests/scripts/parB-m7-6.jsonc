@@ -1,0 +1,430 @@
+// D209: notebooks with several cells selected (Shift / Ctrl+click, Shift+arrows, Ctrl+A; moved,
+// joined, retyped, copied and deleted together) and the cell toolbar sticky in a tall cell; the
+// keyboard shortcuts editor (the when clause edited in the row, keys the IDE and the editor share
+// resolved, not flagged); test results, history, each test's output and coverage kept across a
+// folder reopen; output channels (Window, Git…) with log.level and the Output tab; the merge
+// editor's sash, layout per tab, result word highlights and a delete / modify conflict.
+{
+  "name": "parB-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 860 } },
+
+    // ---- Notebooks: several cells ----
+    {
+      "run": "notebook.new",
+      "input": { "path": "pb/multi.ipynb" },
+      "expect": { "path": { "$contains": "multi.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "a = 1" } },
+    { "run": "notebook.insertCell", "input": { "index": 1, "source": "b = 2" } },
+    { "run": "notebook.insertCell", "input": { "index": 2, "source": "c = 3" } },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 3, "kind": "markdown", "source": "# M" }
+    },
+    { "run": "notebook.selectCells", "input": { "index": 0 } },
+    // Shift+click the second cell's gutter: the first two.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cells > .nb-cell:nth-child(3) .nb-gutter", "shift": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "selection": { "$length": 2 }, "selected": 1 } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cells.is-multi .nb-cell.is-selected", "limit": 5 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Moved down together, past the third cell.
+    { "run": "notebook.moveCell", "input": { "by": 1 } },
+    {
+      "run": "notebook.read",
+      "expect": {
+        "cells": [
+          { "source": "c = 3" },
+          { "source": "a = 1" },
+          { "source": "b = 2" },
+          { "kind": "markdown" }
+        ]
+      }
+    },
+    { "state": "ide://notebook", "expect": { "active": { "selection": { "$length": 2 } } } },
+    // The "…" menu has Join / Run selected cells; joined into one.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cell.is-focused .nb-cell-tool[aria-label='More actions']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Join selected cells" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    { "run": "notebook.joinSelectedCells", "expect": { "joined": 2, "cells": 3 } },
+    {
+      "run": "notebook.read",
+      "expect": { "cells": [{ "source": "c = 3" }, { "source": "a = 1\nb = 2" }] }
+    },
+    { "run": "notebook.undo", "expect": { "done": true } },
+    { "run": "notebook.read", "expect": { "cells": { "$length": 4 } } },
+    // Shift+Down in command mode extends; M makes both Markdown (one undo step).
+    { "run": "notebook.selectCells", "input": { "index": 0 } },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".notebook-editor", "key": "ArrowDown", "shift": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "selection": { "$length": 2 } } },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".notebook-editor", "key": "m" } },
+    {
+      "run": "notebook.read",
+      "expect": { "cells": [{ "kind": "markdown" }, { "kind": "markdown" }, { "kind": "code" }] },
+      "timeoutMs": 3000
+    },
+    { "run": "notebook.undo" },
+    { "run": "notebook.read", "expect": { "cells": [{ "kind": "code" }, { "kind": "code" }] } },
+    // Ctrl+click adds one; Ctrl+A selects all; C copies them, V pastes them.
+    { "run": "notebook.selectCells", "input": { "index": 0 } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cells > .nb-cell:nth-child(5) .nb-gutter", "ctrl": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "selection": { "$length": 2 } } },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".notebook-editor", "key": "a", "ctrl": true } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "selection": { "$length": 4 } } },
+      "timeoutMs": 3000
+    },
+    { "run": "notebook.copyCell", "expect": { "copied": 4 } },
+    { "run": "notebook.pasteCell", "expect": { "pasted": 4 } },
+    { "run": "notebook.read", "expect": { "cells": { "$length": 8 } } },
+    // The pasted four selected and deleted together.
+    { "run": "notebook.selectCells", "input": { "index": 4 } },
+    { "run": "notebook.selectCells", "input": { "index": 7, "extend": "range" } },
+    { "run": "notebook.deleteCell", "expect": { "cells": 4 } },
+    // A tall cell keeps its toolbar in view while it's scrolled (VS Code's sticky toolbar).
+    {
+      "run": "notebook.editCell",
+      "input": {
+        "index": 2,
+        "source": "x = 0\nx = 1\nx = 2\nx = 3\nx = 4\nx = 5\nx = 6\nx = 7\nx = 8\nx = 9\nx = 10\nx = 11\nx = 12\nx = 13\nx = 14\nx = 15\nx = 16\nx = 17\nx = 18\nx = 19\nx = 20\nx = 21\nx = 22\nx = 23\nx = 24\nx = 25\nx = 26\nx = 27\nx = 28\nx = 29\nx = 30\nx = 31\nx = 32\nx = 33\nx = 34\nx = 35\nx = 36\nx = 37\nx = 38\nx = 39\nx = 40\nx = 41\nx = 42\nx = 43\nx = 44\nx = 45\nx = 46\nx = 47\nx = 48\nx = 49\nx = 50\nx = 51\nx = 52\nx = 53\nx = 54\nx = 55\nx = 56\nx = 57\nx = 58\nx = 59"
+      }
+    },
+    { "run": "notebook.selectCells", "input": { "index": 2 } },
+    { "wait": 400 },
+    { "run": "dev.scroll", "input": { "selector": ".nb-cells", "top": 700 } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-focused" },
+      "expect": [{ "box": [{ "$gte": -100000 }, { "$lte": 0 }] }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-focused .nb-cell-toolbar" },
+      "expect": [{ "box": [{ "$gte": -100000 }, { "$gte": 40 }], "opacity": "1" }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "notebook.save" },
+
+    // ---- Keyboard shortcuts ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "state": "ide://keybindings",
+      "expect": { "engineBindings": { "$gte": 50 } },
+      "timeoutMs": 10000
+    },
+    // The editor's own F1 / Ctrl+G / Ctrl+Shift+O are the IDE's commands (taken from the editor).
+    {
+      "run": "keybindings.list",
+      "input": { "query": "editor.action.quickCommand" },
+      "expect": { "$length": 0 }
+    },
+    // Undo in the explorer and the editor's undo never both hold: no conflict. Ctrl+PageDown is
+    // shared with the editor's suggestions: resolved, not flagged.
+    {
+      "state": "ide://keybindings",
+      "expect": {
+        "conflicts": { "$not": { "$contains": "workspace.undo" } },
+        "resolved": { "$contains": "layout.nextTab" }
+      }
+    },
+    {
+      "state": "ide://keybindings",
+      "expect": { "conflicts": { "$not": { "$contains": "palette.show" } } }
+    },
+    // Ctrl+PageUp in an editor without suggestions open still goes to the previous tab.
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".editor-view:not([hidden]) .monaco-editor textarea",
+        "key": "PageUp",
+        "code": "PageUp",
+        "ctrl": true
+      }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "notes.txt" } },
+      "timeoutMs": 3000
+    },
+    // The when clause edited in its row.
+    { "run": "keybindings.show" },
+    { "run": "dev.type", "input": { "selector": ".keybindings-search", "text": "palette.show" } },
+    { "wait": 300 },
+    {
+      "run": "keybindings.changeWhen",
+      "input": { "command": "palette.show", "key": "ctrl+shift+p" },
+      "expect": { "editing": true }
+    },
+    { "wait": 200 },
+    { "state": "ide://keybindings", "expect": { "editingWhen": { "command": "palette.show" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".keybindings-row .keybindings-when-input" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".keybindings-when-input", "text": "!terminalFocus", "key": "Enter" }
+    },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "palette.show" },
+      "expect": { "$contains": "\"when\":\"!terminalFocus\"" },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://keybindings", "expect": { "editingWhen": null } },
+    { "run": "keybindings.reset", "input": { "command": "palette.show" } },
+
+    // ---- Testing: kept across a reopen, each test's own output ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p pbt && printf 'import test from \"node:test\";\\nimport assert from \"node:assert/strict\";\\nimport { add } from \"./lib.mjs\";\\ntest(\"adds\", () => { console.log(\"hello\"); assert.equal(add(1, 2), 3); });\\ntest(\"breaks\", () => { assert.equal(add(1, 1), 3); });\\n' > pbt/out.test.mjs && printf 'export function add(a, b) {\\n  return a + b;\\n}\\nexport function unused() {\\n  return 0;\\n}\\n' > pbt/lib.mjs",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "tests.refresh", "timeoutMs": 30000 },
+    {
+      "run": "tests.runWithCoverage",
+      "input": { "file": "pbt/out.test.mjs" },
+      "expect": { "passed": 1, "failed": 1 },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "tests.showTestOutput",
+      "input": { "test": "node:pbt/out.test.mjs::breaks" },
+      "expect": { "status": "failed", "output": { "$contains": "Expected values" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-result-output", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Expected values" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "ls .*/testing/results.json .*/coverage/last.json",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 15000
+    },
+    // The folder closes and opens again: its runs, results and coverage come back.
+    { "run": "workspace.closeFolder" },
+    { "wait": 1000 },
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "state": "ide://workspace", "expect": { "open": true }, "timeoutMs": 20000 },
+    { "state": "ide://tests", "expect": { "coverage": { "$not": null } }, "timeoutMs": 15000 },
+    {
+      "state": "ide://tests",
+      "expect": {
+        "history": [{ "passed": 1, "failed": 1, "coverage": true }],
+        "coverage": { "$exists": true }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "tests.showTestOutput",
+      "input": { "test": "node:pbt/out.test.mjs::breaks" },
+      "expect": { "output": { "$contains": "Expected values" } }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+
+    // ---- Output channels and the log level ----
+    {
+      "state": "ide://output",
+      "expect": { "level": "info", "channels": { "$contains": "\"id\":\"exthost\"" } }
+    },
+    { "run": "log.setLevel", "input": { "level": "debug" }, "expect": { "level": "debug" } },
+    { "run": "ui.toggleTheme" },
+    { "run": "ui.toggleTheme" },
+    { "run": "output.show", "input": { "channel": "window" }, "expect": { "channel": "window" } },
+    {
+      "run": "output.read",
+      "input": { "channel": "window" },
+      "expect": { "text": { "$contains": "[debug] [command:" } },
+      "timeoutMs": 3000
+    },
+    { "run": "log.setLevel", "input": { "level": "info" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "output.read",
+      "input": { "channel": "git" },
+      "expect": { "text": { "$contains": "> git init -q [" } },
+      "timeoutMs": 3000
+    },
+    { "run": "output.show", "input": { "channel": "git" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".output-body", "html": 3000 },
+      "expect": [{ "html": { "$contains": "git init -q" } }],
+      "timeoutMs": 3000
+    },
+    { "state": "ide://output", "expect": { "shown": "git" } },
+    // A channel's own level (VS Code's per-channel Set log level): git's queries at trace.
+    {
+      "run": "log.setLevel",
+      "input": { "channel": "git", "level": "trace" },
+      "expect": { "channel": "git", "level": "trace", "ownLevel": true }
+    },
+    {
+      "state": "ide://output",
+      "expect": {
+        "level": "info",
+        "channels": { "$contains": "\"id\":\"git\",\"label\":\"Git\"" }
+      }
+    },
+    { "run": "git.init" },
+    {
+      "run": "output.read",
+      "input": { "channel": "git" },
+      "expect": { "text": { "$contains": "> git rev-parse" } },
+      "timeoutMs": 3000
+    },
+    // The filter box and word wrap.
+    {
+      "run": "output.setFilter",
+      "input": { "text": "init, !rev-parse" },
+      "expect": { "filter": "init, !rev-parse" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".output-body", "html": 3000 },
+      "expect": [{ "html": { "$contains": "git init -q", "$not": { "$contains": "rev-parse" } } }],
+      "timeoutMs": 3000
+    },
+    { "run": "output.toggleWordWrap", "expect": { "wordWrap": false } },
+    {
+      "state": "ide://output",
+      "expect": { "tab": { "filter": "init, !rev-parse", "wordWrap": false } }
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".output-body.is-nowrap" }, "expect": [{}] },
+    { "run": "output.toggleWordWrap", "input": { "on": true } },
+    { "run": "output.setFilter", "input": { "text": "" } },
+    {
+      "run": "log.setLevel",
+      "input": { "channel": "git", "level": "default" },
+      "expect": { "channel": "git", "level": "info", "ownLevel": false }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- The merge editor ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && printf 'keep me\\n' > gone.txt && printf 'one two three\\nsecond\\n' > words.txt && git add -A && git commit -qm Base && git checkout -qb feature && printf 'one TWO three\\nsecond\\n' > words.txt && git rm -q gone.txt && git commit -qam Theirs && git checkout -q main && printf 'one two four\\nsecond\\n' > words.txt && printf 'kept and changed\\n' > gone.txt && git commit -qam Ours && (git merge feature >/dev/null 2>&1 || true)",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": { "$length": 2 } },
+      "timeoutMs": 10000
+    },
+    // Deleted by them, changed by us: keep it or delete it, in the editor.
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "gone.txt" },
+      "expect": { "deleted": { "by": "incoming" } },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-deleted-actions button", "limit": 4 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "git.mergeEditor.resolveDeleted",
+      "input": { "path": "gone.txt", "choice": "keep" },
+      "expect": { "kept": true, "staged": true }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": [{ "path": "words.txt" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat gone.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "kept and changed" } },
+      "timeoutMs": 15000
+    },
+    // A content conflict: the sash above the result, sizes kept with the tab, words in the result.
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "words.txt" },
+      "expect": { "conflicts": 1, "inputsShare": 0.5 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-view > .merge-result-sash" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "git.mergeEditor.setLayout",
+      "input": { "split": 0.35, "weights": { "incoming": 2 } },
+      "expect": { "inputsShare": 0.35, "inputShares": { "incoming": 0.67 } }
+    },
+    { "run": "git.mergeEditor.accept", "input": { "conflict": 1, "choice": "incoming" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-pane-result .merge-word-incoming" },
+      "expect": [{ "className": { "$contains": "merge-word-incoming" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

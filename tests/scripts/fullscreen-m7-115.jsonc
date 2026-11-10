@@ -1,0 +1,52 @@
+// D387: F11 toggles full screen (VS Code's; Ctrl+Cmd+F on macOS), from a maximized window too,
+// without the window buttons; the palette (and View → Appearance → Full screen) show the key.
+// Not on Linux: under xvfb there is no window manager to take a window full screen.
+{
+  "name": "fullscreen-m7-115",
+  "platforms": ["win32", "darwin"],
+  "steps": [
+    // From a maximized window (on Windows that left a taskbar-high gap: it's restored first).
+    { "run": "window.toggleMaximize" },
+    { "wait": 600 },
+    { "run": "layout.focusAgent" },
+    { "run": "dev.type", "input": { "selector": ".agent-input", "key": "F11", "code": "F11" } },
+    { "wait": 800 },
+    // Full screen has no minimize / maximize / close.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".window-controls", "html": 10 },
+      "expect": [{ "display": "none" }],
+      "timeoutMs": 3000
+    },
+    // F11 made it full screen: toggling again says it's leaving, and the buttons come back.
+    {
+      "run": "window.toggleFullscreen",
+      "expect": { "fullscreen": false },
+      "timeoutMs": 5000
+    },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".window-controls", "html": 10 },
+      "expect": [{ "display": "flex" }],
+      "timeoutMs": 3000
+    },
+    { "run": "window.toggleMaximize" },
+    { "wait": 600 },
+    // The command palette (and View → Appearance → Full screen) name its key.
+    { "run": "palette.show", "background": true },
+    { "wait": 500 },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": ">toggle full screen" }
+    },
+    { "wait": 400 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input", "limit": 1, "html": 20000 },
+      "expect": { "$contains": "F11" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } }
+  ]
+}

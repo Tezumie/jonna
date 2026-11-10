@@ -1,0 +1,44 @@
+// D382: the code font is the OS's default, as in VS Code (Consolas on Windows), whatever else is
+// installed (Windows Terminal shares Cascadia Code with every app). Editor, terminal and the
+// token all agree; editor.fontFamily still wins when set.
+{
+  "name": "code-font-m7-111",
+  "platforms": ["win32"],
+  "steps": [
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "html", "html": 60 },
+      "expect": [{ "html": { "$contains": "data-platform=\"windows\"" } }],
+      "print": true
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" }, "timeoutMs": 10000 },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "limit": 1, "html": 10 },
+      "expect": [{ "fontFamily": { "$contains": "Consolas" } }],
+      "print": true
+    },
+    // The terminal's DOM renderer (WebGL draws on a canvas, D204) shows the font on its rows.
+    { "run": "settings.set", "input": { "key": "terminal.gpuAcceleration", "value": "off" } },
+    { "run": "terminal.create" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".xterm-rows", "limit": 1, "html": 10 },
+      "expect": [{ "fontFamily": { "$contains": "Consolas" } }],
+      "print": true,
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // A chosen font still wins.
+    { "run": "settings.set", "input": { "key": "editor.fontFamily", "value": "Courier New" } },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "limit": 1, "html": 10 },
+      "expect": [{ "fontFamily": { "$contains": "Courier New" } }],
+      "print": true
+    },
+    { "run": "settings.set", "input": { "key": "editor.fontFamily", "value": "" } }
+  ]
+}

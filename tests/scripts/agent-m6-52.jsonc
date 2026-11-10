@@ -1,0 +1,129 @@
+// D154: a turn's file changes are one card (not a card per file), and a model deep in its work is
+// reminded to keep its plan current.
+{
+  "name": "agent-m6-52",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "agent.setMode", "input": { "autoApply": true } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please build the demo", "wait": true },
+      "expect": { "answer": { "$contains": "Demo built" } },
+      "timeoutMs": 60000
+    },
+    // The plan moved on after the reminder.
+    {
+      "state": "ide://agent/session",
+      // The step it ended on is done once the turn ends normally (D300).
+      "expect": { "plan": [{ "status": "done" }, { "status": "done" }] }
+    },
+    // Six files written: one closed card, not six.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-diff-card" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-card", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Created 6 files" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-row" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-changes-toggle" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-row", "limit": 10 },
+      "expect": { "$length": 6 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-row", "html": 1500 },
+      "expect": [{ "html": { "$contains": "new" } }]
+    },
+
+    // In review mode: the pending files, Accept all / Reject all on the card.
+    { "run": "agent.newSession" },
+    { "run": "agent.setMode", "input": { "autoApply": false } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please rename the title", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-card.has-pending", "html": 3000 },
+      "expect": [{ "html": { "$contains": "1 file to review" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-changes-card.has-pending .button-accent" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-card.has-pending" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+
+    // Review mode, six files proposed one by one: the card's "Accept all" accepts all six (its
+    // buttons were the first render's, with only the first file, D160).
+    { "run": "agent.newSession" },
+    { "run": "agent.setMode", "input": { "autoApply": false } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please build the demo", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes-card.has-pending", "html": 3000 },
+      "expect": [{ "html": { "$contains": "6 files to review" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-changes-card.has-pending .button-accent" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+
+    // Out of steps mid-work: a visible pause with Continue, not a silent end.
+    { "run": "agent.newSession" },
+    { "run": "settings.set", "input": { "key": "agent.maxSteps", "value": 3 } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please build the demo", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Paused after 3 steps" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-notice .agent-notice-actions", "html": 600 },
+      "expect": [{ "html": { "$contains": "Continue" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "agent.maxSteps", "value": 150 } }
+  ]
+}

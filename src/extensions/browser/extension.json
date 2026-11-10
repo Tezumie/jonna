@@ -1,0 +1,317 @@
+{
+  "id": "builtin.browser",
+  "version": "0.1.0",
+  "displayName": "Browser",
+  "description": "Live previews of local dev servers and HTML files, other sites in the tab or their own window, downloads, and page tools for agents.",
+  "activation": ["*"],
+  "permissions": ["browser", "fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "browser.open",
+        "title": "Open browser",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.navigate",
+        "title": "Go to address",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.back",
+        "title": "Back",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.forward",
+        "title": "Forward",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.reload",
+        "title": "Reload page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.snapshot",
+        "title": "Page snapshot",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.click",
+        "title": "Click element",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.hover",
+        "title": "Hover element",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.type",
+        "title": "Type into element",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.press",
+        "title": "Press key",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.select",
+        "title": "Select option",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.scroll",
+        "title": "Scroll page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.text",
+        "title": "Page text",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.wait",
+        "title": "Wait for page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.eval",
+        "title": "Run script in page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.console",
+        "title": "Page console",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.toggleConsole",
+        "title": "Show page console",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.list",
+        "title": "List browser tabs",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.input",
+        "title": "Page input",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.find",
+        "title": "Find in page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.selectTab",
+        "title": "Show browser tab",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.closeTab",
+        "title": "Close browser tab",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.devtools",
+        "title": "Toggle browser DevTools",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.network",
+        "title": "Page requests",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.request",
+        "title": "Request details",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.dom",
+        "title": "Element HTML",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.styles",
+        "title": "Element styles",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.performance",
+        "title": "Measure page performance",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.storage",
+        "title": "Page storage",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.highlight",
+        "title": "Highlight element",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.reveal",
+        "title": "Reveal element in DevTools",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.inspect",
+        "title": "Select an element in the page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.resize",
+        "title": "Device size",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.focusAddress",
+        "title": "Focus address bar",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.setStorage",
+        "title": "Change page storage",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.popOut",
+        "title": "Browser: open in its own window",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.screenshot",
+        "title": "Take screenshot of page",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.goLive",
+        "title": "Go Live",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.toggleLive",
+        "title": "Toggle live preview",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.stopLive",
+        "title": "Stop live preview",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.downloads",
+        "title": "List downloads",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.showDownloads",
+        "title": "Show downloads",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.openDownload",
+        "title": "Open downloaded file",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.revealDownload",
+        "title": "Show download in folder",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.cancelDownload",
+        "title": "Cancel download",
+        "category": "Browser"
+      },
+      {
+        "id": "browser.clearDownloads",
+        "title": "Clear finished downloads",
+        "category": "Browser"
+      }
+    ],
+    "settings": {
+      "browser.notifyOnServer": {
+        "type": "boolean",
+        "default": true,
+        "description": "When a terminal prints a local server address, offer to open it in the browser.",
+        "order": 1
+      },
+      "browser.liveReload.onEdit": {
+        "type": "boolean",
+        "default": true,
+        "description": "Previews of workspace files update while you type (unsaved changes), not only on save; CSS changes apply without a reload.",
+        "order": 2
+      },
+      "browser.goLive.statusBar": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show Go Live in the status bar. It steps aside by itself while a Live Server extension (Live Server, Live Preview, Five Server) is installed and enabled, so there's one Go Live. A preview opened in an outside browser reloads when you save, too.",
+        "order": 2.5
+      },
+      "browser.externalLinks": {
+        "type": "string",
+        "enum": ["ide", "system"],
+        "default": "ide",
+        "description": "Where a page's links and popups to other sites open: \"ide\" in a browser tab of the IDE, \"system\" in the system browser. Links to local servers always stay in the IDE.",
+        "order": 3
+      },
+      "browser.embedSites": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show other sites (not local servers or workspace files) inside the browser tab, as VS Code does, instead of in a separate window the tab controls. Windows and macOS; elsewhere, or if it fails, they open in their own window. The page hides while a menu or dialog of the IDE covers it.",
+        "order": 4
+      },
+      "browser.trustedInput": {
+        "type": "boolean",
+        "default": true,
+        "description": "Clicks, keys and typing from the agent and the browser commands reach the page as a person's (trusted events, through the browser's DevTools protocol): in your own Chrome or Edge, and in the built-in browser on Windows. Off: they are synthesized by script, which pages that check event.isTrusted ignore.",
+        "order": 5
+      }
+    },
+    "keybindings": [
+      {
+        "key": "f12",
+        "command": "browser.devtools",
+        "when": "browserFocus"
+      },
+      {
+        "key": "ctrl+shift+i",
+        "mac": "cmd+alt+i",
+        "command": "browser.devtools",
+        "when": "browserFocus"
+      },
+      {
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "command": "browser.inspect",
+        "when": "browserFocus"
+      },
+      {
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "command": "browser.focusAddress",
+        "when": "browserFocus"
+      },
+      {
+        "key": "f5",
+        "command": "browser.reload",
+        "when": "browserFocus"
+      },
+      {
+        "key": "ctrl+r",
+        "mac": "cmd+r",
+        "command": "browser.reload",
+        "when": "browserFocus"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1125 @@
+/* The canvas page (D181). Colors, type and radii are the IDE's tokens, sent by the IDE with the
+   theme when the page loads and whenever it changes. */
+:root {
+  --c: var(--fg-muted);
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+  color: var(--fg-default);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* ---- The board ---- */
+#stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  outline: none;
+  cursor: default;
+  background-image: radial-gradient(circle, var(--border-strong) 1px, transparent 1.2px);
+  touch-action: none;
+  user-select: none;
+}
+#stage.no-grid,
+#stage.is-broken {
+  background-image: none;
+}
+#stage.is-panning {
+  cursor: grab;
+}
+/* While Space is held, the cards and handles show the hand too. */
+#stage.is-panning .node,
+#stage.is-panning .handle,
+#stage.is-panning .resize,
+#stage.is-panning .group-label,
+#stage.is-panning .edge-hit {
+  cursor: grab;
+}
+#world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+#edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+#marquee {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* ---- Cards ---- */
+.node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-1);
+}
+.node.has-color {
+  border-color: color-mix(in srgb, var(--c) 60%, var(--border-default));
+  background: color-mix(in srgb, var(--c) 12%, var(--bg-surface-raised));
+}
+.node.is-selected {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--shadow-1);
+}
+.node.is-flash::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: flash 1.8s ease-out;
+}
+@keyframes flash {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.node-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+/* A text card scrolls whenever it overflows (D187: not only once selected). */
+.node.is-text .node-body {
+  overflow: auto;
+  user-select: text;
+}
+.placeholder {
+  color: var(--fg-subtle);
+  margin: 0;
+}
+
+/* Groups: a tinted area with its name above. */
+.node.is-group {
+  background: color-mix(in srgb, var(--c) 6%, transparent);
+  border-color: color-mix(in srgb, var(--c) 30%, var(--border-default));
+  box-shadow: none;
+}
+.node.is-group.has-color {
+  background: color-mix(in srgb, var(--c) 9%, transparent);
+}
+.node.is-group.is-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.group-label {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  color: var(--fg-default);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: move;
+}
+.node.is-group.has-color .group-label {
+  background: color-mix(in srgb, var(--c) 22%, var(--bg-surface-raised));
+}
+.group-label[hidden] {
+  display: none;
+}
+.group-input,
+.edge-input {
+  font: inherit;
+  color: var(--fg-default);
+  background: var(--bg-input-raised, var(--bg-surface-raised));
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  padding: 2px 8px;
+}
+.group-input {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  min-width: 160px;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+/* Editing a card. */
+.node-editor {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  line-height: 1.5;
+}
+.node.is-editing {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--shadow-2);
+}
+
+/* Handles: drag a dot to draw an arrow; the corner resizes. */
+.handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg-surface-raised);
+  border: 2px solid var(--fg-muted);
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity 0.12s;
+  z-index: 2;
+}
+.handle[data-side="top"] {
+  left: calc(50% - 6px);
+  top: -6px;
+}
+.handle[data-side="bottom"] {
+  left: calc(50% - 6px);
+  bottom: -6px;
+}
+.handle[data-side="left"] {
+  top: calc(50% - 6px);
+  left: -6px;
+}
+.handle[data-side="right"] {
+  top: calc(50% - 6px);
+  right: -6px;
+}
+.handle:hover {
+  border-color: var(--accent);
+}
+.node:hover > .handle,
+.node.is-selected > .handle {
+  opacity: 1;
+}
+.node.is-group > .handle[data-side="top"] {
+  display: none;
+}
+.resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 2;
+}
+.node.is-selected > .resize::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--fg-subtle);
+  border-bottom: 2px solid var(--fg-subtle);
+  border-bottom-right-radius: 2px;
+}
+.node.is-editing > .handle,
+.node.is-editing > .resize,
+.is-far .handle {
+  display: none;
+}
+/* Very far out, cards show their first line only (D187: zoomed out, text stays as long as it
+   can be read at all). */
+.is-tiny .node-body .card-md > :not(:first-child),
+.is-tiny .file-markdown > :not(:first-child),
+.is-tiny .file-preview {
+  visibility: hidden;
+}
+.is-tiny .node-body .card-md > :first-child {
+  font-size: 28px;
+}
+
+/* ---- Card content: Markdown, files, links ---- */
+.node-body > :first-child {
+  margin-top: 0;
+}
+.node-body > :last-child {
+  margin-bottom: 0;
+}
+.node-body h1,
+.node-body h2,
+.node-body h3 {
+  margin: 0.4em 0 0.3em;
+  line-height: 1.25;
+}
+.node-body h1 {
+  font-size: 1.5em;
+}
+.node-body h2 {
+  font-size: 1.25em;
+}
+.node-body h3,
+.node-body h4,
+.node-body h5,
+.node-body h6 {
+  font-size: 1.05em;
+}
+.node-body p,
+.node-body ul,
+.node-body ol,
+.node-body pre,
+.node-body table,
+.node-body blockquote {
+  margin: 0.4em 0;
+}
+.node-body ul,
+.node-body ol {
+  padding-left: 1.4em;
+}
+.node-body li[data-indent="1"] {
+  margin-left: 1.2em;
+}
+.node-body li[data-indent="2"] {
+  margin-left: 2.4em;
+}
+.node-body li.task {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.node-body input[type="checkbox"] {
+  margin: 0 4px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--accent);
+}
+.node-body code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg-active);
+}
+.node-body pre {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-sunken);
+  overflow: auto;
+}
+.node-body pre code {
+  padding: 0;
+  background: none;
+}
+.node-body blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--fg-muted);
+}
+.node-body hr {
+  border: 0;
+  border-top: 1px solid var(--border-default);
+}
+.node-body table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.node-body th,
+.node-body td {
+  border: 1px solid var(--border-default);
+  padding: 3px 8px;
+  text-align: left;
+}
+.node-body th {
+  background: var(--bg-active);
+}
+.md-link {
+  color: var(--accent-text, var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.md-wiki {
+  color: var(--accent-text, var(--accent));
+}
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+.file-head > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.file-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.file-path {
+  min-width: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.node.is-file .node-body,
+.node.is-link .node-body {
+  display: flex;
+  flex-direction: column;
+}
+.file-preview {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  white-space: pre;
+  overflow: hidden;
+  color: var(--fg-muted);
+}
+.file-preview {
+  overflow: auto;
+}
+.link-url {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Arrows ---- */
+.edge {
+  --c: var(--fg-subtle);
+}
+.edge-line {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 2;
+}
+.edge-head {
+  fill: var(--c);
+  stroke: var(--c);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.edge.is-selected .edge-line,
+.edge.is-selected .edge-head {
+  stroke: var(--accent);
+}
+.edge.is-selected .edge-head {
+  fill: var(--accent);
+}
+.edge.is-drawing {
+  opacity: 0.8;
+}
+.edge.is-drawing .edge-line {
+  stroke-dasharray: 6 4;
+}
+.edge.is-flash .edge-line {
+  animation: edge-flash 1.8s ease-out;
+}
+@keyframes edge-flash {
+  0%,
+  30% {
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+}
+.edge-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 220px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.edge-label.is-selected {
+  color: var(--fg-default);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ---- Bars ---- */
+.bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  max-width: calc(100% - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-overlay, var(--bg-surface-raised));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-2);
+  z-index: 5;
+}
+.bar[hidden] {
+  display: none;
+}
+#toolbar {
+  bottom: 12px;
+}
+#selectionbar {
+  top: 12px;
+}
+.bar button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.bar button:hover {
+  background: var(--bg-hover);
+  color: var(--fg-default);
+}
+.bar button[data-action="zoom-reset"] {
+  min-width: 46px;
+}
+.bar svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.bar-divider {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border-default);
+}
+.bar button.swatch::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.bar button.swatch.is-on::before {
+  box-shadow:
+    0 0 0 2px var(--bg-overlay, var(--bg-surface-raised)),
+    0 0 0 3.5px var(--c);
+}
+
+/* ---- Empty and broken ---- */
+#empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  color: var(--fg-subtle);
+  pointer-events: none;
+}
+#empty[hidden] {
+  display: none;
+}
+.empty-title {
+  color: var(--fg-muted);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+#error {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-default);
+  color: var(--status-danger-fg);
+  z-index: 6;
+}
+#error[hidden] {
+  display: none;
+}
+
+/* Small windows: the toolbar keeps adding and fitting; undo, redo and zoom steps go (their keys
+   still work). */
+@media (max-width: 460px) {
+  #toolbar [data-action="undo"],
+  #toolbar [data-action="redo"],
+  #toolbar [data-action="zoom-in"],
+  #toolbar [data-action="zoom-out"],
+  #toolbar .bar-divider:nth-of-type(2) {
+    display: none;
+  }
+}
+
+/* ---- Images on file cards ---- */
+.file-image {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-sunken);
+}
+
+/* ---- Context menu (the page's own) ---- */
+.ctx-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 200px;
+  max-width: calc(100vw - 8px);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-overlay, var(--bg-surface-raised));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-sm);
+}
+.ctx-menu[hidden] {
+  display: none;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-default);
+  text-align: left;
+  cursor: pointer;
+}
+.ctx-item:hover,
+.ctx-item:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+.ctx-item:disabled {
+  color: var(--fg-subtle);
+  cursor: default;
+  background: none;
+}
+.ctx-item.is-danger:not(:disabled) {
+  color: var(--status-danger-fg);
+}
+.ctx-check {
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+.ctx-label {
+  flex: 1;
+  white-space: nowrap;
+}
+.ctx-key {
+  flex: none;
+  margin-left: 16px;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+.ctx-line {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-subtle);
+}
+.ctx-swatches {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+}
+.ctx-swatches .swatch {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.ctx-swatches .swatch::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.ctx-swatches .swatch.is-none::before {
+  display: none;
+}
+.ctx-swatches .swatch svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.ctx-swatches .swatch:hover {
+  background: var(--bg-hover);
+}
+.ctx-swatches .swatch.is-on::before {
+  box-shadow:
+    0 0 0 2px var(--bg-overlay, var(--bg-surface-raised)),
+    0 0 0 3.5px var(--c);
+}
+
+/* ---- Find ---- */
+.find-bar {
+  top: 12px;
+  left: auto;
+  right: 12px;
+  transform: none;
+  gap: 6px;
+  padding: 4px 4px 4px 8px;
+}
+.find-input {
+  width: 200px;
+  max-width: 40vw;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input-raised, var(--bg-surface-raised));
+  color: var(--fg-default);
+  font: inherit;
+  outline: none;
+}
+.find-input:focus {
+  border-color: var(--accent);
+}
+.find-count {
+  min-width: 56px;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.node.is-match {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--status-warning-fg) 70%, transparent),
+    var(--shadow-1);
+}
+.node.is-match.is-selected {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 5px color-mix(in srgb, var(--status-warning-fg) 50%, transparent);
+}
+
+/* The find bar sits top right; under it, in a narrow page, the selection bar moves down. */
+@media (max-width: 760px) {
+  body.is-finding #selectionbar {
+    top: 56px;
+  }
+}
+
+/* ---- File cards: the theme's icon, colored code, rendered Markdown (D184) ---- */
+.file-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+.file-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.file-preview.is-code {
+  color: var(--fg-default);
+}
+.file-markdown {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 2px 0;
+}
+.file-markdown > :first-child {
+  margin-top: 0;
+}
+.file-note {
+  margin-top: 6px;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+.file-summary ul {
+  margin: 6px 0 0;
+  padding-left: 1.2em;
+  color: var(--fg-muted);
+}
+/* Our own fallback glyph (the theme's icon carries its own drawing attributes). */
+.file-icon svg:not([stroke]):not([fill]) {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Resizing from any edge, arrow ends, alignment guides (D184) ---- */
+.resize[data-dir="n"],
+.resize[data-dir="s"] {
+  left: 10px;
+  right: 10px;
+  width: auto;
+  height: 8px;
+  cursor: ns-resize;
+}
+.resize[data-dir="n"] {
+  top: -4px;
+  bottom: auto;
+}
+.resize[data-dir="s"] {
+  bottom: -4px;
+}
+.resize[data-dir="e"],
+.resize[data-dir="w"] {
+  top: 10px;
+  bottom: 10px;
+  width: 8px;
+  height: auto;
+  cursor: ew-resize;
+}
+.resize[data-dir="e"] {
+  right: -4px;
+}
+.resize[data-dir="w"] {
+  left: -4px;
+  right: auto;
+}
+.resize[data-dir="n"]::after,
+.resize[data-dir="s"]::after,
+.resize[data-dir="e"]::after,
+.resize[data-dir="w"]::after {
+  display: none;
+}
+/* The selected card sits over the others (as in Obsidian), without changing the file. */
+.node.is-selected:not(.is-group) {
+  z-index: 1;
+}
+.edge-end {
+  fill: var(--bg-surface-raised);
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: all;
+  cursor: grab;
+}
+.guide {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* ---- Menus: submenus, headings, custom color ---- */
+.ctx-menu.is-sub {
+  z-index: 21;
+}
+.ctx-item.is-open {
+  background: var(--bg-hover);
+}
+.ctx-heading {
+  padding: 4px 8px 2px 24px;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+.ctx-swatches .swatch.is-custom::before {
+  background: conic-gradient(
+    var(--label-1),
+    var(--label-3),
+    var(--label-4),
+    var(--label-5),
+    var(--label-6),
+    var(--label-1)
+  );
+}
+.ctx-swatches .swatch.is-custom.is-on::before {
+  background: var(--c);
+}
+.swatch-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Toolbar toggles, read-only ---- */
+.bar button.is-on {
+  background: var(--bg-active);
+  color: var(--fg-default);
+}
+body.is-locked .handle,
+body.is-locked .resize {
+  display: none;
+}
+
+/* ---- Group backgrounds ---- */
+.node.is-group > .node-body.has-background {
+  border-radius: inherit;
+  opacity: 0.85;
+}
+
+/* ---- Help and export dialogs ---- */
+.help {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 12px 16px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-overlay, var(--bg-surface-raised));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-sm);
+}
+.help[hidden] {
+  display: none;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.help-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.help-head button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.help-head button:hover {
+  background: var(--bg-hover);
+}
+.help-head svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.help dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+.help dt {
+  color: var(--fg-default);
+}
+.help dd {
+  margin: 0;
+  color: var(--fg-muted);
+}
+.export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.export-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.export-row select {
+  min-width: 170px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input-raised, var(--bg-surface-raised));
+  color: var(--fg-default);
+  font: inherit;
+}
+.export-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--fg-muted);
+}
+.export-check input {
+  accent-color: var(--accent);
+}
+.export-go {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.export-go:hover {
+  background: var(--accent-hover);
+}
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-overlay, var(--bg-surface-raised));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-1);
+  font-size: var(--text-sm);
+}
+.toast[hidden] {
+  display: none;
+}
+
+/* ---- The IDE's Markdown styles in cards (D187) ---- */
+/* The preview's page layout (padding, width) doesn't apply inside a card. */
+.node .md-document {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  cursor: inherit;
+}
+.node .md-document > :first-child {
+  margin-top: 0;
+}
+.node:not(.is-selected) .md-document {
+  user-select: none;
+}
+/* Code in a file card looks like a code block in Markdown. */
+.file-preview,
+.file-preview.is-code {
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+[data-drag] {
+  -webkit-user-drag: element;
+}
+.node.is-selected [data-drag] {
+  cursor: grab;
+}
+
+/* ---- Web pages in link cards (D187) ---- */
+.link-head {
+  flex: none;
+}
+.web-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  /* Used once its card is selected: until then a press moves the card. */
+  pointer-events: none;
+}
+.node.is-selected .web-frame {
+  pointer-events: auto;
+}
+.node.is-selected .link-head .file-path {
+  display: none;
+}

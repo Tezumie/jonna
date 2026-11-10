@@ -1,0 +1,141 @@
+// Feature gaps of D229 closed in m7.11: the multi-file diff of a repository's changes follows its
+// status (no Refresh needed) and moves between files with keys (editor.multiDiff.nextFile /
+// previousFile); a test's output keeps its ANSI colors in the Test results tab (a fake Jest's
+// colored failure); the debugger's captured output shows a line printed without its end at once
+// and continues it (a Node program's prompt). Needs `git` and `node` on PATH. Fixtures:
+// tests/fixtures/setup/gaps-m7-11.cjs.
+{
+  "name": "gaps-m7-11",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // ---- Multi-file diff: follows the status, next / previous file ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'a\\n' > m1.txt && printf 'b\\n' > m2.txt && printf 'c\\n' > m3.txt && git add -A && git commit -qm Base && printf 'A\\n' > m1.txt && printf 'B\\n' > m2.txt",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    { "run": "git.refresh" },
+    { "run": "git.viewChanges", "expect": { "files": 2 } },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [{ "files": [{ "path": "m1.txt" }, { "path": "m2.txt" }] }]
+    },
+    // A third file changes: the open tab lists it without Refresh.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'C\\n' > m3.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [{ "files": { "$length": 3 } }],
+      "timeoutMs": 15000
+    },
+    // Folded files stay folded when the list changes.
+    { "run": "editor.multiDiff.collapseAll", "expect": { "files": [{ "collapsed": true }] } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git checkout -q -- m1.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [
+        {
+          "files": [
+            { "path": "m2.txt", "collapsed": true },
+            { "path": "m3.txt", "collapsed": true }
+          ]
+        }
+      ],
+      "timeoutMs": 15000
+    },
+    { "run": "editor.multiDiff.expandAll" },
+    { "run": "editor.multiDiff.nextFile", "expect": { "file": "m3.txt", "index": 1, "files": 2 } },
+    { "run": "editor.multiDiff.nextFile", "expect": { "file": null } },
+    { "run": "editor.multiDiff.previousFile", "expect": { "file": "m2.txt", "index": 0 } },
+    { "run": "editor.multiDiff.previousFile", "expect": { "file": null } },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- Test output in color ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/gaps-m7-11.cjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "tests.refresh", "timeoutMs": 30000 },
+    {
+      "run": "tests.run",
+      "input": { "framework": "jest" },
+      "expect": { "passed": 1, "failed": 1 },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "tests.showTestOutput",
+      "input": { "test": "jest:jst/sum.test.js::sums › fails" },
+      // Agents get the text without its escape sequences.
+      "expect": {
+        "status": "failed",
+        "output": { "$contains": "Expected: 3" }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-result-output span", "html": 400, "limit": 20 },
+      "expect": [
+        { "html": { "$contains": "--terminal-ansi-red" } },
+        { "html": { "$contains": "--terminal-ansi-green" } },
+        { "html": { "$contains": "--terminal-ansi-red" } },
+        { "html": { "$contains": "orange" } },
+        { "html": { "$contains": "truecolor" } }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-result-output", "html": 2000 },
+      "expect": [{ "html": { "$not": { "$contains": "[31m" } } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- Debugger: a line without its end shows at once and is continued ----
+    {
+      "run": "debug.runWithoutDebugging",
+      "input": { "name": "Prompt" },
+      "expect": { "name": "Prompt" },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.showConsole" },
+    // The prompt is out well before the program prints the rest (3 s later).
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "Name? " } },
+      "timeoutMs": 2500
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "done" } },
+      "timeoutMs": 15000
+    },
+    // One line "Name? Bob" (not "Name? " and "Bob" apart); the progress line redrawn.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-console-line.is-output", "html": 400, "limit": 10 },
+      "expect": { "$contains": "Name? Bob" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-console-line.is-output", "html": 400, "limit": 10 },
+      "expect": { "$not": { "$contains": "10%" } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 }
+  ]
+}

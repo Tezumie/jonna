@@ -1,0 +1,83 @@
+// D118: new viewers (hex for binary files and on request, CSV/TSV table), and the terminal after
+// a clear: the next command is still tracked (its prompt is marked again).
+{
+  "name": "features-m6-17",
+  "steps": [
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "data.csv" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "data.csv" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "name,city\n\"Smith, J\",Paris\nAda,London\n" }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "viewer.openPreview",
+      "input": { "path": "data.csv", "toSide": true },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "state": "ide://layout", "expect": { "groups": { "$contains": "Preview data.csv" } } },
+    {
+      "run": "editor.reopenWith",
+      "input": { "path": "notes.txt", "with": "hex" },
+      "expect": { "with": "hex" }
+    },
+    { "state": "ide://layout", "expect": { "groups": { "$contains": "notes.txt (hex)" } } },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "mod.pyc" } },
+    {
+      "state": "ide://layout",
+      "expect": { "groups": { "$contains": "mod.pyc (hex)" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo before-clear", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "before-clear" } },
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.clear" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo after-clear", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "after-clear" } },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://terminals/1/commands", "expect": { "$contains": "after-clear" } },
+    // D119: a dark page gets dark scrollbars (in a layer the page's own rules beat); a light one doesn't.
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "dark.html" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "dark.html" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "<!doctype html><html><body style=\"background:#101418;color:#eee;height:3000px\">Dark</body></html>\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "browser.open", "input": { "path": "dark.html" } },
+    {
+      "run": "browser.eval",
+      "input": { "code": "!!document.getElementById('__ide-dark-scrollbars')" },
+      "expect": { "result": "true" },
+      "timeoutMs": 10000
+    },
+    { "run": "browser.navigate", "input": { "url": "site/index.html" } },
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "document.readyState === 'complete' && !document.getElementById('__ide-dark-scrollbars')"
+      },
+      "expect": { "result": "true" },
+      "timeoutMs": 10000
+    },
+    // Screenshot for a look at the hex view and the cleared terminal (saved under .jonna).
+    { "run": "editor.reopenWith", "input": { "path": "data.csv", "with": "hex" } },
+    { "run": "workbench.screenshot", "input": { "save": true } }
+  ]
+}

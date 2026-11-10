@@ -1,0 +1,32 @@
+@layer extensions {
+  /* Language server settings (D204): the settings page's rows and cards, plus two JSON fields. */
+  .lsp-settings-json-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+  .lsp-settings-textarea {
+    width: 100%;
+    height: auto;
+    min-height: 120px;
+    padding: var(--space-3) var(--space-4);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    resize: vertical;
+  }
+  .lsp-settings-json-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-4);
+  }
+  .lsp-settings-json-note {
+    flex: 1;
+    min-width: 0;
+  }
+  .lsp-settings-view .settings-list > .setting-note {
+    display: block;
+    margin-bottom: var(--space-4);
+  }
+}

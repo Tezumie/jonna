@@ -1,0 +1,259 @@
+// m7-32: VS Code's triggered breakpoints, restart frame, inline values and step into target.
+// Node: a breakpoint in add() waits for a conditional one in the loop (i === 2), so the first
+// stop in add() is the third call; a third breakpoint waits for the one in add(). While paused
+// in add(), `name = value` shows after its lines (the editor's decoration and ide://debug);
+// Restart frame (Node's inspector, the call stack's menu and button) runs add() again from its
+// start; the session's end makes the triggered breakpoints wait again. A scripted DAP adapter
+// (mock-dap.mjs) lists step-in targets: the editor's menu offers "Step into target", and the
+// command steps into the chosen one.
+{
+  "name": "debug-extras-m7-32",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbg32 .vscode && cp ../setup/debug-extras-m7-32/app.js dbg32/ && cp ../setup/debug-extras-m7-32/launch.json .vscode/launch.json && echo copied",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "editor.openFile", "input": { "path": "dbg32/app.js" } },
+    { "state": "ide://editors/active", "expect": { "path": "dbg32/app.js" }, "timeoutMs": 5000 },
+    { "run": "debug.showView" },
+
+    // The trigger: the loop's call when i is 2. Line 2 (in add) waits for it; line 9 waits for
+    // line 2.
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg32/app.js", "line": 7, "condition": "i === 2" },
+      "save": "loop"
+    },
+    {
+      "run": "debug.addTriggeredBreakpoint",
+      "input": { "path": "dbg32/app.js", "line": 2, "triggeredBy": "${loop.id}" },
+      "expect": { "added": true, "breakpoint": { "line": 2, "waiting": true } },
+      "save": "inAdd"
+    },
+    {
+      "run": "debug.addTriggeredBreakpoint",
+      "input": { "path": "dbg32/app.js", "line": 9, "triggeredBy": "${inAdd.breakpoint.id}" },
+      "expect": { "added": true }
+    },
+    // A loop can't be made.
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg32/app.js", "line": 7, "triggeredBy": "${inAdd.breakpoint.id}" },
+      "expectError": "wait for each other"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .debug-bp.is-conditional" },
+      "expect": { "$length": 3 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-breakpoints [data-breakpoint]", "html": 600 },
+      "expect": [
+        {},
+        { "html": { "$contains": "after app.js:7" } },
+        { "html": { "$contains": "after app.js:2" } }
+      ],
+      "timeoutMs": 5000
+    },
+
+    // The first stop is the trigger (i === 2), not add()'s first call.
+    { "run": "debug.start", "input": { "name": "App" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "line": 7 }],
+        "sessions": [{ "canRestartFrame": true }],
+        "breakpoints": [
+          { "line": 7, "verified": true },
+          { "line": 2, "triggeredIn": { "$length": 1 } },
+          { "line": 9, "waiting": true }
+        ]
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "i" }, "expect": { "value": "2" } },
+    // Line 9's still waits: pending in Breakpoints, hollow in the margin.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-breakpoints .debug-row.is-pending" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .debug-bp.is-pending.is-conditional" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+
+    // Line 2 was set when the trigger was hit: continuing stops in add() with b === 2.
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "name": "add", "line": 2 }] },
+      "timeoutMs": 15000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "b" }, "expect": { "value": "2" } },
+
+    // Inline values after add()'s lines.
+    {
+      "state": "ide://debug",
+      "expect": {
+        "inlineValues": {
+          "path": "dbg32/app.js",
+          "lines": { "$contains": "{\"line\":1,\"text\":\"a = 1, b = 2\"}" }
+        }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ext-dt-2000000-after", "html": 300 },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+
+    // Restart frame: step to line 3, then add() runs again from its start.
+    { "run": "debug.stepOver" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "name": "add", "line": 3 }] },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-stack [data-frame='0'] .debug-row-action" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".debug-stack [data-frame='0']", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": { "$contains": "Restart frame" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    { "run": "debug.restartFrame", "input": { "index": 0 }, "expect": { "restarted": "add" } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "name": "add", "line": 2 }, { "line": 7 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "a + b" }, "expect": { "value": "3" } },
+
+    // D280: in a short window, Loaded scripts opened keeps Breakpoints in the view (the sections
+    // shrink, each list scrolling): it was pushed past the bottom, out of reach.
+    { "run": "dev.setWindowSize", "input": { "width": 1100, "height": 560 } },
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".debug-loaded-section .debug-section-toggle" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-loaded .debug-row", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-view .debug-section:last-child > .debug-section-title" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$lte": 500 }] }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".debug-loaded-section .debug-section-toggle" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 800 } },
+
+    // Line 9 was set when line 2 was hit: the next stop, with the total inline.
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 9 }] },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "inlineValues": { "lines": { "$contains": "total = 3" } } },
+      "timeoutMs": 10000
+    },
+    // debug.inlineValues "off" takes them away.
+    { "run": "settings.set", "input": { "key": "debug.inlineValues", "value": "off" } },
+    { "state": "ide://debug", "expect": { "inlineValues": null }, "timeoutMs": 5000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ext-dt-2000000-after" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "settings.set", "input": { "key": "debug.inlineValues", "value": "auto" } },
+
+    // The end: triggered breakpoints wait again.
+    { "run": "debug.continue" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "inlineValues": null,
+        "breakpoints": [
+          { "line": 7 },
+          { "line": 2, "waiting": true },
+          { "line": 9, "waiting": true }
+        ]
+      },
+      "timeoutMs": 5000
+    },
+    { "run": "debug.removeAllBreakpoints", "expect": { "breakpoints": 0 } },
+
+    // Step into target (the scripted adapter lists two calls on the stopped line).
+    { "run": "debug.start", "input": { "name": "Mock targets" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "sessions": [{ "name": "Mock targets", "canStepIntoTargets": true }],
+        "frames": [{ "line": 2 }]
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "debug.stepIntoTarget",
+      "input": { "list": true },
+      "expect": {
+        "targets": [{ "id": 11, "label": "parse(input)" }, { "id": 12, "label": "render(tree)" }]
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "dbg32/app.js", "line": 2 } },
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .view-lines", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Step into target" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "run": "debug.stepIntoTarget",
+      "input": { "targetId": 12 },
+      "expect": { "stepped": "render(tree)" }
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "stopped": { "reason": "step" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "stepInTarget" },
+      "expect": { "value": "12" }
+    },
+    { "run": "debug.stop" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 }
+  ]
+}

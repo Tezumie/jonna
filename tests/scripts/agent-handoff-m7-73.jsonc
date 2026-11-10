@@ -1,0 +1,69 @@
+// D329: hand_off_task. A new message about something else arrives mid-task: the agent moves the
+// task to a new chat (this conversation plus the remaining plan) that starts working on it at
+// once, shows a card linking to it, and answers the new message here. Against
+// tests/fixtures/mock-ollama.mjs (pkgHScripted).
+{
+  "name": "agent-handoff-m7-73",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "first"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgh handoff: a new question while the long task runs" },
+      "expect": { "answer": { "$contains": "PkgH answered the new question (handed off)." } },
+      "timeoutMs": 20000
+    },
+    // The card: what moved, and a link to the new chat.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-handoff", "limit": 2, "html": 1200 },
+      "expect": [
+        {
+          "html": { "$contains": "Pkgh long task" }
+        }
+      ],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-handoff button", "limit": 2, "html": 200 },
+      "expect": [{ "html": { "$contains": "Open chat" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Open chat: the new chat carried on, with the conversation it came from.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .agent-handoff .button-secondary" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": { "$not": "${first.session}" },
+        "status": "idle",
+        "items": { "$contains": "PkgH carried on (with the conversation)." }
+      },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "pkgh-continue: list the folder" } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

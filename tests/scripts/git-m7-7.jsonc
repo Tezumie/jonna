@@ -1,0 +1,184 @@
+// D220: Source control reads `git status` when files change on disk (the file index's watcher, no
+// 5 s poll), the Graph's base branch in orange (VS Code's base ref) and its branch filter shown as
+// text ("Auto" / "All"), chips in their lane's color in All branches mode, VS Code's "multiple"
+// repositories mode (every repository's changes in one tree) and `repository` on the branch,
+// worktree and rebase commands. A local bare repository is the remote; its HEAD is main, and the
+// current branch is a feature branch, so main is the base. Needs `git` on PATH.
+{
+  "name": "git-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && git add -A && git commit -qm Base && rm -rf ../g77-remote.git && git init -q --bare ../g77-remote.git && git remote add origin ../g77-remote.git && git push -q -u origin main && git remote set-head origin main && git checkout -qb feature && echo f > feature.txt && git add feature.txt && git commit -qm 'Feature work' && git push -q -u origin feature && git checkout -q main && echo m > main.txt && git add main.txt && git commit -qm 'Main work' && git push -q && git branch other main && git checkout -q feature",
+        "timeoutMs": 40000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 50000
+    },
+    { "run": "git.refresh" },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "head": "feature" }, "watched": true },
+      "timeoutMs": 10000
+    },
+
+    // A file written outside the IDE shows up from the watcher, well before any poll.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo outside > from-disk.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": [{ "path": "from-disk.txt", "status": "U" }] },
+      "timeoutMs": 4000
+    },
+    // Past the watcher's debounce (300 ms) first: a file made and removed within it is one
+    // no-op to the watcher, and the status above may have come from git's own folder watcher.
+    { "wait": 1000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm from-disk.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": { "$length": 0 } },
+      "timeoutMs": 4000
+    },
+
+    // The Graph: the filter's choice as text, the base branch (origin/main) orange.
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .view-action-label" },
+      "expect": [{ "html": { "$contains": ">Auto<" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .scm-ref.scm-chip-base", "html": 400 },
+      "expect": [{ "html": { "$contains": "origin/main" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .scm-dot.scm-lane-base" },
+      "expect": { "$not": { "$length": 0 } }
+    },
+    // The current branch keeps its own colors.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .scm-ref.is-head.scm-chip" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "git.toggleGraphAllBranches", "input": { "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .view-action-label" },
+      "expect": [{ "html": { "$contains": ">All<" } }],
+      "timeoutMs": 5000
+    },
+    // All branches: "other" (no special ref) takes its lane's color.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-section-id='scm.graph'] .scm-ref.is-branch.scm-chip",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "other" } }],
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "git.toggleGraphAllBranches", "input": { "value": false } },
+
+    // A nested repository; "multiple" mode lists both repositories' changes in one tree.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir inner && cd inner && git init -q && git symbolic-ref HEAD refs/heads/trunk && git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'inner\\n' > inner.txt && git add -A && git commit -qm 'Inner base' && printf 'changed\\n' >> inner.txt && cd .. && echo top > top.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "git.repositories",
+      "expect": [{ "kind": "workspace" }, { "name": "inner", "kind": "nested" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "scm.repositories.selectionMode", "value": "multiple" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-row.scm-repo-node", "limit": 4 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 8000
+    },
+    // Both repositories' files are in the tree; the list stays, with a checkbox each (D229).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-file-name", "limit": 10 },
+      "expect": { "$contains": "inner.txt" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-file-name", "limit": 10 },
+      "expect": { "$contains": "top.txt" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-repos:not([hidden]) .scm-repo-check" },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A click on a repository's row selects it (the message box commits there).
+    { "run": "dev.click", "input": { "selector": ".scm-row.scm-repo-node[data-repo$='inner']" } },
+    {
+      "state": "ide://git/repositories",
+      "expect": [{ "selected": false }, { "name": "inner", "selected": true }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "scm.repositories.selectionMode", "value": "single" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-row.scm-repo-node" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+
+    // Branch, worktree and rebase commands take `repository`.
+    { "run": "git.selectRepository", "input": { "repository": "." } },
+    {
+      "run": "git.createBranchFrom",
+      "input": { "repository": "inner", "name": "inner-topic", "from": "trunk" },
+      "expect": { "branch": "inner-topic" }
+    },
+    {
+      "run": "git.status",
+      "input": { "repository": "inner" },
+      "expect": { "branch": { "head": "inner-topic" } }
+    },
+    { "state": "ide://git/status", "expect": { "branch": { "head": "feature" } } },
+    {
+      "run": "git.worktrees",
+      "input": { "repository": "inner" },
+      "expect": { "worktrees": [{ "branch": "inner-topic", "current": true }] }
+    },
+    {
+      "run": "git.deleteBranch",
+      "input": { "repository": "inner", "branch": "nope" },
+      "expectError": "nope"
+    }
+  ]
+}

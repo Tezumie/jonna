@@ -1,0 +1,88 @@
+# Releases (D192, docs/releasing.md): pushing a tag like v0.2.0 builds the installers on
+# Windows, macOS and Linux, signs them when the signing secrets are set, and publishes a draft
+# GitHub release with `latest.json`, the file installed copies check for updates.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD   updater signatures (required
+#     for updates: `npx tauri signer generate`); the public key goes in the IDE_UPDATE_PUBKEY
+#     variable (or product.json "updates.pubkey").
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET            Windows code signing with
+#     Azure Artifact Signing (Trusted Signing), with the variables AZURE_SIGNING_ENDPOINT,
+#     AZURE_SIGNING_ACCOUNT and AZURE_SIGNING_PROFILE. Without them the Windows build is unsigned.
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID,
+#     APPLE_PASSWORD, APPLE_TEAM_ID                                  macOS signing and notarizing.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            args: ""
+          - os: macos-14
+            args: "--target universal-apple-darwin"
+          - os: ubuntu-22.04
+            args: ""
+    runs-on: ${{ matrix.os }}
+    env:
+      # Where installed copies look for updates: this repository's latest release.
+      IDE_UPDATE_ENDPOINT: https://github.com/${{ github.repository }}/releases/latest/download/latest.json
+      # The beta channel's latest.json (setting update.channel "beta", D204), from the variable of
+      # that name; empty means the build has no beta channel. See docs/releasing.md.
+      IDE_UPDATE_BETA_ENDPOINT: ${{ vars.IDE_UPDATE_BETA_ENDPOINT }}
+      # Only with the private key to sign the update files (else the build would fail).
+      IDE_UPDATE_PUBKEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.IDE_UPDATE_PUBKEY || '' }}
+      UPDATE_SIGNING: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+      # (Secrets can't be tested in `if:` directly.)
+      WINDOWS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - name: Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Windows code signing (when configured)
+        if: runner.os == 'Windows' && env.WINDOWS_SIGNING == 'true'
+        shell: pwsh
+        run: |
+          cargo install artifact-signing-cli --locked
+          $cmd = "artifact-signing-cli -e ${{ vars.AZURE_SIGNING_ENDPOINT }} -a ${{ vars.AZURE_SIGNING_ACCOUNT }} -c ${{ vars.AZURE_SIGNING_PROFILE }} -d ${{ github.event.repository.name }} %1"
+          "IDE_WINDOWS_SIGN_COMMAND=$cmd" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - run: npm ci
+      - run: node scripts/gen.mjs
+      # The signing keys only for the step that builds and signs (not for npm's install scripts).
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

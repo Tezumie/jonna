@@ -1,0 +1,292 @@
+// D286: agents only. The Agents page has the main agent with one model and your agents; the main
+// agent opens in the agent editor (face, name, model); a face picker on Model icon shows no faces or
+// colors; the composer's menu lists agents (no Mode section) and Shift+Tab steps through the main
+// agent, the planner and the chat partner. D288: subagents as in Claude Code: not on the Agents page
+// (a link and the hand-off switch there), in the main agent's editor (Explore, Plan, Review, General
+// purpose and .claude/agents files; a model and a switch each; New subagent; Customize).
+{
+  "name": "agents-one-list-m7-35",
+  "steps": [
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 860 } },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "agent.showAgentConfig" },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ag-card-main .ac-model" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // D288: one grid of agents: no Explore or Review cards; the hand-off switch and a link to the
+    // subagents.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ag-grid > [data-node='subagent:explore'], .ag-grid > [data-node='subagent:reviewer'], .ag-grid > [data-node='subagent:general']"
+      },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page [data-key='handOff'], .ai-page [data-key='subagents']" },
+      "expect": { "$length": 2 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ac-preset" },
+      "expect": { "$length": 0 }
+    },
+    // The AI features outside the chat: a switch and a model each; Edit with AI is off to start.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page [data-node^='feature:']" },
+      "expect": { "$length": 5 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-node='feature:edit'].is-off [data-key='on:feature:edit']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.click", "input": { "selector": "[data-key='on:feature:edit']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-node='feature:edit']:not(.is-off)" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.scroll",
+      "input": { "selector": ".ai-page:has(> .ac-page)", "top": 2000 }
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "wait": 1100 },
+    { "run": "settings.set", "input": { "key": "editor.inlineEdit.enabled", "value": false } },
+    // A card's model chip opens the chat's model picker for that agent, "Same as the chat" first.
+    { "run": "dev.click", "input": { "selector": "[data-key='model:subagent:planner']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker .model-picker-title", "html": 300 },
+      "expect": { "$contains": "Plato" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".model-picker-row[data-key='=inherit']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // An AI feature's chip: no external agents for Edit with AI.
+    { "run": "dev.click", "input": { "selector": "[data-key='model:feature:edit']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker .model-picker-title", "html": 300 },
+      "expect": { "$contains": "Edit with AI" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker-tab[data-tab^='a:']" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".model-picker-search", "key": "Escape", "code": "Escape" }
+    },
+    // Its card is where its name's click area ends (the area above it once opened the editor).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ag-card-main" },
+      "expect": [{ "position": "relative" }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The main agent in the agent editor: name, face, model; no instructions box.
+    { "run": "dev.click", "input": { "selector": ".ag-card-main .ag-card-open" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-crumbs" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page textarea" },
+      "expect": { "$length": 0 }
+    },
+    // Model icon: no faces, colors or Shuffle; Character: they're back.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-face-row:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "dev.click", "input": { "selector": ".ae-page .ae-face-kind [data-kind='face']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-face-row:not([hidden])" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ae-page .ae-face-kind [data-kind='model']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-face-row:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // D288: the Subagents section, under the main agent's fields.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ae-subagents [data-subagent='explore'], .ae-subagents [data-subagent='plan'], .ae-subagents [data-subagent='reviewer'], .ae-subagents [data-subagent='general']"
+      },
+      "expect": { "$length": 4 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-subagents [data-subagent='reviewer'] .ac-model" },
+      "expect": { "$length": 1 }
+    },
+    // Subagents are run by the delegate tool; agents are handed the chat (hand_off), not run.
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "delegable": { "$contains": "\"plan\"" } }
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "delegable": { "$not": { "$contains": "planner" } } }
+    },
+    // One of your own: a Claude Code file in the project's .claude/agents.
+    {
+      "run": "agent.newSubagent",
+      "input": {
+        "name": "tester",
+        "description": "Runs the tests and reports.",
+        "scope": "project"
+      },
+      "expect": { "name": "tester", "created": { "$contains": ".claude" } }
+    },
+    { "run": "agent.editAgent", "input": { "name": "agent" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-subagents [data-subagent='tester']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "delegable": { "$contains": "tester" } }
+    },
+    { "state": "ide://agent/agents", "expect": { "$not": { "$contains": "tester" } } },
+    // Its switch: off, not run.
+    { "run": "dev.click", "input": { "selector": ".ae-subagents [data-key='on:tester']" } },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "delegable": { "$not": { "$contains": "tester" } } },
+      "timeoutMs": 5000
+    },
+    // Customize a built-in one: copied to .claude/agents, where it replaces it.
+    {
+      "run": "agent.editSubagent",
+      "input": { "name": "reviewer" },
+      "expect": { "customized": true, "path": { "$contains": ".claude" } }
+    },
+    { "run": "agent.editAgent", "input": { "name": "agent" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-subagents [data-subagent='reviewer'] .ag-badge", "html": 200 },
+      "expect": { "$contains": "Project" },
+      "timeoutMs": 5000
+    },
+    // One of your agents' own list: Gabby may run all of them until Plan is switched off.
+    { "run": "agent.editAgent", "input": { "name": "chat" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-subagents[data-agent='chat'] [data-key='on:plan']:checked" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ae-subagents[data-agent='chat'] [data-key='on:plan']" }
+    },
+    // Saved in its file: the others, not plan.
+    {
+      "state": "ide://agent/agents",
+      "expect": { "$contains": "\"subagents\":[" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ae-subagents[data-agent='chat'] [data-key='on:plan']:not(:checked)"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.scroll",
+      "input": { "selector": ".ae-scroll:has([data-agent='chat'])", "top": 4000 }
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.showAgentConfig" },
+    { "run": "dev.click", "input": { "selector": ".ag-card-main .ag-card-open" } },
+    { "wait": 500 },
+    { "run": "dev.scroll", "input": { "selector": ".ae-scroll", "top": 2000 } },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Small windows: the rows wrap, nothing overflows.
+    { "run": "dev.setWindowSize", "input": { "width": 900, "height": 700 } },
+    { "wait": 300 },
+    { "run": "dev.scroll", "input": { "selector": ".ae-scroll", "top": 2000 } },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 860 } },
+    // The composer: agents, no modes.
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "wait": 500 },
+    { "run": "dev.click", "input": { "selector": ".agent-chat-mode" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-label", "limit": 20, "html": 300 },
+      "expect": { "$contains": "Plato" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-heading", "limit": 5, "html": 200 },
+      "expect": { "$not": { "$contains": ">Mode<" } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".titlebar" } },
+    // Shift+Tab: the planner, the chat partner, the main agent again.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-input", "key": "Tab", "code": "Tab", "shift": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:planner", "work": "plan" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-input", "key": "Tab", "code": "Tab", "shift": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:chat", "work": "ask" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-input", "key": "Tab", "code": "Tab", "shift": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "agent", "work": "agent" },
+      "timeoutMs": 3000
+    }
+  ]
+}

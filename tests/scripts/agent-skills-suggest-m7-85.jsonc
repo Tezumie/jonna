@@ -1,0 +1,155 @@
+// D342: suggest_skill. The agent searches the skills the user could add (the IDE's skill catalog
+// and skills turned off) and shows them as a card; a second suggestion in the same conversation
+// is refused until the user takes one up; Turn on (a click) turns a skill on again, Add writes a
+// catalog skill to the user's skills folder. Against tests/fixtures/mock-ollama.mjs
+// (pkgMScripted). Writes release-notes into the user skills folder and deletes it at the end.
+{
+  "name": "agent-skills-suggest-m7-85",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- A workspace skill, turned off; no release-notes left over from an earlier run ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .claude/skills/pkgm-house && printf -- '---\\nname: pkgm-house\\ndescription: PkgM house style for release notes and changelogs.\\n---\\n\\nWrite it our way.\\n' > .claude/skills/pkgm-house/SKILL.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "done" } }
+    },
+    { "run": "agent.listSkills", "expect": { "$contains": "pkgm-house" }, "timeoutMs": 10000 },
+    {
+      "run": "agent.setSkillEnabled",
+      "input": { "name": "pkgm-house", "enabled": false },
+      "expect": { "enabled": false }
+    },
+    { "run": "agent.skillCatalog", "input": {}, "save": "catalog" },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node ../setup/skill-leftover-m7-85.mjs \"${catalog.userDir}\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "cleaned" } }
+    },
+
+    // ---- The search behind the card ----
+    {
+      "run": "agent.skillCatalog",
+      "input": { "keywords": ["release notes", "pkgm house style"] },
+      "expect": {
+        "skills": [
+          { "name": "release-notes", "source": "catalog" },
+          { "name": "pkgm-house", "source": "off" }
+        ]
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+
+    // ---- The agent shows the card ----
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": {
+        "session": "${chat.session}",
+        "message": "pkgm suggest a skill for release notes"
+      },
+      "expect": { "answer": { "$contains": "PkgM skill card: release-notes, pkgm-house" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-skills .rb-discovery-row",
+        "limit": 5,
+        "html": 1200
+      },
+      "expect": [
+        { "html": { "$contains": "release-notes" } },
+        { "html": { "$contains": "Turned off" } }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-skills", "limit": 1, "html": 4000 },
+      "expect": [{ "html": { "$contains": "Release notes in your house style" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // ---- Once per conversation ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgm once more please" },
+      "expect": { "answer": { "$contains": "PkgM again: refused" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Turn on (a click) and Add ----
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".agent-column .rb-skills .rb-discovery-row[data-skill=\"pkgm-house\"] .rb-discovery-action"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-skills .rb-discovery-row[data-skill=\"pkgm-house\"]",
+        "limit": 1,
+        "html": 1200
+      },
+      "expect": [{ "html": { "$contains": "Turned on" } }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.skillCatalog",
+      "input": {},
+      "expect": { "skills": { "$not": { "$contains": "pkgm-house" } } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.addSuggestedSkill",
+      "input": { "session": "${chat.session}", "name": "release-notes" },
+      "expect": { "added": "release-notes", "how": "installed" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-skills .rb-discovery-row[data-skill=\"release-notes\"]",
+        "limit": 1,
+        "html": 1200
+      },
+      "expect": [{ "html": { "$contains": "Added" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.listSkills", "expect": { "$contains": "release-notes" }, "timeoutMs": 10000 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // A suggestion taken up: the agent may suggest again.
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgm once more please" },
+      "expect": { "answer": { "$contains": "PkgM again: shown" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Clean up the user skills folder ----
+    {
+      "run": "agent.deleteSkill",
+      "input": { "name": "release-notes" },
+      "expect": { "deleted": "release-notes" }
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+// D229: delete and rename conflicts in Source control (git's both deleted / added by us / added by
+// them / deleted by us, VS Code's letters; staging a delete / modify conflict keeps or deletes
+// the file), the multi-file diff tab (View all changes, a commit's Open changes, the Graph's
+// Outgoing changes) and "multiple" repositories mode with a commit box per repository and a
+// checkbox per repository. Needs `git` on PATH.
+{
+  "name": "git-m7-8",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    // a.txt renamed to b.txt here and to c.txt there (rename / rename); d.txt deleted here and
+    // renamed to e.txt there (rename / delete).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && printf 'one\\ntwo\\nthree\\n' > a.txt && printf 'x\\ny\\nz\\n' > d.txt && git add -A && git commit -qm Base && git checkout -qb other && git mv a.txt c.txt && git mv d.txt e.txt && git commit -qm Other && git checkout -q main && git mv a.txt b.txt && git rm -q d.txt && git commit -qm Main && (git merge other >/dev/null 2>&1 || true)",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    { "run": "git.refresh" },
+    {
+      "state": "ide://git/status",
+      "expect": {
+        "conflicts": [
+          { "path": "a.txt", "status": "D", "conflict": "bothDeleted" },
+          { "path": "b.txt", "status": "A", "conflict": "addedByUs" },
+          { "path": "c.txt", "status": "A", "conflict": "addedByThem" },
+          { "path": "e.txt", "status": "D", "conflict": "deletedByUs" }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "git.showView" },
+    // The merge editor is offered for the delete / modify conflict only.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row [aria-label='Resolve in merge editor']", "limit": 10 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A delete / modify conflict needs the choice; both deleted stages as is.
+    { "run": "git.stage", "input": { "paths": ["e.txt"] }, "expectError": "deletion" },
+    {
+      "run": "git.stage",
+      "input": { "paths": ["e.txt"], "deletion": "keep" },
+      "expect": { "conflicts": ["a.txt", "b.txt", "c.txt"] }
+    },
+    {
+      "run": "git.stage",
+      "input": { "paths": ["a.txt", "c.txt"] },
+      "expect": { "conflicts": ["b.txt"] }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git rm -q b.txt && git commit -qm Merged", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.refresh" },
+    { "state": "ide://git/status", "expect": { "conflicts": { "$length": 0 } }, "timeoutMs": 8000 },
+
+    // The multi-file diff: View all changes lists the working tree, one diff editor per file.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'one\\nTWO\\nthree\\n' > c.txt && printf 'new\\n' > f.txt && printf 'x\\ny\\nZ\\n' > e.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.refresh" },
+    { "run": "git.viewChanges", "expect": { "files": 3 } },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [
+        {
+          "title": "Changes",
+          "files": [
+            { "path": "c.txt", "status": "M" },
+            { "path": "e.txt", "status": "M" },
+            { "path": "f.txt", "status": "U" }
+          ]
+        }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [{ "files": [{ "shown": true, "changes": 1 }] }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".multi-diff-file .monaco-diff-editor", "limit": 5 },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    {
+      "run": "editor.multiDiff.collapseAll",
+      "expect": { "files": [{ "collapsed": true, "shown": false }] }
+    },
+    { "run": "editor.multiDiff.expandAll", "expect": { "files": [{ "collapsed": false }] } },
+    // Opened again (the Refresh button): the same tab lists the files again.
+    { "run": "git.stage", "input": { "paths": ["f.txt"] } },
+    { "run": "git.viewChanges", "expect": { "files": 2 } },
+    { "state": "ide://editor/multiDiffs", "expect": { "$length": 1 } },
+    { "run": "git.viewStagedChanges", "expect": { "files": 1 } },
+    { "state": "ide://editor/multiDiffs", "expect": { "$length": 2 } },
+
+    // A commit's Open changes: parent ↔ commit for every file.
+    {
+      "run": "git.openCommitChanges",
+      "input": { "commit": "HEAD~1" },
+      "expect": { "files": 2 }
+    },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": { "$contains": "· Main" },
+      "timeoutMs": 5000
+    },
+
+    // Outgoing changes as one tab: a remote, two commits to push.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git add -A && git commit -qm 'More work' && rm -rf ../g78-remote.git && git init -q --bare ../g78-remote.git && git remote add origin ../g78-remote.git && git push -q -u origin main && printf 'pushed later\\n' >> c.txt && git commit -qam 'To push'",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    { "run": "git.refresh" },
+    {
+      "run": "git.showOutgoingChanges",
+      "input": { "all": true },
+      "expect": { "files": [{ "path": "c.txt" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": { "$contains": "Outgoing changes" },
+      "timeoutMs": 5000
+    },
+
+    // "multiple" mode: a commit box per shown repository, a checkbox per repository.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir inner && cd inner && git init -q && git symbolic-ref HEAD refs/heads/trunk && git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'inner\\n' > inner.txt && git add -A && git commit -qm 'Inner base' && printf 'changed\\n' >> inner.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+    {
+      "run": "git.repositories",
+      "expect": [{ "kind": "workspace" }, { "name": "inner", "kind": "nested" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "scm.repositories.selectionMode", "value": "multiple" }
+    },
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-forms .scm-form-repo", "limit": 4 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-repos:not([hidden]) .scm-repo-check", "limit": 4 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // The inner repository's box commits there (its own message).
+    { "run": "git.stage", "input": { "repository": "inner" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".scm-forms .scm-form-repo:nth-child(2) .scm-message" }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".scm-forms .scm-form-repo:nth-child(2) .scm-message",
+        "text": "Inner commit"
+      }
+    },
+    {
+      "state": "ide://git/repositories",
+      "expect": [{ "selected": false }, { "name": "inner", "selected": true }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".scm-forms .scm-form-repo:nth-child(2) .scm-commit" }
+    },
+    {
+      "run": "git.status",
+      "input": { "repository": "inner" },
+      "expect": { "staged": { "$length": 0 }, "changes": { "$length": 0 } },
+      "timeoutMs": 10000
+    },
+    // Unticked: its box and its changes leave the view; kept as `shown` in the state.
+    {
+      "run": "git.toggleRepositoryShown",
+      "input": { "repository": "inner", "shown": false },
+      "expect": [{ "shown": true }, { "name": "inner", "shown": false }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-forms .scm-form-repo", "limit": 4 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-row.scm-repo-node", "limit": 4 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // One always stays shown: with every one unticked, the selected one (inner, whose box was
+    // typed in) shows.
+    {
+      "run": "git.toggleRepositoryShown",
+      "input": { "repository": ".", "shown": false },
+      "expect": [{ "shown": false }, { "name": "inner", "shown": true }]
+    },
+    { "run": "git.toggleRepositoryShown", "input": { "repository": ".", "shown": true } },
+    { "run": "git.toggleRepositoryShown", "input": { "repository": "inner", "shown": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "scm.repositories.selectionMode", "value": "single" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view[data-view='scm.view'] .scm-forms:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    }
+  ]
+}

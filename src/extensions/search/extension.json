@@ -1,0 +1,183 @@
+{
+  "id": "builtin.search",
+  "version": "0.1.0",
+  "displayName": "Search",
+  "description": "Search and replace across the workspace (streamed from Rust), in the sidebar.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      { "id": "search.openEditor", "title": "New search editor", "category": "Search" },
+      { "id": "searchEditor.run", "title": "Search again in search editor", "category": "Search" },
+      { "id": "searchEditor.save", "title": "Save search editor", "category": "Search" },
+      {
+        "id": "search.show",
+        "title": "Search in files",
+        "category": "Search"
+      },
+      {
+        "id": "search.run",
+        "title": "Search workspace",
+        "category": "Search"
+      },
+      {
+        "id": "search.replace",
+        "title": "Replace in files",
+        "category": "Search"
+      },
+      {
+        "id": "search.cancel",
+        "title": "Cancel search",
+        "category": "Search"
+      },
+      {
+        "id": "search.clear",
+        "title": "Clear search results",
+        "category": "Search"
+      },
+      {
+        "id": "search.dismiss",
+        "title": "Dismiss search result",
+        "category": "Search"
+      },
+      {
+        "id": "search.toggleViewMode",
+        "title": "View search results as tree / list",
+        "category": "Search"
+      },
+      {
+        "id": "search.collapseAll",
+        "title": "Collapse all search results",
+        "category": "Search"
+      },
+      {
+        "id": "search.expandAll",
+        "title": "Expand all search results",
+        "category": "Search"
+      },
+      {
+        "id": "search.copyResults",
+        "title": "Copy search results",
+        "category": "Search"
+      },
+      {
+        "id": "search.toggleOption",
+        "title": "Toggle search option",
+        "category": "Search"
+      },
+      {
+        "id": "search.excludeFolder",
+        "title": "Exclude folder from search",
+        "category": "Search"
+      },
+      {
+        "id": "search.findInFolder",
+        "title": "Find in folder",
+        "category": "Search"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+shift+f",
+        "mac": "shift+cmd+f",
+        "command": "search.show"
+      },
+      {
+        "key": "ctrl+shift+h",
+        "mac": "shift+cmd+h",
+        "command": "search.show"
+      }
+    ],
+    "settings": {
+      "search.exclude": {
+        "type": "object",
+        "default": {
+          "**/node_modules": true,
+          "**/bower_components": true,
+          "**/*.code-search": true
+        },
+        "description": "Glob patterns of files and folders the search skips, on top of files.exclude (true skips). The search view's \"Use exclude settings and ignore files\" toggle turns these off.",
+        "order": 0
+      },
+      "search.useIgnoreFiles": {
+        "type": "boolean",
+        "default": true,
+        "description": "Skip files that .gitignore and .ignore files list.",
+        "order": 1
+      },
+      "search.seedWithNearestWord": {
+        "type": "boolean",
+        "default": false,
+        "description": "With no selection, Find in files starts with the word at the cursor.",
+        "order": 9
+      },
+      "search.followSymlinks": {
+        "type": "boolean",
+        "default": true,
+        "description": "Follow symbolic links while searching.",
+        "order": 2
+      },
+      "search.smartCase": {
+        "type": "boolean",
+        "default": false,
+        "description": "Match case when the query has an uppercase letter; ignore case otherwise.",
+        "order": 3
+      },
+      "search.maxResults": {
+        "type": "integer",
+        "default": 20000,
+        "minimum": 1,
+        "maximum": 100000,
+        "description": "Stop a search after this many matches.",
+        "order": 4
+      },
+      "search.searchEditor.defaultNumberOfContextLines": {
+        "type": "integer",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 10,
+        "description": "Lines shown around each match in a new search editor."
+      },
+      "search.searchOnType": {
+        "type": "boolean",
+        "default": true,
+        "description": "Search while typing (otherwise press Enter).",
+        "order": 5
+      },
+      "search.searchOnTypeDebouncePeriod": {
+        "type": "integer",
+        "default": 300,
+        "minimum": 0,
+        "maximum": 5000,
+        "description": "Milliseconds after the last keystroke before searching on type.",
+        "order": 6
+      },
+      "search.showLineNumbers": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show line numbers next to results.",
+        "order": 7
+      },
+      "search.defaultViewMode": {
+        "type": "string",
+        "enum": ["list", "tree"],
+        "enumDescriptions": ["Files in a flat list", "Files grouped by folder"],
+        "default": "list",
+        "description": "How search results show in a folder you haven't switched yet (the search view's tree / list button).",
+        "order": 9
+      },
+      "search.collapseResults": {
+        "type": "string",
+        "enum": ["alwaysExpand", "auto", "alwaysCollapse"],
+        "enumDescriptions": [
+          "Files open showing their matches",
+          "Files with more than 10 matches start collapsed",
+          "Files start collapsed"
+        ],
+        "default": "alwaysExpand",
+        "description": "Whether files in the results start expanded.",
+        "order": 8
+      }
+    }
+  }
+}

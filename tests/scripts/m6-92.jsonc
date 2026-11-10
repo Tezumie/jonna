@@ -1,0 +1,143 @@
+// D191: m6.92. A setting set back to its default isn't "modified" (and doesn't fail); compact
+// folder rows name each folder; the extension authoring helpers (guide sections, validate, try,
+// examples, the brief ide://extensions); the change feed; state paths with "did you mean";
+// screenshots of one view; the usage meter.
+{
+  "name": "m6-92",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- A setting changed back to its default (no error, not modified) ----
+    { "run": "settings.set", "input": { "key": "editor.wordWrap", "value": "off" } },
+    { "run": "settings.open", "input": { "query": "editor.wordWrap" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row[data-key='editor.wordWrap'].is-modified" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.setValue",
+      "input": { "selector": ".setting-row[data-key='editor.wordWrap'] select", "value": "1" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row[data-key='editor.wordWrap'].is-modified" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://settings",
+      "expect": {
+        "$not": { "$contains": "\"key\":\"editor.wordWrap\",\"value\":\"on\",\"source\":\"user\"" }
+      }
+    },
+    { "run": "layout.closeTab" },
+    // ---- A compact folder row: each folder its own target ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p cmp/inner/deep && echo x > cmp/inner/deep/x.txt && echo made",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "made" } }
+    },
+    { "run": "explorer.refresh" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name.is-compact", "html": 2000 },
+      "expect": { "$contains": "data-segment" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "explorer.rename",
+      "input": { "path": "cmp/inner", "newName": "middle" },
+      "expect": { "renamed": { "$contains": "middle" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name.is-compact", "html": 2000 },
+      "expect": { "$contains": ">middle<" },
+      "timeoutMs": 8000
+    },
+    // ---- Building an extension: guide sections, validate, try, examples ----
+    {
+      "run": "extensions.guide",
+      "expect": { "$contains": "extension.json" }
+    },
+    {
+      "run": "extensions.guide",
+      "input": { "section": "code" },
+      "expect": { "$contains": "exports.activate" }
+    },
+    { "run": "extensions.examples", "expect": { "$contains": "webview" } },
+    {
+      "run": "extensions.examples",
+      "input": { "name": "viewer" },
+      "expect": { "$contains": "viewer.html" }
+    },
+    {
+      "run": "extensions.create",
+      "input": { "name": "trial", "displayName": "Trial" },
+      "expect": { "id": "local.trial" }
+    },
+    {
+      "run": "extensions.validate",
+      "input": { "folder": ".jonna/extensions/trial" },
+      "expect": { "ok": true, "id": "local.trial" }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "local.trial", "command": "trial.hello" },
+      "expect": { "ok": true, "result": { "greeted": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "local.trial", "command": "trial.nope" },
+      "expectError": "isn't a command of local.trial"
+    },
+    {
+      "state": "ide://extensions?id=local.trial",
+      "expect": { "extensions": { "$length": 1 } }
+    },
+    {
+      "state": "ide://extensions?brief=1",
+      "expect": { "$contains": "\"commands\":1" }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '{ \"id\": \"local.broken\", \"version\": \"1.0.0\", \"displayName\": \"B\", \"main\": \"gone.js\", \"invented\": 1 }' > .jonna/extensions/trial/extension.json && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "done" } }
+    },
+    {
+      "run": "extensions.validate",
+      "input": { "folder": ".jonna/extensions/trial" },
+      "expect": {
+        "ok": false,
+        "errors": { "$contains": "gone.js" },
+        "warnings": { "$contains": "invented" }
+      }
+    },
+    { "run": "extensions.manifestSchema", "expect": { "$contains": "contributes" } },
+    // ---- The change feed, "did you mean", screenshots of one view, usage ----
+    {
+      "state": "ide://events?since=0",
+      "expect": { "$contains": "file.renamed" }
+    },
+    { "state": "ide://editorz", "expectError": "Did you mean" },
+    {
+      "run": "workbench.screenshot",
+      "input": { "view": "explorer.view", "inline": true, "save": false },
+      "expect": { "width": { "$gte": 50 } }
+    },
+    {
+      "run": "workbench.screenshot",
+      "input": { "selector": ".no-such-thing", "inline": true, "save": false },
+      "expectError": "Nothing matches"
+    },
+    { "state": "ide://agent/usage", "expect": { "total": { "$exists": true } } }
+  ]
+}

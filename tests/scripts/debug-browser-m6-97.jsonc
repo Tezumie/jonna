@@ -1,0 +1,64 @@
+// D196: debugging a page in Chrome (here the test machine's Chromium, headless): a breakpoint in
+// the project's file stops the page's script, values evaluate, the page's console shows in the
+// debug console.
+{
+  "name": "debug-browser-m6-97",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node ../setup/debug-browser-launch.mjs",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // The page's scripts as files in the folder (the mock dev server serves the same text).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'function plus(a, b) {\\n  const sum = a + b;\\n  return sum;\\n}\\nconsole.log(\"sum\", plus(1, 2));\\n' > site/debug.js && printf 'function mul(a, b) {\\n  const product = a * b;\\n  return product;\\n}\\nconsole.log(\"product\", mul(2, 3));\\n' > site/mapped-src.js",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "site/debug.js", "line": 2 },
+      "expect": { "line": 2 }
+    },
+    { "run": "debug.start", "input": { "name": "Page" }, "timeoutMs": 40000 },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "name": "plus", "line": 2 }] },
+      "timeoutMs": 40000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "a + b" }, "expect": { "value": "3" } },
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "sum 3" } },
+      "timeoutMs": 20000
+    },
+    { "run": "debug.stop", "timeoutMs": 20000 },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 20000 },
+    // A script with a source map served beside it: the breakpoint is in its source.
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "site/mapped-src.js", "line": 2 },
+      "expect": { "line": 2 }
+    },
+    { "run": "debug.start", "input": { "name": "Mapped" }, "timeoutMs": 40000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "name": "mul", "line": 2, "path": { "$contains": "mapped-src.js" } }]
+      },
+      "timeoutMs": 40000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "a * b" }, "expect": { "value": "6" } },
+    { "run": "debug.stop", "timeoutMs": 20000 },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 20000 }
+  ]
+}

@@ -1,0 +1,93 @@
+// D409: the chat details panel as Claude Code's: Context offers Compact session and says how far
+// auto-compaction is, lists deferred tools apart; the branch row switches branch; cards move
+// (agent.moveDetailsCard, what dragging a header's grip does) and keep their order; the Chats
+// view's Customize row lists Customize's tabs on a right-click.
+{
+  "name": "details-panel-m7-119",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 900 } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "just answer", "wait": true },
+      "timeoutMs": 60000
+    },
+    { "run": "layout.toggleMaximize", "input": {} },
+    { "run": "agent.toggleDetails", "input": { "show": true }, "expect": { "shown": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-compact-row", "html": 600 },
+      "expect": [{ "html": { "$contains": "until auto-compact" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-compact-row .agent-details-compact", "html": 1000 },
+      "expect": [{ "html": { "$contains": "Compact session" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-row.is-deferred", "html": 300 },
+      "expect": { "$contains": "(deferred)" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-row[data-action='branch']", "html": 300 },
+      "expect": [{ "html": { "$contains": "master" } }]
+    },
+    // Context before Environment, then back to the end.
+    {
+      "run": "agent.moveDetailsCard",
+      "input": { "card": "context", "before": "environment" },
+      "expect": { "order": ["context", "environment", "changes", "background", "plan"] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-card", "limit": 2 },
+      "expect": [{ "html": { "$contains": "data-card=\"context\"" } }],
+      "timeoutMs": 3000
+    },
+    { "state": "ide://agent/details", "expect": { "order": { "$contains": "context" } } },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.moveDetailsCard",
+      "input": { "card": "context" },
+      "expect": { "order": ["environment", "changes", "background", "plan", "context"] }
+    },
+    // Right-click Customize: Open, then each tab.
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-action[data-command='agent.customize']", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 15, "html": 3000 },
+      "expect": { "$contains": "Open" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 15, "html": 3000 },
+      "expect": { "$contains": "Docs" }
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-action[data-command='agent.showUsage']", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 5 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    }
+  ]
+}

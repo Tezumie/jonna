@@ -1,0 +1,717 @@
+/* Source control: the SCM view, git decorations in trees and tabs, the diff tab and the editor's
+ * quick-diff gutter bars (DESIGN.md §3.5, §15.1). Tokens only. */
+@layer extensions {
+  /* ---- Source control view ---- */
+  .scm-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    /* Room above for the message box's focus ring (the view clips at its top edge). */
+    padding: var(--space-2) var(--space-4) var(--space-4);
+  }
+  .scm-message {
+    height: auto;
+    min-height: var(--size-control-md);
+    max-height: 160px;
+    padding: 5px var(--space-4);
+    font: inherit;
+    line-height: var(--text-md-lh);
+    resize: none;
+    overflow-y: auto;
+  }
+  .scm-commit {
+    justify-content: center;
+    gap: var(--space-2);
+  }
+  /* "Sync changes 1↓ 2↑": a count and its arrow icon, close together. */
+  .scm-sync-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    margin-left: var(--space-1);
+  }
+  .scm-sync-count .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* Commit + its menu (VS Code's split button). */
+  .scm-commit-row {
+    display: flex;
+  }
+  .scm-commit-row .scm-commit {
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  /* The split: a soft line on the button itself, not a dark gap between two buttons. */
+  .scm-commit-more {
+    flex: none;
+    box-shadow: inset 1px 0 0 color-mix(in srgb, var(--fg-on-accent) 28%, transparent);
+    width: var(--size-control-md);
+    padding: 0;
+    justify-content: center;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  /* The message box with the "write it for me" button in its corner. */
+  .scm-message-wrap {
+    position: relative;
+    display: flex;
+  }
+  .scm-message-wrap .scm-message {
+    flex: 1;
+    /* Two lines to start with (VS Code's box), growing with the text. */
+    min-height: calc(var(--text-md-lh) * 2 + 10px);
+    padding-right: calc(var(--space-4) + 24px + var(--size-scrollbar, 9px));
+  }
+  /* Left of where the box's scrollbar appears once the message is long. */
+  .scm-generate {
+    position: absolute;
+    top: 3px;
+    right: calc(var(--size-scrollbar, 9px) + 3px);
+    width: 22px;
+    height: 22px;
+  }
+  /* "multiple" repositories mode (D229): a commit box per shown repository, its name above.
+   * They scroll on their own so the changes keep room in a short window. */
+  .scm-forms {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    max-height: 45%;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .scm-forms .scm-form-repo {
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+  }
+  .scm-form-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .scm-form-title .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .scm-form-title > span:first-of-type {
+    flex: none;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scm-form-title .scm-repo-branch {
+    font-weight: 400;
+  }
+  /* A merge / rebase in progress. */
+  .scm-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+  }
+  .scm-banner[hidden] {
+    display: none;
+  }
+  .scm-banner .icon {
+    flex: none;
+    color: var(--status-warning-fg);
+  }
+  .scm-banner-text {
+    flex: 1;
+    min-width: 0;
+  }
+  /* Commits: subject, ref chips, author · age. */
+  .scm-commit-subject {
+    flex: 0 1 auto;
+    /* The subject keeps most of the row; refs and author give way first. */
+    min-width: min(60%, 14ch);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Refs as VS Code's badges (D148): the current branch, branches, remote branches, tags. */
+  /* Badges never shrink or clip: the subject truncates first (each badge caps its own name). */
+  .scm-refs {
+    display: inline-flex;
+    flex: none;
+    gap: 3px;
+  }
+  .scm-ref {
+    --ref: var(--fg-muted);
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    gap: 3px;
+    min-width: 0;
+    max-width: 120px;
+    height: 16px;
+    padding: 0 6px 0 4px;
+    border: 1px solid var(--ref);
+    border-radius: var(--radius-full);
+    background: var(--ref);
+    color: var(--fg-on-accent);
+    font-size: var(--text-xs);
+    line-height: 14px;
+    white-space: nowrap;
+  }
+  /* Dark text on a light badge, white on a dark one, whatever the theme's colors (D268): the
+     badge color's own lightness picks (above 0.66: dark, else white). */
+  @supports (color: oklch(from red l c h)) {
+    .scm-ref {
+      color: oklch(from var(--ref) clamp(0.2, (0.66 - l) * 1000, 1) 0 0);
+    }
+  }
+  .scm-ref .icon {
+    flex: none;
+    width: 11px;
+    height: 11px;
+  }
+  .scm-ref-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .scm-ref.is-compact {
+    flex: none;
+    padding: 0 3px;
+  }
+  /* By kind, in the Graph's colors (D210): local branches the current branch's blue, remote
+     branches purple, tags yellow. All filled, as VS Code's colored labels (D268: a tinted one
+     beside filled ones looked like another control); the current branch is bold. */
+  .scm-ref.is-head,
+  .scm-ref.is-detached {
+    --ref: var(--scm-graph-ref);
+    flex-shrink: 0;
+    max-width: 140px;
+    font-weight: 600;
+  }
+  .scm-ref.is-branch {
+    --ref: var(--scm-graph-ref);
+  }
+  .scm-ref.is-remote {
+    --ref: var(--scm-graph-remote);
+  }
+  .scm-ref.is-tag {
+    --ref: var(--scm-graph-tag);
+  }
+  /* D220: the base branch orange, and in All branches mode every other ref in its lane's color
+     (VS Code's colored labels, filled). */
+  .scm-ref.scm-chip-base {
+    --ref: var(--scm-graph-base);
+  }
+  .scm-ref.scm-chip-0 {
+    --ref: var(--scm-graph-lane-0);
+  }
+  .scm-ref.scm-chip-1 {
+    --ref: var(--scm-graph-lane-1);
+  }
+  .scm-ref.scm-chip-2 {
+    --ref: var(--scm-graph-lane-2);
+  }
+  .scm-ref.scm-chip-3 {
+    --ref: var(--scm-graph-lane-3);
+  }
+  .scm-ref.scm-chip-4 {
+    --ref: var(--scm-graph-lane-4);
+  }
+  .scm-ref.scm-chip-ref {
+    --ref: var(--scm-graph-ref);
+  }
+  .scm-ref.scm-chip-remote {
+    --ref: var(--scm-graph-remote);
+  }
+  .scm-commit-meta {
+    flex: 1 1 0;
+  }
+  /* With refs, the row is subject and badges (author and age are in the hover card). */
+  .scm-row:has(.scm-ref) .scm-commit-meta {
+    display: none;
+  }
+  .scm-row:has(.scm-ref) .scm-commit-subject {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .scm-refs {
+    margin-left: auto;
+    padding-right: 1px;
+  }
+  /* A narrow sidebar: badges other than the current branch show only their icon. */
+  @container scm-tree (max-width: 340px) {
+    .scm-ref:not(.is-head, .is-detached) .scm-ref-name {
+      display: none;
+    }
+    .scm-ref:not(.is-head, .is-detached) {
+      flex: none;
+      padding: 0 3px;
+    }
+  }
+  .scm-more {
+    color: var(--fg-muted);
+  }
+  /* The Graph section (D210): its tree fills the section; a line when there's nothing. */
+  .scm-graph-empty {
+    padding: var(--space-3) var(--space-5);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .scm-graph-empty[hidden] {
+    display: none;
+  }
+  /* Incoming / Outgoing changes (VS Code's rows): the name, the count, the upstream. */
+  .scm-row.is-sync .scm-sync-title {
+    flex: none;
+    min-width: 0;
+    font-weight: 500;
+  }
+  .scm-row.is-sync .scm-sync-badge {
+    flex: none;
+    margin-left: var(--space-2);
+  }
+  .scm-row.is-sync .scm-commit-meta {
+    margin-left: var(--space-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* No repository: initialize, or publish to GitHub. */
+  .scm-empty .scm-empty-button {
+    gap: var(--space-2);
+    justify-content: center;
+    width: 100%;
+    max-width: 260px;
+  }
+  .scm-empty .empty-state-text[hidden],
+  .scm-empty .scm-empty-button[hidden] {
+    display: none;
+  }
+
+  /* The commit hover card (D148). */
+  .scm-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+  }
+  .scm-card-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .scm-avatar {
+    --person: var(--scm-graph-0);
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--person) 30%, transparent);
+    color: var(--person);
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .scm-avatar-1 {
+    --person: var(--scm-graph-1);
+  }
+  .scm-avatar-2 {
+    --person: var(--scm-graph-2);
+  }
+  .scm-avatar-3 {
+    --person: var(--scm-graph-3);
+  }
+  .scm-avatar-4 {
+    --person: var(--scm-graph-4);
+  }
+  .scm-avatar-5 {
+    --person: var(--scm-graph-5);
+  }
+  .scm-card-author {
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .scm-card-when {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-muted);
+  }
+  .scm-card-when .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .scm-card-message {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 220px;
+    overflow: auto;
+  }
+  .scm-card-subject {
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .scm-card-body {
+    color: var(--fg-muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .scm-card-stats {
+    color: var(--fg-muted);
+  }
+  .scm-card-stats .is-added {
+    color: var(--diff-added-fg);
+  }
+  .scm-card-stats .is-removed {
+    color: var(--diff-removed-fg);
+  }
+  .scm-card-refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .scm-card-refs .scm-ref {
+    max-width: 100%;
+  }
+  .scm-card-state {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .scm-card-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .scm-card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .scm-card-link:first-child {
+    font-family: var(--font-mono);
+  }
+  .scm-card-link:hover {
+    text-decoration: underline;
+  }
+  .scm-card-link .icon {
+    width: 13px;
+    height: 13px;
+  }
+  /* Commit graph (D139): one SVG per row; lanes line up because rows share the depth. */
+  .scm-graph {
+    flex: none;
+    align-self: stretch;
+    height: 22px;
+    margin-block: auto;
+    overflow: visible;
+  }
+  .scm-graph-files {
+    /* Files sit one level deeper; the lines stay in the commits' columns. */
+    margin-left: -12px;
+    margin-right: var(--space-2);
+  }
+  .scm-lane {
+    fill: none;
+    stroke-width: 1.5;
+  }
+  .scm-dot {
+    stroke-width: 1.5;
+  }
+  .scm-dot.is-merge {
+    fill: var(--bg-surface);
+  }
+  .scm-dot.is-head {
+    fill: var(--bg-surface);
+    stroke-width: 2;
+  }
+  /* Incoming / Outgoing changes: VS Code's dashed circle. */
+  .scm-dot.is-sync {
+    fill: var(--bg-surface);
+    stroke-dasharray: 2.6 1.6;
+  }
+  /* Lane colors (D210): the current branch's, its upstream's, then five rotating ones. */
+  .scm-lane-ref {
+    --lane: var(--scm-graph-ref);
+  }
+  .scm-lane-remote {
+    --lane: var(--scm-graph-remote);
+  }
+  .scm-lane-base {
+    --lane: var(--scm-graph-base);
+  }
+  .scm-lane-0 {
+    --lane: var(--scm-graph-lane-0);
+  }
+  .scm-lane-1 {
+    --lane: var(--scm-graph-lane-1);
+  }
+  .scm-lane-2 {
+    --lane: var(--scm-graph-lane-2);
+  }
+  .scm-lane-3 {
+    --lane: var(--scm-graph-lane-3);
+  }
+  .scm-lane-4 {
+    --lane: var(--scm-graph-lane-4);
+  }
+  .scm-lane,
+  .scm-dot {
+    stroke: var(--lane);
+    fill: var(--lane);
+  }
+  path.scm-lane {
+    fill: none;
+  }
+  .scm-tree {
+    container: scm-tree / inline-size;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .scm-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-3));
+    padding-right: var(--space-3);
+    /* Nothing paints past the row's right edge, whatever its contents. */
+    overflow: hidden;
+  }
+  .scm-row > .icon {
+    flex: none;
+  }
+  /* "multiple" mode (D220): a repository's row; the one the message box commits is bold. */
+  .scm-repo-node.is-selected .scm-repo-name {
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .scm-group-row .icon-chevron-right,
+  .scm-group-row .icon-chevron-down {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .scm-group-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .scm-file-name {
+    flex: none;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .scm-row.is-struck .scm-file-name {
+    text-decoration: line-through;
+  }
+  .scm-row-actions {
+    display: none;
+    flex: none;
+    gap: 1px;
+  }
+  .scm-row:hover .scm-row-actions,
+  .scm-row.is-focused .scm-row-actions {
+    display: inline-flex;
+  }
+  .scm-row-action {
+    width: 20px;
+    height: 20px;
+  }
+  .scm-badge {
+    flex: none;
+    width: 14px;
+    text-align: center;
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  /* ---- Git decorations in the explorer and on tabs ---- */
+  .explorer-badge,
+  .dock-tab-badge {
+    flex: none;
+    margin-left: auto;
+    padding-left: var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .dock-tab-badge {
+    margin-left: 0;
+    padding-left: 0;
+  }
+  .explorer-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-left: auto;
+    margin-right: var(--space-1);
+    border-radius: var(--radius-full);
+    opacity: 0.8;
+  }
+  .explorer-row.is-struck .explorer-name,
+  .dock-tab.is-struck .dock-tab-label {
+    text-decoration: line-through;
+  }
+  .explorer-row.is-faded {
+    color: var(--fg-subtle);
+  }
+
+  /* ---- Diff tab ---- */
+  .diff-toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 30px;
+    padding: 0 var(--space-3) 0 var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .diff-count {
+    margin-left: var(--space-3);
+    color: var(--fg-subtle);
+  }
+  .diff-spacer {
+    flex: 1;
+  }
+  .diff-toolbar .icon-button {
+    width: 24px;
+    height: 24px;
+  }
+  .diff-engine {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* ---- Multi-file diff (D229, VS Code's multi-diff editor) ---- */
+  .multi-diff-view {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .multi-diff-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .multi-diff-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .multi-diff-file {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  /* Each file's header stays at the top while its diff scrolls past (VS Code's). */
+  .multi-diff-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    height: var(--size-row);
+    padding: 0 var(--space-3) 0 var(--space-2);
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-default);
+    cursor: pointer;
+    user-select: none;
+  }
+  .multi-diff-header:hover {
+    background: var(--bg-hover);
+  }
+  .multi-diff-header:focus-visible {
+    outline: 1px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  .multi-diff-header > .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .multi-diff-header .icon-button {
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+  .multi-diff-name {
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .multi-diff-dir {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .multi-diff-spacer {
+    flex: 1;
+  }
+  .multi-diff-editor {
+    min-width: 0;
+  }
+  .multi-diff-note,
+  .multi-diff-empty {
+    padding: var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+}
+
+/* Monaco's stylesheet is unlayered; gutter bars must be too (see vendor.css). 3px bars. */
+.monaco-editor .quick-diff {
+  margin-left: 3px;
+  /* A click opens the change (D201). */
+  cursor: pointer;
+}
+.monaco-editor .quick-diff-added {
+  border-left: 3px solid var(--diff-added-fg);
+}
+.monaco-editor .quick-diff-modified {
+  border-left: 3px solid var(--diff-modified-fg);
+}
+.monaco-editor .quick-diff-deleted::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  border-left: 5px solid var(--diff-removed-fg);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.diff-view .monaco-editor .quick-diff,
+.multi-diff-view .monaco-editor .quick-diff {
+  display: none;
+}
+/* Staged lines (D203): the same bars, dimmed, as VS Code shows them beside unstaged ones. */
+.monaco-editor .quick-diff.is-staged {
+  opacity: 0.4;
+}

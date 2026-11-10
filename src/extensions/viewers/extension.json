@@ -1,0 +1,142 @@
+{
+  "id": "builtin.viewers",
+  "version": "0.1.0",
+  "displayName": "Viewers",
+  "description": "Image viewer, and live Markdown and SVG previews (to the side, like VS Code).",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "viewer.open",
+        "title": "Open in viewer",
+        "category": "View"
+      },
+      {
+        "id": "viewer.openPreview",
+        "title": "Open preview",
+        "category": "View"
+      },
+      {
+        "id": "viewer.openPreviewToSide",
+        "title": "Open preview to the side",
+        "category": "View"
+      },
+      {
+        "id": "editor.reopenWith",
+        "title": "Reopen editor with…",
+        "category": "File"
+      },
+      {
+        "id": "viewer.zoom",
+        "title": "Zoom image",
+        "category": "View"
+      },
+      {
+        "id": "viewer.togglePreview",
+        "title": "Toggle preview",
+        "category": "View"
+      },
+      {
+        "id": "markdown.find",
+        "title": "Find in preview",
+        "category": "Markdown"
+      },
+      {
+        "id": "markdown.findNext",
+        "title": "Find next in preview",
+        "category": "Markdown"
+      },
+      {
+        "id": "markdown.findPrevious",
+        "title": "Find previous in preview",
+        "category": "Markdown"
+      },
+      {
+        "id": "markdown.closeFind",
+        "title": "Close find in preview",
+        "category": "Markdown"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "command": "markdown.find",
+        "when": "markdownPreviewFocus"
+      },
+      {
+        "key": "enter",
+        "command": "markdown.findNext",
+        "when": "markdownFindInputFocus"
+      },
+      {
+        "key": "shift+enter",
+        "command": "markdown.findPrevious",
+        "when": "markdownFindInputFocus"
+      },
+      {
+        "key": "f3",
+        "mac": "cmd+g",
+        "command": "markdown.findNext",
+        "when": "markdownPreviewFocus && markdownFindVisible"
+      },
+      {
+        "key": "shift+f3",
+        "mac": "shift+cmd+g",
+        "command": "markdown.findPrevious",
+        "when": "markdownPreviewFocus && markdownFindVisible"
+      },
+      {
+        "key": "escape",
+        "command": "markdown.closeFind",
+        "when": "markdownPreviewFocus && markdownFindVisible"
+      },
+      {
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "command": "viewer.togglePreview",
+        "when": "activeEditor && !terminalFocus || activePreview && !terminalFocus"
+      },
+      {
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "command": "viewer.openPreviewToSide",
+        "when": "activeEditor"
+      }
+    ],
+    "settings": {
+      "markdown.preview.remoteImages": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show images from https:// addresses in Markdown previews (badges, screenshots). Off: their alt text is shown and nothing is downloaded.",
+        "order": 1
+      },
+      "markdown.preview.fontFamily": {
+        "type": "string",
+        "default": "",
+        "title": "Markdown preview: font family",
+        "description": "The font of Markdown previews, as a CSS font list (e.g. \"Georgia, serif\"). Empty: the interface font.",
+        "order": 2
+      },
+      "markdown.preview.fontSize": {
+        "type": "number",
+        "default": 14,
+        "minimum": 8,
+        "maximum": 40,
+        "title": "Markdown preview: font size",
+        "description": "The font size of Markdown previews, in pixels.",
+        "order": 3
+      },
+      "markdown.preview.lineHeight": {
+        "type": "number",
+        "default": 1.6,
+        "minimum": 1,
+        "maximum": 3,
+        "title": "Markdown preview: line height",
+        "description": "The line height of Markdown previews, as a multiple of the font size.",
+        "order": 4
+      }
+    }
+  }
+}

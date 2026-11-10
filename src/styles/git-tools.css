@@ -1,0 +1,358 @@
+/* Git (D204): the merge editor, line annotations (extensions' `ide.editor.setLineAnnotations`,
+   the Git tools extension's file blame, D208), repositories in Source control, GitHub review
+   comments. Tokens only. */
+@layer extensions {
+  /* ---- Merge editor ---- */
+  .merge-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-app);
+    container-type: inline-size;
+  }
+  .merge-count.is-done {
+    color: var(--status-success-fg);
+  }
+  .merge-complete {
+    margin-left: var(--space-2);
+  }
+  .merge-notice {
+    flex: none;
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--status-warning-bg);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+  }
+  .merge-inputs {
+    flex: 1 1 50%;
+    display: flex;
+    min-height: 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .merge-pane {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* The hairline between the input panes, also with floating panels (which hide sashes). */
+  .merge-inputs > .merge-sash {
+    background: var(--border-subtle);
+  }
+  .merge-sash[hidden] {
+    display: none;
+  }
+  .merge-pane-result {
+    flex: 1 1 50%;
+  }
+  /* The sash between the inputs and the result (D209): the border line is its hairline. */
+  .merge-view > .merge-result-sash {
+    flex: none;
+  }
+  /* A delete / modify conflict (D209). */
+  .merge-deleted-pane {
+    padding: var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .merge-deleted-body {
+    padding: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--fg-default);
+  }
+  .merge-deleted-body p {
+    margin: 0 0 var(--space-2);
+  }
+  .merge-deleted-hint {
+    color: var(--fg-muted);
+  }
+  .merge-deleted-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+  .merge-pane[hidden] {
+    display: none;
+  }
+  .merge-pane-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .merge-pane-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .merge-pane-header .merge-accept-all {
+    flex: none;
+    margin-left: var(--space-2);
+    font-weight: 400;
+  }
+  .merge-pane-engine {
+    flex: 1;
+    min-height: 0;
+  }
+  /* Narrow windows: the inputs stack too. */
+  @container (max-width: 560px) {
+    .merge-inputs {
+      flex-direction: column;
+    }
+    /* Stacked: no sashes (the heights share the space), a line between the panes. */
+    .merge-inputs > .merge-sash {
+      display: none;
+    }
+    .merge-inputs .merge-pane + .merge-sash + .merge-pane {
+      border-top: 1px solid var(--border-subtle);
+    }
+  }
+  .monaco-editor .merge-incoming {
+    background: color-mix(in srgb, var(--status-info-fg) 10%, transparent);
+  }
+  .monaco-editor .merge-current {
+    background: color-mix(in srgb, var(--status-success-fg) 10%, transparent);
+  }
+  .monaco-editor .merge-incoming.is-conflict {
+    background: color-mix(in srgb, var(--status-info-fg) 18%, transparent);
+  }
+  .monaco-editor .merge-current.is-conflict {
+    background: color-mix(in srgb, var(--status-success-fg) 18%, transparent);
+  }
+  /* The words a side changed inside its changed lines. */
+  .monaco-editor .merge-word-incoming {
+    background: color-mix(in srgb, var(--status-info-fg) 30%, transparent);
+  }
+  .monaco-editor .merge-word-current {
+    background: color-mix(in srgb, var(--status-success-fg) 30%, transparent);
+  }
+  /* In the result (D209): words from both sides, or typed by hand. */
+  .monaco-editor .merge-word-result {
+    background: color-mix(in srgb, var(--status-warning-fg) 24%, transparent);
+  }
+  .monaco-editor .merge-base {
+    background: color-mix(in srgb, var(--fg-muted) 10%, transparent);
+  }
+  .monaco-editor .merge-result {
+    background: color-mix(in srgb, var(--fg-muted) 7%, transparent);
+  }
+  .monaco-editor .merge-result.is-unhandled {
+    background: color-mix(in srgb, var(--status-warning-fg) 16%, transparent);
+  }
+  .monaco-editor .merge-result.is-handled {
+    background: color-mix(in srgb, var(--status-success-fg) 9%, transparent);
+  }
+  .merge-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+  .merge-action {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .merge-action:hover {
+    text-decoration: underline;
+  }
+  .merge-action:focus-visible {
+    outline: 1px solid var(--accent-border);
+    outline-offset: 1px;
+  }
+  .merge-action-state {
+    color: var(--fg-subtle);
+  }
+  .merge-actions.is-unhandled .merge-action-state {
+    color: var(--status-warning-fg);
+  }
+
+  /* ---- Line annotations (before each line, e.g. file blame; the editor font keeps the columns).
+     Tone 0 stands out most (the accent), 4 least. ---- */
+  .monaco-editor .line-annotation {
+    color: var(--fg-subtle);
+    background: var(--bg-surface-sunken);
+    font-style: normal;
+  }
+  .monaco-editor .line-annotation-tone-0 {
+    color: var(--accent-text);
+  }
+  .monaco-editor .line-annotation-tone-1 {
+    color: color-mix(in srgb, var(--accent-text) 75%, var(--fg-subtle));
+  }
+  .monaco-editor .line-annotation-tone-2 {
+    color: color-mix(in srgb, var(--accent-text) 50%, var(--fg-subtle));
+  }
+  .monaco-editor .line-annotation-tone-3 {
+    color: color-mix(in srgb, var(--accent-text) 25%, var(--fg-subtle));
+  }
+  .monaco-editor .line-annotation-tone-4 {
+    color: var(--fg-subtle);
+  }
+
+  /* ---- Review comments in the margin (GitHub) ---- */
+  .monaco-editor .review-comment-mark::before {
+    content: "";
+    display: block;
+    width: 10px;
+    height: 8px;
+    margin: 5px auto 0;
+    border-radius: var(--radius-xs);
+    background: var(--status-info-fg);
+    clip-path: polygon(0 0, 100% 0, 100% 75%, 45% 75%, 20% 100%, 25% 75%, 0 75%);
+  }
+  .monaco-editor .review-comment-mark.is-resolved::before {
+    background: var(--fg-subtle);
+  }
+
+  /* ---- Source control repositories ---- */
+  .scm-repos {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .scm-repos[hidden] {
+    display: none;
+  }
+  .scm-repos-title {
+    padding: var(--space-2) var(--space-4) var(--space-1);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .scm-repo-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    height: var(--size-row);
+    padding: 0 var(--space-4);
+    color: var(--fg-default);
+    cursor: pointer;
+  }
+  .scm-repo-row:hover {
+    background: var(--bg-hover);
+  }
+  .scm-repo-row.is-selected {
+    background: var(--bg-selected);
+  }
+  .scm-repo-row:focus-visible {
+    outline: 1px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  .scm-repo-row .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .scm-repo-name {
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .scm-repo-branch {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  /* "multiple" mode: unticked repositories read as off (D229). */
+  .scm-repo-row.is-hidden-repo .scm-repo-name,
+  .scm-repo-row.is-hidden-repo .scm-repo-branch {
+    color: var(--fg-subtle);
+  }
+
+  /* ---- Pull request files and review threads ---- */
+  .pr-file-block {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .pr-file {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-width: 0;
+    height: var(--size-row);
+    padding: 0 var(--space-2);
+    border: 0;
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .pr-file:hover {
+    background: var(--bg-hover);
+  }
+  .pr-file-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pr-file-status,
+  .pr-file-stat,
+  .pr-file-threads {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .pr-thread {
+    margin: 0 0 var(--space-2) var(--space-8);
+    padding: var(--space-2) var(--space-3);
+    border-left: 2px solid var(--border-default);
+    font-size: var(--text-sm);
+  }
+  .pr-thread.is-resolved {
+    color: var(--fg-muted);
+  }
+  .pr-thread-head {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .pr-thread-comment {
+    margin-top: var(--space-1);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .pr-thread-author {
+    font-weight: 600;
+  }
+  .pr-thread-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+  }
+}

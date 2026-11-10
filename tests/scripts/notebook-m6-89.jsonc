@@ -1,0 +1,164 @@
+// D188: Jupyter notebooks edit and run. A new notebook, cells added and run on the plain Python
+// runner (no Jupyter on the test machine), outputs (stream, result, error, image), Markdown, saved
+// as nbformat, read back for the agent.
+{
+  "name": "notebook-m6-89",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // Jupyter notebooks are the built-in Jupyter extension's (D203): turned on first.
+    { "run": "extensions.enable", "input": { "id": "bundled.jupyter" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.jupyter", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "notebook.new",
+      "input": { "path": "nb/try.ipynb" },
+      "expect": { "path": { "$contains": "try.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "notebook.editCell",
+      "input": { "index": 0, "source": "x = 6 * 7\nprint('hello')\nx" }
+    },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 0 },
+      "expect": { "status": "ok", "executionCount": 1, "output": { "$contains": "hello\n42" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 1, "source": "x + 1" },
+      "expect": { "index": 1 }
+    },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 1 },
+      "expect": { "output": "43" },
+      "timeoutMs": 30000
+    },
+    { "run": "notebook.insertCell", "input": { "index": 2, "source": "1/0" } },
+    {
+      "run": "notebook.runAll",
+      "expect": { "ran": 3, "error": { "$contains": "ZeroDivisionError" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 0, "kind": "markdown", "source": "# Title\n\nSome *text*." }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-markdown h1" },
+      "expect": [{ "html": { "$contains": "Title" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-out-text" },
+      "expect": { "$contains": "ZeroDivisionError" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "notebook.variables",
+      "expect": { "variables": { "$contains": "\"x\"" } },
+      "timeoutMs": 15000
+    },
+    { "run": "notebook.deleteCell", "input": { "index": 3 } },
+    { "run": "notebook.undo", "expect": { "done": true } },
+    { "run": "notebook.save", "expect": { "saved": { "$contains": "try.ipynb" } } },
+    {
+      "run": "notebook.read",
+      "input": { "path": "nb/try.ipynb" },
+      "expect": {
+        "cells": [
+          { "kind": "markdown" },
+          { "kind": "code", "executionCount": 3 },
+          { "kind": "code" },
+          { "kind": "code", "source": "1/0" }
+        ]
+      }
+    },
+    // Interrupting a long cell ends it with KeyboardInterrupt.
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 4, "source": "import time\nfor i in range(100): time.sleep(0.1)" }
+    },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 4, "advance": true },
+      "expect": { "started": true }
+    },
+    { "wait": 1500 },
+    { "run": "notebook.interrupt" },
+    { "wait": 1500 },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "kernel": { "status": "idle" } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.restart", "expect": { "restarted": true }, "timeoutMs": 30000 },
+    { "run": "notebook.exportScript", "expect": { "path": { "$contains": "try.py" } } },
+    // A script that's there is kept unless asked (audit: no silent overwrite).
+    {
+      "run": "notebook.exportScript",
+      "input": { "path": "nb/try.ipynb" },
+      "expectError": "already exists"
+    },
+    // Undo puts a cell operation back without undoing text typed since.
+    {
+      "run": "notebook.editCell",
+      "input": { "path": "nb/try.ipynb", "index": 2, "source": "x + 100" }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "path": "nb/try.ipynb", "index": 5, "source": "'extra'" }
+    },
+    {
+      "run": "notebook.editCell",
+      "input": { "path": "nb/try.ipynb", "index": 1, "source": "x = 7" }
+    },
+    { "run": "notebook.undo", "input": { "path": "nb/try.ipynb" }, "expect": { "done": true } },
+    {
+      "run": "notebook.read",
+      "input": { "path": "nb/try.ipynb" },
+      "expect": { "cells": { "$length": 7 } }
+    },
+    {
+      "run": "notebook.read",
+      "input": { "path": "nb/try.ipynb" },
+      "expect": {
+        "cells": [{}, { "source": "x = 6 * 7\nprint('hello')\nx" }, { "source": "x + 100" }]
+      }
+    },
+    // Renamed with unsaved changes: the same notebook, still unsaved, under its new name.
+    { "run": "notebook.save", "input": { "path": "nb/try.ipynb" } },
+    {
+      "run": "notebook.editCell",
+      "input": { "path": "nb/try.ipynb", "index": 2, "source": "x + 200" }
+    },
+    { "run": "explorer.move", "input": { "paths": ["nb/try.ipynb"], "dest": "src" } },
+    {
+      "state": "ide://notebook",
+      // Still open (an absolute path, with the OS's separators); where it is now: next step.
+      "expect": { "open": { "$contains": "try.ipynb" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "notebook.read",
+      "input": { "path": "src/try.ipynb" },
+      "expect": { "cells": [{}, {}, { "source": "x + 200" }] }
+    }
+  ]
+}

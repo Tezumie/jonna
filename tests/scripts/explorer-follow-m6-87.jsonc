@@ -1,0 +1,43 @@
+// D186: the explorer follows the active tab's file for every kind of tab that shows one (a canvas
+// too), and selects a file again when you come back to its tab.
+{
+  "name": "explorer-follow-m6-87",
+  "steps": [
+    { "run": "extensions.enable", "input": { "id": "bundled.canvas" } },
+    { "run": "extensions.grantPermissions", "input": { "id": "bundled.canvas", "grant": true } },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "canvas.open", "input": {}, "timeoutMs": 15000 },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "extviewer:canvas.viewer" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.canvas" } }],
+      "timeoutMs": 5000
+    },
+    // Back to the file: selected again (it was the last file revealed before the canvas).
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "canvas.open", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.canvas" } }],
+      "timeoutMs": 5000
+    }
+  ]
+}

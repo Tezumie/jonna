@@ -1,0 +1,240 @@
+// D200: the MCP client to the 2025-06-18 spec (elicitation answered in quick inputs, tools /
+// prompts / resources list_changed, resources as @-mentions, prompts as slash commands), external
+// agents' session/load and own slash commands, and web search (a SearXNG address served by the
+// mock Ollama). Against tests/fixtures/mock-ollama.mjs and tests/fixtures/sample/tools/mock-mcp.mjs
+// / mock-acp.mjs.
+{
+  "name": "agent-m7-1-mcp",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+
+    // ---- Web search: off by default, then a SearXNG address ----
+    {
+      "run": "web.search",
+      "input": { "query": "tauri" },
+      "expect": { "results": { "$length": 0 }, "setup": { "$contains": "isn't set up" } }
+    },
+    {
+      "run": "agent.setupWebSearch",
+      "input": { "provider": "searxng", "url": "http://127.0.0.1:11999" },
+      "expect": { "provider": "searxng", "changed": true }
+    },
+    {
+      "run": "web.search",
+      "input": { "query": "tauri" },
+      "expect": {
+        "provider": "searxng",
+        "results": [{ "title": "Mock result for tauri", "snippet": "A mock snippet" }, {}]
+      },
+      "timeoutMs": 10000
+    },
+    // The agent's tool (approved without a card: the same setting as web pages).
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.webFetch.autoApprove", "value": true }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please search the web for tauri channels" },
+      "expect": { "answer": { "$contains": "Search said: Mock result for tauri channels" } }
+    },
+    // @web search <words>: the results go with the message.
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@web search tauri" },
+      "expect": { "attachments": { "$contains": "@web search tauri" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments" },
+      "expect": { "$contains": "Search: tauri" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "What did it find?" },
+      "expect": { "answer": { "$contains": "mock result for tauri" } }
+    },
+
+    // ---- MCP: a server with prompts, resources and an elicitation ----
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "echo",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp.mjs"]
+      },
+      "expect": { "added": true }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please use the echo server" },
+      "expect": { "answer": { "$contains": "MCP said: HELLO" } }
+    },
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"prompts\":1" },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/mcp", "expect": { "$contains": "\"resources\":1" } },
+    {
+      "run": "agent.mcpResources",
+      "input": {},
+      "expect": { "resources": [{ "server": "echo", "uri": "mock://notes/readme" }] }
+    },
+    {
+      "run": "agent.mcpResources",
+      "input": { "uri": "mock://notes/readme" },
+      "expect": { "text": { "$contains": "resources work" } }
+    },
+    // Prompts are slash commands.
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$contains": "mcp__echo__review" }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/mcp__echo__review tests" },
+      "expect": { "answer": { "$contains": "Prompt arrived: tests" } }
+    },
+    // Resources are @-mentions.
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@mcp echo mock://notes/readme" },
+      "expect": { "attachments": { "$contains": "mock://notes/readme" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments" },
+      "expect": { "$contains": "Mock notes" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "What do the notes say?" },
+      "expect": { "answer": { "$contains": "Resource arrived" } }
+    },
+    // Elicitation: the server asks for a name (and an optional color) in quick inputs.
+    { "run": "agent.send", "input": { "message": "Please ask me through MCP", "wait": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-box[placeholder*='What is your name']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "Answer", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-message" },
+      "expect": { "$contains": "echo: Name" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "Ada", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-box[placeholder*='echo: color']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "Green", "key": "Enter" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "MCP said: elicited name=Ada color=green" },
+      "timeoutMs": 20000
+    },
+    // list_changed: the server adds a tool, a prompt and a resource.
+    {
+      "run": "agent.send",
+      "input": { "message": "Please grow the echo server" },
+      "expect": { "answer": { "$contains": "MCP said: grew" } }
+    },
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"tools\":4" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.mcpPrompts",
+      "input": {},
+      "expect": { "$contains": "/mcp__echo__later" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please run the late tool" },
+      "expect": { "answer": { "$contains": "MCP said: late tool ran" } }
+    },
+
+    // ---- External agent: its own slash commands, and session/load after it restarts ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "acp/Mock agent" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "agentSettings": { "agent": "Mock agent" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$contains": "mock-plan" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please just answer", "wait": true },
+      "expect": { "answer": { "$contains": "ACP done on" } },
+      "timeoutMs": 30000
+    },
+    // It quits; the next message starts it again and it loads its session (no replay shown).
+    {
+      "run": "agent.send",
+      "input": { "message": "Please exit now", "wait": true },
+      "expect": { "answer": { "$contains": "Exiting." } },
+      "timeoutMs": 30000
+    },
+    { "wait": 1500 },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please just answer again", "wait": true },
+      "expect": {
+        "answer": { "$contains": "loaded acp1", "$not": { "$contains": "with a recap" } }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$not": { "$contains": "REPLAYED" } }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

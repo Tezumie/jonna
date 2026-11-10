@@ -1,0 +1,86 @@
+// D203: m7.4 audit fixes. A settings write refuses a settings.json with a syntax error (instead of
+// replacing it); keybindings don't run under a modal dialog, and a click on the dialog's text
+// keeps Esc working; autosave leaves untitled editors alone; explorer rows aren't named after a
+// recycled row's path.
+{
+  "name": "fixes-m7-4",
+  "steps": [
+    // ---- Explorer rows: their text names them (no aria-label from a path) ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row" },
+      "expect": [{ "className": { "$contains": "explorer-row" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row[aria-label]" },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- A broken workspace settings.json is never rewritten by a toggle ----
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.tabSize", "value": 3, "scope": "workspace" }
+    },
+    { "run": "settings.openJson", "input": { "scope": "workspace" } },
+    { "run": "editor.insertText", "input": { "text": "\"broken\": 1,\n" } },
+    { "run": "editor.save" },
+    { "wait": 800 },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.fontSize", "value": 17, "scope": "workspace" },
+      "expectError": "syntax error"
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "for f in .*/settings.json; do grep -q '\"broken\": 1' \"$f\" && grep -q 'tabSize' \"$f\" && ! grep -q fontSize \"$f\" && echo KEPT; done; true",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "KEPT" } },
+      "timeoutMs": 20000
+    },
+
+    // ---- Autosave never opens Save as for an untitled editor ----
+    { "run": "settings.set", "input": { "key": "files.autoSave", "value": "afterDelay" } },
+    { "run": "settings.set", "input": { "key": "files.autoSaveDelay", "value": 200 } },
+    { "run": "workspace.newUntitledFile", "input": { "text": "scratch" } },
+    { "run": "editor.insertText", "input": { "text": "more " } },
+    { "wait": 1200 },
+    { "run": "dev.inspectDom", "input": { "selector": ".dialog" }, "expect": { "$length": 0 } },
+    { "run": "settings.set", "input": { "key": "files.autoSave", "value": "off" } },
+
+    // ---- Under a modal dialog, keybindings don't run; Esc after a click on its text cancels ----
+    { "run": "editor.closeTab", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog-body p" } },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dialog", "key": "P", "code": "KeyP", "ctrl": true, "shift": true }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "dev.type", "input": { "selector": ".dialog", "key": "Escape" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // Cancelled: the untitled editor is still open (and unsaved).
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "untitled:" }, "dirty": true }
+    }
+  ]
+}

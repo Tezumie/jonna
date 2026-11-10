@@ -1,0 +1,74 @@
+/* D329–D332 in the chat: a handed-off task's card (the task card's shape), Plan mode's plan
+   document card, a loop's check line and the loop's strip above the message box (the background
+   commands' shape). Quiet like the plan card: hairlines on the surface, no accent edges. */
+@layer extensions {
+  /* The plan document: a header that folds, the plan as Markdown, its buttons. */
+  .agent-plandoc {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-md);
+    min-width: 0;
+  }
+  .agent-plandoc-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-width: 0;
+    color: var(--fg-default);
+    text-align: left;
+  }
+  .agent-plandoc-head .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-muted);
+  }
+  .agent-plandoc-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-plandoc-meta {
+    flex: none;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-plandoc-body {
+    max-height: 420px;
+    overflow-y: auto;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-subtle);
+    min-width: 0;
+  }
+
+  /* A loop's check: a quiet line like a scheduled message's. */
+  .agent-auto.is-loop .icon {
+    color: var(--fg-muted);
+  }
+
+  /* The loop's strip: one line, Stop at its end. */
+  .agent-loop-head {
+    cursor: default;
+  }
+  .agent-loop-head:hover {
+    color: var(--fg-muted);
+  }
+  .agent-loop-stop {
+    flex: none;
+  }
+  /* Under it, the background commands continue the same block. */
+  .agent-loop:not([hidden]) + .agent-processes {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}

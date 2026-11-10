@@ -1,0 +1,30 @@
+// D412: a file tab restored with its folder is selected in the explorer, though it was followed
+// before the tree had listed (it stayed unselected, and clicking its tab didn't retry).
+{
+  "name": "explorer-restored-m7-121",
+  "steps": [
+    { "state": "ide://workspace", "save": "ws" },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 5000
+    },
+    // The owner's case: close the folder, open it again; its tabs come back with it.
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}" } },
+    { "state": "ide://workspace", "expect": { "root": { "$exists": true } }, "timeoutMs": 10000 },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "main.ts" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .is-selected" },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 8000
+    }
+  ]
+}

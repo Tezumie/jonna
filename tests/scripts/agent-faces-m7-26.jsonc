@@ -1,0 +1,175 @@
+// D270: an agent shows its model's logo by default (D272: the main agent too); Character in the
+// editor goes back to a face, everywhere at once; Delete in the side bar's chat menu; the
+// Customize page's breadcrumb back to the agent's settings; Reset to defaults brings the team
+// back. D291: the side bar is a Chats list, so the faces are checked on chats' rows.
+{
+  "name": "agent-faces-m7-26",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:planner" },
+      "timeoutMs": 10000
+    },
+
+    // ---- A chat with Plato and one with the main agent: each row shows its model's logo ----
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "agent.chatWith",
+      "input": { "agent": "planner" },
+      "expect": { "mode": "custom:planner" },
+      "save": "plan"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "say hi", "session": "${plan.session}", "wait": true },
+      "timeoutMs": 60000
+    },
+    { "run": "agent.newSession", "save": "main" },
+    {
+      "run": "agent.send",
+      "input": { "message": "say hi", "session": "${main.session}", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-recent[data-session='${plan.session}'] .agent-face.is-model .ai-mark"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-recent[data-session='${main.session}'] .agent-face.is-model .ai-mark"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/agents",
+      "expect": { "$contains": "\"icon\":\"model\"" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- The main agent can show a face instead, and go back ----
+    {
+      "run": "agent.setMainAgent",
+      "input": { "icon": "squircle-3-dots" },
+      "expect": { "icon": "squircle-3-dots" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-recent[data-session='${main.session}'] .agent-face:not(.is-model) svg.face"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.setMainAgent", "input": { "icon": "" }, "expect": { "icon": "model" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${main.session}'] .agent-face.is-model" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+
+    // ---- The editor: Character writes a face and every view follows; Model icon goes back ----
+    { "run": "agent.editAgent", "input": { "name": "planner" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-face-kind .segment.is-selected[data-kind='model']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ae-face-kind [data-kind='face']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-recent[data-session='${plan.session}'] .agent-face:not(.is-model) svg.face"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".ae-face-kind [data-kind='model']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${plan.session}'] .agent-face.is-model" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+
+    // ---- Customize: Agent settings › Customize; Providers has no Agent settings button ----
+    { "run": "agent.customize", "input": { "section": "models" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize-crumbs .ae-crumb-link" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-header-actions .ai-header-button", "limit": 10 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- Delete in a chat's menu ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-recent[data-session='${main.session}']", "right": true },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item.is-destructive .menu-label", "limit": 5 },
+      "expect": { "$contains": "Delete" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ch-top" } },
+
+    // ---- Reset to defaults: a new agent goes, the team's changes are undone ----
+    {
+      "run": "agent.createAgent",
+      "input": { "label": "Scratch helper", "description": "Temporary.", "scope": "user" },
+      "expect": { "name": "scratch-helper" }
+    },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:scratch-helper" },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ag-section-top .ag-reset" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.resetAgents",
+      "expect": { "removed": ["scratch-helper"], "written": ["planner", "chat"] }
+    },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$not": { "$contains": "custom:scratch-helper" } },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/agents",
+      "expect": {
+        "$contains": "\"name\":\"planner\",\"label\":\"Plato\",\"role\":\"Plan\",\"icon\":\"model\""
+      },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

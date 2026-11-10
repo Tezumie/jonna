@@ -1,0 +1,175 @@
+// D218: language servers (didSave with its text, timed workspace pulls, problems of closed and
+// unopened files), a read-only non-UTF-8 file that becomes writable when rewritten as UTF-8, and
+// the Markdown preview's HTML (Markdown inside <details>, the browser parser's table rules).
+{
+  "name": "editor-lsp-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    // ---- Language servers ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "mock": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-lsp.mjs", "--d204", "--m77"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"state\":\"running\"" },
+      "timeoutMs": 15000
+    },
+    // A push for a file nobody opened is listed (VS Code does).
+    {
+      "run": "problems.list",
+      "input": { "path": "never.md" },
+      "expect": { "$contains": "Mock unopened" },
+      "timeoutMs": 10000
+    },
+    // didSave carries the saved text (save.includeText), after the edit before it.
+    { "run": "editor.insertText", "input": { "text": "saved-marker " } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "for i in $(seq 50); do grep -q '^didSave text=' .mock-lsp-calls.txt && break; sleep 0.2; done; grep '^didSave text=' .mock-lsp-calls.txt",
+        "timeoutMs": 15000
+      },
+      "expect": { "output": { "$contains": "didSave text=\"saved-marker " } },
+      "timeoutMs": 25000
+    },
+    // The workspace is pulled again on its own (2 s after each answer), with no edit.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "a=$(grep -c '^workspace/diagnostic$' .mock-lsp-calls.txt); sleep 5; b=$(grep -c '^workspace/diagnostic$' .mock-lsp-calls.txt); [ $((b - a)) -ge 2 ] && echo PULLS_OK; echo PULLS=$((b - a))",
+        "timeoutMs": 15000
+      },
+      "expect": { "output": { "$contains": "PULLS_OK" } },
+      "timeoutMs": 25000
+    },
+    // Closed with its model kept for undo: the server gets didClose, and what it reports for the
+    // closed file is listed in Problems.
+    { "run": "editor.closeTab", "input": { "path": "README.md" } },
+    {
+      "run": "problems.list",
+      "input": { "path": "README.md" },
+      "expect": { "$contains": "Mock closed: kept" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '^textDocument/didClose$' .mock-lsp-calls.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    // Reopened (the kept model, undo intact): open again for the server.
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "for i in $(seq 50); do [ $(grep -c '^textDocument/didOpen$' .mock-lsp-calls.txt) -ge 2 ] && break; sleep 0.2; done; [ $(grep -c '^textDocument/didOpen$' .mock-lsp-calls.txt) -ge 2 ] && echo OPENS_OK; echo OPENS=$(grep -c '^textDocument/didOpen$' .mock-lsp-calls.txt)",
+        "timeoutMs": 15000
+      },
+      "expect": { "output": { "$contains": "OPENS_OK" } },
+      "timeoutMs": 25000
+    },
+    { "run": "lsp.stop", "input": { "all": true } },
+    { "run": "settings.set", "input": { "key": "lsp.servers", "value": {} } },
+    // The settings page knows more servers (D218): taplo's.
+    { "run": "lsp.openServerSettings", "input": { "server": "taplo" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".lsp-settings-view .setting-row", "html": 400, "limit": 2 },
+      "expect": { "$contains": "evenBetterToml.schema.enabled" },
+      "timeoutMs": 5000
+    },
+    // ---- Encodings: read-only (not UTF-8), rewritten as UTF-8 elsewhere: writable ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'caf\\xe9\\n' > latin77.txt", "timeoutMs": 10000 },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "latin77.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".editor-view .banner:not([hidden])", "html": 600 },
+      "expect": [{ "html": { "$contains": "UTF-8" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'caf\\xc3\\xa9\\n' > latin77.txt", "timeoutMs": 10000 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".editor-view .banner:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 8000
+    },
+    { "state": "ide://editors/active", "expect": { "encoding": "utf8" }, "timeoutMs": 5000 },
+    { "run": "editor.insertText", "input": { "text": "ü" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "od -An -tx1 latin77.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "c3 bc 63 61 66 c3 a9" } },
+      "timeoutMs": 20000
+    },
+    // ---- Markdown preview: Markdown inside HTML blocks, the browser parser's rules ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# Html\\n\\n<details open>\\n<summary>More</summary>\\n\\nInside **bold** and a list:\\n\\n- one\\n- two\\n</details>\\n\\n<table><tr><td>cell</td></tr>stray<script>alert(1)</script></table>\\n\\n<p align=\"center\">\\n<img src=\"none.png\" alt=\"logo\">\\n\\n## After\\n' > html77.md",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "viewer.openPreview", "input": { "path": "html77.md" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-html details strong" },
+      "expect": [{ "html": { "$contains": ">bold</strong>" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-html details ul li" },
+      "expect": { "$length": 2 }
+    },
+    // Text misplaced in a table goes before it (foster parenting); the script is gone.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-html", "html": 2000 },
+      "expect": { "$contains": "stray<table>" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-document script" },
+      "expect": { "$length": 0 }
+    },
+    // The open <p> ends at the heading after it (it isn't swallowed).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-html > p[align=center] h2" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-document h2" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

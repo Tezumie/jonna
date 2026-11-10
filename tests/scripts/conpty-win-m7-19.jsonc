@@ -1,0 +1,10 @@
+// D253: on Windows the terminals use the ConPTY bundled next to the program (src-tauri/conpty,
+// scripts/fetch-conpty.mjs), not Windows 10's own.
+{
+  "name": "conpty-win-m7-19",
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "terminal.create", "timeoutMs": 20000 },
+    { "state": "ide://terminals", "expect": { "conpty": "bundled" } }
+  ]
+}

@@ -1,0 +1,75 @@
+// m7.12 (D233), testing: per-test coverage (a fake c8 runs a Mocha project and writes lcov with a
+// TN: record per test), Show coverage for test, Covered by for a line, and the floating coverage
+// toolbar over the editor. Needs `node` on PATH. Fixtures: tests/fixtures/setup/testing-m7-12.cjs.
+{
+  "name": "testing-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/testing-m7-12.cjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "tests.refresh", "timeoutMs": 30000 },
+    {
+      "run": "tests.runWithCoverage",
+      "input": { "framework": "mocha" },
+      "expect": { "passed": 2, "failed": 0 },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://tests",
+      "expect": { "coverage": { "perTest": true, "shownTest": null } }
+    },
+    // Line 2 (sub) ran only in "subs".
+    {
+      "run": "tests.coveredBy",
+      "input": { "path": "moc/calc.js", "line": 2 },
+      "expect": { "tests": [{ "key": "calc subs", "name": "calc › subs" }] }
+    },
+    {
+      "run": "tests.showCoverageForTest",
+      "input": { "test": "calc › subs" },
+      "expect": { "test": "calc › subs", "files": 1 }
+    },
+    { "state": "ide://tests", "expect": { "coverage": { "shownTest": "calc › subs" } } },
+    // The floating toolbar over the file's editor: its coverage for that test.
+    { "run": "editor.openFile", "input": { "path": "moc/calc.js", "preview": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".coverage-float:not([hidden])", "html": 2000 },
+      "expect": [
+        {
+          "position": "fixed",
+          "html": { "$contains": "calc › subs" }
+        }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".coverage-float .coverage-float-summary", "html": 300 },
+      "expect": [{ "html": { "$contains": "covered" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Every test again; then the toolbar hides (a setting) and comes back.
+    {
+      "run": "tests.showCoverageForTest",
+      "input": { "all": true },
+      "expect": { "test": null }
+    },
+    { "run": "tests.toggleCoverageToolbar", "input": { "on": false }, "expect": { "on": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".coverage-float:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "tests.toggleCoverageToolbar", "input": { "on": true }, "expect": { "on": true } },
+    { "run": "tests.clearCoverage" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".coverage-float:not([hidden])" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

@@ -1,0 +1,549 @@
+/* Settings editor (DESIGN.md §12.16) and the shared form controls it introduced: checkbox,
+   segmented control, link button. */
+@layer components {
+  .checkbox {
+    appearance: none;
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-xs);
+    background: var(--bg-input);
+    cursor: pointer;
+    display: grid;
+    place-content: center;
+  }
+  .checkbox:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .checkbox:checked::after {
+    content: "";
+    width: 8px;
+    height: 4px;
+    margin-top: -2px;
+    border: solid var(--fg-on-accent);
+    border-width: 0 0 2px 2px;
+    transform: rotate(-45deg);
+  }
+  .checkbox:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  .segmented {
+    display: inline-flex;
+    flex: none;
+    padding: 2px;
+    gap: 2px;
+    background: var(--bg-surface-sunken);
+    border-radius: var(--radius-sm);
+  }
+  .segment {
+    height: calc(var(--size-control-md) - 4px);
+    padding: 0 var(--space-4);
+    color: var(--fg-muted);
+    border-radius: calc(var(--radius-sm) - 1px);
+    cursor: pointer;
+  }
+  .segment:hover:not(:disabled) {
+    color: var(--fg-default);
+  }
+  .segment.is-selected {
+    color: var(--fg-default);
+    background: var(--bg-surface-raised);
+    box-shadow: var(--shadow-1);
+  }
+  .segment:disabled {
+    color: var(--fg-disabled);
+    cursor: default;
+  }
+
+  /* A switch (D121): a checkbox drawn as a sliding toggle. */
+  .switch {
+    appearance: none;
+    position: relative;
+    flex: none;
+    width: 32px;
+    height: 18px;
+    margin: 0;
+    border-radius: var(--radius-full);
+    background: var(--border-strong);
+    cursor: pointer;
+    transition: background-color var(--motion-fast);
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--radius-full);
+    background: var(--fg-on-accent);
+    box-shadow: var(--shadow-1);
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .switch:checked {
+    background: var(--accent);
+  }
+  .switch:checked::after {
+    transform: translateX(14px);
+  }
+  .switch:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  .link-button {
+    padding: 0;
+    color: var(--accent-text);
+    cursor: pointer;
+    justify-self: start;
+  }
+  .link-button:hover {
+    text-decoration: underline;
+  }
+}
+
+@layer extensions {
+  /* Settings (D121, D179 after Cursor's): navigation (search, grouped pages with dividers, the
+     open page's sections, links with ↗) | page (title with the scope switch, sections as cards
+     with a label above). Under 640px the navigation is an icon rail and search moves up. */
+  .settings-view {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg-surface);
+    container-type: inline-size;
+  }
+  .settings-layout {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+  }
+  .settings-nav {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: var(--space-6) 0 var(--space-4) var(--space-4);
+    gap: var(--space-4);
+    border-right: 1px solid var(--border-subtle);
+  }
+  .settings-nav .settings-search {
+    margin-right: var(--space-4);
+  }
+  /* The list's scrollbar sits against the divider, as the explorer's does, with the gap on its
+     left: the gutter is kept even when nothing scrolls, so the rows don't move (D283). */
+  .settings-nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    padding-right: calc(var(--space-4) - 4px);
+  }
+  /* The thin scrollbar of the activity bar (workbench.css), not the editor's. */
+  .settings-nav-items::-webkit-scrollbar {
+    width: 4px;
+  }
+  .settings-nav-items::-webkit-scrollbar-thumb,
+  .settings-nav-items:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
+    border: 0;
+    border-radius: var(--radius-full);
+  }
+  .settings-nav-items::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--fg-subtle) 75%, transparent);
+  }
+  .settings-nav-items::-webkit-scrollbar-thumb:active {
+    background: var(--fg-subtle);
+  }
+  .settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--size-control-md);
+    flex: none;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .settings-nav-item > .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    flex: none;
+  }
+  .settings-nav-item:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .settings-nav-item.is-selected {
+    color: var(--fg-default);
+    background: var(--bg-selected);
+  }
+  .settings-nav-item.is-dimmed {
+    opacity: 0.45;
+  }
+  .settings-nav-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A link to a page of its own: a small arrow, like Cursor's "Customize ↗". */
+  .settings-nav-arrow {
+    display: flex;
+    color: var(--fg-subtle);
+  }
+  .settings-nav-arrow > .icon {
+    width: 12px;
+    height: 12px;
+  }
+  /* The open page's sections (a docs page's contents). */
+  .settings-nav-sub {
+    flex: none;
+    height: var(--size-control-sm);
+    padding: 0 var(--space-3) 0 calc(var(--space-3) + var(--size-icon-sm) + var(--space-3));
+    border-radius: var(--radius-sm);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .settings-nav-sub:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .settings-nav-separator {
+    flex: none;
+    height: 1px;
+    margin: var(--space-3) var(--space-3);
+    background: var(--border-subtle);
+  }
+  .settings-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .settings-search {
+    position: relative;
+    flex: none;
+    min-width: 0;
+  }
+  .settings-search > .icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    transform: translateY(-50%);
+    color: var(--fg-subtle);
+    pointer-events: none;
+  }
+  .settings-search-input {
+    width: 100%;
+    padding-left: 28px;
+  }
+  /* The header's copy only shows when the navigation is a rail. */
+  .settings-search.is-header {
+    display: none;
+  }
+  .settings-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    /* Room below the last setting so it can scroll up to about the middle (VS Code's settings
+       editor scrolls past its end too). */
+    padding: var(--space-6) var(--space-8) max(var(--space-10), var(--scroll-past-page));
+  }
+  .settings-page-head,
+  .settings-list {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .settings-page-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+  }
+  .settings-page-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .settings-page-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+  }
+  /* A section off screen skips style and layout work (D275: moving focus, as opening quick access
+     or a dropdown does, restyled every built row); its size until shown is set from its rows. */
+  .settings-section {
+    scroll-margin-top: var(--space-4);
+    content-visibility: auto;
+  }
+  .settings-section + .settings-section {
+    margin-top: var(--space-8);
+  }
+  /* A section's label sits above its card, small and muted (Cursor's "Conversation"). */
+  .settings-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 20px;
+    margin: 0 0 var(--space-3) var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--fg-muted);
+  }
+  .settings-section-title > span:empty {
+    display: none;
+  }
+  .settings-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    overflow: hidden;
+  }
+  .setting-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    padding: var(--space-5) var(--space-6);
+    /* Rows off screen skip layout and paint (D189): resizing the window with the settings open
+       re-laid out every row's wrapped text each frame and lagged. The size is remembered. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 76px;
+  }
+  /* Dividers inset from the card's edges, between rows. */
+  .setting-row + .setting-row::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: var(--space-6);
+    right: var(--space-6);
+    height: 1px;
+    background: var(--border-subtle);
+  }
+  .setting-text {
+    display: grid;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+  }
+  .setting-control {
+    flex: none;
+    display: flex;
+    justify-content: flex-end;
+    max-width: 50%;
+  }
+  .setting-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-md);
+    font-weight: 500;
+    color: var(--fg-default);
+    min-height: 20px;
+    cursor: default;
+  }
+  /* Changed: a small dot after the title, in a quiet color. */
+  .setting-modified-dot {
+    display: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--fg-muted);
+  }
+  .setting-row.is-modified .setting-modified-dot {
+    display: inline-block;
+  }
+  .setting-reset {
+    width: 20px;
+    height: 20px;
+    opacity: 0;
+  }
+  .setting-row:hover .setting-reset,
+  .settings-section-title:hover .setting-reset,
+  .setting-reset:focus-visible {
+    opacity: 1;
+  }
+  .settings-section-reset[hidden] {
+    display: none;
+  }
+  .setting-description,
+  .setting-note {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .setting-note:empty {
+    display: none;
+  }
+  .setting-note {
+    color: var(--fg-subtle);
+  }
+  .setting-select,
+  .setting-input {
+    width: 220px;
+    max-width: 100%;
+  }
+  .setting-input.is-invalid {
+    border-color: var(--status-danger-border);
+  }
+  /* A setting with a popup of its own (D288: models): the value and a chevron, like a select. */
+  .setting-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+  }
+  .setting-picker-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-picker .icon {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .settings-match {
+    color: var(--fg-default);
+    font-weight: 600;
+    background: none;
+  }
+  .settings-empty {
+    padding: var(--space-8);
+  }
+  /* Narrow: the navigation is icons only, search moves above the page, rows stack lower down. */
+  @container (max-width: 640px) {
+    .settings-layout {
+      grid-template-columns: 48px minmax(0, 1fr);
+    }
+    .settings-nav {
+      align-items: center;
+      padding: var(--space-5) 0 var(--space-5) var(--space-2);
+    }
+    .settings-nav .settings-search,
+    .settings-nav-sub,
+    .settings-nav-arrow,
+    .settings-nav-label {
+      display: none;
+    }
+    .settings-nav-items {
+      align-self: stretch;
+      align-items: center;
+      padding-right: 0;
+    }
+    .settings-nav-item {
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+    }
+    .settings-nav-separator {
+      width: 24px;
+      margin: var(--space-2) 0;
+    }
+    .settings-search.is-header {
+      display: block;
+      margin: var(--space-5) var(--space-5) 0;
+    }
+    .settings-scroll {
+      padding-left: var(--space-5);
+      padding-right: var(--space-5);
+    }
+  }
+  @container (max-width: 460px) {
+    .setting-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-3);
+    }
+    .setting-control {
+      max-width: none;
+      justify-content: flex-start;
+    }
+    .settings-page-head {
+      flex-wrap: wrap;
+    }
+  }
+
+  /* A page a category leads to (the agent's models, D165), its own card above the settings in
+     the info color like the agent's "Started in" banner (D166). */
+  .settings-link-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: var(--space-5);
+    padding: var(--space-5) var(--space-6);
+    border: 1px solid var(--status-info-border);
+    border-radius: var(--radius-md);
+    background: var(--status-info-bg);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--motion-fast);
+  }
+  .settings-link-row:hover {
+    border-color: var(--status-info-fg);
+  }
+  .settings-link-row > .icon {
+    color: var(--status-info-fg);
+    flex: none;
+  }
+  .settings-link-icon {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--status-info-fg) 18%, transparent);
+    color: var(--status-info-fg);
+  }
+  .settings-link-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .settings-link-label {
+    font-weight: 600;
+  }
+  .settings-link-detail {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  /* A multi-root workspace's folder picker (D251): long folder names hold up in small windows. */
+  .settings-folder-select {
+    max-width: 160px;
+    min-width: 0;
+  }
+}

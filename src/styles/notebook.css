@@ -1,0 +1,803 @@
+/* The notebook editor (D188): a toolbar, cells with a run gutter, outputs, a variables panel.
+   Tokens only. */
+@layer extensions {
+  .notebook-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    outline: none;
+    background: var(--bg-surface);
+  }
+  .nb-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .nb-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 26px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .nb-tool:hover,
+  .nb-tool.is-on {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .nb-tool .icon {
+    width: 14px;
+    height: 14px;
+  }
+  .nb-sep {
+    width: 1px;
+    height: 16px;
+    margin: 0 var(--space-2);
+    background: var(--border-subtle);
+  }
+  .nb-spacer {
+    flex: 1;
+  }
+  .nb-kernel {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 26px;
+    max-width: 320px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+  }
+  .nb-kernel:hover {
+    background: var(--bg-hover);
+  }
+  .nb-kernel-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nb-kernel-state {
+    color: var(--fg-subtle);
+  }
+  .nb-kernel-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--fg-subtle);
+  }
+  .nb-kernel-dot.is-idle {
+    border-color: transparent;
+    background: var(--status-success-fg);
+  }
+  .nb-kernel-dot.is-busy,
+  .nb-kernel-dot.is-starting {
+    border-color: transparent;
+    background: var(--status-warning-fg);
+  }
+  .nb-kernel-dot.is-dead {
+    border-color: transparent;
+    background: var(--status-danger-fg);
+  }
+  .nb-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-surface-raised);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .nb-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  .nb-cells {
+    /* The drag's drop line is placed in it. */
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    padding: var(--space-4) var(--space-6) 40vh var(--space-3);
+  }
+  .nb-error {
+    padding: var(--space-6);
+    color: var(--fg-muted);
+  }
+
+  /* ---- Cells ---- */
+  .nb-cell {
+    position: relative;
+    display: flex;
+    gap: var(--space-2);
+    /* The gap holds the "+ Code / + Markdown" bar (D204). */
+    margin-bottom: var(--space-7);
+    border-radius: var(--radius-md);
+    outline: none;
+  }
+  /* The selected cell: a bar on its left, as in VS Code. */
+  .nb-cell::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: var(--radius-full);
+    background: transparent;
+  }
+  .nb-cell.is-selected::before {
+    background: var(--border-strong);
+  }
+  .notebook-editor:focus-within .nb-cell.is-selected::before {
+    background: var(--accent);
+  }
+  /* Several selected (D209): each has VS Code's selected-cell background; the focused one the bar. */
+  .nb-cells.is-multi .nb-cell.is-selected {
+    background: var(--bg-selected);
+  }
+  .nb-cells.is-multi .nb-cell.is-selected:not(.is-focused)::before {
+    background: var(--border-strong);
+  }
+  .nb-gutter {
+    flex: none;
+    width: 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+    padding-top: var(--space-2);
+  }
+  /* The gutter is the cells' drag handle (cellDrag.ts, VS Code's): dragged cells dim in place, a
+     line shows where they go. */
+  .nb-gutter {
+    cursor: grab;
+  }
+  .nb-cells.is-dragging-cells,
+  .nb-cells.is-dragging-cells * {
+    cursor: grabbing;
+    user-select: none;
+  }
+  .nb-cell.is-dragging {
+    opacity: 0.4;
+  }
+  .nb-drop-line {
+    position: absolute;
+    left: var(--space-3);
+    right: var(--space-6);
+    height: 2px;
+    margin-top: -1px;
+    border-radius: var(--radius-full);
+    background: var(--accent-secondary);
+    pointer-events: none;
+  }
+  .nb-run {
+    width: 26px;
+    height: 26px;
+    opacity: 0;
+    color: var(--fg-muted);
+  }
+  .nb-cell:hover .nb-run,
+  .nb-cell.is-selected .nb-run,
+  .nb-cell.is-running .nb-run,
+  .nb-cell.is-queued .nb-run {
+    opacity: 1;
+  }
+  .nb-cell.is-running .nb-run {
+    color: var(--accent);
+  }
+  .nb-count {
+    min-height: 16px;
+    padding-right: var(--space-1);
+    color: var(--fg-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .nb-main {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ---- A cell's toolbar (D204): top right, on hover or selection, as in VS Code ---- */
+  /* A zero-height sticky dock (D209): the toolbar rides down a tall cell's top edge while the cell
+     is on screen and stops at its bottom, as VS Code's does. */
+  .nb-toolbar-dock {
+    position: sticky;
+    top: var(--space-5);
+    z-index: 2;
+    height: 0;
+  }
+  .nb-cell-toolbar {
+    position: absolute;
+    top: calc(-1 * var(--space-5));
+    right: var(--space-4);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--space-px);
+    padding: var(--space-px);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .nb-cell:hover .nb-cell-toolbar,
+  .nb-cell.is-selected .nb-cell-toolbar,
+  .nb-cell-toolbar:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .nb-cell-tool {
+    width: 22px;
+    height: 22px;
+    color: var(--fg-muted);
+  }
+  .nb-cell-tool:hover {
+    color: var(--fg-default);
+  }
+  .nb-cell-tool .icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ---- "+ Code / + Markdown" between cells (D204): shown over the gap, always after the last ---- */
+  .nb-insert {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(-1 * var(--space-7));
+    height: var(--space-7);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .nb-insert.is-top {
+    position: relative;
+    bottom: auto;
+    margin-top: calc(-1 * var(--space-3));
+    margin-bottom: var(--space-1);
+  }
+  .nb-insert:hover,
+  .nb-insert:focus-within,
+  .nb-cell:last-child > .nb-insert {
+    opacity: 1;
+  }
+  .nb-insert-line {
+    position: absolute;
+    left: calc(52px + var(--space-2));
+    right: 0;
+    top: 50%;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .nb-cell:last-child > .nb-insert .nb-insert-line {
+    display: none;
+  }
+  .nb-insert-buttons {
+    position: relative;
+    display: flex;
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+    margin-left: calc(52px + var(--space-2));
+    background: var(--bg-surface);
+  }
+  .nb-insert-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 20px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .nb-insert-button:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .nb-insert-button .icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* ---- A cell's status row (D204): how its run went, extensions' items, its language ---- */
+  .nb-cell-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 20px;
+    padding: var(--space-1) var(--space-1) 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .nb-cell-foot[hidden] {
+    display: none;
+  }
+  .nb-status-items {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .nb-status-item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nb-status-item.is-action,
+  .nb-cell-language {
+    height: 18px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-xs);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .nb-status-item.is-action:hover,
+  .nb-cell-language:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .nb-editor {
+    min-height: 34px;
+  }
+  .nb-cell.is-code .nb-editor,
+  .nb-cell.is-raw .nb-editor,
+  .nb-cell.is-md-editing .nb-editor,
+  .nb-editor-placeholder {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-editor-widget);
+    overflow: hidden;
+  }
+  .nb-cell.is-selected .nb-editor {
+    border-color: var(--border-default);
+  }
+  .nb-cell.is-selected .nb-editor:focus-within {
+    border-color: var(--border-input-focus);
+  }
+  .nb-editor-placeholder {
+    margin: 0;
+    padding: 8px 10px 8px 24px;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+    color: var(--fg-default);
+  }
+  .nb-cell.is-raw .nb-editor {
+    background: transparent;
+  }
+  .nb-markdown {
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    min-height: 24px;
+    cursor: default;
+  }
+  .nb-markdown > :first-child {
+    margin-top: 0;
+  }
+  .nb-markdown > :last-child {
+    margin-bottom: 0;
+  }
+  .nb-empty-md {
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
+  .nb-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .nb-status[hidden] {
+    display: none;
+  }
+  .nb-status .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .nb-status.is-ok .icon {
+    color: var(--status-success-fg);
+  }
+  .nb-status.is-error .icon {
+    color: var(--status-danger-fg);
+  }
+  .nb-cell.is-source-collapsed .nb-editor {
+    display: none;
+  }
+
+  /* ---- Input (input() in a cell) ---- */
+  .nb-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .nb-input {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    font: inherit;
+  }
+
+  /* ---- Outputs ---- */
+  .nb-outputs {
+    position: relative;
+    margin-top: var(--space-2);
+  }
+  /* Side by side in the gutter (stacked, they reached into the next cell's run button beside a
+     one-line output, D189). */
+  .nb-outputs-actions {
+    position: absolute;
+    top: 0;
+    right: calc(100% + var(--space-2));
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+    opacity: 0;
+  }
+  .nb-cell:hover .nb-outputs-actions {
+    opacity: 1;
+  }
+  .nb-outputs-actions .icon-button {
+    width: 22px;
+    height: 22px;
+  }
+  /* An output that runs code, in its sandboxed frame (D189): as wide as the cell, as tall as
+     the page says it is. */
+  .nb-out-frame-box {
+    min-width: 0;
+  }
+  .nb-out-frame {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color-scheme: normal;
+  }
+  /* A VS Code controller's notebook (D295): one output page over the cells, as VS Code's back
+     layer; its clip path shows (and takes the pointer at) the outputs' slots only. */
+  .nb-page-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color-scheme: normal;
+  }
+  .nb-page-slot {
+    min-width: 0;
+  }
+  .nb-outputs-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .nb-outputs.is-collapsed .nb-outputs-body {
+    max-height: 22px;
+    overflow: hidden;
+    opacity: 0.5;
+  }
+  .nb-outputs.is-collapsed .nb-out-collapse .icon {
+    transform: rotate(-90deg);
+  }
+  .nb-outputs.is-scrolling .nb-outputs-body {
+    max-height: 480px;
+    overflow: auto;
+  }
+  .nb-out-text {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+  }
+  .nb-out-text.is-stderr {
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--status-warning-fg) 8%, transparent);
+  }
+  .nb-out-text.is-error {
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--status-danger-fg) 7%, transparent);
+  }
+  .nb-out-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    align-self: flex-start;
+    border-radius: var(--radius-xs);
+    /* Plots are drawn on white or transparent: a light ground keeps them readable. */
+    background: var(--bg-web-canvas);
+  }
+  .nb-out-html,
+  .nb-out-md {
+    width: auto;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    font-size: var(--text-sm);
+  }
+  /* Rounded and lightly bordered, as tables in Markdown (D283). */
+  .nb-out-html table {
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+  .nb-out-html th,
+  .nb-out-html td {
+    padding: 2px var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: right;
+  }
+  .nb-out-html tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+  .nb-out-html thead th {
+    border-bottom-color: var(--border-default);
+  }
+  .nb-out-html tbody tr:nth-child(odd) {
+    background: var(--bg-surface-raised);
+  }
+  .nb-out-note {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    font-style: italic;
+  }
+  .nb-out-math {
+    overflow-x: auto;
+  }
+
+  /* ---- Variables ---- */
+  .nb-side {
+    flex: none;
+    width: 340px;
+    max-width: 45%;
+    overflow: auto;
+    padding: var(--space-3) var(--space-4);
+    border-left: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .nb-side-title {
+    margin-bottom: var(--space-3);
+    color: var(--fg-muted);
+    font-weight: 600;
+  }
+  .nb-side-note {
+    color: var(--fg-subtle);
+  }
+  .nb-vars {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .nb-side .nb-vars th {
+    color: var(--fg-muted);
+    font-weight: 500;
+    text-align: left;
+  }
+  .nb-side .nb-vars td,
+  .nb-side .nb-vars th {
+    padding: 3px var(--space-2) 3px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nb-side .nb-vars td:first-child {
+    font-family: var(--font-mono);
+  }
+
+  /* ---- Notebook diffs (D189): cell by cell ---- */
+  .nbd-host {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .nbd {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+  .nbd-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .nbd-sides {
+    margin-left: auto;
+    color: var(--fg-subtle);
+  }
+  .nbd-cells {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .nbd-fold {
+    padding: var(--space-1) var(--space-3);
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .nbd-cell {
+    border: 1px solid var(--border-default);
+    border-left-width: 3px;
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    overflow: hidden;
+  }
+  .nbd-cell.is-modified {
+    border-left-color: var(--diff-modified-fg);
+  }
+  .nbd-cell.is-added {
+    border-left-color: var(--diff-added-fg);
+  }
+  .nbd-cell.is-removed {
+    border-left-color: var(--diff-removed-fg);
+  }
+  .nbd-cell-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .nbd-kind {
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .nbd-change.is-added {
+    color: var(--diff-added-fg);
+  }
+  .nbd-change.is-removed {
+    color: var(--diff-removed-fg);
+  }
+  .nbd-change.is-modified {
+    color: var(--diff-modified-fg);
+  }
+  .nbd-notes {
+    color: var(--fg-subtle);
+  }
+  .nbd-source {
+    margin: 0;
+    padding: var(--space-1) 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  .nbd-line {
+    padding: 0 var(--space-3);
+    white-space: pre;
+  }
+  .nbd-line.is-add {
+    background: var(--diff-added-bg);
+  }
+  .nbd-line.is-del {
+    background: var(--diff-removed-bg);
+  }
+  .nbd-sign {
+    display: inline-block;
+    width: 1.5ch;
+    color: var(--fg-subtle);
+    user-select: none;
+  }
+  .nbd-error {
+    padding: var(--space-4);
+    color: var(--fg-muted);
+  }
+
+  /* ---- Find across cells (D204): a bar over the cells' top right, like the editor's find ---- */
+  .nb-body {
+    position: relative;
+  }
+  .nb-find {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-6);
+    z-index: 5;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-1);
+    max-width: calc(100% - 2 * var(--space-4));
+    padding: var(--space-1) var(--space-2);
+    background: var(--bg-overlay);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+  }
+  .nb-find[hidden],
+  .nb-find-row[hidden] {
+    display: none;
+  }
+  .nb-find-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .nb-find-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .nb-find-input {
+    width: 200px;
+    min-width: 80px;
+    flex-shrink: 1;
+    height: 24px;
+  }
+  .nb-find.is-empty .nb-find-row:first-child .nb-find-input {
+    border-color: var(--status-danger-border);
+  }
+  .nb-find-toggle.is-on {
+    background: var(--bg-selected);
+    color: var(--fg-default);
+  }
+  .nb-find-chevron {
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  .nb-find.is-replacing .nb-find-chevron {
+    transform: rotate(90deg);
+  }
+  .nb-find-count {
+    min-width: 64px;
+    padding: 0 var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  ::highlight(nb-find) {
+    background-color: color-mix(in srgb, var(--status-warning-fg) 30%, transparent);
+  }
+  ::highlight(nb-find-current) {
+    background-color: color-mix(in srgb, var(--status-warning-fg) 70%, transparent);
+    color: var(--fg-on-status);
+  }
+}

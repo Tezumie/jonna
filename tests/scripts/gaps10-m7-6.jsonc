@@ -1,0 +1,346 @@
+// D207: ten small gaps — the status bar's selection count (several cursors), a chord's `args` for
+// an editor command, the shortcuts editor's titles for Monaco's plain commands, per-terminal
+// suggestion keys, zsh records (in gaps10-zsh-m7-6), the JavaScript debug terminal in the
+// profile menu, launch.json `presentation` and a compound's restart keeping stopAll, the merge
+// editor's Accept all / sashes / word highlights, and autofetch of a nested repository. Needs
+// `git` and `node` on PATH.
+{
+  "name": "gaps10-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p g10 .vscode && printf 'foo bar foo\\nline 2\\nline 3\\nline 4\\nline 5\\n' > g10/sel.txt && printf 'setInterval(() => {}, 1000);\\n' > g10/loop.js && printf '{\"version\":\"0.2.0\",\"configurations\":[{\"name\":\"Alpha\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/g10/loop.js\",\"presentation\":{\"group\":\"2-b\",\"order\":2}},{\"name\":\"Beta\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/g10/loop.js\",\"presentation\":{\"group\":\"2-b\",\"order\":1}},{\"name\":\"Hidden\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/g10/loop.js\",\"presentation\":{\"hidden\":true}},{\"name\":\"Plain\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/g10/loop.js\"}],\"compounds\":[{\"name\":\"Solo\",\"configurations\":[\"Alpha\"],\"stopAll\":true,\"presentation\":{\"group\":\"1-a\"}}]}' > .vscode/launch.json && echo made",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "made" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Selection count: from the selections' offsets, several cursors counted ----
+    { "run": "editor.openFile", "input": { "path": "g10/sel.txt" } },
+    // The editor engine loads with the first file.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "html": 300 },
+      "expect": [{ "html": { "$contains": "Ln 1, Col 4 (3 selected)" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.addSelectionToNextFindMatch" },
+      "expect": { "ran": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "html": 300 },
+      "expect": [{ "html": { "$contains": "2 selections (6 characters selected)" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='editor.cursor']", "html": 300 },
+      "expect": [{ "html": { "$contains": "Ln 1, Col 1" } }],
+      "timeoutMs": 5000
+    },
+
+    // ---- An editor command with args: editor.runAction, and a chord's second key ----
+    {
+      "run": "editor.runAction",
+      "input": { "action": "cursorMove", "args": { "to": "down", "by": "line", "value": 2 } },
+      "expect": { "ran": true }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "line": 3 } },
+      "timeoutMs": 3000
+    },
+    { "run": "keybindings.openJson" },
+    { "run": "editor.runAction", "input": { "action": "editor.action.selectAll" } },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "[{ \"key\": \"ctrl+k ctrl+j\", \"command\": \"cursorMove\", \"args\": { \"to\": \"up\", \"by\": \"line\", \"value\": 2 }, \"when\": \"editorTextFocus\" }]"
+      }
+    },
+    { "run": "editor.save" },
+    // Once the saved binding is in effect (reading the file again can take longer than a fixed
+    // pause on Windows; before it, Monaco's own Ctrl+K Ctrl+J unfolds instead).
+    { "state": "ide://keybindings", "expect": { "userRules": 1 }, "timeoutMs": 5000 },
+    { "run": "editor.openFile", "input": { "path": "g10/sel.txt" } },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 3, "startColumn": 1, "endLine": 3, "endColumn": 1 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "k",
+        "code": "KeyK",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "j",
+        "code": "KeyJ",
+        "ctrl": true
+      }
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "recent": [{ "chord": "ctrl+j", "result": "command:cursorMove" }] },
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "line": 1 } },
+      "timeoutMs": 3000
+    },
+
+    // ---- The shortcuts editor: Monaco's plain commands have readable titles ----
+    { "run": "keybindings.show", "input": { "query": "cursorDown" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".keybindings-row", "html": 600, "limit": 10 },
+      "expect": { "$contains": "Cursor down" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Terminal suggestions: the widget's keys follow the focused terminal ----
+    { "run": "terminal.create", "timeoutMs": 20000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "true", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    // Focused through the command (a test window may not have the OS focus).
+    { "run": "terminal.focus" },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".xterm-helper-textarea:focus",
+        "text": "ech",
+        "inputType": "insertText"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-suggest:not([hidden])" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "context": { "terminalSuggestWidgetVisible": true } },
+      "timeoutMs": 3000
+    },
+    // Another terminal focused: its keys aren't the suggestions'.
+    { "run": "terminal.create", "timeoutMs": 20000 },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "context": { "terminalFocus": true, "terminalSuggestWidgetVisible": false } },
+      "timeoutMs": 5000
+    },
+
+    // (zsh records without PROMPT_EOL_MARK: gaps10-zsh-m7-6, where zsh is.)
+
+    // ---- The JavaScript debug terminal in the + ▾ menu ----
+    { "run": "terminal.profileMenu", "input": { "x": 300, "y": 300 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 20 },
+      "expect": { "$contains": "JavaScript debug terminal" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu-label", "key": "Escape" } },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "JavaScript debug terminal" },
+      "expect": { "tabId": { "$exists": true } },
+      "timeoutMs": 20000
+    },
+
+    // ---- launch.json presentation: groups, order, hidden ----
+    {
+      "run": "debug.listConfigurations",
+      "expect": {
+        "compounds": [{ "name": "Solo", "stopAll": true, "presentation": { "group": "1-a" } }]
+      }
+    },
+    { "run": "debug.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-config option:not([disabled])", "html": 200, "limit": 10 },
+      "expect": [
+        { "html": { "$contains": "Solo" } },
+        { "html": { "$contains": "Beta" } },
+        { "html": { "$contains": "Alpha" } },
+        { "html": { "$contains": "Plain" } }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-config option", "html": 200, "limit": 20 },
+      "expect": { "$not": { "$contains": "Hidden" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-config option[disabled]", "limit": 5 },
+      "expect": [{ "tag": "option" }, { "tag": "option" }]
+    },
+
+    // ---- A compound's restart keeps its stopAll ----
+    // Started once (a step with a timeout runs again until its expectation holds).
+    { "run": "debug.start", "input": { "compound": "Solo" }, "expect": { "compound": "Solo" } },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": { "$length": 1 } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": [{ "name": "Alpha", "stopAll": true }] },
+      "timeoutMs": 20000
+    },
+    { "run": "debug.restart", "timeoutMs": 60000 },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": [{ "name": "Alpha", "state": "running", "stopAll": true }] },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.stopAll" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "inactive", "sessions": { "$length": 0 } },
+      "timeoutMs": 20000
+    },
+
+    // ---- Merge editor: word highlights, Accept all, sashes ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && printf 'const port = 3000;\\nkeep\\nconst host = \"a\";\\n' > conf.js && git add -A && git commit -qm Base && git checkout -qb feature && printf 'const port = 8080;\\nkeep\\nconst host = \"b\";\\n' > conf.js && git commit -qam Theirs && git checkout -q main && printf 'const port = 4000;\\nkeep\\nconst host = \"c\";\\n' > conf.js && git commit -qam Ours && (git merge feature >/dev/null 2>&1 || true)",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "conf.js" },
+      "expect": {
+        "conflicts": 2,
+        "unhandled": 2,
+        "inputShares": { "incoming": 0.5, "current": 0.5 }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".merge-pane-incoming .merge-word-incoming",
+        "html": 200,
+        "limit": 5
+      },
+      "expect": { "$length": 2 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-pane-current .merge-word-current", "html": 200, "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-inputs > .merge-sash:not([hidden])" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "git.mergeEditor.toggleBase",
+      "input": { "value": true },
+      "expect": { "showBase": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-inputs > .merge-sash:not([hidden])" },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": "[data-accept-all='incoming']" } },
+    {
+      "state": "ide://git/mergeEditors",
+      "expect": [
+        { "unhandled": 0, "changes": [{ "choice": "incoming" }, { "choice": "incoming" }] }
+      ],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": "[data-accept-all='current']" } },
+    {
+      "state": "ide://git/mergeEditors",
+      "expect": [{ "changes": [{ "choice": "current" }, { "choice": "current" }] }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.completeMerge",
+      "input": { "path": "conf.js" },
+      "expect": { "completed": true, "staged": true },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git commit -q --no-edit && head -1 conf.js", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "4000" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Autofetch reaches a nested repository that isn't selected ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git init -q --bare ../g10-remote.git && mkdir inner && cd inner && git init -q && git symbolic-ref HEAD refs/heads/trunk && git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'a\\n' > a.txt && git add -A && git commit -qm A && git remote add origin ../../g10-remote.git && git push -q -u origin trunk && git clone -q -b trunk ../../g10-remote.git ../../g10-other && cd ../../g10-other && git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'b\\n' >> a.txt && git commit -qam B && git push -q origin trunk && echo pushed",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "pushed" } },
+      "timeoutMs": 40000
+    },
+    {
+      "run": "git.repositories",
+      "expect": [{ "kind": "workspace" }, { "name": "inner", "kind": "nested", "behind": 0 }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.selectRepository", "input": { "repository": "sample" } },
+    { "run": "settings.set", "input": { "key": "git.autofetchPeriod", "value": 30 } },
+    { "run": "settings.set", "input": { "key": "git.autofetch", "value": true } },
+    {
+      "state": "ide://git/repositories",
+      "expect": [{ "selected": true }, { "name": "inner", "selected": false, "behind": 1 }],
+      "timeoutMs": 60000
+    },
+    { "run": "settings.set", "input": { "key": "git.autofetch", "value": false } }
+  ]
+}

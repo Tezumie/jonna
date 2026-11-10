@@ -1,0 +1,41 @@
+// m7.12: a download from a browser tab's frame shows in the IDE's downloads list (WebView2's own
+// download bubble is replaced), with the Downloads tab and ide://downloads. Windows only: there
+// WebView2's download operation is followed (progress, cancel); WebKit reports start and end
+// only. The file lands in the user's Downloads folder as "ide-ui-test-download*.txt" (WebView2
+// picks the folder and a unique name); delete it afterwards if it matters.
+{
+  "name": "browser-downloads-m7-12",
+  "platforms": ["win32"],
+  "steps": [
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/lab.html" },
+      "expect": { "connected": true, "title": "Lab" },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.click", "input": { "name": "Download a file" } },
+    {
+      "run": "browser.downloads",
+      "expect": {
+        "downloads": [
+          { "file": { "$contains": "ide-ui-test-download" }, "state": "done", "canCancel": false }
+        ]
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://downloads",
+      "expect": { "$contains": "ide-ui-test-download" }
+    },
+    { "run": "browser.showDownloads" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".downloads-view .download-row.is-done" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "browser.clearDownloads", "expect": { "remaining": 0 } },
+    { "run": "browser.downloads", "expect": { "downloads": { "$length": 0 } } },
+    { "run": "layout.closeTab" }
+  ]
+}

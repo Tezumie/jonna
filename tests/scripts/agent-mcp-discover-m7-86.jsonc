@@ -1,0 +1,150 @@
+// D343: suggest_mcp_server and mcp_status. The agent finds MCP servers for a need in the built-in
+// list and the MCP registry (served by the mock: agent.mcp.registryUrl points at it, so the real
+// registry isn't asked) and shows them as a card: how each runs, what it needs, a field for its
+// key, Add. Add writes it with agent.installMcpServer; an empty key is asked when it starts.
+// mcp_status shows the configured servers' state; Reconnect on a failed one restarts it and
+// redraws its row. Against tests/fixtures/mock-ollama.mjs (pkgMScripted and its registry).
+{
+  "name": "agent-mcp-discover-m7-86",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.registryUrl", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+
+    // ---- suggest_mcp_server: the registry's weather server, with a field for its key ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgm find a weather server" },
+      "expect": { "answer": { "$contains": "PkgM servers: Mock weather (npx)" } },
+      "timeoutMs": 40000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-mcp-servers .rb-mcp-server[data-server=\"weather\"]",
+        "limit": 1,
+        "html": 3000
+      },
+      "expect": [
+        {
+          "html": {
+            "$contains": "npx -y @mock/weather-mcp@1.0.0"
+          }
+        }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-mcp-server[data-server=\"weather\"] input[type=\"password\"]",
+        "limit": 1
+      },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-mcp-servers", "limit": 1, "html": 4000 },
+      "expect": [{ "html": { "$contains": "Live forecasts for the trip planner" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-mcp-servers", "limit": 1, "html": 4000 },
+      "expect": [{ "html": { "$contains": "MCP registry (not reviewed)" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // ---- Add (as a script: this folder, the key left for the hidden box at its start) ----
+    {
+      "run": "agent.addSuggestedMcpServer",
+      "input": { "session": "${chat.session}", "id": "weather", "scope": "folder" },
+      "expect": { "added": "weather", "stored": { "$length": 0 }, "askedAtStart": ["weather-key"] },
+      "timeoutMs": 20000
+    },
+    { "state": "ide://agent/mcp", "expect": { "$contains": "@mock/weather-mcp@1.0.0" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-mcp-server[data-server=\"weather\"]",
+        "limit": 1,
+        "html": 3000
+      },
+      "expect": [{ "html": { "$contains": "Added as weather" } }],
+      "timeoutMs": 10000
+    },
+    // Taken out again before the next message would start it (npx would fetch the package).
+    {
+      "run": "agent.removeMcpServer",
+      "input": { "name": "weather" },
+      "expect": { "removed": true }
+    },
+
+    // ---- mcp_status: a server that fails, Reconnect ----
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "pkgm-broken",
+        "command": "node",
+        "args": ["${workspaceFolder}/pkgm-missing-server.mjs"]
+      },
+      "expect": { "added": true }
+    },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgm check the mcp servers" },
+      "expect": { "answer": { "$contains": "PkgM status: pkgm-broken failed" } },
+      "timeoutMs": 40000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-mcp-status-row[data-server=\"pkgm-broken\"]",
+        "limit": 1,
+        "html": 3000
+      },
+      "expect": [{ "html": { "$contains": "Reconnect" } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".agent-column .rb-mcp-status-row[data-server=\"pkgm-broken\"] .rb-discovery-action"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-mcp-status-row[data-server=\"pkgm-broken\"]",
+        "limit": 1,
+        "html": 3000
+      },
+      "expect": [{ "html": { "$contains": "Reconnected: Failed" } }],
+      "print": true,
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.reconnectMcpServer",
+      "input": { "session": "${chat.session}", "name": "pkgm-broken" },
+      "expect": { "name": "pkgm-broken", "state": "failed" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.removeMcpServer",
+      "input": { "name": "pkgm-broken" },
+      "expect": { "removed": true }
+    }
+  ]
+}

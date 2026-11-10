@@ -1,0 +1,554 @@
+/* The agent's D204 pages (Rules, Auto-approve, MCP servers and gallery, Docs, Worktree agents,
+   Compare), on the AI pages' layout (ai-setup.css: .ai-page, .ai-section, .ai-list rows, .ai-form).
+   Quiet: status colors only on the state dot and the diff's lines. */
+@layer extensions {
+  /* Form fields side by side when there's room, stacked in a narrow tab. */
+  .agent-page-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-4);
+  }
+  .agent-page-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 120px;
+    padding: var(--space-3);
+    resize: vertical;
+    background: var(--bg-input);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .ai-field select.input {
+    width: 100%;
+    background: var(--bg-input);
+  }
+  .agent-page-empty {
+    margin: 0;
+  }
+
+  /* On / off: a small switch. */
+  .agent-page-switch {
+    flex: none;
+    appearance: none;
+    position: relative;
+    width: 28px;
+    height: 16px;
+    margin: 0;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    cursor: pointer;
+    transition: background var(--motion-fast) ease;
+  }
+  .agent-page-switch::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--fg-muted);
+    transition: transform var(--motion-fast) ease;
+  }
+  .agent-page-switch:checked {
+    background: var(--bg-selected);
+  }
+  .agent-page-switch:checked::after {
+    transform: translateX(12px);
+    background: var(--fg-default);
+  }
+  .agent-page-switch:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .ai-row.is-off .ai-row-name,
+  .ai-row.is-legacy .ai-row-name {
+    color: var(--fg-subtle);
+  }
+  .ai-row code.ai-row-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    overflow-wrap: anywhere;
+  }
+  .ai-row-actions select.input {
+    height: var(--size-control-sm);
+    background: var(--bg-input);
+    font-size: var(--text-sm);
+  }
+
+  /* Auto-approve: a pattern, its answer, Add. */
+  .auto-approve-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+  .auto-approve-add .input {
+    flex: 1 1 200px;
+    min-width: 0;
+    background: var(--bg-input);
+  }
+  .auto-approve-add select.input {
+    flex: 0 0 auto;
+  }
+
+  /* The MCP gallery: tiles that wrap. */
+  .mcp-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+  }
+  .mcp-tile {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-width: 0;
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .mcp-tile .ai-row-actions {
+    justify-content: flex-start;
+  }
+  .mcp-tile-text {
+    white-space: normal;
+  }
+
+  /* Worktree agents: busy and waiting dots. */
+  .ai-dot.is-busy {
+    background: var(--fg-subtle);
+    animation: ai-pulse 1.2s ease-in-out infinite;
+  }
+  .ai-dot.is-warning {
+    background: var(--status-warning-fg);
+  }
+
+  /* Compare: the agents, then the chosen one's diff. */
+  .compare-row {
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+  .compare-row:hover {
+    background: var(--bg-hover);
+  }
+  .compare-row.is-selected {
+    background: var(--bg-selected);
+  }
+  .compare-row:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .compare-diff {
+    margin: 0;
+    max-height: 60vh;
+    overflow: auto;
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre;
+  }
+  .diff-line {
+    display: block;
+    min-width: max-content;
+  }
+  .diff-line.is-added {
+    background: var(--diff-added-bg);
+  }
+  .diff-line.is-removed {
+    background: var(--diff-removed-bg);
+  }
+  .diff-line.is-hunk {
+    color: var(--fg-subtle);
+  }
+  .diff-line.is-file {
+    margin-top: var(--space-3);
+    font-weight: 600;
+  }
+
+  /* ---- Customize (D205): one tab for the agent's set-up pages, like Cursor's ---- */
+  .customize {
+    height: 100%;
+    overflow: auto;
+    background: var(--bg-surface);
+    container-type: inline-size;
+  }
+  .customize:focus-visible {
+    outline: none;
+  }
+  /* Agent settings › Customize (D270): the agent editor's breadcrumb, spaced by the column. */
+  .customize-top > .customize-crumbs {
+    margin-bottom: 0;
+  }
+  .customize-top {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-8) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+  /* The search box and the section switch look like the editor's own (Settings' search, the
+     segmented control), not pills. */
+  .customize-search {
+    position: relative;
+    color: var(--fg-subtle);
+  }
+  .customize-search > .icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .customize-search .customize-search-input {
+    width: 100%;
+    padding-left: 28px;
+  }
+  /* The segments without the control's sunken tray: they wrap onto a second line in a narrow tab. */
+  .customize-chips {
+    flex-wrap: wrap;
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 0;
+    gap: var(--space-1);
+    background: transparent;
+  }
+  /* Hover changes only the text; the open section gets the hover background (a quiet tab). */
+  .customize-none {
+    padding: var(--space-1) 0;
+    color: var(--fg-muted);
+  }
+  .customize-chips .customize-chip:hover {
+    color: var(--fg-default);
+  }
+  .customize-chips .customize-chip.is-selected {
+    background: var(--bg-hover);
+    box-shadow: none;
+  }
+  .customize-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border: 0;
+    background: transparent;
+    font: inherit;
+  }
+  .customize-chip .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .customize-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+  /* The section's own page scrolls with the tab, under the chips; its title is the chip. */
+  .customize-body > .ai-page {
+    height: auto;
+    overflow: visible;
+    background: transparent;
+  }
+  .customize-body .ai-page .ai-setup {
+    max-width: 760px;
+    padding-top: var(--space-6);
+  }
+  .customize-body .ai-header .ai-title {
+    display: none;
+  }
+  /* A header with nothing left but its hidden title takes no room. */
+  .customize-body .ai-header:not(:has(.ai-lead, .ai-header-actions > *)) {
+    display: none;
+  }
+  @container (max-width: 520px) {
+    .customize-top {
+      padding: var(--space-6) var(--space-5) 0;
+    }
+  }
+
+  /* ---- Customize's pages look alike (D399): the Skills page's layout ----
+     A group's title with its count and a quiet "+ New" at the right (pageKit pageGroup /
+     addButton); rows as separate raised cards, whichever list builds them. */
+  .page-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-height: var(--size-control-sm);
+  }
+  .page-group-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .page-add {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .customize-body .ai-section,
+  .customize-body .ag-section {
+    gap: var(--space-3);
+  }
+  .customize-body .ai-section-title,
+  .customize-body .ag-section-title {
+    min-height: var(--size-control-sm);
+    display: flex;
+    align-items: center;
+  }
+  .customize-body .ai-section-lead {
+    margin: 0;
+  }
+  .customize-body .ai-list,
+  .customize-body .ag-rows {
+    gap: var(--space-3);
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+  }
+  .customize-body .ai-list > * + *,
+  .customize-body .ag-row + .ag-row {
+    border-top: 0;
+  }
+  .customize-body .ai-list > .ai-row,
+  .customize-body .ai-list > .ai-list-item,
+  .customize-body .ag-rows > .ag-row {
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+
+  /* Tiles, agent cards and the local-model row: the same raised surface without an edge, and
+     the rows' hover (the dashed New agent card keeps its dashes). */
+  .customize-body .ai-local {
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .customize-body .ai-tile,
+  .customize-body .ag-card:not(.ag-new) {
+    border-color: transparent;
+  }
+  .customize-body .ai-tile:hover,
+  .customize-body .ag-card:not(.ag-new):hover {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--bg-surface-raised) 85%, var(--fg-default));
+  }
+  .customize-body .ai-tile.is-selected {
+    border-color: var(--border-strong);
+  }
+  /* A row being edited: its form right under it. */
+  .page-row-open {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  /* ---- MCP servers (D205): Cursor-like rows ---- */
+  .mcp-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .mcp-group-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+  .mcp-group-count {
+    color: var(--fg-subtle);
+    font-weight: 400;
+  }
+  .mcp-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .mcp-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    cursor: pointer;
+  }
+  .mcp-row:hover {
+    background: color-mix(in srgb, var(--bg-surface-raised) 85%, var(--fg-default));
+  }
+  .mcp-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .mcp-row-icon {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    background: var(--bg-hover);
+    color: var(--fg-muted);
+  }
+  .mcp-row-logo {
+    width: 20px;
+    height: 20px;
+  }
+  /* A server's own icon (serverInfo.icons, server.json icons). */
+  .mcp-row-glyph {
+    display: grid;
+    place-items: center;
+  }
+  .mcp-row-image {
+    width: var(--size-icon-lg);
+    height: var(--size-icon-lg);
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+  }
+  .mcp-row-image.is-mono {
+    background: currentColor;
+    -webkit-mask: var(--logo) center / contain no-repeat;
+    mask: var(--logo) center / contain no-repeat;
+  }
+  .mcp-row-dot {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 9px;
+    height: 9px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--bg-surface-raised);
+    background: var(--fg-subtle);
+  }
+  .mcp-row-dot.is-ok {
+    background: var(--status-success-fg);
+  }
+  .mcp-row-dot.is-error {
+    background: var(--status-danger-fg);
+  }
+  .mcp-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .mcp-row-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .mcp-row-name {
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .mcp-row-detail {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mcp-row-more {
+    flex: none;
+    opacity: 0;
+  }
+  .mcp-row:hover .mcp-row-more,
+  .mcp-row:focus-within .mcp-row-more {
+    opacity: 1;
+  }
+  /* Customize's shared rows (pageKit cardRow, D399). */
+  .page-row .mcp-row-title {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .page-row.is-static {
+    cursor: default;
+  }
+  .page-row.is-static:hover {
+    background: var(--bg-surface-raised);
+  }
+  .page-row.is-off .mcp-row-icon,
+  .page-row.is-off .mcp-row-main {
+    opacity: 0.6;
+  }
+  .mcp-row-name code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  /* ---- A server's Configure dialog (D205) ---- */
+  .mcp-config {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    color: var(--fg-default);
+  }
+  .mcp-config-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .mcp-config-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+  .mcp-config-lead,
+  .mcp-config-note {
+    margin: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .mcp-config-box {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-3) var(--space-5);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .mcp-config-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-height: var(--size-control-md);
+  }
+  .mcp-config-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .mcp-config-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-height: var(--size-control-md);
+    font-weight: 600;
+  }
+  .mcp-config-bulk {
+    width: auto;
+  }
+  .mcp-config-tool {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-height: calc(var(--size-control-md) + 4px);
+  }
+  .mcp-config-tool code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

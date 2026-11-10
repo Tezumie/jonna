@@ -1,0 +1,69 @@
+// D127: the verify step (a failed project check goes back to the agent, which fixes it) and the
+// explore sub-agent (read-only, own context, returns a report).
+{
+  "name": "features-m6-25",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    // Automatic mode runs commands without asking only in a trusted folder.
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.verifyCommand", "value": "test -f fixed.txt" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "agent.newSession" },
+    { "run": "agent.setMode", "input": { "autoApply": true } },
+    {
+      "run": "agent.send",
+      "input": { "message": "make a checked change" },
+      "expect": { "error": null }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "fixed.txt" }
+      }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "ok", "include": ["fixed.txt"] },
+      "expect": { "matches": 1 }
+    },
+    // Explore: the main agent gets the sub-agent's report, not its reads.
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "explore the readme" },
+      "expect": { "answer": "Explorer said: Report: Sample workspace", "error": null }
+    },
+    // File history and inline blame (D127).
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@example.com && git config user.name T && git config commit.gpgsign false",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.stage" },
+    { "run": "git.commit", "input": { "message": "first" } },
+    {
+      "run": "git.fileHistory",
+      "input": { "path": "README.md" },
+      "expect": { "path": "README.md", "commits": [{ "subject": "first" }] }
+    },
+    { "run": "git.toggleInlineBlame", "expect": { "enabled": true } },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "git.fileHistory",
+      "expect": { "path": "README.md", "commits": { "$length": 1 } }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+// m7.12: notebook/view.ts split (the file's reading and writing in notebookFile.ts, what cells
+// are given in cellHost.ts). Checks that a notebook still opens, edits, saves, reopens from
+// disk, and that a cell's "…" menu still opens and acts. Format notebook as one undo step and
+// cross-cell server edits need a Python language server with a formatter: manual (see the
+// report), with the clipping math in core/notebook/cells.test.ts.
+{
+  "name": "notebook-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "notebook.new",
+      "input": { "path": "nb/split.ipynb" },
+      "expect": { "path": { "$contains": "split.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "a = 1" } },
+    { "run": "notebook.insertCell", "input": { "index": 1, "kind": "code", "source": "b = 2" } },
+    // The cell's editor document is named by the cell host (a .py name for a Python cell).
+    { "run": "notebook.revealCell", "input": { "index": 1 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-code .nb-cell-language", "limit": 2 },
+      "expect": { "$contains": "Python" },
+      "timeoutMs": 5000
+    },
+    // The "…" menu (cellHost.ts) opens and its items run on that cell.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cell.is-focused .nb-cell-tool[aria-label='More actions']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": { "$contains": "Copy" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    // Saved through notebookFile.ts, then read back from disk.
+    { "run": "notebook.save", "expect": { "saved": { "$contains": "split.ipynb" } } },
+    {
+      "run": "notebook.read",
+      "input": { "path": "nb/split.ipynb" },
+      "expect": { "cells": [{ "source": "a = 1" }, { "source": "b = 2" }] }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "dirty": false } },
+      "timeoutMs": 5000
+    },
+    // One undo step for a multi-cell text change still works (setSources: replace all).
+    {
+      "run": "notebook.replaceAll",
+      "input": { "query": " = ", "replacement": "=" }
+    },
+    {
+      "run": "notebook.read",
+      "expect": { "cells": [{ "source": "a=1" }, { "source": "b=2" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "notebook.undo" },
+    {
+      "run": "notebook.read",
+      "expect": { "cells": [{ "source": "a = 1" }, { "source": "b = 2" }] }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

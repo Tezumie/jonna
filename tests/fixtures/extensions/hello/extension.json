@@ -1,0 +1,34 @@
+{
+  "id": "acme.hello",
+  "version": "1.0.0",
+  "displayName": "Hello",
+  "description": "Test extension: commands, a tree view, a webview panel, storage, settings, a language with a grammar, snippets.",
+  "main": "main.js",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      { "id": "hello.greet", "title": "Say hello" },
+      { "id": "hello.readNotes", "title": "Read notes" },
+      { "id": "hello.writeNotes", "title": "Write notes", "effects": ["write"] },
+      { "id": "hello.fetch", "title": "Fetch" },
+      { "id": "hello.openTerminal", "title": "Open a terminal" },
+      { "id": "hello.remember", "title": "Remember" },
+      { "id": "hello.ping", "title": "Ping the panel" },
+      { "id": "hello.lastPong", "title": "Last pong" },
+      { "id": "hello.setting", "title": "Read the greeting setting" },
+      { "id": "hello.stamp", "title": "Insert a stamp", "effects": ["write"] }
+    ],
+    "keybindings": [{ "key": "ctrl+alt+h", "command": "hello.greet" }],
+    "settings": {
+      "hello.greeting": { "type": "string", "default": "Hi", "description": "How to greet." }
+    },
+    "views": [
+      { "id": "hello.tree", "title": "Hello tree", "location": "sidebar", "type": "tree", "icon": "list-tree" },
+      { "id": "hello.panel", "title": "Hello panel", "location": "panel", "type": "webview", "path": "panel.html" }
+    ],
+    "languages": [{ "id": "hellolang", "extensions": [".hello"], "aliases": ["Hello"], "configuration": "./language-configuration.json" }],
+    "grammars": [{ "language": "hellolang", "scopeName": "source.hello", "path": "syntaxes/hello.tmLanguage.json" }],
+    "snippets": [{ "language": "hellolang", "path": "snippets.json" }]
+  }
+}

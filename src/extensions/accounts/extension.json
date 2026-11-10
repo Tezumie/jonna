@@ -1,0 +1,29 @@
+{
+  "id": "builtin.accounts",
+  "version": "0.1.0",
+  "displayName": "Accounts",
+  "description": "The Accounts menu: the IDE account, GitHub through the GitHub CLI, settings backup.",
+  "activation": ["*"],
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      { "id": "accounts.showMenu", "title": "Accounts", "category": "Accounts" },
+      { "id": "accounts.signIn", "title": "Sign in…", "category": "Accounts" },
+      { "id": "accounts.cancelSignIn", "title": "Cancel sign-in", "category": "Accounts" },
+      { "id": "accounts.signOut", "title": "Sign out…", "category": "Accounts" },
+      {
+        "id": "accounts.syncSettings",
+        "title": "Backup and sync settings…",
+        "category": "Accounts"
+      }
+    ],
+    "settings": {
+      "accounts.serverUrl": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The accounts server to sign in to (for developing it; empty uses the built-in one, when there is one)."
+      }
+    }
+  }
+}

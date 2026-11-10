@@ -1,0 +1,60 @@
+// D187: Markdown for pages as the IDE's preview renders it (editor.renderMarkdown): colored code,
+// no IDE-only buttons, only pictures read for images, and the preview's styles for the theme.
+{
+  "name": "canvas-m6-88",
+  "steps": [
+    {
+      "run": "editor.renderMarkdown",
+      "input": {
+        "text": "# Hi\n\n```ts\nconst a = 1;\n```\n\n- [x] done\n\n![secret](notes.txt) ![pic](assets/shape.svg)\n"
+      },
+      "expect": {
+        "html": {
+          "$contains": "<h1",
+          "$not": { "$contains": "md-copy" }
+        },
+        "css": { "$contains": ".ide-md" }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.renderMarkdown",
+      "input": { "text": "![pic](assets/shape.svg) ![secret](notes.txt)", "css": false },
+      "expect": { "html": { "$contains": "data:image/svg+xml;base64" } },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.renderMarkdown",
+      "input": { "text": "![secret](notes.txt)", "css": false },
+      "expect": { "html": { "$not": { "$contains": "data:" } } }
+    },
+    {
+      "run": "editor.renderMarkdown",
+      "input": { "path": "README.md", "css": false },
+      "expect": { "html": { "$contains": "Sample workspace" } }
+    },
+    {
+      "run": "editor.renderMarkdown",
+      "input": { "path": "../outside.md" },
+      "expectError": "outside"
+    },
+    // A canvas moved out of its folder: its tab follows it (no second tab).
+    { "run": "extensions.grantPermissions", "input": { "id": "bundled.canvas", "grant": true } },
+    { "run": "extensions.enable", "input": { "id": "bundled.canvas" } },
+    { "run": "canvas.new", "input": { "path": "moving.canvas" }, "timeoutMs": 15000 },
+    { "state": "ide://layout", "expect": { "$contains": "moving.canvas" }, "timeoutMs": 10000 },
+    { "run": "explorer.move", "input": { "paths": ["moving.canvas"], "dest": "src" } },
+    {
+      "run": "canvas.read",
+      "input": { "path": "moving.canvas" },
+      "expect": { "exists": false },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "canvas.read",
+      "input": { "path": "src/moving.canvas" },
+      "expect": { "open": true },
+      "timeoutMs": 10000
+    }
+  ]
+}

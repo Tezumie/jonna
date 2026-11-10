@@ -1,0 +1,243 @@
+// D234: the D233 leftovers (an extension file system's change reloads an open editor, its
+// Explorer section's new / rename / delete, editor.getText on its URIs, its accounts in the
+// Accounts menu) and the wider extension API (tests/fixtures/extensions/apiextras): a decoration
+// type, folding / link / color / highlight / type definition / workspace symbol providers, the
+// active editor's events, a file watcher, findFiles, workspaceState, settings.update and env.
+{
+  "name": "extensions-m7-13",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/extensions-m7-13.cjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+
+    // ---- The D233 leftovers, on the providers fixture's memfs ----
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/providers" },
+      "expect": { "id": "acme.providers" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.providers", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "providers.setup", "expect": { "ok": true }, "timeoutMs": 10000 },
+    {
+      "run": "editor.openFile",
+      "input": { "path": "memfs:/hello.txt" },
+      "expect": { "path": "memfs:/hello.txt" },
+      "timeoutMs": 10000
+    },
+    // Folder-scoped commands take a provider's URIs.
+    {
+      "run": "editor.getText",
+      "input": { "path": "memfs:/hello.txt" },
+      "expect": { "path": "memfs:/hello.txt", "text": { "$contains": "Hello from memfs" } },
+      "timeoutMs": 5000
+    },
+    // The provider reports a change: the unmodified editor reloads.
+    { "run": "providers.touch", "expect": { "ok": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "html": 2000 },
+      "expect": { "$contains": "elsewhere" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "memfs:/hello.txt" },
+      "expect": { "text": { "$contains": "Changed elsewhere" }, "open": true }
+    },
+    // New file, rename and delete through the provider (the section's buttons and row menu).
+    {
+      "run": "extensions.fsNewFile",
+      "input": { "folder": "memfs:/notes", "name": "new.txt" },
+      "expect": { "path": "memfs:/notes/new.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.fsRename",
+      "input": { "path": "memfs:/notes/new.txt", "newName": "renamed.txt" },
+      "expect": { "path": "memfs:/notes/renamed.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://editors",
+      "expect": { "documents": { "$contains": "memfs:/notes/renamed.txt" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "extensions.fsNewFolder",
+      "input": { "folder": "memfs:/", "name": "drafts" },
+      "expect": { "path": "memfs:/drafts" },
+      "timeoutMs": 10000
+    },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-file-system=\"memfs\"]", "html": 4000 },
+      "expect": { "$contains": "drafts" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "extensions.fsDelete",
+      "input": { "path": "memfs:/notes/renamed.txt" },
+      "expect": { "deleted": true },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "providers.stats",
+      "expect": {
+        "files": {
+          "/notes/todo.txt": { "$exists": true },
+          "/notes/renamed.txt": { "$exists": false }
+        }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "extensions.fsRename",
+      "input": { "path": "memfs:/", "newName": "x" },
+      "expectError": "root"
+    },
+    {
+      "run": "extensions.fsNewFile",
+      "input": { "folder": "memfs:/", "name": "../x" },
+      "expectError": "name"
+    },
+    // The provider's accounts are in the Accounts menu.
+    { "run": "providers.signIn", "expect": { "account": "Ann" }, "timeoutMs": 10000 },
+    { "run": "accounts.showMenu" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Ann" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "state": "ide://accounts",
+      "expect": { "extensions": { "$contains": "memo-auth" } }
+    },
+    {
+      "run": "extensions.authSignOut",
+      "input": { "providerId": "memo-auth" },
+      "expect": { "signedOut": 1 },
+      "timeoutMs": 10000
+    },
+
+    // ---- The wider API ----
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/apiextras" },
+      "expect": { "id": "acme.apiextras" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.apiextras", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "apiextras.setup", "expect": { "ok": true }, "timeoutMs": 10000 },
+    {
+      "state": "ide://extensions?id=acme.apiextras",
+      "expect": { "$contains": "inlineCompletions" },
+      "timeoutMs": 5000
+    },
+    // Opening the file: the editor asks for folds, links and colors; the active-editor event.
+    {
+      "run": "editor.openFile",
+      "input": { "path": "sample.extras", "line": 1 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "apiextras.stats",
+      "expect": {
+        "asked": {
+          "folding": { "$exists": true },
+          "links": { "$exists": true },
+          "colors": { "$exists": true }
+        },
+        "active": { "$contains": "sample.extras" }
+      },
+      "timeoutMs": 10000
+    },
+    // The color swatch and a link.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "html": 8000 },
+      "expect": { "$contains": "colorpicker-color-decoration" },
+      "timeoutMs": 8000
+    },
+    // The decoration type: italic whole lines with text after them.
+    { "run": "apiextras.decorate", "expect": { "decorated": 2 }, "timeoutMs": 10000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor", "html": 20000 },
+      "expect": { "$contains": "ext-dt-" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "style[data-owner=\"extension-decoration-types\"]", "html": 4000 },
+      "expect": { "$contains": "font-style: italic" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // A cursor move: the selection event; F12-style type definition via the cursor's word.
+    {
+      "run": "editor.select",
+      "input": { "startLine": 7, "startColumn": 1, "endLine": 7, "endColumn": 5 }
+    },
+    {
+      "run": "apiextras.stats",
+      "expect": { "selections": { "$gte": 1 } },
+      "timeoutMs": 8000
+    },
+    // Go to symbol in workspace includes the extension's symbols.
+    {
+      "run": "quickOpen.findSymbols",
+      "input": { "query": "extrasSymbolFoo" },
+      "expect": { "symbols": { "$contains": "extrasSymbolFoo" } },
+      "timeoutMs": 15000
+    },
+    // findFiles, the watcher, workspaceState, settings.update, env.
+    {
+      "run": "apiextras.findFiles",
+      "expect": { "names": { "$contains": "one.md" } },
+      "timeoutMs": 10000
+    },
+    // A file created through the IDE (files.didCreate) under the watcher's glob.
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": "extras-docs", "name": "three.md" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "apiextras.stats",
+      "expect": { "watched": { "$contains": "three.md" } },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "apiextras.state",
+      "expect": { "runs": 1, "appName": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "apiextras.state", "expect": { "runs": 2 }, "timeoutMs": 10000 },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "apiextras.level" },
+      "timeoutMs": 5000
+    },
+    { "run": "extensions.disable", "input": { "id": "acme.apiextras" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "style[data-owner=\"extension-decoration-types\"]" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 8000
+    }
+  ]
+}

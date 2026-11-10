@@ -1,0 +1,69 @@
+// D230: agents with faces. An agent file (Claude Code's format plus label / role / icon) becomes a
+// chat mode and a face in the Chats sidebar's agents row; a click starts a chat with it (its face
+// in the chat's header); the AI features status-bar menu turns a feature on and off.
+{
+  "name": "agents-row-m7-9",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: tester\\nlabel: Test runner\\nrole: Tester\\nicon: blob-3-happy\\ndescription: Runs the tests and reports what fails.\\npermissionMode: plan\\n---\\n\\nRun the tests.\\n' > .vscode/agents/tester.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    // Agents are read when the folder opens, its trust changes or an agent file is saved in the
+    // IDE (a terminal's write isn't seen): trust again to read them.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:tester" },
+      "timeoutMs": 10000
+    },
+    // A chat with it: the chat's mode is the agent, its face in the header.
+    {
+      "run": "agent.chatWith",
+      "input": { "agent": "tester" },
+      "expect": { "mode": "custom:tester" },
+      "save": "chat"
+    },
+    {
+      "state": "ide://agent",
+      "expect": { "active": "${chat.session}" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-header-face .agent-face[aria-label='Test runner']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // An unknown agent is refused.
+    { "run": "agent.chatWith", "input": { "agent": "nobody" }, "expectError": "No agent named" },
+
+    // ---- AI features: the status-bar sparkle's menu turns a feature on and off ----
+    {
+      "state": "ide://ai/features",
+      "expect": { "$contains": "\"setting\":\"editor.nextEdit.enabled\"" }
+    },
+    {
+      "run": "agent.aiFeatures",
+      "input": { "toggle": "editor.nextEdit.enabled" },
+      "expect": { "feature": "Next-edit suggestions", "enabled": true }
+    },
+    {
+      "run": "agent.aiFeatures",
+      "input": { "toggle": "editor.nextEdit.enabled" },
+      "expect": { "enabled": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='agent.aiFeatures']" },
+      "expect": { "$length": 1 }
+    }
+  ]
+}

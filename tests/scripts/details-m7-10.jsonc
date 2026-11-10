@@ -1,0 +1,164 @@
+// D231: the chat's details panel. Beside the conversation when the chat tab is wide enough
+// (agent.detailsPanel auto / always), a sheet behind the header's button when it isn't, nothing
+// with "never"; agent.toggleDetails; ide://agent/details (environment, context split, changes);
+// folded cards are remembered. Against mock-ollama.
+{
+  "name": "details-m7-10",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 900 } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } }, "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock.", "error": null }
+    },
+    // The header's button is there; shown on demand, the cards say where it runs and how full
+    // the context is.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-header .agent-details-toggle"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.toggleDetails",
+      "input": { "show": true },
+      "expect": { "shown": true, "session": "${chat.session}" }
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": {
+        "session": "${chat.session}",
+        "setting": "auto",
+        "shown": true,
+        "environment": { "where": "This computer", "model": "mock-coder:1b" },
+        "context": { "limit": { "$exists": true }, "rows": { "$contains": "Messages" } }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details:not([hidden]) section[data-card='environment']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details:not([hidden]) [data-card='context'] .agent-details-bar"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // A change: the Changes card with Review / Keep all / Undo all.
+    {
+      "run": "agent.send",
+      "input": { "message": "make a checked change" },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": { "changes": { "files": 1, "review": 1 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-card='changes'] [data-command='agent.acceptAll']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+
+    // Folding a card is remembered (the click runs through the panel's header button).
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-card='context'] .agent-details-card-head"
+      }
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": { "folded": { "$contains": "context" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details section[data-card='context'].is-folded"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-card='context'] .agent-details-card-head"
+      }
+    },
+
+    // Hidden, then shown again with the command.
+    { "run": "agent.toggleDetails", "input": { "show": false }, "expect": { "shown": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-session='${chat.session}'] .agent-details:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.toggleDetails", "expect": { "shown": true } },
+
+    // A small window: a sheet over the chat's right edge, closed by Escape.
+    { "run": "dev.setWindowSize", "input": { "width": 640, "height": 700 } },
+    { "wait": 400 },
+    {
+      "state": "ide://agent/details",
+      "expect": { "layout": "sheet" },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.toggleDetails", "input": { "show": true }, "expect": { "layout": "sheet" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details[data-layout='sheet']:not([hidden])"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "agent.toggleDetails", "input": { "show": false }, "expect": { "shown": false } },
+
+    // "never": no button; the command still opens the sheet.
+    { "run": "settings.set", "input": { "key": "agent.detailsPanel", "value": "never" } },
+    {
+      "state": "ide://agent/details",
+      "expect": { "layout": "off", "setting": "never" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-header .agent-details-toggle:not([hidden])"
+      },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "settings.set", "input": { "key": "agent.detailsPanel", "value": "auto" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 800 } }
+  ]
+}

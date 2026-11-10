@@ -1,0 +1,63 @@
+// D275: the side bar has the panels' color in flush and floating (floating: a rounded card with the
+// panels' border, as the editor groups); `workbench.sideBarColor: "distinct"` gives it the color
+// theme's side bar color in both. Quick access closes on a press anywhere outside it.
+{
+  "name": "panels-sidebar-m7-29",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "wait": 800 },
+    // Flush: the panels' color (Claude Dark's editor, #191919).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sidebar", "html": 10 },
+      "expect": [{ "background": "rgb(25, 25, 25)", "borderRadius": "8px 0px 0px 8px" }]
+    },
+    { "run": "settings.set", "input": { "key": "workbench.panels", "value": "floating" } },
+    { "wait": 500 },
+    // Floating: the same color, a rounded card like the editor groups.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sidebar", "html": 10 },
+      "expect": [{ "background": "rgb(25, 25, 25)", "borderRadius": "10px" }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Distinct: the theme's side bar color (#1f1f1f), floating and flush.
+    { "run": "ui.setSideBarColor", "input": { "color": "distinct" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sidebar", "html": 10 },
+      "expect": [{ "background": "rgb(31, 31, 31)", "borderRadius": "10px" }]
+    },
+    { "run": "ui.setPanelStyle", "input": { "panels": "flush" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sidebar", "html": 10 },
+      "expect": [{ "background": "rgb(31, 31, 31)", "borderRadius": "8px 0px 0px 8px" }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "ui.setSideBarColor", "input": { "color": "matching" } },
+
+    // ---- Quick access over the settings page; a press outside closes it ----
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "run": "settings.open" },
+    { "wait": 1000 },
+    { "run": "quickOpen.show", "input": {}, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$length": 1 },
+      "time": true,
+      "timeoutMs": 5000
+    },
+    // Even on what takes no focus (the status bar).
+    { "run": "dev.click", "input": { "selector": ".statusbar" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden])" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+// D262: quick access lists the commands you used recently first when they match what's typed
+// (VS Code's "recently used" group), and remembers them; its input has the box's background.
+{
+  "name": "quick-access-m7-22",
+  "steps": [
+    // Run "Preferences: Color Theme" from quick access, then close its picker.
+    { "run": "quickOpen.show", "input": { "query": ">color theme" }, "background": true },
+    { "wait": 600 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$contains": "Preferences: " },
+      "print": true,
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "wait": 800 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    { "wait": 500 },
+    // Typing "t": the recently used Color Theme comes first.
+    { "run": "quickOpen.show", "input": { "query": ">t" }, "background": true },
+    { "wait": 600 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 2 },
+      "expect": { "$[0].html": { "$contains": "recently used" } },
+      "print": true,
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$contains": "Preferences: " },
+      "timeoutMs": 5000
+    },
+    // The field has the box's own background.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input .quick-input-box", "limit": 1 },
+      "expect": {},
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } }
+  ]
+}

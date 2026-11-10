@@ -1,0 +1,35 @@
+// D135: one Color theme setting (Dark+ / Light+ built in), folder icons off by default. D270:
+// Claude Dark is the default.
+{
+  "name": "features-m6-34",
+  "steps": [
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.colorTheme\",\"value\":\"Claude Dark\"" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"explorer.folderIcons\",\"value\":false" }
+    },
+    { "run": "ui.toggleTheme" },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.colorTheme\",\"value\":\"Light+\"" },
+      "timeoutMs": 3000
+    },
+    { "run": "ui.setTheme", "input": { "theme": "dark" } },
+    { "run": "settings.open", "input": { "query": "theme" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "#setting-workbench-colorTheme", "html": 400 },
+      "expect": [{ "html": { "$contains": "Dark+" } }],
+      "timeoutMs": 5000
+    },
+    // The old Dark/Light setting isn't shown any more.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "#setting-workbench-theme" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

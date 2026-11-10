@@ -1,0 +1,63 @@
+// D403: a file that something else changes while an external agent works, between its steps,
+// isn't counted as the agent's: it stays out of the review and the turn's "Changed files", with a
+// note naming it. A file its command writes while the command runs is still the agent's.
+{
+  "name": "acp-foreign-changes-m7-117",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git add -A && git -c user.email=t@example.com -c user.name=T commit -qm init && echo committed",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "committed" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.send", "input": { "message": "Check while others edit", "wait": false } },
+    // During the agent's pause between steps, another program writes a file in the folder.
+    { "wait": 1000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo mine > outside.txt && echo wrote", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "wrote" } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": { "$not": "running" }, "items": { "$contains": "Others checked" } },
+      "timeoutMs": 30000
+    },
+    // The command's file is under review; the other one isn't, and the note names it.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "pending": { "$contains": "by-command.txt" },
+        "items": { "$contains": "so not counted as its work: outside.txt" }
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$not": { "$contains": "outside.txt" } } }
+    }
+  ]
+}

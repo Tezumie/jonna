@@ -1,0 +1,269 @@
+{
+  "id": "builtin.testing",
+  "version": "0.1.0",
+  "displayName": "Testing",
+  "description": "Find, run, debug and measure the coverage of the project's tests (Vitest, Jest, node:test, Mocha, Playwright, pytest, unittest, cargo test, go test), in a Testing view, the editor's margin and for agents.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "process.exec"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "tests.showView",
+        "title": "Show testing",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.refresh",
+        "title": "Refresh tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.run",
+        "title": "Run tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runAll",
+        "title": "Run all tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runFailed",
+        "title": "Rerun failed tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runFile",
+        "title": "Run tests in current file",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runAtCursor",
+        "title": "Run test at cursor",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.toggleContinuousRun",
+        "title": "Toggle continuous run",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.stopContinuousRun",
+        "title": "Turn off all continuous runs",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.cancel",
+        "title": "Stop the test run",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runExtension",
+        "title": "Run an extension's tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.cancelExtension",
+        "title": "Stop an extension's test run",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.showOutput",
+        "title": "Show test output",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.showMessage",
+        "title": "Show a test's failure",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.list",
+        "title": "List tests",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runWithCoverage",
+        "title": "Run tests with coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.runAllWithCoverage",
+        "title": "Run all tests with coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.rerunWithCoverage",
+        "title": "Rerun the last coverage run",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.showCoverage",
+        "title": "Show test coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.toggleInlineCoverage",
+        "title": "Show inline coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.goToNextUncoveredLine",
+        "title": "Go to next uncovered line",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.goToPreviousUncoveredLine",
+        "title": "Go to previous uncovered line",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.clearCoverage",
+        "title": "Clear test coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.coverage",
+        "title": "Get test coverage",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.compareExpected",
+        "title": "Compare expected with actual",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.showResults",
+        "title": "Show test results",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.history",
+        "title": "Get test run history",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.rerunFromHistory",
+        "title": "Rerun a past test run",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.clearHistory",
+        "title": "Clear test results",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.debug",
+        "title": "Debug test",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.debugAtCursor",
+        "title": "Debug test at cursor",
+        "category": "Testing"
+      },
+      {
+        "id": "tests.debugFile",
+        "title": "Debug tests in current file",
+        "category": "Testing"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+; a",
+        "mac": "cmd+; a",
+        "command": "tests.runAll"
+      },
+      {
+        "key": "ctrl+; f",
+        "mac": "cmd+; f",
+        "command": "tests.runFile",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+; c",
+        "mac": "cmd+; c",
+        "command": "tests.runAtCursor",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+; e",
+        "mac": "cmd+; e",
+        "command": "tests.runFailed"
+      },
+      {
+        "key": "ctrl+; ctrl+c",
+        "mac": "cmd+; cmd+c",
+        "command": "tests.debugAtCursor",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+; ctrl+f",
+        "mac": "cmd+; cmd+f",
+        "command": "tests.debugFile",
+        "when": "editorFocus"
+      }
+    ],
+    "settings": {
+      "testing.timeoutSeconds": {
+        "type": "number",
+        "default": 600,
+        "minimum": 10,
+        "description": "Stop a test command that runs longer than this many seconds."
+      },
+      "testing.gutterMarks": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show each test's last result (passed, failed, skipped) in the editor's margin."
+      },
+      "testing.discoverOnOpen": {
+        "type": "boolean",
+        "default": true,
+        "description": "Look for tests when a folder opens (otherwise when the Testing view is first shown)."
+      },
+      "testing.alwaysShow": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show the Testing icon in the activity bar even when no tests were found in the folder (it appears by itself once tests are found, as in VS Code)."
+      },
+      "testing.showInlineCoverage": {
+        "type": "boolean",
+        "default": true,
+        "description": "After a coverage run, show which lines ran (and which never did) in the editor's margin. Show inline coverage (in the Test coverage tab) turns it on and off for the moment."
+      },
+      "testing.coverageToolbarEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "While a coverage report is loaded, a floating toolbar over the editor shows the file's coverage and which test's coverage is shown, with Covered by, previous / next uncovered line and inline coverage (VS Code's coverage toolbar)."
+      },
+      "testing.showCoverageInExplorer": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show each file's coverage percentage in the explorer after a coverage run (in place of its version control letter)."
+      },
+      "testing.resultsHistory": {
+        "type": "number",
+        "default": 20,
+        "minimum": 1,
+        "maximum": 200,
+        "description": "How many test runs the Test results tab keeps."
+      },
+      "testing.keepResults": {
+        "type": "boolean",
+        "default": true,
+        "description": "Keep test results, the run history and the last coverage across reloads and restarts (in the folder's IDE folder, git-ignored), like VS Code. Off: they last until the window reloads."
+      },
+      "testing.pythonRunner": {
+        "type": "string",
+        "enum": ["auto", "pytest", "unittest"],
+        "default": "auto",
+        "description": "Which runner runs Python tests: auto (pytest, or unittest for unittest test cases in a project not set up for pytest), pytest or unittest."
+      },
+      "testing.listWithRunner": {
+        "type": "boolean",
+        "default": true,
+        "description": "In a trusted folder, ask Playwright (--list) and unittest for their tests after reading the files, for their exact names and Playwright's projects."
+      }
+    }
+  }
+}

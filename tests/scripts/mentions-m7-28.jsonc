@@ -1,0 +1,94 @@
+// D274: @mentions in the chat are colored chips (an agent's with a hover naming it, @channel in a
+// warm tint), never inside code; the @ list offers @everyone outside a channel; Claude Dark's dimmed text is dim.
+{
+  "name": "mentions-m7-28",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:planner" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["planner", "chat"] },
+      "expect": { "members": ["planner", "chat"] }
+    },
+    {
+      "run": "agent.send",
+      "input": {
+        "message": "@Plato what do you think, @channel? Not `@Gabby` in code.",
+        "wait": false
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-text .agent-mention", "limit": 5, "html": 300 },
+      "expect": [
+        { "html": { "$contains": "data-member=\"planner\"" } },
+        { "html": { "$contains": "is-everyone" } }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-user-text .agent-mention[data-member='planner']",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "Plato · Plan" } }]
+    },
+    // Between backticks it's code, even in a message shown as typed.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-text .agent-mention[data-member='chat']" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.stop" },
+
+    // ---- The @ list: @everyone in a group chat that isn't a channel; @ch still offers @channel ----
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "@" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-member-row[data-member='everyone']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "@ch" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-member-row[data-member='channel']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".dock-body > :not([hidden]) .agent-input",
+        "text": "",
+        "key": "Escape"
+      }
+    },
+
+    // ---- Claude Dark: a role tag is dimmer than the name beside it ----
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-section[data-section='dms'] .ch-row-detail" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

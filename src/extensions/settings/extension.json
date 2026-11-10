@@ -1,0 +1,64 @@
+{
+  "id": "builtin.settings",
+  "version": "0.1.0",
+  "displayName": "Settings",
+  "description": "The settings editor tab, settings commands (set, reset, open settings.json) and ide://settings.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "settings.open",
+        "title": "Open settings",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.openJson",
+        "title": "Open settings (JSON)",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.set",
+        "title": "Change setting",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.reset",
+        "title": "Reset setting",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.importVscode",
+        "title": "Import VS Code settings",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.showImport",
+        "title": "Import from VS Code…",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.importFromEditor",
+        "title": "Import from another editor",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.exportProfile",
+        "title": "Export profile…",
+        "category": "Preferences"
+      },
+      {
+        "id": "settings.importProfile",
+        "title": "Import profile…",
+        "category": "Preferences"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+,",
+        "mac": "cmd+,",
+        "command": "settings.open"
+      }
+    ]
+  }
+}

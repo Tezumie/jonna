@@ -1,0 +1,154 @@
+// D202: the extension API pieces a kernel-running extension needs (tests/fixtures/extensions/procs):
+// processes (a script it ships, ndjson and lines, the limit, kill), its folder and the platform,
+// workspace trust, command input schemas and the caller, state paths, context keys,
+// readsSettings, and processes killed when the folder closes.
+{
+  "name": "extensions m7.3",
+  "steps": [
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/procs" },
+      "expect": { "id": "acme.procs" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.procs", "grant": true },
+      "expect": { "granted": true }
+    },
+    // An invalid input schema is a warning, not a failure: the command takes any input.
+    {
+      "state": "ide://extensions?id=acme.procs",
+      "expect": { "$contains": "input schema ignored" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "procs.badInput",
+      "input": { "anything": 1 },
+      "expect": { "input": { "anything": 1 } },
+      "timeoutMs": 10000
+    },
+    // Restricted folder: no processes.
+    {
+      "run": "workspace.setTrust",
+      "input": { "trusted": false },
+      "expect": { "state": "restricted" }
+    },
+    { "run": "procs.lines", "expectError": "restricted mode" },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "procs.info",
+      "expect": {
+        "platform": { "$exists": true },
+        "path": { "$contains": "procs" },
+        "trusted": true,
+        "trustChanges": [true],
+        "caller": "user"
+      }
+    },
+    // A script it ships, run from its own folder (outside the open folder), ndjson both ways.
+    {
+      "run": "procs.echo",
+      "expect": {
+        "ready": true,
+        "cwd": { "$contains": "procs" },
+        "pong": 7,
+        "env": "on",
+        "plain": ["plain text line"],
+        "stderr": ["echo starting"],
+        "exit": { "code": 3 }
+      },
+      "timeoutMs": 20000
+    },
+    // Lines framing, stderr, the exit code.
+    {
+      "run": "procs.lines",
+      "expect": { "lines": ["first", "second"], "stderr": ["oops"], "exit": { "code": 5 } },
+      "timeoutMs": 20000
+    },
+    // At most 8 at a time; kill() reports SIGKILL.
+    {
+      "run": "procs.limit",
+      "expect": {
+        "started": 8,
+        "error": { "$contains": "at most 8" },
+        "signals": [
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL",
+          "SIGKILL"
+        ]
+      },
+      "timeoutMs": 30000
+    },
+    // Command input schemas: validated by the dispatcher, the shape is in the tool definition.
+    { "run": "procs.greet", "input": {}, "expectError": "name" },
+    { "run": "procs.greet", "input": { "name": "Ada", "times": 9 }, "expectError": "times" },
+    { "run": "procs.greet", "input": { "name": "Ada", "nme": 1 }, "expectError": "nme" },
+    {
+      "run": "procs.greet",
+      "input": { "name": "Ada" },
+      "expect": { "text": "hi Ada", "caller": "user" }
+    },
+    // State paths: its own namespace; a slow getter gives an error after 2 s.
+    { "run": "procs.state", "expect": { "ok": true } },
+    {
+      "state": "ide://ext/acme.procs/info?brief=1",
+      "expect": { "running": 0, "params": { "brief": "1" } },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://ext/acme.procs/slow",
+      "expect": { "error": { "$contains": "2 s" } },
+      "timeoutMs": 8000
+    },
+    { "state": "ide://procs-elsewhere", "expectError": "Unknown state path" },
+    // Context keys: only its own.
+    { "run": "procs.context", "expect": { "error": { "$contains": "acme.procs." } } },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "context": { "acme.procs.busy": true } }
+    },
+    // Settings: readsSettings ones, never agent.*.
+    {
+      "run": "procs.settings",
+      "expect": { "fontSize": { "$gte": 1 }, "agentError": { "$contains": "readsSettings" } }
+    },
+    // Its processes end when the folder becomes restricted, and when it closes.
+    { "run": "procs.running", "expect": { "id": { "$contains": "p" } }, "timeoutMs": 10000 },
+    { "state": "ide://ext/acme.procs/info", "expect": { "running": 1 } },
+    {
+      "run": "workspace.setTrust",
+      "input": { "trusted": false },
+      "expect": { "state": "restricted" }
+    },
+    {
+      "run": "procs.lastExit",
+      "expect": { "exit": { "signal": "SIGKILL" } },
+      "timeoutMs": 10000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "procs.running", "expect": { "id": { "$contains": "p" } }, "timeoutMs": 10000 },
+    { "run": "procs.lastExit", "expect": { "exit": null } },
+    { "run": "workspace.closeFolder" },
+    {
+      "run": "procs.lastExit",
+      "expect": { "exit": { "signal": "SIGKILL" } },
+      "timeoutMs": 10000
+    },
+    // Disabled: its state paths and context keys go.
+    { "run": "extensions.disable", "input": { "id": "acme.procs" } },
+    {
+      "state": "ide://ext/acme.procs/info",
+      "expectError": "Unknown state path",
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "context": { "$not": { "$contains": "acme.procs.busy" } } }
+    }
+  ]
+}

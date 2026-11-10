@@ -1,0 +1,116 @@
+// m7.12 (workbench, windows, command line): the caller checks the dispatcher makes for agents,
+// MCP clients and extensions (core/permissions/commandGuards.ts), seen from a real extension
+// (tests/fixtures/extensions/guards runs a command as itself and returns the error), and a file
+// named on the command line in folders that don't exist yet, saved there (the folders are
+// created, as VS Code does). Empty windows coming back, the Dock menu, the desktop file's action
+// and the shell command's /usr/local/bin need a real restart, macOS or Linux: see
+// docs/manual-test.md.
+{
+  "name": "windows-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/guards" },
+      "expect": { "id": "acme.guards" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.guards", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" }, "timeoutMs": 10000 },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "README.md" },
+      "timeoutMs": 5000
+    },
+
+    // ---- editor.runAction: the engine's own actions only ----
+    // The IDE's commands inside the engine run IDE commands as the user: refused.
+    {
+      "run": "guards.try",
+      "input": { "command": "editor.runAction", "input": { "action": "ide.resolveConflict" } },
+      "expect": { "ok": false, "error": { "$contains": "Only you" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "guards.try",
+      "input": { "command": "editor.runAction", "input": { "action": "ext.acme.guards.run.1" } },
+      "expect": { "ok": false, "error": { "$contains": "Only you" } }
+    },
+    {
+      "run": "guards.try",
+      "input": { "command": "editor.runAction", "input": { "action": "editor.action.openLink" } },
+      "expect": { "ok": false, "error": { "$contains": "Only you" } }
+    },
+    {
+      "run": "guards.try",
+      "input": {
+        "command": "editor.runAction",
+        "input": { "action": "editor.action.clipboardPasteAction" }
+      },
+      "expect": { "ok": false, "error": { "$contains": "clipboard" } }
+    },
+    // An editing action on a file of the folder still runs.
+    {
+      "run": "guards.try",
+      "input": { "command": "editor.runAction", "input": { "action": "cursorDown" } },
+      "expect": { "ok": true, "result": { "ran": true } }
+    },
+    // The user (a test script stands in for them) isn't limited.
+    { "run": "editor.runAction", "input": { "action": "cursorUp" }, "expect": { "ran": true } },
+
+    // ---- A Refresh command kept for the user's click; language server settings ----
+    {
+      "run": "guards.try",
+      "input": {
+        "command": "editor.openMultiDiff",
+        "input": {
+          "title": "Changes",
+          "files": [],
+          "refresh": { "command": "terminal.runCommand", "input": { "command": "echo hi" } }
+        }
+      },
+      "expect": { "ok": false, "error": { "$contains": "Refresh" } }
+    },
+    {
+      "run": "guards.try",
+      "input": {
+        "command": "lsp.setServerSetting",
+        "input": { "server": "typescript", "key": "typescript.tsdk", "value": "x" }
+      },
+      "expect": { "ok": false, "error": { "$contains": "not by an extension" } }
+    },
+
+    // ---- A file in folders that don't exist yet, outside the open folder ----
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "window.openFromCommandLine",
+      "input": {
+        "files": [{ "path": "${ws.root}/../m712-outside/deep/note.md", "missing": true }]
+      },
+      "expect": { "errors": { "$length": 0 }, "tabs": { "$length": 1 } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "untitled:" }, "language": "markdown" },
+      "timeoutMs": 5000
+    },
+    // Not a file of the folder: an extension's editor actions don't reach it.
+    {
+      "run": "guards.try",
+      "input": { "command": "editor.runAction", "input": { "action": "cursorDown" } },
+      "expect": { "ok": false, "error": { "$contains": "files of the open folder" } }
+    },
+    { "run": "editor.insertText", "input": { "text": "# Saved into new folders\n" } },
+    { "run": "editor.save", "timeoutMs": 10000 },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "deep" }, "dirty": false },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://windows", "expect": { "waiting": [] } }
+  ]
+}

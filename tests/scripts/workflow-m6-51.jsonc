@@ -1,0 +1,66 @@
+// D153: no redundant prompts. Testing appears once tests are found; a server already shown in a
+// browser tab gets no toast; "run commands automatically" covers the IDE's commands; the edit
+// mode is remembered for new chats.
+{
+  "name": "workflow-m6-51",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // The sample folder has no tests: no Testing icon (VS Code shows it once tests are found).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-item[aria-label='Testing']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 4000
+    },
+    // Testing is hidden from the activity bar by default (D205); shown again for this check.
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.activityBar.hidden", "value": ["outline.view", "timeline.view"] }
+    },
+    { "run": "settings.set", "input": { "key": "testing.alwaysShow", "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-item[aria-label='Testing']" },
+      "expect": [{ "tag": "button" }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "testing.alwaysShow", "value": false } },
+    { "run": "settings.reset", "input": { "key": "workbench.activityBar.hidden" } },
+
+    // A dev server already open in a browser tab: starting it again shows no toast.
+    { "run": "browser.open", "input": { "url": "http://127.0.0.1:11998/" }, "timeoutMs": 20000 },
+    {
+      "run": "terminal.start",
+      "input": { "command": "echo Local: http://localhost:11998/ && sleep 6", "waitMs": 3000 },
+      "expect": { "urls": { "$contains": "11998" } },
+      "timeoutMs": 20000
+    },
+    { "wait": 1500 },
+    {
+      "state": "ide://notifications",
+      "expect": { "items": { "$not": { "$contains": "A server is running" } } }
+    },
+
+    // Commands run automatically: an IDE command the agent calls doesn't ask.
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Set a breakpoint please", "wait": true },
+      "expect": { "answer": { "$contains": "Breakpoint set: main.ts" } },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://debug", "expect": { "breakpoints": [{ "line": 1 }] } },
+
+    // The edit mode is remembered: a new chat starts in Auto-apply.
+    { "run": "agent.setMode", "input": { "autoApply": true } },
+    { "run": "agent.newSession" },
+    {
+      "state": "ide://agent",
+      "expect": { "sessions": { "$contains": "\"autoApply\":true,\"pending\":[],\"items\":0" } }
+    }
+  ]
+}

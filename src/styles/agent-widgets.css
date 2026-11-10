@@ -1,0 +1,72 @@
+/* The agent's inline widgets (D334): the model's SVG or HTML in a frame, drawn on the chat's own
+   background (no card around it, like an answer's picture), with a quiet title row whose actions
+   open it in a tab, copy its code or save it. The widget tab fills its slot. */
+@layer extensions {
+  .agent-widget {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-5);
+    min-width: 0;
+  }
+  .agent-widget-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 24px;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-widget-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-widget-actions {
+    flex: none;
+    display: flex;
+    gap: var(--space-1);
+    opacity: 0.6;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .agent-widget:hover .agent-widget-actions,
+  .agent-widget-actions:focus-within {
+    opacity: 1;
+  }
+  .agent-widget-body {
+    position: relative;
+    min-width: 0;
+  }
+  .agent-widget-frame {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color-scheme: normal;
+  }
+  .agent-widget-loading {
+    padding: var(--space-3) 0;
+    font-size: var(--text-sm);
+  }
+  .agent-widget-error:empty {
+    display: none;
+  }
+  .agent-widget-error {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .agent-widget-page {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .agent-widget-frame.is-fill {
+    flex: 1;
+    height: 100%;
+  }
+}

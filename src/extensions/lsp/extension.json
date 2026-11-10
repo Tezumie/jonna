@@ -1,0 +1,155 @@
+{
+  "id": "builtin.lsp",
+  "version": "0.1.0",
+  "displayName": "Language server client",
+  "description": "Starts language servers (stdio, via the Rust host) when you open a file of their language, offers to install missing ones, and connects them to the editor: completion, hover, signature help, definitions, references, symbols, formatting, rename, quick fixes, code lens, inlay hints, semantic tokens, folding, document colors, call and type hierarchies, diagnostics.",
+  "activation": ["*"],
+  "permissions": ["process.spawn"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "lsp.list",
+        "title": "List language servers",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.restart",
+        "title": "Restart language server",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.stop",
+        "title": "Stop language server",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.showLog",
+        "title": "Show language server log",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.install",
+        "title": "Install a language server…",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.openServerSettings",
+        "title": "Language server settings",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.codeActions",
+        "title": "Language server: quick fixes",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.statusAction",
+        "title": "Language server of the active file",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.hover",
+        "title": "Language server: hover",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.definition",
+        "title": "Language server: definition",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.references",
+        "title": "Language server: references",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.symbols",
+        "title": "Language server: document symbols",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.callHierarchy",
+        "title": "Language server: call hierarchy",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.typeHierarchy",
+        "title": "Language server: type hierarchy",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.showCallHierarchy",
+        "title": "Show call hierarchy",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.showTypeHierarchy",
+        "title": "Show type hierarchy",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.setHierarchyDirection",
+        "title": "Hierarchy: switch direction",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.refreshHierarchy",
+        "title": "Hierarchy: refresh",
+        "category": "Language servers"
+      },
+      {
+        "id": "lsp.showHierarchyOfItem",
+        "title": "Hierarchy: show hierarchy of this item",
+        "category": "Language servers"
+      },
+      {
+        "id": "python.selectInterpreter",
+        "title": "Select Python interpreter…",
+        "category": "Python"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "shift+alt+h",
+        "command": "lsp.showCallHierarchy",
+        "when": "editorFocus && editorHasCallHierarchyProvider"
+      }
+    ],
+    "settings": {
+      "lsp.enabled": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Start language servers for open files (those installed on PATH, plus any in lsp.servers).",
+        "order": 1
+      },
+      "lsp.offerInstall": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Offer to install a language server the first time you open a file it handles and it isn't installed (Install runs the package manager in a terminal).",
+        "order": 1.5
+      },
+      "lsp.dontOfferInstall": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Language servers not to offer for install (\"Don't ask again\").",
+        "order": 1.6
+      },
+      "lsp.servers": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Language servers by name: { \"name\": { \"command\": \"…\", \"args\": [\"--stdio\"], \"languages\": [\"python\"], \"settings\": {…} } }. Use a built-in name to change it, or { \"enabled\": false } to turn it off. ${workspaceFolder} expands in args. User settings only.",
+        "order": 2
+      },
+      "python.defaultInterpreterPath": {
+        "type": "string",
+        "default": "",
+        "description": "The Python interpreter Pyright uses to find installed packages (a virtual environment's python). Empty: the folder's .venv, venv or env, else Python on PATH. ${workspaceFolder} expands. Status bar → Python to pick one.",
+        "order": 5
+      }
+    }
+  }
+}

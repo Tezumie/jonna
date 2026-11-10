@@ -1,0 +1,189 @@
+{
+  "id": "builtin.language-servers",
+  "version": "0.2.0",
+  "displayName": "Language servers",
+  "description": "Common language servers, started when you open a file of their language. A missing one is offered for install (in a terminal, with the package manager you have): TypeScript and JavaScript, Python, Rust, Go, C and C++, C#, Java, PHP, Ruby, Lua, Bash, YAML, TOML, Dockerfile, Svelte, Zig, Kotlin.",
+  "activation": ["*"],
+  "contributes": {
+    "languageServers": {
+      "typescript": {
+        "title": "TypeScript",
+        "command": "typescript-language-server",
+        "args": ["--stdio"],
+        "languages": ["typescript", "tsx", "javascript", "jsx"],
+        "initializationOptions": {
+          "preferences": {
+            "includeInlayParameterNameHints": "literals",
+            "includeInlayFunctionLikeReturnTypeHints": false,
+            "includeCompletionsForModuleExports": true,
+            "includeCompletionsWithInsertText": true
+          }
+        },
+        "description": "TypeScript and JavaScript across the whole project (tsserver: the project's own TypeScript when it has one)",
+        "install": [{ "tool": "npm", "package": "typescript-language-server typescript@6" }]
+      },
+      "pyright": {
+        "yieldTo": [
+          "meta.pyrefly",
+          "detachhead.basedpyright",
+          "ms-pyright.pyright",
+          "ms-python.vscode-pylance",
+          { "extension": "ms-python.python", "unlessSetting": { "python.languageServer": "None" } }
+        ],
+        "title": "Pyright",
+        "command": "pyright-langserver",
+        "args": ["--stdio"],
+        "languages": ["python"],
+        "settings": {
+          "python": { "analysis": { "autoSearchPaths": true, "useLibraryCodeForTypes": true } }
+        },
+        "description": "Python",
+        "install": [
+          { "tool": "npm", "package": "pyright" },
+          { "tool": "pip", "package": "pyright" }
+        ]
+      },
+      "rust-analyzer": {
+        "yieldTo": ["rust-lang.rust-analyzer"],
+        "title": "rust-analyzer",
+        "command": "rust-analyzer",
+        "languages": ["rust"],
+        "description": "Rust",
+        "install": [
+          { "tool": "rustup", "package": "rust-analyzer" },
+          { "tool": "brew", "package": "rust-analyzer", "platforms": ["mac"] }
+        ]
+      },
+      "gopls": {
+        "yieldTo": ["golang.go"],
+        "title": "gopls",
+        "command": "gopls",
+        "languages": ["go"],
+        "description": "Go",
+        "install": [{ "tool": "go", "package": "golang.org/x/tools/gopls@latest" }]
+      },
+      "clangd": {
+        "yieldTo": ["llvm-vs-code-extensions.vscode-clangd", "ms-vscode.cpptools"],
+        "title": "clangd",
+        "command": "clangd",
+        "languages": ["c", "cpp"],
+        "description": "C and C++",
+        "install": [
+          { "tool": "winget", "package": "LLVM.LLVM", "platforms": ["windows"] },
+          { "tool": "brew", "package": "llvm", "platforms": ["mac"] }
+        ]
+      },
+      "csharp-ls": {
+        "yieldTo": ["ms-dotnettools.csharp", "muhammad-sammy.csharp"],
+        "title": "C# (csharp-ls)",
+        "command": "csharp-ls",
+        "languages": ["csharp"],
+        "description": "C# (needs the .NET SDK)",
+        "install": [{ "tool": "dotnet", "package": "csharp-ls" }]
+      },
+      "jdtls": {
+        "yieldTo": ["redhat.java"],
+        "title": "Eclipse JDT (Java)",
+        "command": "jdtls",
+        "languages": ["java"],
+        "description": "Java (needs a JDK 21+)",
+        "install": [{ "tool": "brew", "package": "jdtls", "platforms": ["mac", "linux"] }]
+      },
+      "intelephense": {
+        "yieldTo": ["bmewburn.vscode-intelephense-client", "devsense.phptools-vscode"],
+        "title": "Intelephense",
+        "command": "intelephense",
+        "args": ["--stdio"],
+        "languages": ["php"],
+        "description": "PHP",
+        "install": [{ "tool": "npm", "package": "intelephense" }]
+      },
+      "ruby-lsp": {
+        "yieldTo": ["shopify.ruby-lsp"],
+        "title": "Ruby LSP",
+        "command": "ruby-lsp",
+        "languages": ["ruby"],
+        "description": "Ruby",
+        "install": [{ "tool": "gem", "package": "ruby-lsp" }]
+      },
+      "lua-language-server": {
+        "yieldTo": ["sumneko.lua"],
+        "title": "Lua",
+        "command": "lua-language-server",
+        "languages": ["lua"],
+        "description": "Lua",
+        "install": [
+          { "tool": "brew", "package": "lua-language-server", "platforms": ["mac", "linux"] },
+          { "tool": "winget", "package": "LuaLS.lua-language-server", "platforms": ["windows"] }
+        ]
+      },
+      "bash-language-server": {
+        "yieldTo": ["mads-hartmann.bash-ide-vscode"],
+        "title": "Bash",
+        "command": "bash-language-server",
+        "args": ["start"],
+        "languages": ["shellscript"],
+        "description": "Bash and sh",
+        "install": [{ "tool": "npm", "package": "bash-language-server" }]
+      },
+      "yaml-language-server": {
+        "yieldTo": ["redhat.vscode-yaml"],
+        "title": "YAML",
+        "command": "yaml-language-server",
+        "args": ["--stdio"],
+        "languages": ["yaml"],
+        "settings": { "yaml": { "schemaStore": { "enable": true }, "keyOrdering": false } },
+        "description": "YAML (schemas from SchemaStore)",
+        "install": [{ "tool": "npm", "package": "yaml-language-server" }]
+      },
+      "taplo": {
+        "yieldTo": ["tamasfe.even-better-toml"],
+        "title": "Taplo (TOML)",
+        "command": "taplo",
+        "args": ["lsp", "stdio"],
+        "languages": ["toml"],
+        "description": "TOML",
+        "install": [{ "tool": "npm", "package": "@taplo/cli" }]
+      },
+      "docker-langserver": {
+        "yieldTo": ["ms-azuretools.vscode-docker", "docker.docker"],
+        "title": "Dockerfile",
+        "command": "docker-langserver",
+        "args": ["--stdio"],
+        "languages": ["dockerfile"],
+        "description": "Dockerfile",
+        "install": [{ "tool": "npm", "package": "dockerfile-language-server-nodejs" }]
+      },
+      "svelteserver": {
+        "yieldTo": ["svelte.svelte-vscode"],
+        "title": "Svelte",
+        "command": "svelteserver",
+        "args": ["--stdio"],
+        "languages": ["svelte"],
+        "description": "Svelte",
+        "install": [{ "tool": "npm", "package": "svelte-language-server" }]
+      },
+      "zls": {
+        "yieldTo": ["ziglang.vscode-zig"],
+        "title": "ZLS (Zig)",
+        "command": "zls",
+        "languages": ["zig"],
+        "description": "Zig",
+        "install": [
+          { "tool": "brew", "package": "zls", "platforms": ["mac", "linux"] },
+          { "tool": "winget", "package": "zigtools.zls", "platforms": ["windows"] }
+        ]
+      },
+      "kotlin-language-server": {
+        "yieldTo": ["fwcd.kotlin"],
+        "title": "Kotlin",
+        "command": "kotlin-language-server",
+        "languages": ["kotlin"],
+        "description": "Kotlin (needs a JDK)",
+        "install": [
+          { "tool": "brew", "package": "kotlin-language-server", "platforms": ["mac", "linux"] }
+        ]
+      }
+    }
+  }
+}

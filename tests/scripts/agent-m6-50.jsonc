@@ -1,0 +1,114 @@
+// D151: the chat reads like a chat. A turn's work is one quiet line that opens to a card of
+// rows (thinking tucked away), the status line has no spinner, and a message sent while the
+// agent works joins its next step (or can be taken back).
+{
+  "name": "agent-m6-50",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please tour the project", "wait": true },
+      "expect": { "answer": { "$contains": "All set" } },
+      "timeoutMs": 60000
+    },
+    // Closed: one line. No spinner anywhere.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-header" },
+      "expect": [{ "html": { "$contains": "Read a file, ran a command" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-spinner" },
+      "expect": { "$length": 0 }
+    },
+    // Open: the first step's headline, the tool rows, the answer's thinking last.
+    { "run": "dev.click", "input": { "selector": ".agent-work-header" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-body > .agent-step", "limit": 10 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-body", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Looking around" } }]
+    },
+    // What it said between steps shows in the conversation, above its group (D159).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-assistant .agent-prose", "html": 400 },
+      "expect": [{ "html": { "$contains": "start with the README" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-body > .agent-step:last-child" },
+      "expect": [{ "html": { "$contains": "Thought process" } }]
+    },
+    // The second tool row holds its step's thinking (a second click).
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-step.is-tool:nth-child(3) .agent-step-row" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step-thinking" },
+      "expect": [{ "html": { "$contains": "run something small" } }],
+      "timeoutMs": 3000
+    },
+
+    // A message sent while the agent works joins its next step.
+    { "run": "agent.newSession" },
+    { "run": "agent.send", "input": { "message": "Please start the slow job", "wait": false } },
+    { "wait": 1200 },
+    {
+      "run": "agent.send",
+      "input": { "message": "Also, say hi to the team" },
+      "expect": { "queued": { "$exists": true } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-wrap.is-queued" },
+      "expect": [{ "html": { "$contains": "say hi" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Got it, thanks" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-wrap.is-queued" },
+      "expect": { "$length": 0 }
+    },
+
+    // Taken back before the next step: it never reaches the agent.
+    { "run": "agent.newSession" },
+    { "run": "agent.send", "input": { "message": "Please start the slow job", "wait": false } },
+    { "wait": 1200 },
+    {
+      "run": "agent.send",
+      "input": { "message": "remove me please" },
+      "expect": { "queued": { "$exists": true } }
+    },
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".agent-queued-back" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "slow job is done" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "remove me" } } }
+    }
+  ]
+}

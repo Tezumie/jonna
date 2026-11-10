@@ -1,0 +1,53 @@
+// D360: the agent's notify messages to the user's phone through a webhook. A local JSON endpoint
+// (the mock dev server's /pkgs-hook) is kept in settings as it is; a test send arrives there. An
+// ntfy topic is a secret: it goes to the secret store and settings say only where it goes.
+{
+  "name": "agent-phone-notify-m7-102",
+  "steps": [
+    { "state": "ide://agent/notifyWebhook", "expect": null },
+    {
+      "run": "agent.setNotifyWebhook",
+      "input": { "url": "http://127.0.0.1:11998/pkgs-hook", "kind": "json" },
+      "expect": { "set": true, "kind": "json", "secret": false }
+    },
+    {
+      "state": "ide://agent/notifyWebhook",
+      "expect": { "kind": "json", "host": "127.0.0.1:11998", "secret": false }
+    },
+    { "run": "agent.testNotifyWebhook", "expect": { "sent": true }, "timeoutMs": 10000 },
+    {
+      "run": "web.fetch",
+      "input": { "url": "http://127.0.0.1:11998/pkgs-hook/last" },
+      "expect": { "text": { "$contains": "A test from the agent" } },
+      "print": true
+    },
+    {
+      "run": "web.fetch",
+      "input": { "url": "http://127.0.0.1:11998/pkgs-hook/last" },
+      "expect": { "text": { "$contains": "application/json" } }
+    },
+    // Plain http elsewhere than this machine isn't allowed.
+    {
+      "run": "agent.setNotifyWebhook",
+      "input": { "url": "http://example.com/hook", "kind": "json" },
+      "expectError": "https"
+    },
+    // A topic anyone could post to: in the secret store, not in settings.
+    {
+      "run": "agent.setNotifyWebhook",
+      "input": { "url": "https://ntfy.sh/pkgs-secret-topic-123", "kind": "ntfy" },
+      "expect": { "set": true, "kind": "ntfy", "secret": true }
+    },
+    {
+      "state": "ide://agent/notifyWebhook",
+      "expect": { "kind": "ntfy", "host": "ntfy.sh", "secret": true }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$not": { "$contains": "pkgs-secret-topic" } }
+    },
+    { "run": "agent.clearNotifyWebhook", "expect": { "cleared": true } },
+    { "state": "ide://agent/notifyWebhook", "expect": null },
+    { "run": "agent.testNotifyWebhook", "expectError": "No webhook" }
+  ]
+}

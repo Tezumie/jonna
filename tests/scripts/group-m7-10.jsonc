@@ -1,0 +1,266 @@
+// D231: agents talking to each other. A group chat (Scout and Forge): its faces in the header and
+// the composer, "@" lists its agents and completes one; a message goes to the agent it mentions
+// first, an agent's reply that opens a line with @Forge hands the next turn to Forge (each turn in
+// that agent's own mode: its instructions arrive), each reply records its speaker and shows its
+// face and name; agents answering each other stop at agent.groupChat.maxAutoTurns. Handoffs: an
+// agent file's `handoffs:` become buttons under its reply; one moves the chat to Forge and sends.
+{
+  "name": "group-m7-10",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.groupChat.maxAutoTurns", "value": 2 } },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\nrole: Researcher\\nicon: blob-3-happy\\ndescription: Finds things in the code.\\npermissionMode: plan\\n---\\n\\nscout-instr-marker: research first.\\n' > .vscode/agents/scout.md && printf -- '---\\nname: forge\\nlabel: Forge\\nrole: Builder\\nicon: round-5-dots\\ndescription: Builds what was planned.\\n---\\n\\nforge-instr-marker: build it.\\n' > .vscode/agents/forge.md && printf -- '---\\nname: planner\\nlabel: Planner\\nrole: Planner\\ndescription: Plans the work.\\nhandoffs:\\n  - label: Build it\\n    agent: forge\\n    prompt: grp231 implement now\\n    send: true\\n---\\n\\nPlan the work.\\n' > .vscode/agents/planner.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    // Agent files are read when trust changes: trust again to read them.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:planner" },
+      "timeoutMs": 10000
+    },
+    // The built-in team has a planner too: wait for the files' own agents.
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:forge" },
+      "timeoutMs": 10000
+    },
+
+    // ---- A group chat: faces, the members pill, no mode pill ----
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["scout", "forge"] },
+      "expect": { "members": ["scout", "forge"] },
+      "save": "grp"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-header-face .agent-face-group" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-members-pill:not([hidden]) .agent-face-group" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-chat-mode[hidden]" },
+      "expect": { "$length": 1 }
+    },
+    { "state": "ide://agent", "expect": { "$contains": "\"members\":[\"scout\",\"forge\"]" } },
+
+    // ---- "@" lists the members; typing narrows; Enter completes ----
+    {
+      "run": "dev.type",
+      "input": { "selector": "[data-session='${grp.session}'] .agent-input", "text": "@" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-member-list:not([hidden]) .agent-member-row[data-member]:not([data-member='all']):not([data-member='everyone']):not([data-member='channel']):not(:has(.agent-member-joins))"
+      },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-input",
+        "text": "grp231 plan it with @Sc"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-member-list:not([hidden]) .agent-member-row[data-member]:not(:has(.agent-member-joins))",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "data-member=\"scout\"" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": "[data-session='${grp.session}'] .agent-input", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-session='${grp.session}'] .agent-member-list[hidden]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // The completed text ("… @Scout ") is sent with Enter: Scout answers and hands over to Forge.
+    {
+      "run": "dev.type",
+      "input": { "selector": "[data-session='${grp.session}'] .agent-input", "key": "Enter" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": {
+          "$contains": "\"text\":\"Forge (own): built it after Scout.\",\"thinking\":false,\"speaker\":\"forge\""
+        },
+        "status": "idle"
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": { "$contains": "\"speaker\":\"scout\"" }
+      }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Scout (own): the plan is ready." } }
+    },
+    // Each speaker's face and name above its reply; the harness's note isn't shown.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-speaker[data-speaker='scout'] .agent-face"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-speaker[data-speaker='forge']"
+      },
+      "expect": [{ "html": { "$contains": "Builder" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- Several mentioned: the first answers, then the next ----
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["scout", "forge"] },
+      "save": "both"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "grp231 both: @Forge first, then @Scout", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": {
+          "$contains": "\"text\":\"scout answered.\",\"thinking\":false,\"speaker\":\"scout\""
+        },
+        "status": "idle"
+      },
+      "timeoutMs": 60000
+    },
+
+    // Forge (named first) answered before Scout.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": {
+          "$contains": "\"text\":\"forge answered.\",\"thinking\":false,\"speaker\":\"forge\"},{\"type\":\"user\""
+        }
+      }
+    },
+
+    // ---- Agents answering each other stop at the limit (2 here) ----
+    { "run": "agent.newGroupChat", "input": { "members": ["scout", "forge"] } },
+    {
+      "run": "agent.send",
+      "input": { "message": "grp231 ping @Scout", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": { "$contains": "Paused after 2 replies between agents" },
+        "status": "idle"
+      },
+      "timeoutMs": 60000
+    },
+    // Scout, Forge, Scout: three replies, no fourth.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": {
+          "$contains": "\"text\":\"Scout: ping\\n@Forge your turn\",\"thinking\":false,\"speaker\":\"scout\"},{\"type\":\"notice\""
+        }
+      }
+    },
+
+    // ---- Handoffs: an agent file's buttons under its reply ----
+    {
+      "run": "agent.chatWith",
+      "input": { "agent": "planner" },
+      "expect": { "mode": "custom:planner" },
+      "save": "solo"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "grp231 solo plan the work", "wait": true },
+      "expect": { "answer": { "$contains": "Plan done" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-session='${solo.session}'] .agent-handoffs .agent-handoff" },
+      "expect": [{ "html": { "$contains": "Build it" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${solo.session}'] .agent-msg-actions [aria-label='Hand to another agent…']"
+      },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": "[data-session='${solo.session}'] .agent-handoffs .agent-handoff" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "chatMode": "custom:forge",
+        "items": { "$contains": "Implemented by forge" },
+        "status": "idle"
+      },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://agent/session", "expect": { "items": { "$contains": "Handed to Forge." } } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${solo.session}'] .agent-speaker[data-speaker='forge']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle" },
+      "timeoutMs": 30000
+    },
+    // agent.handoff by command: to the main agent, the prompt left in the box.
+    {
+      "run": "agent.handoff",
+      "input": { "to": "agent", "prompt": "carry on" },
+      "expect": { "to": "agent", "mode": "agent", "sent": false }
+    },
+    { "run": "agent.handoff", "input": { "to": "nobody" }, "expectError": "No agent named" },
+    { "run": "settings.set", "input": { "key": "agent.groupChat.maxAutoTurns", "value": 4 } }
+  ]
+}

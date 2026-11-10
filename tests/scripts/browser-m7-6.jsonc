@@ -1,0 +1,132 @@
+// D209: links, redirects, forms and popups between two local servers stay in the IDE's browser —
+// another port through its own proxy in the same tab, target=_blank and window.open in a new
+// browser tab, a sign-in popup that posts its result to the opener and closes. The mock dev
+// server (11998) and its "accounts server" one port below (11997).
+{
+  "name": "browser-m7-6",
+  "steps": [
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/cross.html" },
+      "expect": { "connected": true, "title": "Cross" },
+      "timeoutMs": 20000
+    },
+
+    // A link to another port: the same tab, through that server's proxy (not the system browser).
+    { "run": "browser.click", "input": { "name": "Account" } },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Account page", "timeoutMs": 10000 },
+      "expect": { "found": true, "title": "Account" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "browser.list",
+      "expect": {
+        "tabs": [{ "url": "http://127.0.0.1:11997/account", "shownIn": "frame", "connected": true }]
+      }
+    },
+    // Its cookie came back on the next request (the frame is a cross-site frame of the IDE).
+    { "run": "browser.navigate", "input": { "url": "http://127.0.0.1:11997/whoami" } },
+    {
+      "run": "browser.wait",
+      "input": { "text": "acct=yes", "timeoutMs": 5000 },
+      "expect": { "found": true },
+      "timeoutMs": 10000
+    },
+    // History across ports: back to the account page, back again to the first server.
+    { "run": "browser.back" },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Account page", "timeoutMs": 5000 },
+      "expect": { "found": true },
+      "timeoutMs": 10000
+    },
+    { "run": "browser.back" },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Cross-port app", "timeoutMs": 5000 },
+      "expect": { "found": true },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "browser.list",
+      "expect": { "tabs": [{ "url": "http://localhost:11998/cross.html", "connected": true }] },
+      "timeoutMs": 5000
+    },
+
+    // A redirect from one server to the other (an OAuth-style hop) through the goto page.
+    { "run": "browser.click", "input": { "name": "Sign in by redirect" } },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Account page", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "browser.list",
+      "expect": { "tabs": [{ "url": "http://127.0.0.1:11997/account" }] }
+    },
+    // The goto page left no history entry: Back returns to the page with the link.
+    { "run": "browser.back" },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Cross-port app", "timeoutMs": 5000 },
+      "expect": { "found": true },
+      "timeoutMs": 10000
+    },
+    { "wait": 800 },
+    {
+      "run": "browser.list",
+      "expect": { "tabs": [{ "url": "http://localhost:11998/cross.html", "connected": true }] }
+    },
+
+    // A form posted to the other server keeps its body.
+    { "run": "browser.navigate", "input": { "url": "http://localhost:11998/cross.html" } },
+    { "run": "browser.type", "input": { "name": "User", "text": "Ada", "submit": true } },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Signed in as Ada", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+
+    // target=_blank: a new browser tab in the IDE (same server, then the other one).
+    { "run": "browser.navigate", "input": { "url": "http://localhost:11998/cross.html" } },
+    { "run": "browser.click", "input": { "name": "About in a new tab" } },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 2 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "About this app", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "layout.closeTab" },
+    { "run": "browser.click", "input": { "name": "Account in a new tab" } },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 2 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Account page", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "layout.closeTab" },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 5000 },
+
+    // window.open: a popup tab whose window.opener relays its result, then closes itself.
+    { "run": "browser.click", "input": { "name": "Sign in with a popup" } },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Token: t0k", "timeoutMs": 15000 },
+      "expect": { "found": true },
+      "timeoutMs": 30000
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Popup: closed", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    }
+  ]
+}

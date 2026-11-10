@@ -1,0 +1,731 @@
+/* Workbench anatomy (DESIGN.md v2 §10): title bar, activity bar, sidebar, dock host, status bar.
+ * Flush (default): one shell color everywhere, regions separated by 1px --border-subtle hairlines.
+ * Floating (opt-in): --bg-app one step darker, sidebar and dock groups become cards with gaps.
+ * Every container has min-width/min-height 0 so content (many tabs, long names) can never make
+ * the document wider or taller than the window (§10.1). */
+@layer components {
+  .workbench {
+    display: grid;
+    grid-template-rows: var(--size-titlebar) minmax(0, 1fr) var(--size-statusbar);
+    grid-template-columns: minmax(0, 1fr);
+    height: 100vh;
+    width: 100vw;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg-app);
+  }
+  .workbench > * {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* ---- Title bar (§10.1) ---- */
+  .titlebar {
+    display: grid;
+    /* DESIGN.md §10.1 grid; the center is also capped at 44% of the bar so the side columns
+       (app menu, workspace name, toggles) keep room in small windows instead of collapsing to 0. */
+    /* titlebar.ts sets the columns while the menu bar fits (the field gives way first); this is
+       the collapsed (☰) layout. */
+    grid-template-columns: minmax(0, 1fr) minmax(160px, min(560px, 44%)) minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--space-4);
+    min-width: 0;
+    overflow: hidden;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+  }
+  .titlebar > * {
+    min-width: 0;
+  }
+  .titlebar-left,
+  .titlebar-right {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .titlebar-left {
+    gap: var(--space-1);
+    padding-left: var(--space-3);
+    container-type: inline-size;
+  }
+  .workbench[data-platform="mac"] .titlebar-left {
+    padding-left: 78px; /* native traffic lights */
+  }
+  .titlebar-right {
+    justify-content: flex-end;
+  }
+  .titlebar-menubar {
+    display: flex;
+    align-items: center;
+    flex: none;
+  }
+  /* Menu items collapse into ☰ when they don't fit (measured in titlebar.ts); ☰ takes the
+     logo's place. */
+  .titlebar-left.is-menubar-collapsed .titlebar-menubar,
+  .titlebar-left.is-menubar-collapsed .titlebar-logo,
+  .titlebar-left:not(.is-menubar-collapsed) .titlebar-menu {
+    display: none;
+  }
+  .titlebar-logo {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 28px;
+    height: var(--size-control-sm);
+    pointer-events: none;
+  }
+  .titlebar-menu-item {
+    height: var(--size-control-sm);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      background-color var(--motion-fast),
+      color var(--motion-fast);
+  }
+  .titlebar-menu-item.is-open,
+  .titlebar-menu-item:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .titlebar-center {
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+    container-type: inline-size;
+  }
+  /* Go back / Go forward before the command field (D279). */
+  .titlebar-nav {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: var(--space-1);
+    margin-right: var(--space-3);
+  }
+  .titlebar-nav[hidden] {
+    display: none;
+  }
+  .titlebar-nav-button:disabled {
+    color: var(--fg-disabled);
+    background: none;
+    cursor: default;
+  }
+  @container (max-width: 220px) {
+    .titlebar-nav {
+      display: none;
+    }
+  }
+  .titlebar-command {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    max-width: 560px;
+    min-width: 0;
+    height: var(--size-control-sm);
+    padding: 0 var(--space-2) 0 var(--space-4);
+    /* The bar's own color: the field is marked by its border, not a darker well (D204). */
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--fg-subtle);
+    cursor: pointer;
+    transition:
+      border-color var(--motion-fast),
+      color var(--motion-fast);
+  }
+  .titlebar-command:hover {
+    border-color: var(--border-strong);
+    color: var(--fg-muted);
+  }
+  .titlebar-command .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .titlebar-command-label {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* The shortcut is a dimmed hint, not a key chip. */
+  .titlebar-command kbd {
+    height: auto;
+    padding: 0 var(--space-2);
+    background: none;
+    border: 0;
+    color: var(--fg-disabled);
+  }
+  @container (max-width: 260px) {
+    .titlebar-command kbd {
+      display: none;
+    }
+  }
+  /* Icon-only command field when its column is narrow. */
+  @container (max-width: 150px) {
+    .titlebar-command {
+      justify-content: center;
+      padding: 0;
+    }
+    .titlebar-command-label,
+    .titlebar-command kbd {
+      display: none;
+    }
+  }
+  /* Layout toggles: out of the way until the title bar is hovered (like the dock's header
+     actions); the on state is the filled glyph, a fill only on hover. */
+  .titlebar-toggles {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-4);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+  }
+  .titlebar:hover .titlebar-toggles,
+  .titlebar-toggles:focus-within {
+    opacity: 1;
+  }
+  @media (max-width: 720px) {
+    .titlebar-toggles {
+      display: none;
+    }
+  }
+  .titlebar-toggles .titlebar-button {
+    background: none;
+  }
+  .titlebar-toggles .titlebar-button:hover {
+    background: var(--bg-hover);
+  }
+  .titlebar-button.is-on {
+    color: var(--fg-default);
+  }
+  .titlebar-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  /* Window controls: their own non-shrinking column; never pushed off-screen. */
+  .window-controls.is-fullscreen {
+    display: none;
+  }
+  .window-controls {
+    display: flex;
+    align-self: stretch;
+    flex: none;
+  }
+  .icon-button.window-control {
+    width: 46px;
+    height: var(--size-titlebar);
+    border-radius: 0;
+    color: var(--fg-muted);
+  }
+  .icon-button.window-control:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .icon-button.window-control.is-close:hover {
+    background: var(--window-close-bg);
+    color: var(--fg-on-status);
+  }
+
+  /* ---- Main row: activity bar, sidebar, dock ---- */
+  .workbench-main {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 var(--size-gap-panel) 0 0;
+  }
+  .workbench-main > * {
+    min-width: 0;
+    min-height: 0;
+  }
+  /* Sidebar on the right (workbench.sideBar.location): the same row, mirrored. */
+  .workbench[data-sidebar="right"] .workbench-main {
+    padding: 0 0 0 var(--size-gap-panel);
+  }
+  .workbench[data-sidebar="right"] .workbench-main > .dock-host {
+    order: 1;
+  }
+  .workbench[data-sidebar="right"] .workbench-main > .sash {
+    order: 2;
+  }
+  .workbench[data-sidebar="right"] .workbench-main > .sidebar {
+    order: 3;
+  }
+  .workbench[data-sidebar="right"] .workbench-main > .activitybar {
+    order: 4;
+    border-right: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+  :root[data-panels="floating"] .workbench[data-sidebar="right"] .activitybar {
+    border-left-color: transparent;
+  }
+  /* Zen mode (layout.toggleZenMode): only the editors. */
+  .workbench.is-zen .activitybar,
+  .workbench.is-zen .statusbar,
+  .statusbar[hidden] {
+    display: none;
+  }
+  /* No status bar (zen mode, workbench.statusBar.visible): its row goes too. */
+  .workbench.is-zen,
+  .workbench.is-statusbar-hidden {
+    grid-template-rows: var(--size-titlebar) minmax(0, 1fr) 0;
+  }
+  .activitybar {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: var(--size-activitybar);
+    flex: none;
+    padding: var(--space-2) 0 var(--space-4);
+    background: var(--bg-app);
+    border-right: 1px solid var(--border-subtle);
+  }
+  /* The account's picture in place of the Accounts icon (D142). */
+  .activitybar-accounts.has-avatar > .icon {
+    display: none;
+  }
+  .activitybar-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-full);
+    object-fit: cover;
+  }
+  .activitybar-top,
+  .activitybar-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  /* Too many views for the height: the icons keep their size and the list scrolls, with the tab
+     strip's always-visible 4px scrollbar (§10.5 exception; .dock-tabs in dock.css), vertical.
+     Accounts and Settings stay put at the bottom. */
+  .activitybar {
+    position: relative;
+    min-height: 0;
+  }
+  .activitybar-top {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Room for the active item's background and focus ring at the scroll edges. */
+    padding: 2px 0;
+  }
+  /* Only the ::-webkit-scrollbar rules (no scrollbar-width: in Chromium it turns these off). */
+  .activitybar-top::-webkit-scrollbar {
+    width: 4px;
+  }
+  .activitybar-top::-webkit-scrollbar-thumb,
+  .activitybar-top:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
+    border: 0;
+    border-radius: var(--radius-full);
+  }
+  .activitybar-top::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--fg-subtle) 75%, transparent);
+  }
+  .activitybar-top::-webkit-scrollbar-thumb:active {
+    background: var(--fg-subtle);
+  }
+  .activitybar-bottom {
+    flex: none;
+    padding-top: var(--space-2);
+  }
+  /* A hairline over Accounts / Settings while views are hidden under it. The scrollbar takes 4px
+     on the right: as much padding on the left keeps the icons centered, where the
+     bar is wide enough (not at compact density's 40px). */
+  .activitybar-top.is-overflowing {
+    border-bottom: 1px solid var(--border-subtle);
+    padding-left: clamp(0px, calc(var(--size-activitybar) - 40px), 4px);
+  }
+  .activitybar-item {
+    display: grid;
+    place-items: center;
+    /* Never squeezed by a short window: the list scrolls instead. */
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition:
+      color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .activitybar-item .icon {
+    width: var(--size-icon-lg);
+    height: var(--size-icon-lg);
+  }
+  .activitybar-item:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  /* Active view: a step above hover, no accent bar (§10.2). Not the raised surface: in imported
+     themes (Claude Dark) that's darker than the hover overlay, so hover looked like the active
+     one (D273). */
+  .activitybar-item.is-active {
+    color: var(--fg-default);
+    background: var(--bg-active);
+  }
+  /* VS Code's activity badges (D134): a count (unsaved files, changes) or, while work runs in a
+     view that isn't shown, a spinning progress mark, at the icon's bottom right. */
+  .activitybar-item {
+    position: relative;
+  }
+  .activitybar-badge {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    color: var(--fg-on-accent);
+    font-size: calc(var(--text-xs) - 2px);
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  /* The digits centered on their own height (D404): grid centering centers the line box, and
+     the UI font's digits sit low in it. Trimmed to cap height and baseline, the padding centers
+     the figures themselves. */
+  @supports (text-box: trim-both cap alphabetic) {
+    .activitybar-badge:not(.is-progress) {
+      display: block;
+      height: auto;
+      padding-block: calc((16px - 1cap) / 2);
+      text-align: center;
+      text-box: trim-both cap alphabetic;
+    }
+  }
+  /* Four digits or "9999+" (D210): tighter, so the badge stays inside the 36px icon. */
+  .activitybar-badge.is-wide {
+    right: 1px;
+    max-width: calc(100% - 2px);
+    /* Inline only: the trimmed badge's vertical padding (D404) stays. */
+    padding-inline: 3px;
+    letter-spacing: -0.02em;
+  }
+  .activitybar-badge.is-progress {
+    padding: 0;
+  }
+  .activitybar-badge.is-progress .icon {
+    width: 12px;
+    height: 12px;
+    animation: activity-spin 1s linear infinite;
+  }
+  @keyframes activity-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .activitybar-badge.is-progress .icon {
+      animation: none;
+    }
+  }
+  /* Dragging an icon (view.move): it dims in place; a line shows where it goes. */
+  .activitybar-item.is-drag-source {
+    opacity: 0.4;
+  }
+  .activitybar-drop-line {
+    position: absolute;
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: var(--accent-secondary);
+    pointer-events: none;
+  }
+
+  .panel {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    min-width: 0;
+    min-height: 0;
+  }
+  .sidebar {
+    width: var(--sidebar-width, 260px);
+    flex: none;
+    display: flex;
+    flex-direction: column;
+  }
+  .dock-host {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ---- Splitters (§10.5): the 1px hairline is the splitter; 6px hit area; 2px on hover/drag ---- */
+  .sash,
+  .dock-sash {
+    position: relative;
+    flex: 0 0 max(1px, var(--size-gap-split));
+    z-index: var(--z-sticky);
+    touch-action: none;
+    background: var(--border-subtle);
+  }
+  :root[data-panels="floating"] .sash,
+  :root[data-panels="floating"] .dock-sash {
+    background: transparent;
+  }
+  .sash-vertical,
+  .dock-sash.is-row {
+    cursor: ew-resize;
+  }
+  .sash-horizontal,
+  .dock-sash.is-column {
+    cursor: ns-resize;
+  }
+  .sash::after,
+  .dock-sash::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .sash-vertical::after,
+  .dock-sash.is-row::after {
+    left: 50%;
+    width: 6px;
+    margin-left: -3px;
+  }
+  .sash-horizontal::after,
+  .dock-sash.is-column::after {
+    top: 50%;
+    height: 6px;
+    margin-top: -3px;
+  }
+  .sash::before,
+  .dock-sash::before {
+    content: "";
+    position: absolute;
+    background: var(--border-strong);
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .sash-vertical::before,
+  .dock-sash.is-row::before {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    margin-left: -1px;
+  }
+  .sash-horizontal::before,
+  .dock-sash.is-column::before {
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+  }
+  /* A resize handle shows in the second accent (D276; VS Code's sash.hoverBorder is its focus
+     color). */
+  .sash:hover::before,
+  .dock-sash:hover::before {
+    background: var(--accent-secondary);
+    opacity: 1;
+    transition-delay: 150ms;
+  }
+  .sash.is-active::before,
+  .dock-sash.is-active::before {
+    background: var(--accent-secondary);
+    opacity: 1;
+    transition-delay: 0ms;
+  }
+
+  /* ---- Status bar (§10.4) ---- */
+  .statusbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0 var(--space-3);
+    background: var(--bg-app);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+  }
+  .statusbar-left,
+  .statusbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .statusbar-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: calc(var(--size-statusbar) - var(--space-2));
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .statusbar-item:empty {
+    display: none;
+  }
+  /* A link in the agent's status line (D373). */
+  .statusline-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .statusline-link {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--border-strong);
+    text-underline-offset: 2px;
+  }
+  .statusline-link:hover {
+    text-decoration-color: currentColor;
+  }
+  button.statusbar-item {
+    cursor: pointer;
+  }
+  button.statusbar-item:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  /* An extension's item that needs attention (VS Code's warning / error backgrounds). */
+  .statusbar-item.is-warning {
+    background: var(--status-warning-bg);
+    color: var(--status-warning-fg);
+  }
+  .statusbar-item.is-error {
+    background: var(--status-danger-bg);
+    color: var(--status-danger-fg);
+  }
+  .statusbar-item.is-warning-text {
+    color: var(--status-warning-fg);
+  }
+  .statusbar-item.is-error-text {
+    color: var(--status-danger-fg);
+  }
+
+  /* ---- Floating panels (opt-in) ---- */
+  :root[data-panels="floating"] .titlebar {
+    border-color: transparent;
+  }
+  /* Floating (D137, D275): the sidebar and the editor groups are cards of the panels' color with
+     a hairline border. */
+  :root[data-panels="floating"] .workbench-main > .sidebar,
+  :root[data-panels="floating"] .dock-group {
+    border: 1px solid var(--border-default);
+  }
+  /* A distinct side bar (workbench.sideBarColor, D275): the color theme's side bar color, in
+     flush or floating panels. */
+  :root[data-sidebar-color="distinct"] .workbench-main > .sidebar {
+    /* Its surface is the side bar color for what's inside too: sticky rows, the commit box and
+       other parts painted with the surface color stayed the panels' color (D277). */
+    --bg-surface: var(--bg-sidebar);
+    background-color: var(--bg-sidebar);
+  }
+  /* The title bar, activity bar and status bar (and the window around the workspace, the gaps
+     between floating cards) are the side bar's color, matching or distinct, not the theme's
+     title bar color (a theme with darker bars set them apart from the explorer). The bars paint
+     it in colorCustomizations.css, under the user's own bar colors. */
+  :root {
+    --bg-chrome: var(--bg-surface);
+  }
+  :root[data-sidebar-color="distinct"] {
+    --bg-chrome: var(--bg-sidebar);
+  }
+  .workbench {
+    background: var(--bg-chrome);
+  }
+  /* Flush panels (D133, D135): the workspace (sidebar, splitter, editor area) is one framed
+     region with rounded outer corners; the title bar, activity bar and status bar around it are
+     one piece of chrome with no lines of their own. :has()-free: the edge pieces are found with
+     [hidden] siblings and the sidebar side. */
+  :root:not([data-panels="floating"]) .titlebar {
+    border-bottom-color: transparent;
+  }
+  :root:not([data-panels="floating"]) .activitybar,
+  :root:not([data-panels="floating"]) .workbench[data-sidebar="right"] .activitybar {
+    border-right-color: transparent;
+    border-left-color: transparent;
+  }
+  :root:not([data-panels="floating"]) .workbench-main {
+    padding-right: var(--size-workspace-inset);
+  }
+  :root:not([data-panels="floating"]) .workbench[data-sidebar="right"] .workbench-main {
+    padding-right: 0;
+    padding-left: var(--size-workspace-inset);
+  }
+  :root:not([data-panels="floating"]) .workbench-main > .sidebar,
+  :root:not([data-panels="floating"]) .workbench-main > .dock-host,
+  :root:not([data-panels="floating"]) .workbench-main > .sash {
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  /* Outer left edge: the sidebar on the left, or the editor area when the sidebar is hidden or
+     on the right. */
+  :root:not([data-panels="floating"]) .workbench[data-sidebar="left"] .workbench-main > .sidebar,
+  :root:not([data-panels="floating"])
+    .workbench[data-sidebar="left"]
+    .workbench-main
+    > .sidebar[hidden]
+    ~ .dock-host,
+  :root:not([data-panels="floating"])
+    .workbench[data-sidebar="right"]
+    .workbench-main
+    > .dock-host {
+    border-left: 1px solid var(--border-subtle);
+    border-top-left-radius: var(--radius-workspace);
+    border-bottom-left-radius: var(--radius-workspace);
+  }
+  /* Outer right edge: the editor area, or the sidebar when it's on the right. */
+  :root:not([data-panels="floating"]) .workbench[data-sidebar="left"] .workbench-main > .dock-host,
+  :root:not([data-panels="floating"]) .workbench[data-sidebar="right"] .workbench-main > .sidebar,
+  :root:not([data-panels="floating"])
+    .workbench[data-sidebar="right"]
+    .workbench-main
+    > .sidebar[hidden]
+    ~ .dock-host {
+    border-right: 1px solid var(--border-subtle);
+    border-top-right-radius: var(--radius-workspace);
+    border-bottom-right-radius: var(--radius-workspace);
+  }
+  :root:not([data-panels="floating"]) .workbench-main > .sidebar {
+    overflow: hidden;
+  }
+  /* The workspace's borders are translucent: each is drawn over the window's color, not over its
+     own part's background, so the side bar's matches the editor area's (D282: a theme whose side
+     bar is darker than the window, Monokai Pro, made its frame a different gray). Floating cards
+     the same. */
+  .workbench-main > .sidebar,
+  .workbench-main > .dock-host,
+  .dock-group {
+    background-clip: padding-box;
+  }
+  .workbench.is-zen .workbench-main > * {
+    border-radius: 0;
+  }
+  :root[data-panels="floating"] .activitybar {
+    border-right-color: transparent;
+  }
+}

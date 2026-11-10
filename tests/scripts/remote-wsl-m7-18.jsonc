@@ -1,0 +1,157 @@
+// D252: a remote window, end to end, with WSL's Ubuntu as the remote (no SSH server needed: the
+// transport is `wsl.exe -e`, everything after it is what an SSH window does). The window connects
+// "here" (test runs start no windows), the server is installed in ~/<serverDir>/ there when it's
+// missing, and the folder opens in WSL's /tmp: files are read and written there, listed by the
+// server's index, searched there, git runs there through the relay, a terminal and a task run
+// there in a remote pty, and a port listening there is forwarded to this machine. Windows with a
+// WSL distribution named Ubuntu (with git and python3) only.
+{
+  "name": "remote-wsl-m7-18",
+  "requires": ["wsl"],
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // The folder on the remote, made from a local terminal (Git Bash) before connecting.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "wsl.exe -d Ubuntu -e sh -c 'rm -rf /tmp/ide-remote-ui && mkdir -p /tmp/ide-remote-ui/src && cd /tmp/ide-remote-ui && echo hello needle > src/a.txt && git init -q && git add -A && git -c user.email=t@e.x -c user.name=T commit -qm base && echo made-remote-folder'",
+        "timeoutMs": 60000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "made-remote-folder" } },
+      "timeoutMs": 70000
+    },
+    { "run": "workspace.closeFolder" },
+    {
+      "run": "remote.connect",
+      "input": { "kind": "wsl", "host": "Ubuntu", "here": true, "folder": "/tmp/ide-remote-ui" },
+      "expect": { "connected": "wsl:Ubuntu", "home": { "$exists": true } },
+      "timeoutMs": 120000
+    },
+    {
+      "state": "ide://remote",
+      "expect": {
+        "authority": "wsl:Ubuntu",
+        "status": "connected",
+        "info": { "os": "linux", "arch": "x86_64" },
+        "folder": "ide-remote-ui"
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": { "root": "/tmp/ide-remote-ui" },
+      "timeoutMs": 10000
+    },
+    // Trust is the folder's own (a remote folder is another folder).
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // Read a file there; write a new one there (the explorer's New file, then save).
+    { "run": "editor.openFile", "input": { "path": "/tmp/ide-remote-ui/src/a.txt" } },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "hello needle" } },
+      "timeoutMs": 10000
+    },
+    { "run": "explorer.newFile", "input": { "parent": "src", "name": "b.txt" } },
+    { "run": "editor.insertText", "input": { "text": "second needle\n" } },
+    { "run": "editor.save" },
+    // The server's file index and search see both.
+    { "run": "quickOpen.show", "input": { "query": "b.txt" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 3, "html": 600 },
+      "expect": { "$contains": "b.txt" },
+      "timeoutMs": 10000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    {
+      "run": "search.run",
+      "input": { "query": "needle" },
+      "expect": { "matches": 2 },
+      "timeoutMs": 15000
+    },
+    // Git there, through the relay: the new file is the one change.
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "$exists": true }, "changes": [{ "path": "src/b.txt" }] },
+      "timeoutMs": 30000
+    },
+    // A terminal there (a remote pty): the remote's shell and folder.
+    {
+      "run": "terminal.create",
+      "expect": { "shell": "wsl · Ubuntu", "cwd": "/tmp/ide-remote-ui" },
+      "save": "t"
+    },
+    {
+      "run": "terminal.sendText",
+      "input": { "id": "${t.id}", "text": "echo remote-$((40+2)) $(uname -s) $(pwd)\r" }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${t.id}" },
+      "expect": { "text": { "$contains": "remote-42 Linux /tmp/ide-remote-ui" } },
+      "timeoutMs": 15000
+    },
+    // A task there, from the folder's tasks.json (written through the IDE).
+    { "run": "explorer.newFolder", "input": { "parent": "/tmp/ide-remote-ui", "name": ".vscode" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": "/tmp/ide-remote-ui/.vscode", "name": "tasks.json" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{ \"version\": \"2.0.0\", \"tasks\": [{ \"label\": \"remote-echo\", \"type\": \"shell\", \"command\": \"echo task-on-$(uname -s) && exit 3\" }] }\n"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "tasks.run",
+      "input": { "label": "remote-echo" },
+      "expect": { "exitCode": 3, "output": { "$contains": "task-on-Linux" } },
+      "timeoutMs": 30000
+    },
+    // A port listening there, forwarded here.
+    {
+      "run": "terminal.sendText",
+      "input": {
+        "id": "${t.id}",
+        "text": "python3 -m http.server 18123 --bind 127.0.0.1 >/dev/null 2>&1 &\r"
+      }
+    },
+    {
+      "run": "terminal.sendText",
+      "input": {
+        "id": "${t.id}",
+        "text": "until (exec 3<>/dev/tcp/127.0.0.1/18123) 2>/dev/null; do sleep 0.2; done; echo port-$((18000+123))-up\r"
+      }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${t.id}" },
+      "expect": { "text": { "$contains": "port-18123-up" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "remote.forwardPort",
+      "input": { "port": 18123 },
+      "expect": { "remote": 18123, "local": { "$gte": 1 } },
+      "save": "fw",
+      "timeoutMs": 15000
+    },
+    // Bytes cross: the folder listing python serves there, through the local port.
+    { "run": "browser.open", "input": { "url": "http://127.0.0.1:${fw.local}/" } },
+    {
+      "run": "browser.text",
+      "input": { "selector": "h1" },
+      "expect": { "text": { "$contains": "Directory listing" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://remote",
+      "expect": { "forwarded": [{ "remote": 18123 }] },
+      "timeoutMs": 5000
+    },
+    { "run": "remote.showLog", "expect": { "length": { "$gte": 1 } } }
+  ]
+}

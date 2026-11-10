@@ -1,0 +1,168 @@
+/* Agent faces (D230, ui/AgentFace.ts): a generated character per agent. States: working (looks
+   around, breathes), waiting (needs you: a dot), failed (droops, dimmed). Motion stops with
+   reduced motion (the dot stays). D294: no ring turns around a working face any more: the chat
+   list's dot and shimmering title, and the chat's own progress, already say it works. */
+@layer components {
+  .agent-face {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    width: var(--face-size, 24px);
+    height: var(--face-size, 24px);
+    line-height: 0;
+  }
+  .agent-face > .face {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+  .agent-face .face-body {
+    transform-origin: 50% 60%;
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+  .agent-face .face-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  /* Working: the eyes glance side to side, the body breathes. */
+  .agent-face[data-state="working"] .face-eyes {
+    animation: face-glance 2.4s var(--ease-standard) infinite;
+  }
+  .agent-face[data-state="working"] .face-body {
+    animation: face-breathe 1.8s ease-in-out infinite;
+  }
+  /* Waiting for the user (a question, an approval): a dot at the top right. */
+  .agent-face[data-state="waiting"]::after {
+    content: "";
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: max(6px, calc(var(--face-size, 24px) * 0.3));
+    height: max(6px, calc(var(--face-size, 24px) * 0.3));
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg-sidebar, var(--bg-surface));
+  }
+  .agent-face[data-state="waiting"] .face-eyes {
+    transform: translateY(-6%);
+  }
+
+  /* Failed: it droops and fades a little. */
+  .agent-face[data-state="failed"] .face-body {
+    transform: scaleY(0.92);
+    opacity: 0.7;
+  }
+  .agent-face[data-state="failed"] .face-eyes {
+    transform: translateY(10%);
+  }
+
+  /* Hovering a face's button: it looks up at the pointer. */
+  :is(button, a, [role="button"]):hover > .agent-face[data-state="idle"] .face-eyes {
+    transform: translateY(-8%);
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+
+  /* A group: faces overlapping, each with a ring of the surface behind it. */
+  /* As tall as one face; as wide as its overlapping faces (they mustn't run into the text beside). */
+  .agent-face-group {
+    display: inline-flex;
+    flex: none;
+    align-items: flex-end;
+    min-width: var(--face-size, 24px);
+    height: var(--face-size, 24px);
+  }
+  .agent-face-group > .agent-face + .agent-face {
+    margin-left: calc(var(--face-size, 24px) * -0.32);
+  }
+  .agent-face-group > .agent-face:nth-child(2) {
+    align-self: flex-start;
+  }
+
+  @keyframes face-glance {
+    0%,
+    30%,
+    100% {
+      transform: translateX(0);
+    }
+    40%,
+    55% {
+      transform: translateX(-12%);
+    }
+    65%,
+    85% {
+      transform: translateX(12%);
+    }
+  }
+  @keyframes face-breathe {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.04);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .agent-face .face-eyes,
+    .agent-face .face-body,
+    .agent-face::after {
+      animation: none !important;
+    }
+  }
+  :root[data-motion="reduced"] .agent-face .face-eyes,
+  :root[data-motion="reduced"] .agent-face .face-body,
+  :root[data-motion="reduced"] .agent-face::after {
+    animation: none !important;
+  }
+}
+
+@layer extensions {
+  /* An agent showing its model's logo (D270), flat (D389, D390, the owner's ask): the logo alone
+     in one color, the other icons' dimmer one, with no chip, border or tint behind it; the model
+     picker's (its rail and rows) the same. A logo in color (an image) shows as it is; one with no
+     logo, its letters. [data-brand] outranks ai-setup.css's per-brand chips. The providers page
+     keeps its chips (ai-setup.css). */
+  .agent-face.is-model > .ai-mark[data-brand],
+  .model-picker-tab .ai-mark[data-brand],
+  .model-picker-row .ai-mark[data-brand] {
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--fg-muted);
+  }
+  .agent-face.is-model > .ai-mark[data-brand] {
+    width: 100%;
+    height: 100%;
+    font-size: calc(var(--face-size, 24px) * 0.5);
+  }
+  /* The picker's rail: the logo brightens with its tab, as the icons beside it do. */
+  .model-picker-tab .ai-mark[data-brand] {
+    color: inherit;
+  }
+  .agent-face.is-model > .ai-mark[data-brand] .ai-logo-mask,
+  .model-picker-tab .ai-mark[data-brand] .ai-logo-mask,
+  .model-picker-row .ai-mark[data-brand] .ai-logo-mask {
+    background: currentColor;
+  }
+  .agent-face.is-model > .ai-mark img {
+    width: 100%;
+    height: 100%;
+  }
+  .agent-face.is-model > .ai-mark[data-brand] .ai-logo-mask {
+    width: 88%;
+    height: 88%;
+  }
+  .agent-face.is-model[data-state="failed"] > .ai-mark {
+    opacity: 0.7;
+  }
+
+  .agent-header-face {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-left: var(--space-2);
+    margin-right: var(--space-2);
+  }
+}

@@ -1,0 +1,170 @@
+// D251: multi-root workspaces. A second folder (with its own .vscode settings, tasks.json and git
+// repository) joins the window: the window becomes an untitled workspace in place; its files are
+// in scope everywhere (explorer, quick open, search, editors, tasks, git, the agent's sandbox);
+// saved as a .code-workspace, reopened, the folder taken out again.
+{
+  "name": "multiroot-m7-17",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+    // The second folder, beside the test folder.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "rm -rf ../mr-api && mkdir -p ../mr-api/src ../mr-api/.vscode && printf 'export const apiToken = 42;\\n' > ../mr-api/src/apiMain.ts && printf '{ \"editor.tabSize\": 7 }\\n' > ../mr-api/.vscode/settings.json && printf '{ \"version\": \"2.0.0\", \"tasks\": [{ \"label\": \"api-hello\", \"type\": \"shell\", \"command\": \"echo api-${workspaceFolderBasename}\" }] }\\n' > ../mr-api/.vscode/tasks.json && cd ../mr-api && git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm init && echo made",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    // ---- Add it: an untitled workspace, both folders ----
+    {
+      "run": "workspace.addFolder",
+      "input": { "paths": ["${ws.root}/../mr-api"], "trust": true },
+      "expect": { "added": [{ "name": "mr-api" }] },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": {
+        "file": { "$contains": "untitled" },
+        "folders": { "$length": 2 },
+        "name": "Untitled (Workspace)"
+      },
+      "timeoutMs": 5000
+    },
+    // The explorer: the folders are its top rows.
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row.is-workspace-folder", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Quick open and search find the second folder's file.
+    {
+      "run": "quickOpen.search",
+      "input": { "query": "apiMain" },
+      "expect": { "$contains": "apiMain.ts" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "apiToken" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 15000
+    },
+    // Its files are workspace files: opened, they're "mr-api/src/apiMain.ts".
+    {
+      "run": "editor.openFile",
+      "input": { "path": "${ws.root}/../mr-api/src/apiMain.ts" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://editors",
+      "expect": { "$contains": "mr-api/src/apiMain.ts" },
+      "timeoutMs": 5000
+    },
+    // Its own tasks, with its own ${workspaceFolderBasename}.
+    {
+      "run": "tasks.list",
+      "expect": { "$contains": "api-hello" },
+      "timeoutMs": 15000
+    },
+    // Its git repository shows in Source control.
+    {
+      "state": "ide://git/repositories",
+      "expect": { "$contains": "mr-api" },
+      "timeoutMs": 15000
+    },
+    // The agent may read it (its sandbox covers every folder).
+    {
+      "state": "ide://agent/ignore",
+      "expect": { "$exists": true }
+    },
+    // ---- Save the workspace as a file; take the folder out; open the file again ----
+    {
+      "run": "workspace.saveAs",
+      "input": { "path": "${ws.root}/../mr-test.code-workspace" },
+      "expect": { "saved": { "$contains": "mr-test.code-workspace" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": { "name": "mr-test (Workspace)", "folders": { "$length": 2 } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat ../mr-test.code-workspace", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "mr-api" } },
+      "timeoutMs": 30000
+    },
+    // ---- Something rewrites the workspace file to add a folder: the user is asked; declined, it
+    // stays out of the window (and out of the agent's and extensions' reach) ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p ../mr-extra && printf '{ \"folders\": [ { \"path\": \"sample\" }, { \"path\": \"mr-api\" }, { \"path\": \"mr-extra\" } ] }\\n' > ../mr-test.code-workspace && echo written",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.reloadWorkspaceFile", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$contains": "mr-extra" },
+      "timeoutMs": 10000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-secondary" } },
+    {
+      "state": "ide://workspace",
+      "expect": {
+        "folders": { "$length": 2 },
+        "missing": [{ "error": { "$contains": "declined" } }]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "workspace.removeFolder",
+      "input": { "path": "mr-extra" },
+      "expect": { "removed": { "$contains": "mr-extra" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "workspace.removeFolder",
+      "input": { "path": "mr-api" },
+      "expect": { "removed": { "$contains": "mr-api" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": { "folders": { "$length": 1 } },
+      "timeoutMs": 5000
+    },
+    // Its editor closed with it.
+    {
+      "state": "ide://editors",
+      "expect": { "$not": { "$contains": "apiMain.ts" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "workspace.addFolder",
+      "input": { "paths": ["${ws.root}/../mr-api"], "trust": true },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "workspace.openWorkspaceFile",
+      "input": { "path": "${ws.root}/../mr-test.code-workspace" },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": { "name": "mr-test (Workspace)", "folders": { "$length": 2 } },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

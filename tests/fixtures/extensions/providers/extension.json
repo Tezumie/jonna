@@ -1,0 +1,38 @@
+{
+  "id": "acme.providers",
+  "version": "1.0.0",
+  "displayName": "Providers",
+  "description": "Test extension for D233: a pseudoterminal, a task provider, a source control, an inline debug adapter, an authentication provider with secrets, and a file system provider.",
+  "icon": "box",
+  "author": "Acme tests",
+  "license": "MIT",
+  "categories": ["Testing"],
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "permissions": ["fs.read", "fs.write", "terminal"],
+  "contributes": {
+    "commands": [
+      { "id": "providers.setup", "title": "Providers: register everything" },
+      { "id": "providers.stats", "title": "Providers: what happened" },
+      { "id": "providers.touch", "title": "Providers: change hello.txt elsewhere" },
+      { "id": "providers.echoTerminal", "title": "Providers: open the echo terminal" },
+      { "id": "providers.commit", "title": "Providers: save the memo", "effects": ["write"] },
+      { "id": "providers.signIn", "title": "Providers: sign in" },
+      { "id": "providers.secret", "title": "Providers: store and read a secret" }
+    ],
+    "taskDefinitions": [{ "type": "memo", "properties": { "flavor": { "type": "string" } } }],
+    "debuggers": [
+      {
+        "type": "memo-dbg",
+        "label": "Memo debugger",
+        "configurationSnippets": [
+          {
+            "label": "Memo: Launch",
+            "description": "Runs the memo adapter",
+            "body": { "request": "launch", "name": "Memo run" }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+// D388: a VS Code extension's terminal made with hideFromUser (as the Python extension's
+// shell-integration probes) gets no tab, runs hidden, isn't saved with the folder, and shows when
+// the extension calls show(). They used to open as "Python" tabs each session and come back after
+// a restart. Needs Node.
+{
+  "name": "ext-hidden-terminal-m7-116",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "${ws.root}/../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.hiddenTerminal" },
+      "expect": { "result": { "pid": { "$exists": true } } },
+      "timeoutMs": 60000
+    },
+    { "wait": 800 },
+    // No tab: it's among the hidden terminals, named after the extension.
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 1 }, "$contains": "VS Code hello" },
+      "print": true,
+      "timeoutMs": 5000
+    },
+    // show(): its tab appears.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.showHiddenTerminal" },
+      "expect": { "result": { "shown": true } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 0 }, "terminals": { "$contains": "VS Code hello" } },
+      "timeoutMs": 5000
+    },
+    // Not saved with the folder: reopened, it's gone (it used to come back as a plain shell).
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "wait": 3000 },
+    {
+      "state": "ide://terminals",
+      "expect": { "$not": { "$contains": "VS Code hello" } },
+      "print": true,
+      "timeoutMs": 5000
+    }
+  ]
+}

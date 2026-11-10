@@ -1,0 +1,92 @@
+// D211: external agents get the IDE's tools with their session (the built-in MCP server, for
+// agents that take HTTP MCP servers): the mock ACP agent reads the terminal through
+// terminal.readOutput; turned off with agent.externalAgents.ideTools, it gets none. Also the
+// terminal output state and command for any program's output.
+{
+  "name": "acp-tools-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo TERMINAL-MARKER-42", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "TERMINAL-MARKER-42" } },
+      "timeoutMs": 30000
+    },
+    // What a terminal shows, for any agent or extension.
+    {
+      "run": "terminal.readOutput",
+      "input": { "lines": 20 },
+      "expect": { "text": { "$contains": "TERMINAL-MARKER-42" }, "altScreen": false }
+    },
+    { "state": "ide://terminals", "print": true },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please read my terminal", "wait": true },
+      "expect": { "answer": { "$contains": "Terminal check: saw the marker" } },
+      "timeoutMs": 40000
+    },
+    { "state": "ide://agent/session", "expect": { "ideTools": "on" } },
+    // D365: a browser tab with a console error. The message carries the IDE's state (the tab and
+    // its error) and the IDE's tools list browser_console directly.
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/agent-lab.html" },
+      "expect": { "connected": true },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.eval", "input": { "code": "console.error('BOOM-365'); 1" } },
+    {
+      "state": "ide://browser",
+      "expect": [{ "errors": { "$gte": 1 } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please check the browser", "wait": true },
+      "expect": {
+        "answer": { "$contains": "Browser check: console tool listed, state sent, tabs told" }
+      },
+      "timeoutMs": 40000
+    },
+    // The server was lent, not turned on for everyone: the setting stays off.
+    {
+      "state": "ide://settings",
+      "expect": { "$not": { "$contains": "\"key\":\"mcp.enabled\",\"value\":true" } }
+    },
+    // Off: a new chat's agent gets no IDE tools.
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.externalAgents.ideTools", "value": false }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please read my terminal", "wait": true },
+      "expect": { "answer": { "$contains": "Terminal check: no IDE tools" } },
+      "timeoutMs": 40000
+    },
+    { "state": "ide://agent/session", "expect": { "ideTools": "off" } }
+  ]
+}

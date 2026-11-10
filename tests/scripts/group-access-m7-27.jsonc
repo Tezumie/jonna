@@ -1,0 +1,131 @@
+// D273: Auto (full access) applies edits in every chat, a new folder's too (it said Auto and still
+// asked to review); the review bar keeps its rounded top while the plan is hidden; a group chat's
+// effort and access pills list each agent's own, as its model pill does; a folder made for the
+// agent ("Create and start") is trusted, so opening it stops nothing.
+{
+  "name": "group-access-m7-27",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+
+    // ---- The review bar: rounded on top (the plan is in the conversation now, D300) ----
+    { "run": "agent.setMode", "input": { "autoApply": false } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please rename the title", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes:not([hidden])" },
+      "expect": [{ "borderRadius": { "$contains": " 0px 0px" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.rejectAll" },
+
+    // ---- Auto: every chat's edits apply, open ones and new ones ----
+    { "run": "agent.setCommandMode", "input": { "mode": "full" } },
+    { "state": "ide://agent", "expect": { "$not": { "$contains": "\"autoApply\":false" } } },
+    { "run": "agent.newSession" },
+    { "state": "ide://agent", "expect": { "$not": { "$contains": "\"autoApply\":false" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-access", "html": 300 },
+      "expect": [{ "html": { "$contains": ">Auto<" } }],
+      "timeoutMs": 5000
+    },
+    // Review edits picked under Auto: the pill says so.
+    { "run": "agent.setMode", "input": { "autoApply": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-access", "html": 300 },
+      "expect": [{ "html": { "$contains": ">Auto, review edits<" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "ask" } },
+
+    // ---- A group chat: Effort and Access list each agent ----
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:planner" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["planner", "chat"] },
+      "expect": { "members": ["planner", "chat"] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-body > :not([hidden]) .agent-reasoning:not([hidden])",
+        "html": 300
+      },
+      "expect": [{ "html": { "$contains": ">Effort<" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-access", "html": 300 },
+      "expect": [{ "html": { "$contains": ">Access<" } }]
+    },
+    {
+      "run": "agent.setSubagent",
+      "input": { "name": "planner", "effort": "high", "access": "edit" },
+      "expect": { "name": "planner", "effort": "high", "access": "edit" }
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "$contains": "\"effort\":\"high\",\"access\":\"edit\"" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".dock-body > :not([hidden]) .agent-reasoning" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 10 },
+      "expect": [{ "html": { "$contains": "Plato" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-keybinding", "limit": 10 },
+      "expect": [{ "html": { "$contains": "High" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    { "run": "dev.click", "input": { "selector": ".dock-body > :not([hidden]) .agent-access" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-keybinding", "limit": 10 },
+      "expect": [{ "html": { "$contains": "Accept edits" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "run": "agent.setSubagent",
+      "input": { "name": "planner", "effort": "", "access": "" },
+      "expect": { "effort": "default", "access": "" }
+    },
+
+    // ---- A folder made for the agent is trusted ----
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.askForFolder",
+      "input": { "name": "made-here-273" },
+      "expect": { "asked": true }
+    },
+    {
+      "run": "agent.startInFolder",
+      "input": { "choice": "create", "name": "made-here-273", "parent": "${ws.root}/.." },
+      "expect": { "started": true }
+    },
+    { "state": "ide://workspace/trust", "expect": { "state": "trusted" }, "timeoutMs": 5000 }
+  ]
+}

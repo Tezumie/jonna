@@ -1,0 +1,75 @@
+// Split from parA-m7-6: terminal profiles and the automation profile from the folder's settings,
+// once trusted. The settings are terminal.profiles.linux / automationProfile.linux with zsh:
+// Linux only.
+{
+  "name": "parA-profiles-m7-6",
+  "requires": ["zsh"],
+  "platforms": ["linux"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "terminal.profiles.linux",
+        "value": {
+          "Folder zsh": { "path": "zsh", "env": { "IDE_FROM_FOLDER": "folder-profile" } }
+        },
+        "scope": "workspace"
+      }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "profiles": { "$contains": "\"name\":\"Folder zsh\"" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "Folder zsh" },
+      "expect": { "profile": "Folder zsh", "shell": { "$contains": "zsh" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo $IDE_FROM_FOLDER", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "folder-profile" } },
+      "timeoutMs": 30000
+    },
+    // Tasks run their command lines in the automation profile's shell.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "terminal.automationProfile.linux",
+        "value": { "path": "zsh" },
+        "scope": "workspace"
+      }
+    },
+    {
+      "run": "tasks.run",
+      "input": { "label": "say done" },
+      "expect": { "exitCode": 0, "output": { "$contains": "task-ran" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"title\":\"say done\",\"shell\":\"zsh\"" } },
+      "timeoutMs": 5000
+    },
+    // Restricted: the folder's profiles don't apply while it isn't trusted.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    {
+      "state": "ide://terminals",
+      "expect": { "profiles": { "$not": { "$contains": "Folder zsh" } } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "Folder zsh" },
+      "expectError": "No terminal profile"
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.reset",
+      "input": { "key": "terminal.automationProfile.linux", "scope": "workspace" }
+    }
+  ]
+}

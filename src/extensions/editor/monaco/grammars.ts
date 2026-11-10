@@ -1,0 +1,48 @@
+// One lazy import per grammar: esbuild emits each as its own chunk, fetched from the app bundle
+// (never the network) the first time a file of that language opens.
+import type { LanguageRegistration } from "shiki/core";
+
+type GrammarModule = { default: LanguageRegistration[] };
+
+export const GRAMMARS: Record<string, () => Promise<GrammarModule>> = {
+  typescript: () => import("shiki/langs/typescript.mjs"),
+  tsx: () => import("shiki/langs/tsx.mjs"),
+  javascript: () => import("shiki/langs/javascript.mjs"),
+  jsx: () => import("shiki/langs/jsx.mjs"),
+  json: () => import("shiki/langs/json.mjs"),
+  jsonc: () => import("shiki/langs/jsonc.mjs"),
+  html: () => import("shiki/langs/html.mjs"),
+  css: () => import("shiki/langs/css.mjs"),
+  scss: () => import("shiki/langs/scss.mjs"),
+  less: () => import("shiki/langs/less.mjs"),
+  markdown: () => import("shiki/langs/markdown.mjs"),
+  python: () => import("shiki/langs/python.mjs"),
+  r: () => import("shiki/langs/r.mjs"),
+  julia: () => import("shiki/langs/julia.mjs"),
+  rust: () => import("shiki/langs/rust.mjs"),
+  go: () => import("shiki/langs/go.mjs"),
+  java: () => import("shiki/langs/java.mjs"),
+  kotlin: () => import("shiki/langs/kotlin.mjs"),
+  c: () => import("shiki/langs/c.mjs"),
+  cpp: () => import("shiki/langs/cpp.mjs"),
+  csharp: () => import("shiki/langs/csharp.mjs"),
+  swift: () => import("shiki/langs/swift.mjs"),
+  ruby: () => import("shiki/langs/ruby.mjs"),
+  php: () => import("shiki/langs/php.mjs"),
+  lua: () => import("shiki/langs/lua.mjs"),
+  zig: () => import("shiki/langs/zig.mjs"),
+  shellscript: () => import("shiki/langs/shellscript.mjs"),
+  powershell: () => import("shiki/langs/powershell.mjs"),
+  bat: () => import("shiki/langs/bat.mjs"),
+  yaml: () => import("shiki/langs/yaml.mjs"),
+  toml: () => import("shiki/langs/toml.mjs"),
+  ini: () => import("shiki/langs/ini.mjs"),
+  xml: () => import("shiki/langs/xml.mjs"),
+  sql: () => import("shiki/langs/sql.mjs"),
+  graphql: () => import("shiki/langs/graphql.mjs"),
+  dockerfile: () => import("shiki/langs/dockerfile.mjs"),
+  make: () => import("shiki/langs/make.mjs"),
+  diff: () => import("shiki/langs/diff.mjs"),
+  vue: () => import("shiki/langs/vue.mjs"),
+  svelte: () => import("shiki/langs/svelte.mjs"),
+};

@@ -1,0 +1,97 @@
+// D313: report_findings as a card in a review chat (Ask mode, as /review opens it): a row per
+// finding opens its file at the line, Fix sends the agent a message asking for that one (the chat
+// switches to Agent mode to make it), and the re-report shows each finding's outcome. The latest
+// findings show under ide://agent/session.
+{
+  "name": "agent-findings-m7-55",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+    { "run": "agent.setChatMode", "input": { "mode": "ask" }, "expect": { "mode": "ask" } },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgC findings", "wait": true },
+      "expect": { "answer": { "$contains": "pkgC reported findings" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- The card and the state ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-finding", "limit": 5, "html": 800 },
+      "expect": [
+        { "html": { "$contains": "Empty list returns undefined" } },
+        { "html": { "$contains": "Logged twice" } }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-finding-open", "limit": 1, "html": 600 },
+      "expect": [{ "html": { "$contains": "src/util.ts:2" } }]
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "findings": {
+          "findings": [
+            { "file": "src/util.ts", "line": 2, "verdict": "CONFIRMED", "category": "correctness" },
+            { "file": "src/main.ts", "line": 3, "verdict": "PLAUSIBLE" }
+          ]
+        }
+      }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- A row opens its file ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .rb-finding:nth-child(1) .rb-finding-open" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "util.ts" } },
+      "timeoutMs": 10000
+    },
+
+    // ---- Fix asks the agent for that one; the re-report has outcomes ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .rb-finding:nth-child(1) .rb-finding-fix" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "chatMode": "agent",
+        "items": { "$contains": "pkgC fixed: util" },
+        "findings": {
+          "findings": [
+            { "file": "src/util.ts", "outcome": "fixed" },
+            { "file": "src/main.ts", "outcome": "no_change_needed" }
+          ]
+        }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-finding-outcome.is-fixed",
+        "limit": 5,
+        "html": 200
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

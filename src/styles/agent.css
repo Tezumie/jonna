@@ -1,0 +1,2493 @@
+/* Agent panel (DESIGN.md §13) and Markdown prose (§14). Tokens only. */
+@layer extensions {
+  .agent-view {
+    /* The reading column: messages, cards, header, plan and prompt line up to it (D125). */
+    --agent-column: 680px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .agent-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    box-sizing: border-box;
+    width: 100%;
+    /* A wide panel keeps the header, the prompt and the messages in one centred column (D125). */
+    max-width: calc(var(--agent-column) + 2 * var(--space-6));
+    height: 32px;
+    margin: 0 auto;
+    padding: 0 var(--space-3) 0 var(--space-4);
+  }
+  /* "+ ▾" (D236): the ▾ is narrow and sits against the +. */
+  .agent-header .agent-header-dropdown {
+    width: auto;
+    min-width: 0;
+    padding: 0 var(--space-1);
+    margin-left: calc(var(--space-1) * -1);
+  }
+  .agent-header .agent-header-dropdown .icon {
+    width: 12px;
+    height: 12px;
+  }
+  /* A chat from another folder (D126): a strip under the header, in the reading column. */
+  .agent-elsewhere {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    max-width: var(--agent-column);
+    margin: var(--space-2) auto 0;
+    padding: var(--space-3) var(--space-4);
+    /* Neutral, as the wrap-up box (D345): the chat's own background, not the info blue. */
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-elsewhere > .icon {
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+  }
+  .agent-elsewhere-text {
+    flex: 1 1 12em;
+    min-width: 0;
+  }
+  .agent-elsewhere-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-left: auto;
+    max-width: 100%;
+  }
+  .agent-elsewhere-actions > * {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agent-elsewhere strong {
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .agent-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px var(--space-3);
+    margin-left: calc(var(--space-3) * -1);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .agent-title:hover {
+    background: var(--bg-hover);
+  }
+  .agent-shot {
+    display: block;
+    max-width: min(100%, 320px);
+    max-height: 200px;
+    margin: var(--space-2) 0 0 var(--space-7);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 1px var(--border-default);
+    cursor: zoom-in;
+    object-fit: contain;
+    object-position: left top;
+  }
+  /* Images a model or tool made (D381): the result, large, rounded, its actions floating on it. */
+  .agent-images {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+  }
+  .agent-image {
+    position: relative;
+    margin: 0;
+    max-width: min(100%, 480px);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    background: var(--bg-surface-sunken);
+  }
+  .agent-image-open {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+  }
+  .agent-image-open img {
+    display: block;
+    max-width: 100%;
+    max-height: 480px;
+    object-fit: contain;
+  }
+  .agent-image-open:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+    border-radius: var(--radius-xl);
+  }
+  /* The id and the actions show on hover (and while one has focus). */
+  .agent-image-id,
+  .agent-image-float {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--media-chip);
+    color: var(--fg-on-media);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .agent-image:hover .agent-image-id,
+  .agent-image:hover .agent-image-float,
+  .agent-image:focus-within .agent-image-id,
+  .agent-image:focus-within .agent-image-float {
+    opacity: 1;
+  }
+  .agent-image-id {
+    top: var(--space-4);
+    left: var(--space-4);
+    padding: 0 var(--space-4);
+    height: 22px;
+    font: 400 var(--text-xs) / var(--text-xs-lh) var(--font-mono);
+    pointer-events: none;
+  }
+  .agent-image-float {
+    bottom: var(--space-4);
+    height: 30px;
+    border: 0;
+    padding: 0 var(--space-5);
+    font: 500 var(--text-sm) / var(--text-sm-lh) var(--font-ui);
+    cursor: pointer;
+  }
+  .agent-image-float:hover {
+    background: var(--media-scrim);
+  }
+  .agent-image-float:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .agent-image-add {
+    left: var(--space-4);
+  }
+  .agent-image-save {
+    right: var(--space-4);
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+  }
+  /* Being made: its label shimmers over a field of dots a light sweeps across. */
+  .agent-image-pending {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: min(100%, 360px);
+  }
+  .agent-image-pending-label {
+    align-self: flex-start;
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .agent-image-dots {
+    width: 100%;
+    max-height: 360px;
+    border-radius: var(--radius-xl);
+    background-image: radial-gradient(circle, var(--accent) 1px, transparent 1.6px);
+    background-size: 12px 12px;
+    background-position: center;
+    --dots-light: linear-gradient(
+      115deg,
+      color-mix(in srgb, black 15%, transparent) 30%,
+      black 50%,
+      color-mix(in srgb, black 15%, transparent) 70%
+    );
+    -webkit-mask-image: var(--dots-light);
+    mask-image: var(--dots-light);
+    -webkit-mask-size: 300% 100%;
+    mask-size: 300% 100%;
+    animation: agent-image-dots 2.4s var(--ease-standard) infinite;
+  }
+  @keyframes agent-image-dots {
+    from {
+      -webkit-mask-position: 100% 0;
+      mask-position: 100% 0;
+    }
+    to {
+      -webkit-mask-position: 0% 0;
+      mask-position: 0% 0;
+    }
+  }
+  .agent-shot.is-expanded {
+    max-width: 100%;
+    max-height: none;
+    cursor: zoom-out;
+  }
+  .agent-log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    /* Room under the newest message so it doesn't sit against the prompt box. */
+    padding: var(--space-6) var(--space-6) calc(var(--space-6) * 4);
+  }
+  .agent-column,
+  .agent-cards {
+    max-width: var(--agent-column);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .agent-cards:not(:empty) {
+    margin-top: 20px;
+  }
+  .agent-msg {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    min-width: 0;
+  }
+  /* The user's turns sit on the right, narrower than the column (D138), so the conversation's
+     back-and-forth reads at a glance; answers keep the full width. */
+  .agent-user-wrap {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .agent-user-wrap > .agent-user {
+    max-width: min(85%, 640px);
+  }
+  /* A long message of yours shows its start; "Show more" opens it (D143). */
+  /* A long message folds to its first lines, fading out (D151): whole lines, never a cut one. */
+  .agent-user-text.is-clamped {
+    max-height: calc(1.55em * 6);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 3em), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 3em), transparent);
+  }
+  .agent-user-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .agent-user-more {
+    align-self: flex-start;
+    margin-top: var(--space-2);
+    padding: 0;
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .agent-user-more:hover {
+    color: var(--fg-muted);
+  }
+  .agent-user-wrap > .agent-user.is-editing {
+    align-self: stretch;
+    max-width: none;
+  }
+  /* Messages, thoughts, command output and permission details can be selected and copied (the
+     app's chrome isn't: body sets user-select: none). */
+  .agent-prose,
+  .agent-user-text,
+  .agent-thought-body,
+  .agent-well,
+  .agent-notice-text,
+  .agent-permission-detail,
+  .agent-permission-code {
+    user-select: text;
+    -webkit-user-select: text;
+    /* auto, not text: the I-beam over text, the normal arrow over scrollbars and blank space. */
+    cursor: auto;
+  }
+  /* A harness message (D127): a quiet line instead of a user bubble. */
+  .agent-auto {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-auto .icon {
+    width: 14px;
+    height: 14px;
+    color: var(--status-danger-fg);
+  }
+  .agent-user {
+    padding: 10px 12px;
+    background: var(--bg-surface-raised);
+    border-radius: var(--radius-md);
+  }
+  .agent-user-text {
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agent-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .agent-chip {
+    padding: 1px var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+  }
+  /* The mode a message was sent in (D180): Plan or Ask. */
+  /* Message actions under a message: the newest answer's stay visible, the rest show on hover. */
+  .agent-msg-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 24px;
+    margin-top: var(--space-1);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+  }
+  .agent-msg-actions.is-user {
+    justify-content: flex-end;
+  }
+  .agent-msg-actions.is-latest,
+  .agent-assistant:hover .agent-msg-actions,
+  .agent-user-wrap:hover .agent-msg-actions,
+  .agent-msg-actions:focus-within {
+    opacity: 1;
+  }
+  .agent-msg-actions .icon-button {
+    color: var(--fg-subtle);
+  }
+  .agent-msg-actions .icon-button:hover {
+    color: var(--fg-default);
+  }
+  .agent-msg-model,
+  .agent-msg-cost {
+    margin-left: var(--space-3);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-msg-cost {
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-cost {
+    flex: none;
+    padding: 0 var(--space-2);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-cost[hidden] {
+    display: none;
+  }
+  .agent-cost.is-high {
+    color: var(--status-warning-fg);
+  }
+  .agent-user.is-editing {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    border: 1px solid var(--border-strong);
+  }
+  .agent-edit-input {
+    resize: none;
+    border: 0;
+    outline: none;
+    padding: 0;
+    background: transparent;
+    color: var(--fg-default);
+    font: inherit;
+    line-height: 1.5;
+  }
+  .agent-edit-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .agent-edit-hint {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-thought {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-md);
+    color: var(--fg-muted);
+    margin-bottom: var(--space-2);
+  }
+  .agent-thought .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* The text itself shimmers (the label span, or the bare placeholder), not its container too. */
+  div.agent-thought.is-shimmer,
+  .agent-thought.is-shimmer > span {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  @keyframes agent-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+  .agent-thought-body {
+    margin: 0 0 var(--space-4);
+    padding-left: var(--space-5);
+    border-left: 2px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-size: var(--text-md);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agent-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--fg-default);
+    animation: agent-caret 1s steps(1) infinite;
+  }
+  @keyframes agent-caret {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* Tool rows (§13.3) */
+  .agent-tool-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: -14px 0;
+  }
+  /* A row followed by its diff card or output keeps its space below (no overlap with the next). */
+  .agent-tool-wrap:has(.agent-diff-card, .agent-well) {
+    margin-bottom: 0;
+  }
+  .agent-tool {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 28px;
+    padding: 0 var(--space-3);
+    margin: 0 calc(var(--space-3) * -1);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-md);
+    text-align: left;
+    color: var(--fg-default);
+    min-width: 0;
+  }
+  .agent-tool:hover {
+    background: var(--bg-hover);
+  }
+  .agent-tool > .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .agent-tool-verb {
+    flex: none;
+    font-weight: 500;
+  }
+  .agent-tool-target {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--fg-muted);
+  }
+  /* Shrinks with an ellipsis (a failed step's error can be long): never a horizontal scroll. */
+  .agent-tool-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg-subtle);
+    white-space: nowrap;
+  }
+  /* An external agent's shell ("PowerShell") and its own review of the step (D208). */
+  .agent-tool-tag {
+    /* Shrinks before the command does (a narrow panel keeps `npm run check` readable). */
+    flex: 0 4 auto;
+    min-width: var(--space-6);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-tool-tag.is-denied {
+    color: var(--status-danger-fg);
+  }
+  .agent-tool-status {
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .agent-tool-status .is-done {
+    color: var(--fg-subtle);
+  }
+  .agent-tool-status .is-error {
+    color: var(--status-danger-fg);
+  }
+  .agent-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-full);
+    border: 1.5px solid var(--border-strong);
+    border-top-color: var(--fg-default);
+    animation: agent-spin 0.8s linear infinite;
+  }
+  @keyframes agent-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .agent-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+  }
+  .agent-well {
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    max-height: 260px;
+    overflow: auto;
+    background: var(--bg-surface-raised);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-muted);
+  }
+
+  /* Diff cards (§13.4) */
+  .agent-diff-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    font-size: var(--text-md);
+  }
+  .agent-diff-card.is-done {
+    opacity: 0.7;
+  }
+  .agent-diff-path {
+    flex: 1 1 100px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  .agent-diff-stat {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .is-added {
+    color: var(--diff-added-fg);
+  }
+  .is-removed {
+    color: var(--diff-removed-fg);
+  }
+  .button-ghost {
+    color: var(--fg-muted);
+  }
+  .button-ghost:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+
+  /* /btw's side question (D389): a quiet card; its answer isn't part of the conversation. */
+  .agent-aside {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .agent-aside-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-aside-head > .icon {
+    flex: none;
+  }
+  .agent-aside-label {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .agent-aside-question {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-default);
+  }
+  .agent-aside-close {
+    flex: none;
+    margin-left: auto;
+  }
+  .agent-aside-pending {
+    color: var(--fg-subtle);
+  }
+  .agent-notice {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    font-size: var(--text-md);
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+  }
+  .agent-notice.is-error {
+    color: var(--status-danger-fg);
+  }
+  .agent-notice {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .agent-notice-text {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+  .agent-notice-actions {
+    display: flex;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+
+  /* Permission cards (§13.5). Like the folder card and the wrap-up box (D402): the chat's own
+     background, a quiet border, rounder corners; only a dangerous request is colored. */
+  .agent-permission {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    animation: agent-permission-in 140ms var(--ease-standard);
+  }
+  .agent-permission:focus-within {
+    border-color: var(--border-strong);
+  }
+  .agent-permission.is-danger {
+    border-color: var(--status-danger-border);
+  }
+  @keyframes agent-permission-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  .agent-permission-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .agent-permission-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-md);
+    color: var(--fg-muted);
+    background: var(--bg-chip);
+  }
+  .agent-permission.is-danger .agent-permission-icon {
+    color: var(--status-danger-fg);
+    background: var(--status-danger-bg);
+  }
+  .agent-permission-icon > svg {
+    width: 14px;
+    height: 14px;
+  }
+  .agent-permission-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 3px;
+  }
+  .agent-permission-title {
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .agent-permission-title code,
+  .agent-permission-always code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 1px 5px;
+    background: var(--bg-chip);
+    border-radius: var(--radius-xs);
+  }
+  .agent-permission-detail {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agent-permission-code {
+    margin: 0;
+    max-height: 160px;
+    overflow: auto;
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+    background: var(--bg-chip);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .agent-permission-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .agent-permission-always,
+  .agent-permission-spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agent-permission-always {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .agent-permission-always > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-permission-key {
+    margin-left: var(--space-2);
+    padding: 0 3px;
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    line-height: 1.3;
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    opacity: 0.7;
+  }
+
+  /* Changeset bar, jump pill, composer (§13.4, §13.6, §13.7) */
+  /* "Where should this project live?" (D121) */
+  .agent-folder-card {
+    container-type: inline-size;
+  }
+  /* Fields with their labels above, then the folder that will be created as a hint. */
+  .agent-folder-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .agent-folder-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .agent-folder-key {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-folder-name {
+    min-width: 0;
+  }
+  /* The location looks like the name field (read-only), with its folder button inside. */
+  .agent-folder-place {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    height: var(--size-control-md);
+    box-sizing: border-box;
+    padding: 0 var(--space-1) 0 var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    cursor: pointer;
+  }
+  .agent-folder-place:hover {
+    border-color: var(--border-strong);
+  }
+  .agent-folder-place:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle);
+  }
+  .agent-folder-where {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* The end of a long path is the part that differs. */
+    direction: rtl;
+    text-align: left;
+    color: var(--fg-default);
+  }
+  .agent-folder-change {
+    flex: none;
+  }
+  .agent-folder-result {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .agent-folder-result:empty {
+    display: none;
+  }
+  /* Narrow panels: the main button takes a row of its own. */
+  @container (max-width: 340px) {
+    .agent-folder-actions .agent-permission-spacer {
+      display: none;
+    }
+    .agent-folder-actions .button-accent {
+      flex: 1 0 100%;
+      justify-content: center;
+    }
+  }
+  .agent-changes {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    max-width: var(--agent-column);
+    margin: 0 auto;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-bottom: 0;
+    /* The same rounding as the message box it sits on (one shape, D160). */
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    background: var(--bg-surface-raised);
+    font-size: var(--text-md);
+  }
+  .agent-changes-text {
+    white-space: nowrap;
+  }
+  .agent-jump {
+    position: absolute;
+    left: 50%;
+    bottom: 120px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-full);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-1);
+    font-size: var(--text-sm);
+    z-index: 2;
+  }
+  /* The agent still working (D273): three dots pulse in turn after the label. */
+  .agent-jump-dots {
+    display: none;
+    gap: 3px;
+    align-items: center;
+  }
+  .agent-jump.is-working .agent-jump-dots {
+    display: inline-flex;
+  }
+  .agent-jump-dots > span {
+    width: 4px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: currentColor;
+    opacity: 0.3;
+    animation: agent-jump-dot 1.2s var(--ease-standard) infinite;
+  }
+  .agent-jump-dots > span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .agent-jump-dots > span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  @keyframes agent-jump-dot {
+    30% {
+      opacity: 1;
+    }
+    60%,
+    100% {
+      opacity: 0.3;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-jump-dots > span {
+      animation: none;
+      opacity: 0.7;
+    }
+  }
+  /* The composer (D131): cards, the box (text + send), the controls row under it. */
+  .agent-composer {
+    container-type: inline-size;
+    flex: none;
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    max-width: var(--agent-column);
+    margin: 0 auto 10px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .agent-box {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    padding: 6px 6px 6px 14px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    transition: border-color var(--motion-fast) var(--ease-standard);
+    cursor: text;
+  }
+  .agent-box:focus-within {
+    border-color: var(--border-input-focus);
+  }
+  .agent-composer.is-drop-over .agent-box {
+    border: 1px dashed var(--accent-secondary);
+    background: color-mix(in srgb, var(--accent-secondary) 6%, var(--bg-surface-raised));
+  }
+  .agent-changes:not([hidden]) + .agent-composer:has(.agent-attachments[hidden]) .agent-box {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .agent-input {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg-default);
+    font: inherit;
+    font-size: var(--text-lg);
+    line-height: 22px;
+    min-height: 22px;
+    max-height: 272px;
+    padding: 3px 0;
+    overflow-y: hidden;
+  }
+  .agent-input::placeholder {
+    color: var(--fg-subtle);
+  }
+  .agent-composer-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 0 var(--space-1);
+  }
+  .agent-plus {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+  }
+  .agent-plus:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  /* Words only (D227): the model and access read bright, the effort dimmer beside the model; the
+     access button stands a little apart. */
+  .agent-composer-footer .agent-model-pill,
+  .agent-composer-footer .agent-access {
+    color: var(--fg-default);
+  }
+  .agent-composer-footer .agent-reasoning {
+    padding-left: var(--space-1);
+    color: var(--fg-subtle);
+  }
+  .agent-reasoning.is-on > span {
+    color: var(--fg-muted);
+  }
+  .agent-composer-footer .agent-access {
+    margin-left: var(--space-2);
+  }
+  .agent-model-pill {
+    gap: var(--space-2);
+  }
+  @container (max-width: 440px) {
+    .agent-model-pill {
+      max-width: 60%;
+    }
+  }
+  /* A narrow chat (a small window, D254): the mode and access keep their words whole; the
+     model's name and the effort give way. */
+  @container (max-width: 380px) {
+    .agent-composer-footer .agent-chat-mode,
+    .agent-composer-footer .agent-access {
+      flex: none;
+      max-width: none;
+    }
+  }
+  /* The model pill's provider or agent logo (D227): the badge, small and without its chip. */
+  .agent-model-pill .ai-mark {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    border-radius: var(--radius-xs);
+    font-size: calc(var(--text-xs) * 0.7);
+    border: none;
+  }
+  .agent-model-pill .ai-mark img,
+  .agent-model-pill .ai-logo-mask {
+    width: 100%;
+    height: 100%;
+  }
+  .agent-model-pill .ai-mark.is-mono {
+    background: none;
+  }
+  .agent-model-pill .ai-mark.is-mono .ai-logo-mask {
+    background: var(--fg-muted);
+  }
+  /* Hidden for now (D288): the agent pill beside it already shows who answers. The styles above
+     stay for when it comes back. */
+  .agent-model-pill .ai-mark {
+    display: none;
+  }
+  .agent-model-pill {
+    max-width: 45%;
+  }
+  .agent-composer-footer .agent-pill {
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* The agent pill: a little air between its face and its name (D291, the owner's ask). */
+  .agent-composer-footer .agent-chat-mode {
+    gap: var(--space-2);
+  }
+  .agent-composer-footer .agent-pill > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-send {
+    flex: none;
+  }
+  .agent-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--size-control-sm);
+    max-width: 50%;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-pill .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    flex: none;
+  }
+  .agent-pill:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .agent-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+  /* Send (↵), Stop (■) and the microphone (D385): quiet icon buttons side by side, the icon in
+     the text's color and a soft square behind it on hover. */
+  .agent-send,
+  .agent-mic {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md);
+    color: var(--fg-default);
+    transition: background-color var(--motion-fast) var(--ease-standard);
+  }
+  .agent-send:hover,
+  .agent-mic:hover {
+    background: var(--bg-hover);
+  }
+  /* Nothing to send yet (dictation off, so Send stays): dimmed. */
+  .agent-composer:has(.agent-input:placeholder-shown):has(.agent-attachments[hidden])
+  .agent-send:not(.is-busy) {
+    color: var(--fg-subtle);
+  }
+  /* Stop: a small filled square. */
+  .agent-send.is-busy .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    fill: currentColor;
+  }
+  .agent-send[hidden],
+  .agent-mic[hidden] {
+    display: none;
+  }
+  .agent-send:disabled,
+  .agent-mic:disabled {
+    cursor: default;
+  }
+
+  /* Voice input (D180): while recording, a live waveform takes the text's place. The textarea
+     stays focused (Enter finishes, Esc cancels) but out of sight. */
+  .agent-box.is-voice {
+    position: relative;
+    align-items: center;
+  }
+  .agent-box.is-voice .agent-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .agent-voice {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 30px;
+    margin-left: -8px;
+  }
+  .agent-voice[hidden] {
+    display: none;
+  }
+  .agent-voice-cancel {
+    flex: none;
+  }
+  .agent-voice-slot {
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    display: flex;
+  }
+  .agent-voice-wave {
+    width: 100%;
+    height: 100%;
+    color: var(--fg-muted);
+  }
+  .agent-box.is-voice:has(.agent-voice-status:not(:empty)) .agent-voice-wave {
+    opacity: 0.4;
+  }
+  .agent-voice-status {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-voice-status:empty {
+    display: none;
+  }
+  .agent-voice-time {
+    flex: none;
+    min-width: 3ch;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-subtle);
+  }
+  .agent-empty {
+    margin-top: 10vh;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+  }
+  .agent-empty-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .agent-empty-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .agent-empty-tips {
+    margin: var(--space-4) 0 0;
+    padding-left: 18px;
+    font-size: var(--text-md);
+    color: var(--fg-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  /* Markdown (§14) */
+  .md p {
+    margin: 0 0 12px;
+  }
+  /* A long link or path wraps instead of widening the chat (only where it has to: tables keep
+     their columns). */
+  .md p,
+  .md li,
+  .md blockquote,
+  .md h2,
+  .md h3,
+  .md h4 {
+    overflow-wrap: anywhere;
+  }
+  .md > :last-child,
+  .md li > :last-child {
+    margin-bottom: 0;
+  }
+  .md h2 {
+    font-size: var(--text-2xl, 20px);
+    font-weight: 600;
+    margin: 20px 0 10px;
+  }
+  .md h3 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    margin: 16px 0 8px;
+  }
+  .md h4,
+  .md h5,
+  .md h6 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin: 12px 0 6px;
+  }
+  .md h5,
+  .md h6 {
+    color: var(--fg-muted);
+  }
+  .md ul,
+  .md ol {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .md li::marker {
+    color: var(--fg-subtle);
+  }
+  /* Bold in answers reads as emphasis, not as a heading (D143): a step lighter than 700. */
+  .md strong,
+  .md b {
+    font-weight: 600;
+  }
+  .md.agent-prose strong,
+  .md.agent-prose b {
+    font-weight: 550;
+  }
+  .md-link {
+    color: var(--accent-text, var(--accent));
+    text-decoration: none;
+  }
+  .md-link:hover {
+    text-decoration: underline;
+  }
+  /* Code is never darker than the chat around it (D151): a raised surface, a hairline. */
+  .md-code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 1px 5px;
+    background: var(--bg-chip);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xs);
+  }
+  .md-pre {
+    margin: 0 0 12px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .md-pre-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 28px;
+    padding: 0 var(--space-2) 0 var(--space-5);
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .md-copy {
+    width: 22px;
+    height: 22px;
+  }
+  .md-pre-lang {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* "Apply" on a code block that names its file (D122). */
+  .md-pre-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+  .md-pre-action:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .md-pre-action .icon {
+    width: 14px;
+    height: 14px;
+  }
+  /* agent.codeBlockWordWrap (D179): long lines wrap instead of scrolling. */
+  .agent-view.is-wrap-code .md-pre pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* agent.textSize (D179): the conversation, scaled as a whole (the composer stays). */
+  .agent-view[data-text-size="small"] .agent-log {
+    zoom: 0.9;
+  }
+  .agent-view[data-text-size="large"] .agent-log {
+    zoom: 1.12;
+  }
+  /* Long code scrolls inside its block instead of stretching the chat (D143). */
+  .md-pre pre {
+    margin: 0;
+    padding: 0 12px 12px;
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  .md blockquote {
+    margin: 0 0 12px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-strong);
+    color: var(--fg-muted);
+  }
+  .md hr {
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    margin: 20px 0;
+  }
+  /* A table is a rounded, lightly bordered card; a wide one scrolls inside it (D283). */
+  .md-table-wrap {
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .md table {
+    border-collapse: collapse;
+    font-size: var(--text-md);
+  }
+  .md-table-wrap > table {
+    min-width: 100%;
+  }
+  .md th {
+    font-weight: 600;
+    text-align: left;
+    background: var(--bg-surface-raised);
+  }
+  .md th,
+  .md td {
+    padding: 8px 12px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .md-table-wrap tbody tr:last-child > td {
+    border-bottom: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  div.agent-thought.is-shimmer,
+  .agent-thought.is-shimmer > span,
+  .agent-image-pending-label {
+    animation: none;
+    color: var(--fg-muted);
+    background: none;
+  }
+  .agent-image-dots {
+    animation: none;
+  }
+}
+@layer extensions {
+  .agent-attachments,
+  .agent-sent-cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-2);
+  }
+  .agent-attachments[hidden] {
+    display: none;
+  }
+  /* One row that scrolls sideways (a narrow panel keeps its height for the chat). */
+  .agent-attachments {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0 2px 2px;
+  }
+  .agent-sent-cards {
+    margin-bottom: var(--space-2);
+    justify-content: flex-end;
+  }
+  .agent-attachments::-webkit-scrollbar {
+    height: 4px;
+  }
+  .agent-attachments .agent-chip,
+  .agent-sent-cards .agent-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 26px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    font-family: inherit;
+    font-size: var(--text-sm);
+    color: var(--fg-default);
+  }
+  .agent-chip > span {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-chip .icon {
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+  }
+  .agent-chip .agent-card-remove {
+    position: static;
+    width: 16px;
+    height: 16px;
+    margin-right: -6px;
+    opacity: 1;
+    background: transparent;
+    color: var(--fg-muted);
+  }
+  .agent-chip .agent-card-remove:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  /* A card: a text preview with name / lines / type badge, or an image thumbnail. */
+  .agent-card {
+    position: relative;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 120px;
+    height: 104px;
+    overflow: hidden;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .agent-card-preview {
+    flex: 1;
+    min-height: 0;
+    padding: 9px 10px 0;
+    overflow: hidden;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    font-size: 10px;
+    line-height: 1.45;
+    color: var(--fg-muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+  }
+  .agent-card.is-pasted .agent-card-preview {
+    color: var(--fg-default);
+  }
+  .agent-card-foot {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 8px 8px;
+  }
+  .agent-card-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .agent-card-meta {
+    margin-top: 2px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 10.5px;
+    color: var(--fg-subtle);
+  }
+  .agent-card-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .agent-card-badge {
+    flex: none;
+    margin-top: 2px;
+    padding: 1px 6px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xs);
+    background: var(--bg-chip);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--fg-muted);
+  }
+  .agent-card-thumb {
+    position: absolute;
+    inset: 0;
+  }
+  .agent-card-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .agent-card.is-image .agent-card-foot {
+    margin-top: auto;
+    padding-top: 16px;
+    background: linear-gradient(to top, var(--media-scrim), transparent);
+  }
+  .agent-card.is-image:has(.agent-card-thumb) .agent-card-name {
+    color: var(--fg-on-media);
+  }
+  .agent-card.is-image:has(.agent-card-thumb) .agent-card-badge {
+    border-color: transparent;
+    background: var(--media-chip);
+    color: var(--fg-on-media);
+  }
+  .agent-card-gone {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--fg-subtle);
+  }
+  /* The card's buttons in its corner: Add to project (D196) and remove. */
+  .agent-card-actions {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    z-index: 2;
+    display: flex;
+    gap: var(--space-2);
+  }
+  .agent-card-actions .agent-card-remove {
+    position: static;
+  }
+  .agent-card:hover .agent-card-actions .agent-card-remove,
+  .agent-card-actions .agent-card-remove:focus-visible {
+    opacity: 1;
+  }
+  .agent-card-remove {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-full);
+    background: var(--media-chip);
+    color: var(--fg-on-media);
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .agent-chips .agent-chip.is-image {
+    padding: 2px;
+  }
+  .agent-chip.is-image img {
+    height: 32px;
+    max-width: 64px;
+    object-fit: cover;
+    border-radius: var(--radius-xs);
+  }
+  .agent-card-remove .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .agent-card:hover .agent-card-remove,
+  .agent-card-remove:focus-visible {
+    opacity: 1;
+  }
+
+  /* ---- A turn's work group (D104): one quiet line, the steps inside ---- */
+  .agent-work {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  /* ---- The agent's plan (D300): a card under the latest message, as Claude Code's app ---- */
+  .agent-plan {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-md);
+  }
+  .agent-plan-before {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .agent-plan-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .agent-plan-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    min-height: 24px;
+    color: var(--fg-default);
+  }
+  .agent-plan-text {
+    min-width: 0;
+    padding-top: 2px;
+    overflow-wrap: anywhere;
+  }
+  .agent-plan-steps li.is-done {
+    color: var(--fg-muted);
+  }
+  /* The step's mark: a dashed ring waits, a turning arc works, a filled circle is done. */
+  .agent-plan-mark {
+    flex: none;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-top: 5px;
+    border-radius: var(--radius-full);
+  }
+  .agent-plan-wait {
+    border: 1.5px dashed var(--fg-subtle);
+  }
+  .agent-plan-spin {
+    border: 1.5px solid var(--border-subtle);
+    border-top-color: var(--fg-default);
+    animation: agent-spin 0.9s linear infinite;
+  }
+  .agent-plan-steps li.is-done .agent-plan-mark {
+    background: var(--fg-subtle);
+    color: var(--bg-surface);
+  }
+  .agent-plan-mark .icon {
+    width: 10px;
+    height: 10px;
+    stroke-width: 3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-plan-spin {
+      animation: none;
+      border-color: var(--fg-default);
+      border-right-color: var(--border-subtle);
+    }
+  }
+  .agent-summary-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-md);
+  }
+  .agent-summary-row:hover {
+    color: var(--fg-default);
+  }
+  .agent-summary-row .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-summary-body {
+    margin-top: var(--space-2);
+  }
+
+  /* Snug under the message it answers (the message's action row already leaves room). */
+  .agent-user-wrap + .agent-work {
+    margin-top: -10px;
+  }
+  .agent-work-header {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: 2px 0;
+    font-size: var(--text-md);
+    color: var(--fg-muted);
+    text-align: left;
+    transition: color var(--motion-fast) var(--ease-standard);
+  }
+  .agent-work-header:hover {
+    color: var(--fg-default);
+  }
+  .agent-work-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-work.is-working .agent-work-label {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .agent-work-duration {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-work-chevron {
+    flex: none;
+    display: inline-flex;
+    color: var(--fg-subtle);
+  }
+  .agent-work-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* The status line changes calmly: the old phrase fades out, the new one in (work.ts). */
+  .agent-work-label {
+    transition:
+      opacity 160ms var(--ease-standard),
+      transform 160ms var(--ease-standard);
+  }
+  .agent-work-label.is-fading {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  /* The steps (D151): a card of rows divided by hairlines, on the chat's own surface. */
+  .agent-work-body {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .agent-work-body[hidden] {
+    display: none;
+  }
+  .agent-step {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .agent-step + .agent-step {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .agent-step-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 36px;
+    padding: var(--space-2) var(--space-5);
+    color: var(--fg-muted);
+    font-size: var(--text-md);
+    text-align: left;
+    min-width: 0;
+  }
+  .agent-step-row[aria-expanded]:hover {
+    background: var(--bg-hover);
+  }
+  .agent-step-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-step-verb {
+    color: var(--fg-muted);
+  }
+  .agent-step-target {
+    color: var(--fg-default);
+  }
+  .agent-step-target:hover {
+    text-decoration: underline;
+  }
+  .agent-step-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-step-meta::before {
+    content: "· ";
+  }
+  .agent-step-failed {
+    flex: none;
+    display: inline-flex;
+    color: var(--status-danger-fg);
+  }
+  .agent-step-failed .icon,
+  .agent-step-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-step-chevron {
+    flex: none;
+    display: inline-flex;
+    margin-left: auto;
+    color: var(--fg-subtle);
+  }
+  .agent-step-row:hover .agent-step-chevron {
+    color: var(--fg-default);
+  }
+  .agent-step-row > .agent-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+  }
+  /* Running: the row's words shimmer like the status line. */
+  .agent-step-text.is-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .agent-step-text.is-shimmer > span {
+    color: transparent;
+  }
+  .agent-step-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0 var(--space-5) var(--space-4);
+  }
+  .agent-step-detail .agent-well {
+    max-height: 220px;
+    border: 1px solid var(--border-subtle);
+  }
+  .agent-step-thinking {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 320px;
+    overflow: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: auto;
+  }
+  /* A turn that only thought: its thinking straight in the card. */
+  .agent-step.is-plain {
+    padding: var(--space-4) var(--space-5);
+  }
+  .agent-step-note-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  }
+  .agent-step.is-note:not(:has(.agent-step-note-row)) {
+    padding: var(--space-3) var(--space-5);
+  }
+  .agent-step-note {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-muted);
+  }
+  .agent-step-note > :last-child {
+    margin-bottom: 0;
+  }
+  .agent-step-more {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    color: var(--fg-subtle);
+  }
+  .agent-step-more:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .agent-step-more .agent-step-chevron {
+    margin: 0;
+    color: inherit;
+  }
+  .agent-step > .agent-shot {
+    margin: 0 var(--space-5) var(--space-3);
+  }
+  .agent-narration {
+    color: var(--fg-muted);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-step-text.is-shimmer {
+    animation: none;
+    color: var(--fg-muted);
+    background: none;
+  }
+  .agent-work-label {
+    transition: none;
+  }
+  .agent-permission {
+    animation: none;
+  }
+  .agent-work.is-working .agent-work-label {
+    animation: none;
+  }
+  .agent-work.is-working .agent-work-label {
+    color: var(--fg-muted);
+    background: none;
+  }
+}
+@layer extensions {
+  /* A message sent while the agent works (D151): your bubble, quieter, until the next step. */
+  .agent-user-wrap.is-queued > .agent-user {
+    opacity: 0.6;
+  }
+  .agent-queued-note {
+    align-self: flex-end;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-queued-back,
+  .agent-queued-now {
+    padding: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .agent-queued-back:hover,
+  .agent-queued-now:hover:not(:disabled) {
+    color: var(--fg-default);
+  }
+}
+@layer extensions {
+  /* The work line with the turn's screenshots at its end (D155). */
+  .agent-work-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .agent-work-top > .agent-work-header {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .agent-work-shots {
+    flex: none;
+    margin-left: auto;
+  }
+  .agent-shots {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .agent-shots-thumb {
+    width: 40px;
+    height: 26px;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 1px var(--border-default);
+    cursor: zoom-in;
+    opacity: 0.85;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .agent-shots-thumb:hover {
+    opacity: 1;
+    box-shadow: 0 0 0 1px var(--border-strong);
+  }
+  .agent-shots-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: left top;
+  }
+  .agent-shots-more {
+    min-width: 26px;
+    height: 26px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-shots-more:hover {
+    color: var(--fg-default);
+  }
+  /* Full size, over the window. */
+  /* A modal's layer (D201: tooltips and hover previews show above it, menus too). */
+  .agent-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    background: var(--media-scrim);
+    backdrop-filter: blur(2px);
+    outline: none;
+    animation: agent-viewer-in var(--motion-slow) var(--ease-enter);
+  }
+  .agent-viewer .agent-viewer-image,
+  .agent-viewer .agent-viewer-text {
+    animation: agent-viewer-pop var(--motion-slow) var(--ease-enter);
+  }
+  @keyframes agent-viewer-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes agent-viewer-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+  /* Beside the chat (D196): the chat stays visible and usable; the viewer takes the rest, on a
+     lighter scrim (D201). */
+  .agent-viewer.is-beside {
+    backdrop-filter: none;
+    background: none;
+  }
+  /* The scrim fades out toward the chat instead of ending in a hard edge a few pixels short of
+     it (D370). Its own layer, so the fade leaves the bar's buttons alone. */
+  .agent-viewer.is-beside::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--media-scrim-soft);
+    --viewer-fade: linear-gradient(to right, black calc(100% - var(--space-7)), transparent);
+    -webkit-mask-image: var(--viewer-fade);
+    mask-image: var(--viewer-fade);
+  }
+  /* The chat moved to the viewer's left: the fade turns with it. */
+  .agent-viewer.is-beside.is-chat-left::before {
+    --viewer-fade: linear-gradient(to left, black calc(100% - var(--space-7)), transparent);
+  }
+  .agent-viewer-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+  }
+  /* The arrows sit over the image's edges (D211: beside it they left a wide empty band between
+     the image and the chat). */
+  .agent-viewer-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--space-3) var(--space-5);
+  }
+  .agent-viewer-stage > .agent-viewer-nav {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    translate: 0 -50%;
+    box-shadow: var(--shadow-1);
+  }
+  .agent-viewer-stage > .agent-viewer-nav:first-child {
+    left: var(--space-5);
+  }
+  .agent-viewer-stage > .agent-viewer-nav:last-child {
+    right: var(--space-5);
+  }
+  .agent-viewer-nav[disabled] {
+    visibility: hidden;
+  }
+  .agent-viewer-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .agent-viewer-action {
+    color: var(--fg-default);
+    background: var(--bg-overlay);
+  }
+  .agent-viewer-image {
+    min-width: 0;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    user-select: none;
+  }
+  .agent-viewer-nav,
+  .agent-viewer-close {
+    flex: none;
+    color: var(--fg-default);
+    background: var(--bg-overlay);
+  }
+
+  .agent-viewer-count {
+    padding: var(--space-1) var(--space-4);
+    /* As the buttons beside it (D370). */
+    border-radius: var(--radius-sm);
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    box-shadow: var(--shadow-1);
+  }
+}
+@layer extensions {
+  /* A thumbnail's hover preview (D156): the screenshot large, what took it, which one. */
+  .hover-card:has(.agent-shot-card) {
+    max-width: min(520px, calc(100vw - 16px));
+    overflow: hidden;
+  }
+  .agent-shot-card {
+    display: flex;
+    flex-direction: column;
+    width: min(500px, calc(100vw - 32px));
+  }
+  .agent-shot-card img {
+    display: block;
+    width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    background: var(--bg-surface);
+  }
+  .agent-shot-card-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .agent-shot-card-caption {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-default);
+  }
+  .agent-shot-card-position {
+    flex: none;
+    color: var(--fg-subtle);
+    font-variant-numeric: tabular-nums;
+  }
+}
+@layer extensions {
+  /* Attachments open in the viewer (D158). */
+  .agent-card.is-openable {
+    cursor: pointer;
+  }
+  .agent-card.is-openable:hover {
+    border-color: var(--border-strong);
+  }
+  .agent-card.is-openable:focus-visible {
+    outline: 2px solid var(--focus-ring, var(--accent));
+    outline-offset: 1px;
+  }
+  /* A pasted text or a file in the viewer: a readable page, not a screenshot. */
+  .agent-viewer-text {
+    flex: 0 1 900px;
+    min-width: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-2);
+    overflow: hidden;
+  }
+  .agent-viewer-text[hidden],
+  .agent-viewer-image[hidden] {
+    display: none;
+  }
+  .agent-viewer-text-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-viewer-text-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-default);
+  }
+  .agent-viewer-text-detail {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .agent-viewer-text-body {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: auto;
+  }
+}
+
+@layer extensions {
+  /* A reply shown as plain text when its Markdown couldn't render (D163). */
+  .agent-plain {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* An external agent that isn't installed yet (D190): above the message box. */
+  .agent-missing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    font-size: var(--text-sm);
+  }
+  .agent-missing-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-muted);
+  }
+  .agent-missing-text strong {
+    color: var(--fg-default);
+  }
+}
+
+/* Agent edits under review in the editor (D199): a bar in the margin's right lane. */
+@layer extensions {
+  .monaco-editor .agent-review-glyph::before {
+    content: "";
+    display: block;
+    width: 3px;
+    height: 100%;
+    margin-left: auto;
+    background: var(--accent);
+  }
+  .monaco-editor .agent-review-glyph.is-deleted::before {
+    height: 3px;
+    width: 10px;
+    background: var(--status-danger-fg);
+  }
+}
+
+@layer extensions {
+  /* A background command's live output (D286): its command and status, then what it printed. */
+  .agent-procout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .agent-procout-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-procout-head .agent-dot {
+    background: var(--fg-subtle);
+  }
+  .agent-procout-head .agent-dot.is-running {
+    background: var(--status-success-fg);
+  }
+  .agent-procout-head .agent-dot.is-failed {
+    background: var(--status-danger-fg);
+  }
+  .agent-procout-head > :not(.agent-procout-cmd) {
+    flex: none;
+  }
+  .agent-procout-cmd {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    color: var(--fg-default);
+  }
+  .agent-procout-status,
+  .agent-procout-gone {
+    color: var(--fg-muted);
+  }
+  .agent-procout-spacer {
+    flex: 1;
+  }
+  .agent-procout-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-3) var(--space-5);
+  }
+  .agent-procout-text {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+  }
+  /* "View output" under a step that left a command running (D286). */
+  .agent-step-output {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-2) var(--space-5);
+    font-size: var(--text-sm);
+  }
+  .agent-step-output .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+}

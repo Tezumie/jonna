@@ -1,0 +1,8 @@
+{
+  "name": "Hello",
+  "scopeName": "source.hello",
+  "patterns": [
+    { "match": "\\b(hello|bye)\\b", "name": "keyword.control.hello" },
+    { "match": "#.*$", "name": "comment.line.number-sign.hello" }
+  ]
+}

@@ -1,0 +1,79 @@
+// D226: real mouse input in the explorer (xdotool under xvfb; Linux only, where the runner has
+// it). Ctrl+click and Shift+click add to the selection, and a right-click on a file's or a compact
+// folder segment's name opens that item's menu, not the root's: the tree's own mousedown
+// re-renders the row, so handlers that judged by the (now detached) target got it wrong. Split
+// from explorer-m7-7, whose other steps run everywhere.
+{
+  "name": "explorer-mouse-m7-7",
+  "platforms": ["linux"],
+  "requires": ["xdotool"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1200, "height": 800 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p deep/one/two && echo x > deep/one/two/f.txt && echo ok",
+        "timeoutMs": 10000
+      },
+      "timeoutMs": 20000
+    },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "explorer.refresh" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row[data-path$='notes.txt'] .explorer-name" },
+      "expect": [{ "box": { "$exists": true } }],
+      "save": "notes"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row[data-path$='README.md'] .explorer-name" },
+      "save": "readme"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-segment[data-segment$='one']" },
+      "save": "one"
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "xdotool mousemove ${notes.0.box.0} ${notes.0.box.1} mousemove_relative 6 8 click 1; sleep 0.8; xdotool mousemove ${readme.0.box.0} ${readme.0.box.1} mousemove_relative 6 8 keydown ctrl click 1 keyup ctrl; sleep 0.8; echo done",
+        "timeoutMs": 15000
+      },
+      "timeoutMs": 25000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row.is-selected", "limit": 10 },
+      "expect": { "$length": 2 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "xdotool mousemove ${readme.0.box.0} ${readme.0.box.1} mousemove_relative 6 8 click 1; sleep 0.6; xdotool click 3; sleep 0.8; echo done",
+        "timeoutMs": 15000
+      },
+      "timeoutMs": 25000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[role=menu]", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Open to the side" } }]
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "xdotool key Escape; sleep 0.3; xdotool mousemove ${one.0.box.0} ${one.0.box.1} mousemove_relative 4 6 click 3; sleep 0.8; echo done",
+        "timeoutMs": 15000
+      },
+      "timeoutMs": 25000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[role=menu]", "html": 3000 },
+      "expect": [{ "html": { "$contains": "New file" } }]
+    }
+  ]
+}

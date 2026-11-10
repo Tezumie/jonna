@@ -1,0 +1,141 @@
+// D172: Edit with AI on Ctrl+K (like Cursor), reviewed change by change (hunks); Ctrl+K chords
+// still work (Ctrl+K Ctrl+S closes the untouched prompt and opens the shortcuts).
+{
+  "name": "editor-ai-m6-73",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 900 } },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "README.md" } },
+      "timeoutMs": 10000
+    },
+    { "wait": 800 },
+    // Off by default: Ctrl+K in the editor is only a chord prefix.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".monaco-editor textarea", "key": "k", "code": "KeyK", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".monaco-editor textarea", "key": "Escape", "code": "Escape" }
+    },
+    { "run": "settings.set", "input": { "key": "editor.inlineEdit.enabled", "value": true } },
+    // On: Ctrl+K opens the prompt at once…
+    {
+      "run": "dev.type",
+      "input": { "selector": ".monaco-editor textarea", "key": "k", "code": "KeyK", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit-input" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // …and Ctrl+K Ctrl+S still opens the keyboard shortcuts (the untouched prompt goes away).
+    {
+      "run": "dev.type",
+      "input": { "selector": ".inline-edit-input", "key": "s", "code": "KeyS", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "groups": { "$contains": "Keyboard shortcuts" } },
+      "timeoutMs": 3000
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "wait": 500 },
+    // Two changes: each reviewed on its own.
+    {
+      "run": "editor.inlineEdit",
+      "input": { "instruction": "two changes", "startLine": 1, "endLine": 3 },
+      "expect": {
+        "phase": "review",
+        "hunks": [
+          { "state": "pending", "added": 1, "removed": 1 },
+          { "state": "pending", "added": 1, "removed": 0 }
+        ]
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit-hunk" },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Reject the first (its old line comes back), keep the second: the edit closes.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".inline-edit-hunk[data-index=\"0\"] .button-ghost" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit-hunk" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "editor.inlineEdit.acceptHunk",
+      "input": {},
+      "expect": { "hunks": [{ "state": "rejected" }, { "state": "accepted" }] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit" },
+      "expect": { "$length": 0 }
+    },
+    // The first change undone ("Sample" is back), the second kept (read from the editor, not its
+    // DOM, which paints a frame later).
+    { "run": "editor.select", "input": { "startLine": 1, "endLine": 1 } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "selectedText": "# Sample workspace" },
+      "timeoutMs": 3000
+    },
+    { "run": "editor.select", "input": { "startLine": 4, "endLine": 4 } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "selectedText": "- added by mock" },
+      "timeoutMs": 3000
+    },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    // A change that isn't the edit's (typing elsewhere) ends the review, keeping the text as it
+    // stands: the edit never writes to lines that moved (D174 audit).
+    {
+      "run": "editor.inlineEdit",
+      "input": { "instruction": "two changes", "startLine": 1, "endLine": 3 },
+      "expect": { "phase": "review" },
+      "timeoutMs": 15000
+    },
+    { "run": "editor.select", "input": { "startLine": 5, "endLine": 5 } },
+    { "run": "editor.insertText", "input": { "text": "typed meanwhile" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".inline-edit" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "editor.inlineEdit.acceptHunk", "expectError": "not available" },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

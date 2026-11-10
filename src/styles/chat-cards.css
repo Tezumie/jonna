@@ -1,0 +1,148 @@
+/* Cards in the chat from the agent's display tools (D171): link / file cards and choices to
+   click. Quiet like code blocks: hairline borders, --bg-surface-raised cards. */
+@layer extensions {
+  .rb {
+    margin: 0 0 12px;
+  }
+  /* Link and file cards */
+  .rb-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .rb-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    width: 100%;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .rb-card:hover {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+  }
+  .rb-card > .icon {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .rb-card-icon {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+  }
+  .rb-card-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .rb-card-title {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rb-card-meta {
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Choices */
+  .rb-choices {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .rb-choices-prompt {
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .rb-choices-hint {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .rb-choices-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .rb-choice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    width: 100%;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color var(--motion-fast),
+      background-color var(--motion-fast),
+      transform var(--motion-fast);
+  }
+  .rb-choice:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+  }
+  .rb-choice:active:not(:disabled) {
+    transform: scale(0.99);
+  }
+  .rb-choice:disabled {
+    cursor: default;
+    color: var(--fg-muted);
+  }
+  .rb-choice-text {
+    flex: 1;
+    min-width: 0;
+  }
+  /* A line on what picking it means (ask_user's descriptions). */
+  .rb-choice-note {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  /* Picked, before Send (several may be). */
+  .rb-choice.is-selected {
+    border-color: var(--border-strong);
+    background: var(--bg-selected);
+  }
+  .rb-choices-send {
+    align-self: flex-start;
+  }
+  .rb-choice > .icon {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .rb-choice.is-chosen:disabled {
+    border-color: var(--border-strong);
+    color: var(--fg-default);
+    opacity: 1;
+  }
+  .rb-choice.is-chosen > .icon {
+    color: var(--status-success-fg);
+  }
+  .rb-choices.is-answered .rb-choice:not(.is-chosen) {
+    opacity: 0.55;
+  }
+}

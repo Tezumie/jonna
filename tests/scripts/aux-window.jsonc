@@ -1,0 +1,43 @@
+// D101: a browser tab moved into a window of its own keeps working (bridge, agent commands,
+// screenshots), and comes back.
+{
+  "name": "aux window",
+  "steps": [
+    {
+      "run": "browser.goLive",
+      "input": { "path": "site/index.html" },
+      "expect": { "connected": true },
+      "timeoutMs": 20000
+    },
+    { "run": "layout.moveToNewWindow", "expect": { "tabId": { "$exists": true } } },
+    { "state": "ide://layout", "expect": { "detached": { "$length": 1 } } },
+    {
+      "run": "browser.text",
+      "input": { "selector": "h1" },
+      "expect": { "text": "Static site" },
+      "timeoutMs": 15000
+    },
+    { "run": "browser.click", "input": { "name": "Break it" } },
+    {
+      "run": "browser.console",
+      "input": { "level": "error" },
+      "expect": { "console": { "$contains": "static boom" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "browser.screenshot",
+      "input": { "inline": true },
+      "expect": { "width": { "$gte": 100 }, "png": { "$exists": true } }
+    },
+    { "run": "layout.returnFromWindow", "expect": { "tabId": { "$exists": true } } },
+    { "state": "ide://layout", "expect": { "detached": { "$length": 0 } } },
+    {
+      "run": "browser.text",
+      "input": { "selector": "h1" },
+      "expect": { "text": "Static site" },
+      "timeoutMs": 15000
+    },
+    { "run": "terminal.create" },
+    { "run": "layout.moveToNewWindow", "expectError": "can't move into its own window" }
+  ]
+}

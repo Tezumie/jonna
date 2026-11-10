@@ -1,0 +1,225 @@
+// D102: a third-party extension (tests/fixtures/extensions/hello) loaded unpacked: permissions,
+// the worker sandbox, commands, settings, storage, a tree view, a webview panel, a language with a
+// grammar; a VS Code color theme (package.json with an include).
+{
+  "name": "extensions",
+  "steps": [
+    // The bundled extensions (D121, D181) are uninstalled first so the list holds only these;
+    // they stay uninstalled (the registry remembers they were seeded).
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "extensions": [
+          { "id": "bundled.canvas", "status": "disabled" },
+          // Git tools (D208) is on from the start, its permissions granted.
+          { "id": "bundled.gittools", "status": "active" },
+          { "id": "bundled.jupyter", "status": "disabled" },
+          { "id": "bundled.todo-tree", "status": "disabled" }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "extensions.uninstall", "input": { "id": "bundled.gittools" } },
+    { "run": "git.lineHistory", "expectError": "Unknown command" },
+    { "run": "extensions.uninstall", "input": { "id": "bundled.todo-tree" } },
+    { "run": "extensions.uninstall", "input": { "id": "bundled.canvas" } },
+    { "run": "extensions.uninstall", "input": { "id": "bundled.jupyter" } },
+    { "state": "ide://extensions", "expect": { "extensions": { "$length": 0 } } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/hello" },
+      "expect": { "id": "acme.hello" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": [{ "id": "acme.hello", "status": "needsPermission" }] }
+    },
+    { "run": "hello.greet", "expectError": "Unknown command" },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": [{ "id": "acme.hello", "status": "active", "running": true }] },
+      "timeoutMs": 10000
+    },
+    // The worker has no network APIs of its own.
+    {
+      "run": "hello.greet",
+      "input": { "name": "Ada" },
+      "expect": { "text": "Hi Ada", "hasFetch": false }
+    },
+    { "run": "hello.setting", "expect": { "greeting": "Hi" } },
+    { "run": "hello.readNotes", "expect": { "text": { "$contains": "hello world" } } },
+    // Not granted: fs.write, network, terminal.
+    { "run": "hello.writeNotes", "expectError": "fs.write" },
+    // The editor API: looking needs fs.read (granted), typing needs fs.write (not granted).
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "hello.stamp", "expectError": "fs.write", "timeoutMs": 5000 },
+    { "run": "editor.insertText", "input": { "text": "typed " }, "expect": { "inserted": 6 } },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    { "run": "hello.fetch", "expectError": "may not connect to example.com" },
+    { "run": "hello.openTerminal", "expectError": "Not permitted" },
+    {
+      "run": "hello.remember",
+      "input": { "value": { "n": 7 } },
+      "expect": { "value": { "n": 7 } }
+    },
+    // Tree view in the sidebar.
+    { "run": "view.show", "input": { "id": "hello.tree" } },
+    // Webview panel: a message to the page and its answer.
+    { "run": "hello.panel.show" },
+    { "run": "hello.ping", "expect": { "sent": true } },
+    { "run": "hello.lastPong", "expect": { "pong": 43 }, "timeoutMs": 15000 },
+    // The contributed language: .hello files use it.
+    { "run": "explorer.newFile", "input": { "name": "greeting.hello" } },
+    { "state": "ide://editors/active", "expect": { "language": "hellolang" }, "timeoutMs": 5000 },
+    // Its language-configuration.json (D200): Ctrl+/ comments with "--".
+    { "run": "editor.insertText", "input": { "text": "hi" } },
+    { "wait": 300 },
+    { "run": "editor.runAction", "input": { "action": "editor.action.commentLine" } },
+    {
+      "run": "editor.getText",
+      "input": { "path": "greeting.hello" },
+      "expect": { "$contains": "-- hi" },
+      "timeoutMs": 4000
+    },
+    // A VS Code color theme.
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscode-theme" },
+      "expect": { "id": "tester.sunset-theme" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "extensions": [
+          { "id": "acme.hello" },
+          // It has a `main`: its code waits until it's allowed; the theme doesn't (D256).
+          {
+            "id": "tester.sunset-theme",
+            "status": "active",
+            "format": "vscode",
+            "codeWaiting": true
+          }
+        ]
+      }
+    },
+    {
+      "run": "ui.selectColorTheme",
+      "input": { "label": "Sunset Dark" },
+      "expect": { "label": "Sunset Dark" }
+    },
+    { "run": "ui.selectColorTheme", "input": { "label": "" }, "expect": { "label": "Dark+" } },
+    // Disable, enable, remove.
+    { "run": "extensions.disable", "input": { "id": "acme.hello" } },
+    { "run": "hello.greet", "expectError": "Unknown command" },
+    { "run": "extensions.enable", "input": { "id": "acme.hello" } },
+    { "run": "hello.greet", "expect": { "text": "Hi there" }, "timeoutMs": 10000 },
+    { "run": "extensions.showDetails", "input": { "id": "acme.hello" } },
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"extension\"" } },
+    // Remove keeps the folder (it can be loaded again); uninstall deletes it.
+    { "run": "extensions.remove", "input": { "id": "acme.hello" }, "expect": { "deleted": false } },
+    { "state": "ide://extensions", "expect": { "extensions": { "$length": 1 } } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/hello" },
+      "expect": { "id": "acme.hello" }
+    },
+    {
+      "run": "extensions.uninstall",
+      "input": { "id": "acme.hello" },
+      "expect": { "deleted": true }
+    },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/hello" },
+      "expectError": "no extension.json"
+    },
+    { "state": "ide://extensions", "expect": { "extensions": { "$length": 1 } } },
+    // A new extension from the template, in the open folder, loaded unpacked.
+    {
+      "run": "extensions.create",
+      "input": { "name": "my-tool", "displayName": "My \"tool\"" },
+      "expect": { "id": "local.my-tool", "files": { "$length": 4 } }
+    },
+    { "run": "myTool.hello", "expect": { "greeted": true }, "timeoutMs": 10000 },
+    { "run": "view.show", "input": { "id": "myTool.items" } },
+    { "run": "extensions.create", "input": { "name": "my-tool" }, "expectError": "already has" },
+    // Inside the open folder, uninstall moves the folder to the IDE's trash.
+    {
+      "run": "extensions.uninstall",
+      "input": { "id": "local.my-tool" },
+      "expect": { "deleted": true }
+    },
+    { "run": "myTool.hello", "expectError": "Unknown command" },
+    // An extension typing into the editor (ide.editor.insert, with fs.write granted).
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/stamper" },
+      "expect": { "id": "acme.stamper" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.stamper", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "stamper.insert",
+      "expect": { "inserted": true, "path": { "$contains": "README.md" } },
+      "timeoutMs": 10000
+    },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    // D110: a folder in .jonna/extensions written by hand shows as not loaded, with what's wrong.
+    { "run": "explorer.newFolder", "input": { "parent": ".jonna/extensions", "name": "demo" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".jonna/extensions/demo", "name": "extension.json" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{ \"id\": \"demo-extension\", \"name\": \"Demo\", \"version\": \"1.0.0\", \"scripts\": [\"main.js\"] }"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "notLoaded": [{ "name": "demo", "error": { "$contains": "displayName" } }]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "explorer.newFolder", "input": { "parent": ".jonna/extensions", "name": "later" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".jonna/extensions/later", "name": "extension.json" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{ \"id\": \"local.later\", \"displayName\": \"Later\", \"version\": \"0.1.0\" }"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "state": "ide://extensions",
+      "expect": { "notLoaded": { "$length": 2 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.loadFromWorkspace",
+      "input": { "folder": ".jonna/extensions/later" },
+      "expect": { "id": "local.later", "status": "active" }
+    },
+    {
+      "run": "extensions.loadFromWorkspace",
+      "input": { "folder": "src" },
+      "expectError": "Only folders under .jonna/extensions"
+    },
+    { "state": "ide://extensions", "expect": { "notLoaded": { "$length": 1 } } }
+  ]
+}

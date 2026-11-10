@@ -1,0 +1,56 @@
+// D282: dropdowns open the IDE's own menu, lined up under the field and at least as wide, the
+// chosen option checked, a search box for long lists; picking changes the setting as the system
+// list did. Bundled themes say "(built in)", one entry per name.
+{
+  "name": "select-menu-m7-33",
+  "steps": [
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 800 } },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "run": "settings.open", "input": { "query": "Color theme" } },
+    { "wait": 1000 },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".setting-row[data-key='workbench.colorTheme'] select option[value='Night Owl']",
+        "html": 200
+      },
+      "expect": [{ "html": { "$contains": "Night Owl (built in)" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".setting-row[data-key='workbench.colorTheme'] select" }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item[aria-checked='true']", "html": 300 },
+      "expect": [{ "html": { "$contains": "Claude Dark (built in)" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-search" },
+      "expect": { "$length": 1 }
+    },
+    // Below the field (or above it), never over it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu, .setting-row[data-key='workbench.colorTheme'] select" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Type to filter, Enter picks: the setting changes.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".menu .menu-search", "text": "Light+", "key": "Enter" }
+    },
+    { "wait": 500 },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.colorTheme\",\"value\":\"Light+\"" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".menu" }, "expect": { "$length": 0 } },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } }
+  ]
+}

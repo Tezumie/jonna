@@ -1,0 +1,192 @@
+// D208: external agents (the mock ACP agent) writing files themselves — the turn's changed files
+// go under review — with Codex-like Guardian reviews folded into the command they reviewed, a
+// PowerShell command shown as typed, usage per turn in the usage log; then with no folder open:
+// the agent runs in the chat's private folder and can't read outside it, and the IDE's own agent
+// still chats (its tools say there's no folder).
+{
+  "name": "acp-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git add -A && git -c user.email=t@example.com -c user.name=T commit -qm init && echo committed",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "committed" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    // ---- A turn that writes files itself: they're found and put under review ----
+    {
+      "run": "agent.send",
+      "input": { "message": "Please, agent writes itself", "wait": true },
+      "expect": { "answer": { "$contains": "Wrote the files myself" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "pending": { "$contains": "made-by-agent.txt" },
+        "items": { "$contains": "Changed files" },
+        "usage": { "tokens": 1200, "limit": 200000 }
+      },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/session", "expect": { "pending": { "$contains": "notes.txt" } } },
+    // The command as typed, tagged PowerShell, with Guardian's verdict folded in.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": { "$contains": "\"title\":\"npm run check\",\"shell\":\"PowerShell\"" }
+      }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": { "$contains": "\"review\":{\"by\":\"Guardian\",\"status\":\"approved\"" }
+      }
+    },
+    // The denied one, whose command never ran: a compact row of its own.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Guardian: denied · high risk" } }
+    },
+    { "run": "agent.openSession" },
+    { "run": "dev.click", "input": { "selector": ".agent-work-header" }, "timeoutMs": 8000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step .agent-tool-tag", "limit": 10 },
+      "expect": { "$contains": "PowerShell" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step .agent-tool-tag", "limit": 10 },
+      "expect": { "$contains": "Guardian: approved · low risk" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step-verb", "limit": 10 },
+      "expect": { "$contains": "Guardian: denied · high risk" },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-step-verb", "limit": 10 },
+      "expect": { "$contains": "npm run check" }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Undo one: the file the agent created goes away, the other change stays under review.
+    {
+      "run": "agent.rejectFile",
+      "input": { "path": "made-by-agent.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "pending": { "$not": { "$contains": "made-by-agent.txt" } }
+      },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/session", "expect": { "pending": { "$contains": "notes.txt" } } },
+    {
+      "run": "agent.rejectFile",
+      "input": { "path": "notes.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git status --porcelain; echo status-done", "timeoutMs": 20000 },
+      "expect": { "output": { "$not": { "$contains": "notes.txt" } } },
+      "timeoutMs": 30000
+    },
+    // ---- Usage: the turn with tokens and its cost, and one that reported none ----
+    {
+      "run": "agent.send",
+      "input": { "message": "Please just answer", "wait": true },
+      "expect": { "answer": { "$contains": "ACP done" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/usage/history",
+      "expect": {
+        "today": { "requests": { "$gte": 2 }, "unreported": { "$gte": 1 } },
+        "byModel": { "$contains": "acp:Mock agent/fast" }
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "state": "ide://agent/usage/history",
+      "expect": { "byModel": { "$contains": "\"cost\":0.05" } }
+    },
+    { "run": "agent.showUsage" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-provider[data-provider='acp:Mock agent']" },
+      "expect": { "$contains": "external agent" },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "layout.closeTab" },
+    // ---- No folder: the chat's private folder; nothing outside it ----
+    { "run": "workspace.closeFolder" },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": {
+            "command": "node",
+            "args": ["../../../../../sample/tools/mock-acp.mjs"]
+          }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please do a scratch check", "wait": true, "noFolder": true },
+      "expect": { "answer": { "$contains": "Scratch: wrote=yes/read=kept/outside=refused" } },
+      "timeoutMs": 30000
+    },
+    // ---- No folder, the IDE's own agent: it chats; a tool that needs a folder says so ----
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please read the sub file", "wait": true, "noFolder": true },
+      "expect": { "answer": { "$contains": "Sub rules" } },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://agent/session", "print": true },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

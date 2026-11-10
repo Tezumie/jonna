@@ -1,0 +1,390 @@
+/* The chat's details panel (D231, view/details.ts): small cards on the right of the conversation
+   — quiet, dense, numbers right-aligned. Beside the chat when the tab is wide; a sheet over the
+   right edge otherwise. Tokens only. */
+@layer extensions {
+  /* The chat tab: the conversation column, and the panel beside it. */
+  .agent-view {
+    flex-direction: row;
+  }
+  .agent-main {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+  .agent-details-toggle[hidden] {
+    display: none;
+  }
+
+  .agent-details {
+    --details-width: 280px;
+    flex: none;
+    box-sizing: border-box;
+    width: var(--details-width);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-4) var(--space-4) var(--space-6);
+    background: var(--bg-surface);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    color: var(--fg-default);
+    outline: none;
+  }
+  .agent-details[hidden] {
+    display: none;
+  }
+  /* Narrow tabs: a sheet over the right edge, under the header. */
+  .agent-details[data-layout="sheet"] {
+    position: absolute;
+    top: var(--space-9);
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-dropdown);
+    width: min(var(--details-width), calc(100% - var(--space-9)));
+    background: var(--bg-overlay);
+    border-left: none;
+    border-top-left-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    animation: agent-details-in var(--motion-base) var(--ease-enter);
+  }
+  @keyframes agent-details-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--space-6));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-details[data-layout="sheet"] {
+      animation: none;
+    }
+  }
+
+  .agent-details-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .agent-details-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: var(--space-2) var(--space-4) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .agent-details-card.is-folded {
+    padding-bottom: var(--space-2);
+  }
+  .agent-details-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    height: var(--size-control-sm);
+    margin: 0 calc(var(--space-2) * -1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-weight: 500;
+    text-align: left;
+  }
+  .agent-details-card-head:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .agent-details-card-title {
+    flex: none;
+  }
+  .agent-details-card-summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-subtle);
+  }
+  .agent-details-card-head > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* The grip that drags a card (D409): shown on the header's hover, as in Claude Code. */
+  .agent-details-grip {
+    flex: none;
+    display: grid;
+    place-items: center;
+    margin-right: calc(var(--space-1) * -1);
+    color: var(--fg-subtle);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+    touch-action: none;
+  }
+  .agent-details-grip > .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-details-card-head:hover .agent-details-grip,
+  .agent-details-card-head:focus-visible .agent-details-grip {
+    opacity: 1;
+  }
+  .agent-details-card.is-dragging {
+    opacity: 0.5;
+  }
+  /* Where the dragged card goes: a line above that card, or below the last. */
+  .agent-details-card.is-drop-before {
+    box-shadow: 0 calc(var(--space-2) * -1) 0 calc(var(--space-2) * -1 + 2px) var(--fg-subtle);
+  }
+  .agent-details-cards.is-drop-end > .agent-details-card:last-child {
+    box-shadow: 0 var(--space-2) 0 calc(var(--space-2) * -1 + 2px) var(--fg-subtle);
+  }
+  .agent-details-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    padding-top: var(--space-2);
+  }
+
+  /* Rows: a leading icon, the text, values on the right. */
+  .agent-details-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+    min-height: var(--size-control-xs);
+    margin: 0 calc(var(--space-2) * -1);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--fg-default);
+    text-align: left;
+  }
+  .agent-details-row.is-action {
+    cursor: pointer;
+  }
+  .agent-details-row.is-action:hover {
+    background: var(--bg-hover);
+  }
+  .agent-details-row.is-plain {
+    gap: var(--space-3);
+  }
+  .agent-details-lead {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    color: var(--fg-muted);
+  }
+  .agent-details-lead > .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-details-lead > .agent-spinner {
+    width: 10px;
+    height: 10px;
+  }
+  .agent-details-label,
+  .agent-details-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-details-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .agent-details-label > .icon {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    color: var(--fg-subtle);
+  }
+  button.agent-details-label {
+    cursor: pointer;
+    text-align: left;
+  }
+  button.agent-details-label:hover {
+    color: var(--accent-text);
+  }
+  .agent-details-label.is-code {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .agent-details-muted {
+    color: var(--fg-muted);
+  }
+  .agent-details-num {
+    flex: none;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-muted);
+  }
+  .agent-details-pct {
+    min-width: 4ch;
+    color: var(--fg-subtle);
+  }
+  .agent-details-stop {
+    width: var(--size-control-xs);
+    height: var(--size-control-xs);
+  }
+  .agent-details-stop > .icon {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Context: "38% used · 12.4k / 200k", a thin stacked bar, a row per part. */
+  .agent-details-context-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+    color: var(--fg-default);
+  }
+  .agent-details-bar {
+    display: flex;
+    gap: 1px;
+    height: 6px;
+    margin: var(--space-2) 0 var(--space-3);
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+  }
+  .agent-details-seg {
+    flex: none;
+    min-width: 2px;
+    height: 100%;
+    background: var(--details-color);
+  }
+  .agent-details-rows {
+    display: flex;
+    flex-direction: column;
+  }
+  .agent-details-row.is-token {
+    gap: var(--space-3);
+  }
+  .agent-details-row.is-sub {
+    padding-left: calc(var(--space-2) + 10px + var(--space-3));
+    color: var(--fg-muted);
+  }
+  .agent-details-swatch {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--radius-xs);
+    background: var(--details-color);
+  }
+  .agent-details-swatch.is-free {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+  /* Deferred tools (D409): not in the window, so dashed and dimmer. */
+  .agent-details-swatch.is-deferred {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--border-default);
+  }
+  .agent-details-row.is-deferred {
+    color: var(--fg-muted);
+  }
+  /* "N until auto-compact" and Compact session (D409). */
+  .agent-details-compact-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+  }
+  .agent-details-compact {
+    margin-left: auto;
+  }
+  .agent-details .is-conversation {
+    --details-color: var(--chart-1);
+  }
+  .agent-details .is-attachments {
+    --details-color: var(--label-6);
+  }
+  .agent-details .is-system {
+    --details-color: var(--chart-4);
+  }
+  .agent-details .is-rules {
+    --details-color: var(--chart-3);
+  }
+  .agent-details .is-skills {
+    --details-color: var(--chart-6);
+  }
+  .agent-details .is-tools {
+    --details-color: var(--chart-2);
+  }
+  .agent-details .is-mcp {
+    --details-color: var(--chart-5);
+  }
+
+  /* Quiet text actions under a card (Summarize now, Review, Keep all, Create PR). */
+  .agent-details-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-5);
+    padding-top: var(--space-3);
+  }
+  .agent-details-link {
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  .agent-details-link:hover {
+    text-decoration: underline;
+  }
+  .agent-details-link[disabled] {
+    color: var(--fg-disabled);
+    cursor: default;
+    text-decoration: none;
+  }
+
+  /* A helper's Review / Merge, under its name. */
+  .agent-details-actions.is-row {
+    padding: 0 0 var(--space-2) calc(var(--size-icon-md) + var(--space-4));
+  }
+
+  /* Plan */
+  .agent-details-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .agent-details-steps > li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+    color: var(--fg-muted);
+  }
+  .agent-details-steps > li > :first-child {
+    flex: none;
+    align-self: center;
+    width: 10px;
+    height: 10px;
+  }
+  .agent-details-steps > li.is-in_progress {
+    color: var(--fg-default);
+  }
+  .agent-details-steps > li.is-done {
+    color: var(--fg-subtle);
+  }
+  .agent-details-dot {
+    display: inline-block;
+    box-sizing: border-box;
+    border-radius: var(--radius-full);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+}

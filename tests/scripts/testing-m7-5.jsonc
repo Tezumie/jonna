@@ -1,0 +1,194 @@
+// D204: Testing at VS Code's level — run with coverage (node:test's lcov: the Test coverage tab,
+// covered / uncovered lines in the margin, tests.coverage), Mocha (its .mocharc spec, a fake mocha
+// printing the JSON reporter) and unittest (listed by its own discovery), expected / actual of a
+// failed assertion in a diff tab, the run history (rerun a past run) and Debug test (a breakpoint
+// in the code a node:test test calls). Fixtures: tests/fixtures/setup/testing-m7-5.cjs.
+{
+  "name": "testing-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/testing-m7-5.cjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "tests.refresh",
+      "expect": { "tests": 6 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "tests.list",
+      "input": { "file": "moch/spec/math.js" },
+      "expect": { "total": 2, "tests": [{ "framework": "mocha", "name": "math › adds" }] }
+    },
+    {
+      "run": "tests.list",
+      "input": { "file": "ut/test_calc.py" },
+      "expect": {
+        "total": 2,
+        "tests": [{ "framework": "unittest", "name": "CalcTests › test_double", "line": 5 }]
+      }
+    },
+
+    // Coverage of a node:test file: the run's report, the tab, the margin. Newer Node (24) leaves
+    // the test file itself out of its lcov: one file or two.
+    {
+      "run": "tests.runWithCoverage",
+      "input": { "file": "cov/lib.test.mjs" },
+      "expect": {
+        "passed": 1,
+        "failed": 1,
+        "commands": [{ "$contains": "--experimental-test-coverage" }],
+        "coverage": {
+          "files": { "$gte": 1 },
+          "leastCovered": [{ "file": "cov/lib.mjs", "uncovered": "3-4, 8-9" }]
+        }
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "tests.coverage",
+      "input": { "file": "cov/lib.mjs" },
+      "expect": { "uncovered": "3-4, 8-9", "partial": [2], "summary": { "$contains": "Lines 5/9" } }
+    },
+    { "run": "tests.showCoverage" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".coverage-view", "html": 4000 },
+      "expect": [{ "html": { "$contains": "lib.mjs" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "editor.openFile", "input": { "path": "cov/lib.mjs" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .coverage-glyph.is-uncovered" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "tests.toggleInlineCoverage",
+      "input": { "on": false },
+      "expect": { "inline": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .coverage-glyph" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "tests.toggleInlineCoverage", "expect": { "inline": true } },
+    { "state": "ide://tests", "expect": { "coverage": { "files": { "$gte": 1 } } } },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // Expected / actual of the failed assertion, in a diff tab.
+    {
+      "state": "ide://tests",
+      "expect": { "failures": [{ "id": "node:cov/lib.test.mjs::greets", "comparable": true }] }
+    },
+    { "run": "tests.compareExpected", "input": { "id": "node:cov/lib.test.mjs::greets" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".diff-toolbar .diff-label", "html": 200 },
+      "expect": [{ "html": { "$contains": "Expected ↔ Actual" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-diff-editor .editor.original .view-lines", "html": 20000 },
+      "expect": [{ "html": { "$contains": "there" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".monaco-diff-editor .editor.modified .view-lines:not(.line-delete)",
+        "html": 20000
+      },
+      "expect": [{ "html": { "$contains": "world" } }],
+      "timeoutMs": 8000
+    },
+
+    // Mocha (the fake prints its JSON reporter): counts, the failure's values.
+    {
+      "run": "tests.run",
+      "input": { "framework": "mocha" },
+      "expect": {
+        "passed": 1,
+        "failed": 1,
+        "commands": [{ "$contains": "npx mocha --reporter json" }],
+        "failures": [{ "name": "math › fails", "expected": "3", "actual": "2" }]
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "tests.run",
+      "input": { "test": "mocha:moch/spec/math.js::math › adds" },
+      "expect": { "passed": 1, "failed": 0, "commands": [{ "$contains": "--grep '^math adds$'" }] },
+      "timeoutMs": 60000
+    },
+
+    // unittest: -v output read back, the failure's values.
+    {
+      "run": "tests.run",
+      "input": { "framework": "unittest" },
+      "expect": {
+        "passed": 1,
+        "failed": 1,
+        "failures": [{ "name": "CalcTests › test_wrong", "expected": "5", "actual": "6" }]
+      },
+      "timeoutMs": 60000
+    },
+
+    // History: the runs so far, newest first; a past run runs again.
+    {
+      "run": "tests.history",
+      "expect": {
+        "runs": [
+          { "run": 4, "ran": "unittest tests" },
+          { "run": 3 },
+          { "run": 2, "ran": "Mocha tests" },
+          { "run": 1, "ran": "cov/lib.test.mjs", "coverage": true }
+        ]
+      }
+    },
+    {
+      "run": "tests.history",
+      "input": { "test": "node:cov/lib.test.mjs::adds" },
+      "expect": { "runs": [{ "run": 1, "status": "passed" }] }
+    },
+    {
+      "run": "tests.rerunFromHistory",
+      "input": { "run": 2 },
+      "expect": { "run": 5, "passed": 1, "failed": 1 },
+      "timeoutMs": 60000
+    },
+    { "run": "tests.showResults" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-results-view", "html": 6000 },
+      "expect": [{ "html": { "$contains": "Mocha tests" } }],
+      "timeoutMs": 5000
+    },
+
+    // Debug test: a breakpoint in the code the test calls stops it.
+    { "run": "debug.setBreakpoint", "input": { "path": "cov/lib.mjs", "line": 5 } },
+    {
+      "run": "tests.debug",
+      "input": { "test": "node:cov/lib.test.mjs::adds" },
+      "expect": {
+        "configuration": { "type": "node", "runtimeArgs": ["--test-name-pattern=^adds$"] }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "name": "add", "line": 5 }] },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.stop" },
+    { "run": "tests.debug", "input": { "test": "nothing" }, "expectError": "No test" },
+    { "run": "tests.clearCoverage", "expect": { "cleared": true } },
+    { "state": "ide://tests", "expect": { "coverage": null } }
+  ]
+}

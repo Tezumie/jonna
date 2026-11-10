@@ -1,0 +1,38 @@
+// History: workspace undo/redo of explorer operations and replace all (app trash, local-history
+// snapshots), and a file's local history.
+{
+  "name": "history",
+  "steps": [
+    { "run": "explorer.newFile", "input": { "name": "h.txt" } },
+    {
+      "run": "explorer.rename",
+      "input": { "path": "h.txt", "newName": "h2.txt" },
+      "expect": { "renamed": { "$contains": "h2.txt" } }
+    },
+    { "run": "workspace.undo", "expect": { "done": { "$contains": "Rename" } } },
+    { "state": "ide://history", "expect": { "redo": { "$contains": "Rename h.txt to h2.txt" } } },
+    { "run": "workspace.redo", "expect": { "done": { "$contains": "Rename" } } },
+    { "run": "explorer.delete", "input": { "path": "h2.txt" } },
+    { "run": "workspace.undo", "expect": { "done": { "$contains": "Delete h2.txt" } } },
+    {
+      "run": "editor.openFile",
+      "input": { "path": "h2.txt" },
+      "expect": { "path": { "$exists": true } }
+    },
+
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "matches": { "$gte": 2 } } },
+    {
+      "run": "search.replace",
+      "input": { "query": "hello", "replacement": "howdy" },
+      "expect": { "files": { "$gte": 1 } }
+    },
+    {
+      "run": "history.list",
+      "input": { "path": "README.md" },
+      "expect": { "versions": { "$contains": "before replace" } }
+    },
+    { "run": "workspace.undo", "expect": { "done": { "$contains": "Replace" } } },
+    { "run": "search.run", "input": { "query": "howdy" }, "expect": { "matches": 0 } },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "matches": { "$gte": 2 } } }
+  ]
+}

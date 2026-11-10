@@ -1,0 +1,28 @@
+// D207, split from gaps10-m7-6: a zsh command's record ends before PROMPT_EOL_MARK (no stray
+// %). Needs `zsh`: Linux and macOS (Windows has none; Git for Windows doesn't ship it).
+{
+  "name": "gaps10-zsh-m7-6",
+  "requires": ["zsh"],
+  "platforms": ["linux", "darwin"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "zsh" },
+      "expect": { "profile": "zsh" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf abc; false", "timeoutMs": 20000 },
+      "expect": { "exitCode": 1, "output": "abc" },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo second", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": "second" },
+      "timeoutMs": 30000
+    }
+  ]
+}

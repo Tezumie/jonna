@@ -1,0 +1,109 @@
+// The m7.6 editor audit: a save doesn't overwrite a change on disk it hasn't seen (Keep my changes
+// then does); an auto save leaves the cursor's line untrimmed; Save with encoding converts a
+// UTF-8 file (its old bytes aren't taken for an outside change).
+{
+  "name": "editor-audit-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'one\\n' > conflict.txt && printf 'a  \\nb\\n' > trim.txt && printf 'caf\\xc3\\xa9\\n' > latin.txt && echo READY",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "READY" } },
+      "timeoutMs": 20000
+    },
+    // ---- A change on disk while edited: the save refuses, Keep my changes then saves ----
+    { "run": "editor.openFile", "input": { "path": "conflict.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "conflict.txt", "dirty": false },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1 }
+    },
+    { "run": "editor.insertText", "input": { "text": "mine " } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'theirs\\n' > conflict.txt && echo WROTE", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "WROTE" } },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.save", "expectError": "changed on disk" },
+    {
+      "state": "ide://editors/active",
+      "expect": { "diskState": "changed", "dirty": true },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat conflict.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "theirs" } },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.keepLocalChanges", "input": { "path": "conflict.txt" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat conflict.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "mine one" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "diskState": "ok", "dirty": false },
+      "timeoutMs": 3000
+    },
+    // ---- Auto save with trimming: the line being typed on keeps its space ----
+    { "run": "settings.set", "input": { "key": "files.trimTrailingWhitespace", "value": true } },
+    { "run": "settings.set", "input": { "key": "files.autoSaveDelay", "value": 200 } },
+    { "run": "settings.set", "input": { "key": "files.autoSave", "value": "afterDelay" } },
+    { "run": "editor.openFile", "input": { "path": "trim.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "trim.txt" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 2, "startColumn": 2, "endLine": 2, "endColumn": 2 }
+    },
+    { "run": "editor.insertText", "input": { "text": " " } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "dirty": false },
+      "timeoutMs": 5000
+    },
+    // Line 1 (no cursor) was trimmed, line 2 (the cursor's) kept "b ".
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat -A trim.txt | tr '\\n' '|'", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "a$|b $|" } },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "files.autoSave", "value": "off" } },
+    { "run": "settings.set", "input": { "key": "files.trimTrailingWhitespace", "value": false } },
+    // ---- Save with encoding: UTF-8 → Windows-1252 ----
+    { "run": "editor.openFile", "input": { "path": "latin.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "latin.txt", "encoding": "utf8" },
+      "timeoutMs": 8000
+    },
+    { "run": "editor.saveWithEncoding", "input": { "encoding": "windows-1252" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "od -An -tx1 latin.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "63 61 66 e9 0a" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "encoding": "windows-1252", "diskState": "ok" },
+      "timeoutMs": 3000
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+// D356: output styles, as Claude Code's. The mock reports which style the system prompt carries
+// (pkgR: "pkgr style report"). Default first; Explanatory set by the command; Learning by
+// /output-style in the same chat (its prompt is rebuilt); a trusted folder's own style file in
+// .claude/output-styles (no keep-coding-instructions: the IDE's coding guidance gives way); the
+// chat's details show the style; a style whose file is gone falls back to Default.
+{
+  "name": "agent-output-style-m7-98",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // The full prompt, whose "How to work" a custom style replaces.
+    { "run": "settings.set", "input": { "key": "agent.smallModelProfile", "value": "off" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr style report" },
+      "expect": { "answer": "PkgR style: default, coding=true." }
+    },
+    { "state": "ide://agent/outputStyles", "expect": { "current": "Default", "missing": false } },
+
+    // ---- A built-in, by the command ----
+    {
+      "run": "agent.setOutputStyle",
+      "input": { "style": "Explanatory" },
+      "expect": { "style": "Explanatory", "changed": true }
+    },
+    { "state": "ide://agent/outputStyles", "expect": { "current": "Explanatory" } },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr style report" },
+      "expect": { "answer": "PkgR style: explanatory, coding=true." }
+    },
+    // The chat's details say which.
+    { "run": "agent.toggleDetails", "input": { "session": "${chat.session}", "show": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details", "limit": 1, "html": 6000 },
+      "expect": [{ "html": { "$contains": "Explanatory style" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // ---- /output-style in the chat: acts instead of sending ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "/output-style learning" },
+      "expect": { "outputStyle": { "style": "Learning" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr style report" },
+      "expect": { "answer": "PkgR style: learning, coding=true." }
+    },
+
+    // ---- The folder's own style ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/pkgr-style.mjs", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "agent.setOutputStyle",
+      "input": { "style": "pirate" },
+      "expect": { "style": "Pirate", "changed": true }
+    },
+    {
+      "state": "ide://agent/outputStyles",
+      "expect": {
+        "current": "Pirate",
+        "styles": { "$contains": "pkgr-pirate.md" }
+      },
+      "print": true
+    },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr style report" },
+      "expect": { "answer": "PkgR style: pirate, coding=false." }
+    },
+    // A name that isn't a style is refused.
+    {
+      "run": "agent.setOutputStyle",
+      "input": { "style": "no-such-style" },
+      "expectError": "No output style named"
+    },
+    // The file is gone: Default, and the state says so.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm .claude/output-styles/pkgr-pirate.md", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://agent/outputStyles",
+      "expect": { "current": "Default", "missing": true }
+    },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr style report" },
+      "expect": { "answer": "PkgR style: default, coding=true." }
+    },
+    { "run": "settings.set", "input": { "key": "agent.outputStyle", "value": "default" } }
+  ]
+}

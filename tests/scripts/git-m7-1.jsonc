@@ -1,0 +1,77 @@
+// D200: sign-off on commit, stage selected lines, change bars against the merge base, autofetch
+// settings. Needs `git` on PATH.
+{
+  "name": "git-m7-1",
+  "steps": [
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && printf 'one\\ntwo\\nthree\\nfour\\nfive\\n' > lines.txt && git add -A",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    // git.alwaysSignOff adds the trailer.
+    { "run": "settings.set", "input": { "key": "git.alwaysSignOff", "value": true } },
+    {
+      "run": "git.commit",
+      "input": { "message": "Base" },
+      "expect": { "commit": { "$exists": true } }
+    },
+    { "run": "settings.set", "input": { "key": "git.alwaysSignOff", "value": false } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git log -1 --format=%B", "timeoutMs": 20000 },
+      "expect": {
+        "exitCode": 0,
+        "output": { "$contains": "Signed-off-by: Test <test@example.com>" }
+      },
+      "timeoutMs": 30000
+    },
+    // Stage selected lines: of two changed lines only the selected one is staged.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git checkout -q -b feature && printf 'one\\nTWO\\nthree\\nFOUR\\nfive\\n' > lines.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "lines.txt" } },
+    {
+      "run": "git.stageSelectedRanges",
+      "input": { "path": "lines.txt", "from": 2, "to": 2 },
+      "expect": { "staged": { "$length": 1 } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git diff --cached --stat && git diff --cached | grep -c '^+[A-Z]'",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "1 insertion" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "git.commit",
+      "input": { "message": "Two" },
+      "expect": { "commit": { "$exists": true } }
+    },
+    // Change bars against the merge base with main: line 2 (committed on this branch) counts too.
+    { "run": "settings.set", "input": { "key": "git.quickDiffBase", "value": "mergeBase" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .quick-diff-modified", "limit": 5 },
+      "expect": [{ "tag": "div" }, { "tag": "div" }],
+      "timeoutMs": 8000
+    },
+    { "run": "settings.set", "input": { "key": "git.quickDiffBase", "value": "index" } },
+    // Autofetch's settings are in the schema.
+    { "run": "settings.set", "input": { "key": "git.autofetch", "value": true } },
+    { "run": "settings.set", "input": { "key": "git.autofetchPeriod", "value": 60 } },
+    { "run": "settings.set", "input": { "key": "git.autofetch", "value": false } }
+  ]
+}

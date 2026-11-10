@@ -1,0 +1,72 @@
+{
+  "id": "builtin.dev",
+  "version": "0.2.0",
+  "displayName": "Developer tools",
+  "description": "Dev-build-only commands: state tree dump, DOM inspection, leak counter, the iframe-layer test view.",
+  "activation": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "dev.dumpState",
+        "title": "Dump state tree",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.inspectDom",
+        "title": "Inspect DOM",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.type",
+        "title": "Type into element",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.setValue",
+        "title": "Set a field's value",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.elementsAt",
+        "title": "Elements at a point",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.scroll",
+        "title": "Scroll an element",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.click",
+        "title": "Click element",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.liveDisposables",
+        "title": "Show live disposables count",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.notify",
+        "title": "Show a test notification",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.openIframeTest",
+        "title": "Open iframe test view",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.reload",
+        "title": "Reload window",
+        "category": "Developer"
+      },
+      {
+        "id": "dev.checkLayoutOverflow",
+        "title": "Check layout overflow (80 tabs, 640\u00d7480)",
+        "category": "Developer"
+      }
+    ],
+    "keybindings": []
+  }
+}

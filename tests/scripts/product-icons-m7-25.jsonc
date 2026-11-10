@@ -1,0 +1,58 @@
+// D267: a product icon theme from an extension (made by tests/fixtures/setup/product-icons.cjs,
+// its font Windows' Segoe MDL2 Assets): picked, the activity bar's Explorer and Search icons are
+// drawn as the theme's glyphs; Default brings the IDE's own icons back.
+{
+  "name": "product-icons-m7-25",
+  "platforms": ["win32"],
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/product-icons.cjs ../producticons", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "made" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../producticons" },
+      "expect": { "id": "acme.product-icons" }
+    },
+    {
+      "run": "ui.selectProductIconTheme",
+      "input": { "id": "acme-glyphs" },
+      "expect": { "id": "acme-glyphs" },
+      "timeoutMs": 10000
+    },
+    { "wait": 1000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "svg.icon-glyph.icon-files", "limit": 2, "html": 300 },
+      "expect": { "$contains": "product-icons-acme-glyphs-mdl2" },
+      "print": true,
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "svg.icon-glyph.icon-search", "limit": 1, "html": 100 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "print": true },
+    {
+      "run": "ui.selectProductIconTheme",
+      "input": { "id": "Default" },
+      "expect": { "id": "Default" }
+    },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "svg.icon-glyph", "limit": 1 },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "svg.icon-files use", "limit": 1 },
+      "expect": { "$length": 1 }
+    }
+  ]
+}

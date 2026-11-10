@@ -1,0 +1,56 @@
+// D410: a chat the main agent answered and then another agent (switched in) answered names both
+// replies, not only the second.
+{
+  "name": "chat-two-agents-m7-120",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\nname: scout\nlabel: Scout\ndescription: Finds things.\n---\n\nFind it.\n' > .vscode/agents/scout.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "\"custom:scout\"" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "just answer", "wait": true },
+      "timeoutMs": 60000
+    },
+    // One agent so far: no name on its reply.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-speaker" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "agent.setChatAgent", "input": { "agent": "scout" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "just answer", "wait": true },
+      "timeoutMs": 60000
+    },
+    // Two agents: both replies are named.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-speaker .agent-speaker-name", "limit": 4, "html": 200 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

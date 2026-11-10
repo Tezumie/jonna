@@ -1,0 +1,521 @@
+{
+  "id": "builtin.terminal",
+  "version": "0.2.0",
+  "displayName": "Terminal",
+  "description": "Integrated terminal tabs: the user's shell in a pty, rendered by xterm.js.",
+  "activation": ["*"],
+  "permissions": ["shell", "terminal"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "terminal.create",
+        "title": "New terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.toggle",
+        "title": "Toggle terminal",
+        "category": "View"
+      },
+      {
+        "id": "terminal.focus",
+        "title": "Focus terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.sendText",
+        "title": "Send text to terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.kill",
+        "title": "Kill terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.rename",
+        "title": "Rename terminal…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.split",
+        "title": "Split terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.splitToNewGroup",
+        "title": "Split terminal into a new group",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.unsplit",
+        "title": "Unsplit terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.join",
+        "title": "Join terminals…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.hide",
+        "title": "Hide terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.showHidden",
+        "title": "Show hidden terminal…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.focusNextPane",
+        "title": "Focus next terminal in group",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.focusPreviousPane",
+        "title": "Focus previous terminal in group",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.runCommand",
+        "title": "Run command in terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.commands",
+        "title": "List terminal commands",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.clear",
+        "title": "Clear terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.setColor",
+        "title": "Change terminal color…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.setIcon",
+        "title": "Change terminal icon…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.start",
+        "title": "Start in terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.servers",
+        "title": "Running servers",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.copySelection",
+        "title": "Copy",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.paste",
+        "title": "Paste",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.selectAll",
+        "title": "Select all",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.fixWithAgent",
+        "title": "Fix with agent",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.copyLastCommand",
+        "title": "Copy last command",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.copyLastOutput",
+        "title": "Copy last command output",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.scrollToPreviousCommand",
+        "title": "Scroll to previous command",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.scrollToNextCommand",
+        "title": "Scroll to next command",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.runRecentCommand",
+        "title": "Run recent command…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.newWithProfile",
+        "title": "New terminal with profile…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.selectDefaultProfile",
+        "title": "Select default profile…",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.configureSettings",
+        "title": "Configure terminal settings",
+        "category": "Terminal"
+      },
+      {
+        "id": "terminal.triggerSuggest",
+        "title": "Show suggestions",
+        "category": "Terminal"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+`",
+        "command": "terminal.toggle"
+      },
+      {
+        "key": "ctrl+shift+`",
+        "command": "terminal.create"
+      },
+      {
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "command": "terminal.find",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "ctrl+shift+5",
+        "mac": "cmd+\\",
+        "command": "terminal.split",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "alt+right",
+        "mac": "alt+cmd+right",
+        "command": "terminal.focusNextPane",
+        "when": "terminalFocus && terminalSplitPaneActive"
+      },
+      {
+        "key": "alt+down",
+        "mac": "alt+cmd+down",
+        "command": "terminal.focusNextPane",
+        "when": "terminalFocus && terminalSplitPaneActive"
+      },
+      {
+        "key": "alt+left",
+        "mac": "alt+cmd+left",
+        "command": "terminal.focusPreviousPane",
+        "when": "terminalFocus && terminalSplitPaneActive"
+      },
+      {
+        "key": "alt+up",
+        "mac": "alt+cmd+up",
+        "command": "terminal.focusPreviousPane",
+        "when": "terminalFocus && terminalSplitPaneActive"
+      },
+      {
+        "key": "ctrl+up",
+        "mac": "cmd+up",
+        "command": "terminal.scrollToPreviousCommand",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "ctrl+down",
+        "mac": "cmd+down",
+        "command": "terminal.scrollToNextCommand",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "ctrl+alt+r",
+        "command": "terminal.runRecentCommand",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "ctrl+space",
+        "command": "terminal.triggerSuggest",
+        "when": "terminalFocus"
+      },
+      {
+        "key": "tab",
+        "command": "terminal.acceptSuggestion",
+        "when": "terminalFocus && terminalSuggestWidgetVisible"
+      },
+      {
+        "key": "enter",
+        "command": "terminal.acceptSuggestion",
+        "when": "terminalFocus && terminalSuggestWidgetVisible && terminalSuggestNavigated"
+      },
+      {
+        "key": "escape",
+        "command": "terminal.hideSuggestWidget",
+        "when": "terminalFocus && terminalSuggestWidgetVisible"
+      },
+      {
+        "key": "down",
+        "command": "terminal.selectNextSuggestion",
+        "when": "terminalFocus && terminalSuggestWidgetVisible"
+      },
+      {
+        "key": "up",
+        "command": "terminal.selectPreviousSuggestion",
+        "when": "terminalFocus && terminalSuggestWidgetVisible"
+      }
+    ],
+    "settings": {
+      "terminal.fixWithAgent": {
+        "type": "boolean",
+        "default": true,
+        "description": "Offer \"Fix with agent\" on a failed command: a small button when hovering its line, and in its dot's menu."
+      },
+      "terminal.bell": {
+        "type": "string",
+        "enum": ["none", "visual", "sound"],
+        "enumDescriptions": [
+          "Ignore BEL",
+          "Flash the terminal tab",
+          "A short, quiet tone from the IDE"
+        ],
+        "default": "none",
+        "description": "What happens when a program rings the bell (\\a).",
+        "order": 1
+      },
+      "terminal.sendKeybindingsToShell": {
+        "type": "boolean",
+        "default": false,
+        "description": "Ctrl+<letter> keys go to the shell even at the prompt, instead of the IDE's shortcuts. While a program runs in the terminal (Claude Code, nano, vim, tmux) they always go to it.",
+        "title": "Send keybindings to shell"
+      },
+      "terminal.scrollbarSize": {
+        "type": "integer",
+        "default": 12,
+        "minimum": 4,
+        "maximum": 30,
+        "description": "Width of the terminal's scrollbar in pixels."
+      },
+      "terminal.fontSize": {
+        "type": "integer",
+        "default": 13,
+        "minimum": 6,
+        "maximum": 72,
+        "description": "Font size in pixels.",
+        "order": 2
+      },
+      "terminal.shellIntegration.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Load shell integration in bash, zsh, fish and PowerShell (command marks in the gutter, command history for agents, the folder in the tab title). Applies to new terminals.",
+        "order": 3
+      },
+      "terminal.highlightCommands": {
+        "type": "boolean",
+        "default": true,
+        "description": "Color the commands you run (program, flags, strings, variables, paths) with the editor theme's colors.",
+        "order": 10
+      },
+      "terminal.notifyAfterSeconds": {
+        "type": "integer",
+        "default": 30,
+        "minimum": 0,
+        "description": "When a command that ran at least this long finishes while the window is in the background, show a notification (0: never). Needs shell integration.",
+        "order": 20
+      },
+      "terminal.fontFamily": {
+        "type": "string",
+        "default": "",
+        "description": "Font family (empty: the editor's monospace font).",
+        "order": 2
+      },
+      "terminal.lineHeight": {
+        "type": "number",
+        "default": 1.25,
+        "minimum": 1,
+        "maximum": 2,
+        "description": "Line height, as a multiple of the font size.",
+        "order": 2
+      },
+      "terminal.cursorStyle": {
+        "type": "string",
+        "enum": ["block", "bar", "underline"],
+        "default": "block",
+        "description": "The cursor's shape.",
+        "order": 4
+      },
+      "terminal.cursorBlinking": {
+        "type": "boolean",
+        "default": true,
+        "description": "Blink the cursor.",
+        "order": 4
+      },
+      "terminal.scrollback": {
+        "type": "integer",
+        "default": 10000,
+        "minimum": 100,
+        "maximum": 100000,
+        "description": "Lines kept above the screen per terminal. Large values use more memory.",
+        "order": 5
+      },
+      "terminal.minimumContrastRatio": {
+        "type": "number",
+        "default": 4.5,
+        "minimum": 1,
+        "maximum": 21,
+        "description": "Text colors are adjusted to at least this contrast with their background, so colored output stays readable (like VS Code's terminal.integrated.minimumContrastRatio). 1: colors exactly as the program sends them; 4.5: readable text (the default); 7: high contrast.",
+        "order": 5.5
+      },
+      "terminal.rightClickBehavior": {
+        "type": "string",
+        "enum": ["menu", "copyPaste"],
+        "enumDescriptions": [
+          "Show the context menu",
+          "Copy the selection, or paste when nothing is selected (Windows Terminal, PuTTY)"
+        ],
+        "default": "menu",
+        "description": "What right-clicking in a terminal does.",
+        "order": 6
+      },
+      "terminal.splitDirection": {
+        "type": "string",
+        "enum": ["auto", "horizontal", "vertical"],
+        "enumDescriptions": [
+          "Follow the tab's shape: side by side in a wide tab, stacked in a tall one",
+          "Side by side",
+          "Stacked, one above the other"
+        ],
+        "default": "auto",
+        "title": "Split direction",
+        "description": "How a split terminal tab lays out its terminals.",
+        "order": 6.5
+      },
+      "terminal.copyOnSelection": {
+        "type": "boolean",
+        "default": false,
+        "description": "Copy text to the clipboard as soon as it's selected.",
+        "order": 6
+      },
+      "terminal.profiles.windows": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Profiles (Windows)",
+        "description": "Terminal profiles on Windows, as in VS Code's terminal.integrated.profiles.windows: { \"name\": { \"path\": \"C:\\\\…\\\\bash.exe\" (or a list, the first that exists), \"source\": \"PowerShell\" | \"Git Bash\", \"args\": [], \"env\": { \"NAME\": \"value\" | null }, \"icon\": \"terminal\", \"color\": \"terminal.ansiGreen\", \"overrideName\": true } }. The shells found on this machine (PowerShell, Windows PowerShell, Git Bash, Command Prompt, WSL distributions) are listed too; null hides one of them, an entry of the same name changes it. A folder's settings may set it once the folder is trusted.",
+        "order": 0.1
+      },
+      "terminal.profiles.osx": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Profiles (macOS)",
+        "description": "Terminal profiles on macOS (VS Code's terminal.integrated.profiles.osx): { \"name\": { \"path\": \"/opt/homebrew/bin/fish\", \"args\": [\"-l\"], \"env\": {}, \"icon\": \"terminal\", \"color\": \"terminal.ansiBlue\" } }. The shells in /etc/shells are listed too; null hides one. A folder's settings may set it once the folder is trusted.",
+        "order": 0.1
+      },
+      "terminal.profiles.linux": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Profiles (Linux)",
+        "description": "Terminal profiles on Linux (VS Code's terminal.integrated.profiles.linux): { \"name\": { \"path\": \"/usr/bin/fish\", \"args\": [\"-l\"], \"env\": {}, \"icon\": \"terminal\", \"color\": \"terminal.ansiBlue\" } }. The shells in /etc/shells are listed too; null hides one. A folder's settings may set it once the folder is trusted.",
+        "order": 0.1
+      },
+      "terminal.defaultProfile.windows": {
+        "type": "string",
+        "default": "",
+        "restricted": true,
+        "title": "Default profile (Windows)",
+        "description": "The profile new terminals start with on Windows, by name (\"Git Bash\", \"Command Prompt\", \"Ubuntu (WSL)\"…). Empty: PowerShell 7 if installed, else Windows PowerShell. Also \"Select default profile\" in the terminal's + ▾ menu.",
+        "order": 0.2
+      },
+      "terminal.defaultProfile.osx": {
+        "type": "string",
+        "default": "",
+        "restricted": true,
+        "title": "Default profile (macOS)",
+        "description": "The profile new terminals start with on macOS, by name (\"zsh\", \"fish\"…). Empty: your login shell.",
+        "order": 0.2
+      },
+      "terminal.defaultProfile.linux": {
+        "type": "string",
+        "default": "",
+        "restricted": true,
+        "title": "Default profile (Linux)",
+        "description": "The profile new terminals start with on Linux, by name (\"bash\", \"zsh\", \"fish\"…). Empty: your login shell.",
+        "order": 0.2
+      },
+      "terminal.automationProfile.windows": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Automation profile (Windows)",
+        "description": "The shell tasks and debug launches run their command lines in on Windows (VS Code's terminal.integrated.automationProfile.windows): { \"path\": \"C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe\", \"args\": [] }, with \"env\" for extra variables. Empty: the default shell. The flags that run one command (-c, -Command, /c) are added. A folder's settings may set it once the folder is trusted.",
+        "order": 0.3
+      },
+      "terminal.automationProfile.osx": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Automation profile (macOS)",
+        "description": "The shell tasks and debug launches run their command lines in on macOS (VS Code's terminal.integrated.automationProfile.osx): { \"path\": \"/bin/zsh\", \"args\": [] }, with \"env\" for extra variables. Empty: the default shell. The flags that run one command (-c, -Command, /c) are added. A folder's settings may set it once the folder is trusted.",
+        "order": 0.3
+      },
+      "terminal.automationProfile.linux": {
+        "type": "object",
+        "default": {},
+        "restricted": true,
+        "title": "Automation profile (Linux)",
+        "description": "The shell tasks and debug launches run their command lines in on Linux (VS Code's terminal.integrated.automationProfile.linux): { \"path\": \"/bin/bash\", \"args\": [] }, with \"env\" for extra variables. Empty: the default shell. The flags that run one command (-c, -Command, /c) are added. A folder's settings may set it once the folder is trusted.",
+        "order": 0.3
+      },
+      "terminal.enablePersistentSessions": {
+        "type": "boolean",
+        "default": true,
+        "title": "Enable persistent sessions",
+        "description": "Bring terminals back after a reload or restart. After Developer: Reload window the processes keep running and the terminals (hidden ones too) take them back with their output. After a restart each terminal's last output comes back dim above a new shell, under a \"Restored session\" line.",
+        "order": 7
+      },
+      "terminal.persistentSessionScrollback": {
+        "type": "integer",
+        "default": 100,
+        "minimum": 0,
+        "maximum": 10000,
+        "title": "Persistent session scrollback",
+        "description": "How many lines of each terminal's output are kept for the next session (0: none).",
+        "order": 7.1
+      },
+      "terminal.suggest.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Suggestions",
+        "description": "Suggest commands while typing at the prompt: programs on PATH, shell builtins, commands run before, files and folders, git subcommands and branches. Tab accepts; Enter accepts after moving with ↑ / ↓; Escape closes; Ctrl+Space opens them. Needs shell integration (bash, zsh, fish, PowerShell). Not an AI feature.",
+        "order": 8
+      },
+      "terminal.gpuAcceleration": {
+        "type": "string",
+        "enum": ["auto", "on", "off"],
+        "enumDescriptions": [
+          "WebGL, and the DOM renderer for the rest of the session once WebGL fails",
+          "Always try WebGL",
+          "The DOM renderer"
+        ],
+        "default": "auto",
+        "title": "GPU acceleration",
+        "description": "Draw terminals with WebGL (faster with lots of output) or the DOM renderer. A lost WebGL context falls back to the DOM renderer at once.",
+        "order": 9
+      },
+      "terminal.multiLinePasteWarning": {
+        "type": "boolean",
+        "default": true,
+        "description": "Ask before pasting several lines into a program that would run each one (when it didn't ask for bracketed paste).",
+        "order": 6
+      }
+    }
+  }
+}

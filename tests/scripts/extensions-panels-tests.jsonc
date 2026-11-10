@@ -1,0 +1,115 @@
+// Extension API: a webview panel made at run time (ide.ui.createWebviewPanel: html, messages both
+// ways, title, a new page, dispose), a test controller in the Testing view (its tests next to the
+// built-in ones, Run and Debug through its run profiles) and provideDebugConfigurations in Add
+// configuration… (tests/fixtures/extensions/apipanels).
+{
+  "name": "extensions-panels-tests",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/apipanels" },
+      "expect": { "id": "acme.apipanels" }
+    },
+
+    // ---- Webview panel ----
+    { "run": "apipanels.open", "expect": { "ok": true }, "timeoutMs": 10000 },
+    {
+      "state": "ide://extensions/providers",
+      "expect": { "webviewPanels": [{ "owner": "acme.apipanels", "title": "Panel one" }] },
+      "timeoutMs": 5000
+    },
+    // The page loaded (its own origin) and said so.
+    {
+      "run": "apipanels.stats",
+      "expect": { "open": true, "messages": { "$contains": "one" } },
+      "timeoutMs": 10000
+    },
+    { "run": "apipanels.post", "input": { "message": "ping" }, "expect": { "ok": true } },
+    {
+      "run": "apipanels.stats",
+      "expect": { "messages": { "$contains": "echo" } },
+      "timeoutMs": 5000
+    },
+    // A new title and new HTML: the tab says so and the new page loads.
+    { "run": "apipanels.retitle", "expect": { "ok": true } },
+    {
+      "run": "apipanels.stats",
+      "expect": { "title": "Panel two", "messages": { "$contains": "two" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://extensions/providers",
+      "expect": { "webviewPanels": [{ "title": "Panel two" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Closed by its code: the tab goes and onDidDispose fires.
+    { "run": "apipanels.close", "expect": { "ok": true } },
+    {
+      "run": "apipanels.stats",
+      "expect": { "open": false, "disposed": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://extensions/providers",
+      "expect": { "webviewPanels": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+
+    // ---- Test controller ----
+    {
+      "state": "ide://tests/extensions",
+      "expect": [
+        {
+          "key": "acme.apipanels/panelsTests",
+          "label": "Panels tests",
+          "items": { "$contains": "breaks on purpose" }
+        }
+      ],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "tests.runExtension",
+      "input": { "controller": "acme.apipanels/panelsTests" },
+      "expect": {
+        "passed": 2,
+        "failed": 1,
+        "failures": [{ "test": "breaks on purpose", "message": { "$contains": "expected 3" } }]
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "tests.runExtension",
+      "input": { "controller": "acme.apipanels/panelsTests", "profile": "debug" },
+      "expect": { "failed": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "apipanels.stats",
+      "expect": { "runs": [{ "kind": "run" }, { "kind": "debug" }] }
+    },
+    { "run": "tests.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-tree", "html": 6000 },
+      "expect": [{ "html": { "$contains": "Panels tests" } }],
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- provideDebugConfigurations ----
+    {
+      "run": "debug.addConfiguration",
+      "input": { "snippet": "Panels: launch" },
+      "expect": { "added": true, "snippet": "Panels: launch" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "debug.listConfigurations",
+      "expect": { "configurations": { "$contains": "Panels: launch" } }
+    },
+
+    { "run": "extensions.remove", "input": { "id": "acme.apipanels" } }
+  ]
+}

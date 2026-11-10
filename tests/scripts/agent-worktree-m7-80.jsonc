@@ -1,0 +1,98 @@
+// D337: the chat itself in a git worktree (enter_worktree / exit_worktree). The mock enters a new
+// worktree (agent/pkgj-wt), writes a file and commits there; the open folder never sees the file,
+// the header shows the branch, ide://agent/chatWorktrees lists it and its changes can be reviewed.
+// Then it leaves with keep: the chat is back in the folder, the branch and worktree stay (deleted
+// at the end). Against tests/fixtures/mock-ollama.mjs (pkgJScripted). Needs git.
+{
+  "name": "agent-worktree-m7-80",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+
+    // ---- In: a new worktree; a file written and committed there ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgj enter a worktree" },
+      "expect": { "answer": "PkgJ worktree: entered=yes branch=yes" },
+      "timeoutMs": 90000
+    },
+    {
+      "state": "ide://agent/chatWorktrees",
+      "expect": { "chats": [{ "branch": "agent/pkgj-wt", "created": true }] },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-worktree-chip:not([hidden])", "limit": 1 },
+      "expect": [{ "html": { "$contains": "agent/pkgj-wt" } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Not here; on the branch, committed.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test ! -e pkgj-wt.txt && git log -1 --format=%s agent/pkgj-wt && git show agent/pkgj-wt:pkgj-wt.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "pkgj-commit" } },
+      "timeoutMs": 30000
+    },
+    // Its changes, through the worktree agents' compare page.
+    {
+      "run": "agent.chatWorktree",
+      "input": { "action": "review" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+
+    // ---- Out: keep ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgj leave the worktree" },
+      "expect": { "answer": "PkgJ left: kept" },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://agent/chatWorktrees", "expect": { "chats": { "$length": 0 } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-worktree-chip:not([hidden])", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git worktree list && test ! -e pkgj-wt.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "agent/pkgj-wt" } },
+      "timeoutMs": 30000
+    },
+    // Clean up: the kept worktree and its branch.
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/pkgj-wt", "action": "delete" },
+      "expect": { "deleted": "agent/pkgj-wt" },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "id": "builtin.remote",
+  "version": "0.1.0",
+  "displayName": "Remote development",
+  "description": "Work on folders on another machine over SSH, or in a dev container: its files, terminals, git, tasks, language servers and the agent's commands run there; its ports are forwarded for the browser preview.",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "remote.connect",
+        "title": "Connect to host…",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.openFolder",
+        "title": "Open folder on the remote…",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.reconnect",
+        "title": "Reconnect to the remote",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.disconnect",
+        "title": "Close remote connection",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.forwardPort",
+        "title": "Forward a port…",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.stopForwarding",
+        "title": "Stop forwarding a port",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.showLog",
+        "title": "Show the remote connection's log",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.menu",
+        "title": "Remote connection menu",
+        "category": "Remote"
+      },
+      {
+        "id": "remote.reopenInContainer",
+        "title": "Reopen in container",
+        "category": "Dev containers"
+      },
+      {
+        "id": "remote.rebuildContainer",
+        "title": "Rebuild container",
+        "category": "Dev containers"
+      },
+      {
+        "id": "remote.reopenLocally",
+        "title": "Reopen folder locally",
+        "category": "Dev containers"
+      },
+      {
+        "id": "remote.attachToContainer",
+        "title": "Attach to running container…",
+        "category": "Dev containers"
+      },
+      {
+        "id": "remote.showContainerLog",
+        "title": "Show the dev containers log",
+        "category": "Dev containers"
+      }
+    ],
+    "settings": {
+      "remote.containers.dockerPath": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The docker program dev containers use (VS Code's dev.containers.dockerPath): empty for docker on PATH, or a path (podman works too)."
+      },
+      "remote.containers.showReopenNotice": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "When a folder with a dev container configuration (.devcontainer/devcontainer.json) opens and Docker is installed, offer to reopen it in its container."
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+// D216: the Models page's provider tiles have no tags and are all one size; the ACP registry's
+// gallery (search and cards) is behind "View more agents"; the model settings are dropdowns in the
+// Settings editor.
+{
+  "name": "setup-m7-6",
+  "steps": [
+    { "run": "agent.showSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-tile .ai-tag" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-gallery-search" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "dev.click", "input": { "selector": ".acp-gallery-toggle" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-gallery-search" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-card[data-agent-id='cursor']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.click", "input": { "selector": ".acp-gallery-toggle" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".acp-gallery-search" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // The settings editor: the commit-message model opens the chat's model picker (D288).
+    { "run": "settings.open", "input": { "query": "@id:git.aiCommitMessage.model" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "#setting-git-aiCommitMessage-model.setting-picker", "html": 400 },
+      "expect": [{ "html": { "$contains": "Same as the chat" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": "#setting-git-aiCommitMessage-model" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker .model-picker-title", "html": 300 },
+      "expect": { "$contains": "Generate commit message" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker-row[data-key='=inherit']" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".model-picker-search", "key": "Escape", "code": "Escape" }
+    }
+  ]
+}

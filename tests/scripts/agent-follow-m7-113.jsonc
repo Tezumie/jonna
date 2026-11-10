@@ -1,0 +1,55 @@
+// D383: Follow the agent. With agent.followEdits off (the default) an edit opens nothing; on, the
+// file the chat edits opens in a preview tab at the change (src/main.ts line 4 in the sample),
+// and focus stays where it was. Against tests/fixtures/mock-ollama.mjs ("break the code").
+{
+  "name": "agent-follow-m7-113",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" }, "timeoutMs": 10000 },
+
+    // ---- Off (the default): the edit happens, the editor stays on notes.txt ----
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "break the code" },
+      "expect": { "pending": { "$length": 1 } },
+      "timeoutMs": 30000
+    },
+    { "wait": 600 },
+    { "state": "ide://editors/active", "expect": { "path": { "$contains": "notes.txt" } } },
+    { "run": "agent.rejectAll", "expect": { "rejected": { "$length": 1 } } },
+
+    // ---- On: the edited file opens at the change ----
+    { "run": "settings.set", "input": { "key": "agent.followEdits", "value": true } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "break the code" },
+      "expect": { "pending": { "$length": 1 } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "main.ts" }, "cursor": { "line": 4 } },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    // Focus stayed out of the editor.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor.focused", "html": 10 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.rejectAll", "expect": { "rejected": { "$length": 1 } } },
+    { "run": "settings.set", "input": { "key": "agent.followEdits", "value": false } }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "sunset-theme",
+  "displayName": "Sunset",
+  "publisher": "tester",
+  "version": "0.2.0",
+  "main": "./out/extension.js",
+  "engines": { "vscode": "^1.80.0" },
+  "contributes": {
+    "themes": [{ "label": "Sunset Dark", "uiTheme": "vs-dark", "path": "./themes/sunset.json" }]
+  }
+}

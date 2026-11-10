@@ -1,0 +1,64 @@
+// D116: breadcrumb/outline symbols for every language VS Code has them for out of the box. A .tsx
+// opened first (no .ts yet) still gets TypeScript's worker; TS outlines leave out imports and
+// anonymous callbacks; CSS, HTML and JSON symbols come from their language services.
+{
+  "name": "features-m6-15",
+  "steps": [
+    { "run": "explorer.newFile", "input": { "parent": "src", "name": "App.tsx" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "App.tsx" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "import { useState } from \"react\";\n\nexport default function App() {\n  const [count, setCount] = useState(0);\n  return <button onClick={() => setCount(count + 1)}>{count}</button>;\n}\n"
+      }
+    },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": {
+        "symbols": [
+          { "name": "App", "kind": "function", "depth": 0 },
+          { "name": "count", "depth": 1 },
+          { "name": "setCount", "depth": 1 }
+        ]
+      },
+      "timeoutMs": 20000
+    },
+    { "state": "ide://editors/active/outline", "expect": { "$not": { "$contains": "useState" } } },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "$not": { "$contains": "<function>" } }
+    },
+    // Go to / Peek definition work in a .tsx without any .ts open.
+    { "run": "editor.gotoLine", "input": { "line": 5, "column": 35 } },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.peekDefinition" },
+      "expect": { "ran": true }
+    },
+    { "run": "editor.openFile", "input": { "path": "site/style.css" } },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "path": { "$contains": "style.css" }, "symbols": [{ "name": "h1", "depth": 0 }] },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "site/index.html" } },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "path": { "$contains": "index.html" }, "symbols": { "$contains": "title" } },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": ".vscode/settings.json" } },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": {
+        "path": { "$contains": "settings.json" },
+        "symbols": [{ "name": "editor.tabSize", "depth": 0 }]
+      },
+      "timeoutMs": 20000
+    }
+  ]
+}

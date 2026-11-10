@@ -1,0 +1,122 @@
+// D134: VS Code tasks (problem matchers, process tasks, env, dependencies, inputs), preview
+// toggle, activity badges, the Manage menu, theme dropdowns in Settings.
+{
+  "name": "features-m6-33",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // $tsc problem matcher: the task's errors land in Problems (the file isn't open).
+    {
+      "run": "tasks.run",
+      "input": { "label": "check" },
+      "expect": { "exitCode": 2, "problems": 1, "output": { "$contains": "TS2345" } }
+    },
+    {
+      "run": "problems.list",
+      "expect": { "$contains": "Argument fake is wrong" },
+      "timeoutMs": 3000
+    },
+    // A process task with its own environment.
+    {
+      "run": "tasks.run",
+      "input": { "label": "env" },
+      "expect": { "exitCode": 0, "output": { "$contains": "env:from-env" } }
+    },
+    // Dependencies one after the other.
+    { "run": "tasks.run", "input": { "label": "chain" }, "expect": { "label": "chain" } },
+    { "state": "ide://tasks", "expect": { "recent": ["env", "say done", "check"] } },
+    {
+      "run": "tasks.list",
+      "expect": {
+        "tasks": { "$contains": "\"label\":\"check\"" },
+        "problemMatchers": { "$contains": "$tsc-watch" }
+      }
+    },
+    // ${input:who}: asked once (the default answers).
+    { "run": "tasks.run", "input": { "label": "greet", "wait": false }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input:not([hidden]) .quick-input-message" },
+      "expect": [{ "html": { "$contains": "Who to greet" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "state": "ide://tasks", "expect": { "recent": { "$contains": "greet" } }, "timeoutMs": 5000 },
+    {
+      "run": "terminal.find",
+      "input": { "query": "greetings world" },
+      "expect": { "count": { "$gte": 1 } },
+      "timeoutMs": 5000
+    },
+
+    // Ctrl+Shift+V: the Markdown file turns into its preview in the same tab, and back.
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "viewer.togglePreview",
+      "expect": { "showing": "preview" }
+    },
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"markdownPreview\"" } },
+    {
+      "state": "ide://layout",
+      "expect": { "$not": { "$contains": "\"viewType\":\"editor\",\"title\":\"README.md\"" } }
+    },
+    { "run": "viewer.togglePreview", "expect": { "showing": "source" } },
+    { "state": "ide://editors/active", "expect": { "path": "README.md" }, "timeoutMs": 5000 },
+    {
+      "state": "ide://layout",
+      "expect": { "$not": { "$contains": "\"viewType\":\"markdownPreview\"" } }
+    },
+
+    // Activity badges: an unsaved file counts on the explorer.
+    { "run": "editor.insertText", "input": { "text": "x" } },
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "badges": { "explorer.view": { "count": 1 } } } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-badge" },
+      "expect": [{ "html": { "$contains": ">1<" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "editor.save" },
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "badges": { "$not": { "$contains": "explorer.view" } } } },
+      "timeoutMs": 3000
+    },
+
+    // The gear: VS Code's Manage menu.
+    { "run": "workbench.showManageMenu" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Layout density"
+          }
+        }
+      ],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".statusbar" } },
+
+    // Settings: color and icon themes are dropdowns of what's installed.
+    { "run": "settings.open", "input": { "query": "workbench.colorTheme" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "#setting-workbench-colorTheme", "html": 20000 },
+      "expect": [{ "tag": "select", "html": { "$contains": "Dracula" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "settings.open", "input": { "query": "workbench.iconTheme" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "#setting-workbench-iconTheme", "html": 2000 },
+      "expect": [{ "tag": "select", "html": { "$contains": "Minimal" } }],
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+// D300: the agent's plan as a card under the conversation's latest message. The whole list goes
+// with the first call, advance: true with the call that starts the next step; the turn's end
+// finishes the step it was on. A plan written before the user's latest message says so.
+{
+  "name": "agent-plan-m7-45",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "d300 plan: look around" },
+      "expect": { "answer": "D300 looked twice." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "plan": [
+          { "text": "Look at the folder", "status": "done" },
+          { "text": "Look again", "status": "done" },
+          { "text": "Report back", "status": "pending" }
+        ]
+      },
+      "print": true
+    },
+    // In the conversation, not over the message box.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plan li", "limit": 5, "html": 200 },
+      "expect": { "$length": 3 },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plan li.is-done", "limit": 5 },
+      "expect": { "$length": 2 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plan-before", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    // The plan's updates aren't counted as work done.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column", "limit": 1, "html": 4000 },
+      "expect": { "$not": { "$contains": "updated the plan" } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // A new message: the unfinished plan is from before it.
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock." }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plan-before", "limit": 1, "html": 100 },
+      "expect": { "$contains": "Plan from before your last message" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

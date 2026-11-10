@@ -1,0 +1,171 @@
+// D233: the extension API's workbench providers (tests/fixtures/extensions/providers): a file
+// system ("memfs:" files open, save and show in the Explorer), a pseudoterminal (output, typed
+// input), a task provider (a custom task in a pseudoterminal), a source control (its section in
+// Source control, accept, a resource opened), an inline debug adapter (launch, evaluate), an
+// authentication provider (sign in, kept by the IDE, sign out) and the extension's secrets.
+{
+  "name": "extensions-m7-12",
+  "steps": [
+    // Tasks and debug sessions run in a trusted folder only.
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/providers" },
+      "expect": { "id": "acme.providers" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.providers", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "providers.setup", "expect": { "ok": true }, "timeoutMs": 10000 },
+    {
+      "state": "ide://extensions/providers",
+      "expect": {
+        "fileSystems": { "$contains": "memfs" },
+        "authentication": { "$contains": "memo-auth" },
+        "debugTypes": { "$contains": "memo-dbg" },
+        "taskTypes": { "$contains": "memo" },
+        "sourceControls": { "$contains": "Memo changes" }
+      },
+      "timeoutMs": 5000
+    },
+
+    // File system: a memfs file opens in the editor, saves through the extension, and the
+    // provider's files show in their Explorer section.
+    {
+      "run": "editor.openFile",
+      "input": { "path": "memfs:/hello.txt" },
+      "expect": { "path": "memfs:/hello.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "html": 2000 },
+      // Monaco may draw the spaces as &nbsp;.
+      "expect": { "$contains": "memfs" },
+      "timeoutMs": 8000
+    },
+    { "run": "editor.insertText", "input": { "text": "Edited. " } },
+    { "run": "editor.save" },
+    {
+      "run": "providers.stats",
+      "expect": { "written": { "$contains": "Edited. Hello from memfs" } },
+      "timeoutMs": 5000
+    },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-file-system=\"memfs\"]", "html": 4000 },
+      "expect": { "$contains": "hello.txt" },
+      "timeoutMs": 8000
+    },
+
+    // A pseudoterminal: its output in a terminal tab, typed text reaching the extension.
+    {
+      "run": "providers.echoTerminal",
+      "expect": { "id": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.readOutput",
+      "expect": { "$contains": "Echo terminal ready" },
+      "timeoutMs": 10000
+    },
+    { "run": "terminal.sendText", "input": { "text": "hi" } },
+    { "run": "providers.stats", "expect": { "echoed": { "$contains": "hi" } }, "timeoutMs": 5000 },
+    {
+      "run": "terminal.readOutput",
+      "expect": { "$contains": "[hi" },
+      "timeoutMs": 5000
+    },
+
+    // A task provider: its custom task is listed and runs in a pseudoterminal.
+    {
+      "run": "tasks.list",
+      "expect": { "$contains": "memo: greet" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "tasks.run",
+      "input": { "label": "memo: greet" },
+      "expect": { "exitCode": 0, "output": { "$contains": "memo task ran (memo)" } },
+      "timeoutMs": 20000
+    },
+    { "run": "providers.stats", "expect": { "taskRuns": 1 } },
+
+    // Source control: a section of the Source control view, its accept button's command, a
+    // resource opened from it.
+    { "run": "view.show", "input": { "id": "scm.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-scm=\"acme.providers/scm1\"]", "html": 4000 },
+      "expect": { "$contains": "Save memo" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-scm=\"acme.providers/scm1\"] .ext-tree-row", "html": 4000 },
+      "expect": { "$contains": "todo.txt" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "extensions.scmAccept",
+      "input": { "key": "acme.providers/scm1", "value": "first memo" },
+      "expect": { "ok": true },
+      "timeoutMs": 10000
+    },
+    { "run": "providers.stats", "expect": { "commits": { "$contains": "first memo" } } },
+    {
+      "run": "extensions.scmOpenResource",
+      "input": { "key": "acme.providers/scm1", "group": "changes", "index": 1 },
+      "expect": { "path": "memfs:/notes/todo.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "todo.txt" } },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // An inline debug adapter: the session starts, stops on entry and evaluates.
+    {
+      "run": "debug.start",
+      "input": { "configuration": { "type": "memo-dbg", "request": "launch", "name": "Memo run" } },
+      "expect": { "name": "Memo run" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "answer", "session": "Memo run" },
+      "expect": { "value": "memo:answer" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "providers.stats",
+      "expect": { "debugRequests": { "$contains": "configurationDone" } }
+    },
+    { "run": "debug.stop", "input": {}, "timeoutMs": 10000 },
+
+    // Authentication: the provider's own extension signs in without a question; the IDE keeps
+    // the session (silent finds it), and signing out removes it.
+    {
+      "run": "providers.signIn",
+      "expect": { "account": "Ann", "kept": "s-read" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.authSignOut",
+      "input": { "providerId": "memo-auth" },
+      "expect": { "signedOut": 1 },
+      "timeoutMs": 10000
+    },
+    // Secrets: stored, read back, deleted.
+    {
+      "run": "providers.secret",
+      "expect": { "value": "s3cret", "after": null },
+      "timeoutMs": 10000
+    }
+  ]
+}

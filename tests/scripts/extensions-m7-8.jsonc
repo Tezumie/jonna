@@ -1,0 +1,171 @@
+// The extension API's other language providers (tests/fixtures/extensions/studio,
+// `studio.languageProviders`): document symbols in the Outline, formatting, definition, a code
+// action (resolved when applied), code lens (clicked: the extension's own command runs), semantic
+// tokens' refresh, rename's prepare step (a refusal), then progress and extension bisect's state.
+{
+  "name": "extensions-m7-8",
+  "steps": [
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/studio" },
+      "expect": { "id": "acme.studio" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.studio", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "run": "studio.languageProviders", "expect": { "ok": true }, "timeoutMs": 10000 },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"languageProviders\":11" } },
+      "timeoutMs": 5000
+    },
+    { "run": "explorer.newFile", "input": { "name": "providers.txt" } },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "# Intro\nstudio here   \n# Usage\na todo item\nstudio again\n" }
+    },
+    // Document symbols: the Outline's state.
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "$contains": "Usage" },
+      "timeoutMs": 8000
+    },
+    // Formatting: trailing spaces go (the extension's edits).
+    { "run": "editor.formatDocument", "expect": { "formatter": { "$exists": true } } },
+    {
+      "run": "editor.getText",
+      "input": { "path": "providers.txt" },
+      "expect": { "text": { "$contains": "studio here\n# Usage" } },
+      "timeoutMs": 5000
+    },
+    // A code action (quick fix, applied as the first one).
+    {
+      "run": "editor.select",
+      "input": { "startLine": 4, "startColumn": 3, "endLine": 4, "endColumn": 3 }
+    },
+    {
+      "run": "editor.runAction",
+      "input": {
+        "action": "editor.action.codeAction",
+        "args": { "kind": "quickfix", "apply": "first" }
+      }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "providers.txt" },
+      "expect": { "text": { "$contains": "a TODO item" } },
+      "timeoutMs": 5000
+    },
+    // The action came without edits: the extension's resolve filled them in when it was applied.
+    { "run": "studio.providerStats", "expect": { "resolved": { "$gte": 1 } } },
+    // Code lens on line 1: clicking it runs the extension's command.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .codelens-decoration", "html": 2000 },
+      "expect": { "$contains": "Studio lens" },
+      "timeoutMs": 8000
+    },
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .codelens-decoration a" } },
+    { "run": "studio.lensClicked", "expect": { "clicks": 2 }, "timeoutMs": 5000 },
+    // Semantic tokens' refresh: the count starts from zero and only the refresh asks again.
+    {
+      "run": "studio.providerStats",
+      "expect": { "tokenRequests": { "$gte": 1 } },
+      "timeoutMs": 8000
+    },
+    { "run": "studio.refreshTokens", "expect": { "ok": true } },
+    {
+      "run": "studio.providerStats",
+      "expect": { "tokenRequests": { "$gte": 1 } },
+      "timeoutMs": 8000
+    },
+    // Definition: "studio" goes to notes.txt; then back.
+    {
+      "run": "editor.select",
+      "input": { "startLine": 2, "startColumn": 2, "endLine": 2, "endColumn": 2 }
+    },
+    { "run": "editor.runAction", "input": { "action": "editor.action.revealDefinition" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "notes.txt" } },
+      "timeoutMs": 5000
+    },
+    { "run": "editor.openFile", "input": { "path": "providers.txt" } },
+    // Rename's prepare step: between "#" and " " there's no word, so the extension refuses before
+    // the rename box opens and its reason shows at the cursor. The box itself (a word) never shows
+    // in a test window without the OS focus (D228): a manual check (docs/manual-test.md, m7.8).
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 2, "endLine": 1, "endColumn": 2 }
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.rename" },
+      "expect": { "ran": true }
+    },
+    {
+      "run": "studio.providerStats",
+      "expect": { "prepared": { "$gte": 1 } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor-overlaymessage", "html": 2000 },
+      "expect": { "$contains": "Studio renames words only." },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // withProgress: a toast with its title and message; Cancel reaches the task's token.
+    { "run": "studio.progress", "expect": { "started": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".notification.is-progress", "html": 2000 },
+      "expect": { "$contains": "first half" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".notification.is-progress .notification-actions button" }
+    },
+    {
+      "run": "studio.progressResult",
+      "expect": { "result": "cancelled" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".notification.is-progress" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // Extension bisect (applied live here: restart false): half of the running ones off;
+    // Stop turns them all back on.
+    { "state": "ide://extensions/bisect", "expect": { "active": false } },
+    {
+      "run": "extensions.startBisect",
+      "input": { "confirm": false, "restart": false },
+      "expect": { "started": true, "round": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://extensions/bisect",
+      "expect": { "active": true, "round": 1, "off": { "$exists": true } }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "extension bisect" } },
+      "timeoutMs": 5000
+    },
+    // (How an answer narrows it is unit-tested, bisect.test.ts: with two extensions here one
+    // answer can already end it.)
+    { "run": "extensions.stopBisect", "expect": { "stopped": true }, "timeoutMs": 15000 },
+    { "state": "ide://extensions/bisect", "expect": { "active": false } },
+    {
+      "state": "ide://extensions?id=acme.studio",
+      "expect": { "extensions": [{ "status": "active" }] },
+      "timeoutMs": 10000
+    }
+  ]
+}

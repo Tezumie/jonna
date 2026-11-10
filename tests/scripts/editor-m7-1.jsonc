@@ -1,0 +1,99 @@
+// D200: pull diagnostics and code actions on save from a language server, files.autoGuessEncoding,
+// the Python interpreter from the folder's venv, the diff view toggles.
+{
+  "name": "editor-m7-1",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# Pull\\nthis line is pulled\\n' > pull.md && printf 'caf\\xe9\\n' > guess.txt && mkdir -p .venv/bin .venv/Scripts && printf '' > .venv/bin/python && printf '' > .venv/Scripts/python.exe && printf 'import os\\n' > app.py",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "mock": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-lsp.mjs"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    // ---- Pull diagnostics: "pulled" is only reported when asked (textDocument/diagnostic) ----
+    { "run": "editor.openFile", "input": { "path": "pull.md" } },
+    {
+      "run": "problems.list",
+      "expect": { "$contains": "Mock pulled: pulled" },
+      "timeoutMs": 15000
+    },
+    // ---- editor.codeActionsOnSave: the server's organize imports runs before the save ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "editor.codeActionsOnSave",
+        "value": { "source.organizeImports": "explicit" }
+      }
+    },
+    { "run": "editor.insertText", "input": { "text": "x" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "head -c 10 pull.md", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "ORGANIZED" } },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "editor.codeActionsOnSave", "value": {} } },
+    // ---- files.autoGuessEncoding: a Windows-1252 file opens editable, as Windows 1252 ----
+    { "run": "settings.set", "input": { "key": "files.autoGuessEncoding", "value": true } },
+    { "run": "editor.openFile", "input": { "path": "guess.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "guess.txt", "encoding": "windows-1252", "wordAtCursor": "café" },
+      "timeoutMs": 5000
+    },
+    { "run": "settings.set", "input": { "key": "files.autoGuessEncoding", "value": false } },
+    // ---- The Python interpreter: the folder's .venv, shown in the status bar ----
+    { "run": "editor.openFile", "input": { "path": "app.py" } },
+    {
+      "state": "ide://lsp",
+      "expect": { "python": { "interpreter": { "$contains": ".venv" } } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-id='python.interpreter']:not([hidden])", "html": 600 },
+      "expect": [{ "html": { "$contains": "Python (.venv)" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "python.selectInterpreter",
+      "input": { "path": "/usr/bin/python3" },
+      "expect": { "interpreter": "/usr/bin/python3" }
+    },
+    {
+      "run": "python.selectInterpreter",
+      "input": { "path": "" },
+      "expect": { "interpreter": { "$contains": ".venv" } }
+    },
+    // ---- Diff view toggles flip their settings ----
+    {
+      "run": "diffEditor.toggleInline",
+      "expect": { "diffEditor.renderSideBySide": false }
+    },
+    {
+      "run": "diffEditor.toggleInline",
+      "expect": { "diffEditor.renderSideBySide": true }
+    },
+    {
+      "run": "diffEditor.toggleCollapseUnchanged",
+      "expect": { "diffEditor.hideUnchangedRegions.enabled": true }
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+// D371: Claude Code's other hook events: SessionStart (its output reaches the chat's first
+// message), Notification (waiting for an approval), PreCompact (a manual summary) and SessionEnd
+// (/clear). tests/fixtures/setup/test-hook.mjs logs each event to .hook-log.jsonl. Against
+// tests/fixtures/mock-ollama.mjs.
+{
+  "name": "agent-hooks-m7-106",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.hooks",
+        "value": {
+          "SessionStart": [
+            { "matcher": "startup", "hooks": [{ "command": "node ../setup/test-hook.mjs" }] }
+          ],
+          "Notification": [{ "hooks": [{ "command": "node ../setup/test-hook.mjs" }] }],
+          "PreCompact": [{ "hooks": [{ "command": "node ../setup/test-hook.mjs" }] }],
+          "SessionEnd": [{ "hooks": [{ "command": "node ../setup/test-hook.mjs" }] }]
+        }
+      }
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please tell me what did the hooks say", "wait": true },
+      "expect": { "answer": { "$contains": "Hooks said: start" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please start the background server", "wait": false }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "node -e" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle" },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.stopBackgroundTask", "input": { "id": "bg1" } },
+    { "run": "agent.compact", "input": {}, "timeoutMs": 30000 },
+    { "run": "agent.send", "input": { "message": "/clear" } },
+    { "wait": 2000 },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "cat .hook-log.jsonl",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "\"source\":\"startup\"" } },
+      "timeoutMs": 30000,
+      "print": true
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat .hook-log.jsonl", "timeoutMs": 20000 },
+      "expect": {
+        "output": {
+          "$contains": "\"notification_type\":\"permission_prompt\""
+        }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat .hook-log.jsonl", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "\"trigger\":\"manual\"" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat .hook-log.jsonl", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "\"reason\":\"clear\"" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

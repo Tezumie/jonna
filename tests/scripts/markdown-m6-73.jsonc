@@ -1,0 +1,50 @@
+// D172: a Markdown file's preview draws ```mermaid diagrams (pele) and $math$ (KaTeX, MathML); a
+// diagram that doesn't parse says so and shows its source.
+{
+  "name": "markdown-m6-73",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# Diagrams\\n\\nInline $a^2 + b^2 = c^2$, and $5 stays text.\\n\\n```mermaid\\nflowchart LR\\n  A[Write] --> B{Review}\\n  B -->|ok| C[Ship]\\n```\\n\\n```mermaid\\npie title Pets\\n  \"Dogs\" : 40\\n  \"Cats\" : 60\\n```\\n\\n$$\\nx^2 + y^2 = r^2\\n$$\\n\\n```mermaid\\nflowchart LR\\n  A -->\\n```\\n' > visuals.md",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "viewer.openPreview", "input": { "path": "visuals.md" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-diagram" },
+      "expect": { "$length": 3 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-diagram-body svg.pele" },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-diagram-error" },
+      "expect": [{ "html": { "$contains": "Can't draw this diagram" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-math math" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-math-block math" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "ui.toggleTheme" },
+    { "wait": 300 },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "ui.toggleTheme" }
+  ]
+}

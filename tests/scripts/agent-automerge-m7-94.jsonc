@@ -1,0 +1,119 @@
+// D352: auto-merge for a watched pull request. The agent turns it on with watch_pr's auto_merge
+// (squash) because the user asked; the first time per pull request the user confirms it on a
+// card. The fake GitHub CLI's repository doesn't allow GitHub's auto-merge, so the IDE merges it
+// itself at the first look where every check passed and it's mergeable, then says so in the chat
+// (the agent answers that message) and the watch ends. The details panel's row offers to turn it
+// off while it waits. Against tests/fixtures/mock-ollama.mjs (pkgPScripted) and
+// tests/fixtures/setup/automerge-m7-94.mjs.
+{
+  "name": "agent-automerge-m7-94",
+  "fakeGh": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // Asked as a tool is: not in full access.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/automerge-m7-94.mjs pending", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 25000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgP auto-merge pr" },
+      "background": true
+    },
+    // The confirmation card, the first time for this pull request.
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Auto-merge #7" }] },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-cards .agent-permission", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "once every check passed" } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgP auto-merge: on (by the IDE)" } },
+      "timeoutMs": 30000
+    },
+    // Watched, auto-merge on, waiting for the tests.
+    {
+      "state": "ide://agent/prWatches",
+      "expect": {
+        "watches": [
+          {
+            "number": 7,
+            "autoMerge": {
+              "method": "squash",
+              "by": "ide",
+              "status": { "$contains": "waiting: 1 check still running" }
+            }
+          }
+        ]
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    // The details panel's row: Turn auto-merge off.
+    { "run": "agent.toggleDetails", "input": { "show": true }, "expect": { "shown": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-row[data-key='pr:7']", "limit": 1, "html": 2000 },
+      "expect": [{ "html": { "$contains": "Turn auto-merge off" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The tests pass: the next look merges it and tells the chat.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/automerge-m7-94.mjs passing", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 25000
+    },
+    { "run": "agent.checkPullRequestNow" },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgP merged: yes" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "merged by auto-merge (squash)" } }
+    },
+    { "state": "ide://agent/prWatches", "expect": { "watches": { "$length": 0 } } },
+    // The fake GitHub CLI merged it with squash.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat ../fake-github/pr.json", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "\"mergedWith\":\"squash\"" } },
+      "timeoutMs": 25000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-auto.is-news", "limit": 3, "html": 300 },
+      "expect": { "$contains": "merged by auto-merge" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

@@ -1,0 +1,21 @@
+// The editor area survives closing its last editor (Welcome takes the place), so the next file
+// opens there and not in the terminal's group.
+{
+  "name": "editor area",
+  "steps": [
+    { "run": "terminal.create", "input": {} },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "run": "layout.closeTab", "input": {} },
+    {
+      "state": "ide://layout",
+      "expect": { "groups": [{ "id": "main", "tabs": [{ "viewType": "welcome" }] }] }
+    },
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    {
+      "state": "ide://layout",
+      "expect": {
+        "groups": [{ "id": "main", "tabs": [{ "viewType": "editor", "title": "util.ts" }] }]
+      }
+    }
+  ]
+}

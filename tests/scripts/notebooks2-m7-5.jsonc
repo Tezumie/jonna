@@ -1,0 +1,188 @@
+// D204: notebooks out of the box, like VS Code with its built-in ipynb support. An .ipynb opens,
+// edits and saves as a notebook with the Jupyter extension off; Markdown cells use the Markdown
+// preview's styles; the cell toolbar, the "+ Code / + Markdown" bar between cells, the cell
+// language label; join, copy down, line numbers, a cell's language, metadata; the source toggle;
+// with nothing to run the cells, the kernel picker offers to enable the Jupyter extension and to
+// browse extensions for kernels, and enabling it runs the cell.
+{
+  "name": "notebooks2-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // Built in: the IDE's own format, the Jupyter extension still off.
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } }
+    },
+    { "state": "ide://notebook", "expect": { "types": { "$contains": "\"owner\":\"builtin\"" } } },
+    {
+      "run": "extensions.list",
+      "expect": { "extensions": { "$contains": "\"status\":\"disabled\"" } }
+    },
+    {
+      "run": "notebook.new",
+      "input": { "path": "nb/first.ipynb" },
+      "expect": { "path": { "$contains": "first.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "type": "jupyter.notebook", "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "x = 1" } },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 0, "kind": "markdown", "source": "# Title\n\nSome *text* and `code`." }
+    },
+    // A Markdown cell reads like the Markdown preview (its classes).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-markdown .nb-markdown.md-document h1" },
+      "expect": { "$contains": "Title" },
+      "timeoutMs": 5000
+    },
+    // The code cell's toolbar: run above, run and below, split, more, delete; its language.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-code .nb-cell-toolbar .nb-cell-tool", "limit": 10 },
+      "expect": { "$length": 5 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-markdown .nb-cell-toolbar .nb-cell-tool", "limit": 10 },
+      "expect": { "$contains": "Edit the cell" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-code .nb-cell-language" },
+      "expect": { "$contains": "Python" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // "+ Code" in the bar under the last cell.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cell:last-child > .nb-insert .nb-insert-button" }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 3 }, "selected": 2 } },
+      "timeoutMs": 5000
+    },
+    { "run": "notebook.editCell", "input": { "index": 2, "source": "y = 2" } },
+    // Join with the previous cell; copy a cell down.
+    {
+      "run": "notebook.joinCells",
+      "input": { "index": 2, "with": "previous" },
+      "expect": { "cells": 2 }
+    },
+    {
+      "run": "notebook.read",
+      "expect": { "cells": [{ "kind": "markdown" }, { "source": "x = 1\ny = 2" }] }
+    },
+    { "run": "notebook.duplicateCell", "input": { "index": 1 } },
+    { "run": "notebook.read", "expect": { "cells": { "$length": 3 } } },
+    { "run": "notebook.undo" },
+    { "run": "notebook.read", "expect": { "cells": { "$length": 2 } } },
+    { "run": "notebook.redo" },
+    // Line numbers in one cell.
+    {
+      "run": "notebook.toggleLineNumbers",
+      "input": { "index": 1 },
+      "expect": { "lineNumbers": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-code .line-numbers" },
+      "expect": { "$contains": "line-numbers" },
+      "timeoutMs": 5000
+    },
+    // A cell's own language, kept as VS Code keeps it; "markdown" makes it a Markdown cell.
+    {
+      "run": "notebook.changeCellLanguage",
+      "input": { "index": 2, "language": "sql" },
+      "expect": { "language": "sql", "kind": "code" }
+    },
+    {
+      "run": "notebook.read",
+      "input": { "metadata": true },
+      "expect": { "cells": { "$contains": "\"languageId\":\"sql\"" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell.is-code .nb-cell-language", "limit": 5 },
+      "expect": { "$contains": "SQL" }
+    },
+    {
+      "run": "notebook.changeCellLanguage",
+      "input": { "index": 2, "language": "markdown" },
+      "expect": { "kind": "markdown" }
+    },
+    // Metadata (what extensions and agents set), saved in the file.
+    { "run": "notebook.setMetadata", "input": { "metadata": { "acme": { "keep": true } } } },
+    { "run": "notebook.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat nb/first.ipynb", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "\"acme\": {" } },
+      "timeoutMs": 20000
+    },
+    // The source toggle: the file's JSON in the same tab, and back.
+    { "run": "notebook.toggleSource", "expect": { "showing": "source" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "first.ipynb" } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.toggleSource", "expect": { "showing": "notebook" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "path": { "$contains": "first.ipynb" }, "cells": { "$length": 3 } } },
+      "timeoutMs": 10000
+    },
+    // Nothing runs Jupyter notebooks yet: an agent (or a test) is told what to do…
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 1 },
+      "expectError": "notebook.enableJupyter"
+    },
+    // …and the user's kernel picker offers the Jupyter extension and kernel extensions.
+    { "run": "notebook.selectKernel", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 5, "html": 500 },
+      "expect": { "$contains": "Enable the Jupyter extension" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 5, "html": 500 },
+      "expect": { "$contains": "Browse extensions for kernels" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    {
+      "run": "notebook.browseKernelExtensions",
+      "input": {}
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-filter-input", "html": 300 },
+      "expect": { "$contains": "ext-filter-input" }
+    },
+    // Enabling the Jupyter extension (its permissions first), then the cell runs on Python.
+    {
+      "run": "notebook.enableJupyter",
+      "input": { "grant": true },
+      "expect": { "enabled": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "notebook.runCell",
+      "input": { "path": "nb/first.ipynb", "index": 1 },
+      "expect": { "status": "ok" },
+      "timeoutMs": 90000
+    },
+    // The IDE's own two: Jupyter notebooks and the Interactive Window (D297).
+    { "state": "ide://notebook", "expect": { "types": { "$length": 2 } } },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

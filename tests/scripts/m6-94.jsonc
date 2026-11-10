@@ -1,0 +1,256 @@
+// D193: m6.94. An external agent's own models and reasoning levels (ACP config options), picked
+// in the model menu and remembered.
+{
+  "name": "m6-94",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- An external agent's models ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "acp/Mock agent" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "agentSettings": {
+          "agent": "Mock agent",
+          "settings": [{ "category": "model", "current": "fast" }, { "current": "low" }]
+        }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.setAgentModel",
+      "input": { "value": "smart" },
+      "expect": { "model": "smart" }
+    },
+    {
+      "run": "agent.setAgentModel",
+      "input": { "setting": "thought_level", "value": "high" },
+      "expect": { "thought_level": "high" }
+    },
+    {
+      "run": "agent.setAgentModel",
+      "input": { "value": "huge" },
+      "expectError": "has no model huge"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please just answer", "wait": true },
+      "expect": { "answer": { "$contains": "ACP done on smart (high)" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"thought_level\":\"high\"" }
+    },
+    // The composer's model pill names the agent's model (its logo says which agent, D227).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill" },
+      "expect": { "$contains": "Smart model" },
+      "timeoutMs": 5000
+    },
+    // ---- MCP (D193): a folder's mcp.json server with a password input ----
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "echo",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp.mjs"],
+        "env": { "TOKEN": "${input:token}" },
+        "inputs": [{ "id": "token", "description": "Echo token", "password": true }]
+      },
+      "expect": { "added": true, "file": { "$contains": "mcp.json" } }
+    },
+    {
+      "run": "agent.addMcpServer",
+      "input": { "name": "leaky", "command": "x", "env": { "KEY": "sk-abcdefghijklmnop" } },
+      "expectError": "looks like a key"
+    },
+    { "run": "agent.send", "input": { "message": "Please use the echo server", "wait": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-box[type='password']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "abc123", "key": "Enter" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "MCP said: HELLO token=abc123" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"name\":\"echo\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"state\":\"running\"" }
+    },
+    {
+      "run": "agent.mcpServers",
+      "input": { "forgetInputs": "echo" },
+      "expect": { "forgotten": 1 }
+    },
+    // ---- Import from VS Code (D193): a profile folder in the workspace ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"const f=require('fs');f.mkdirSync('vsc/User/snippets',{recursive:true});f.mkdirSync('vsc/extensions/formulahendry.auto-rename-tag-0.1.10',{recursive:true});f.mkdirSync('vsc/extensions/someone.unknown-1.0.0',{recursive:true});f.writeFileSync('vsc/User/settings.json',JSON.stringify({'editor.fontSize':17,'python.x':1,'editor.tabSize':4}));f.writeFileSync('vsc/User/keybindings.json',JSON.stringify([{key:'ctrl+alt+k',command:'workbench.action.toggleSidebarVisibility'},{key:'ctrl+alt+j',command:'gitlens.x'}]));f.writeFileSync('vsc/User/snippets/vsimport-test.json','{}');f.writeFileSync('vsc/User/mcp.json',JSON.stringify({servers:{memtest:{command:'npx',args:['x']}}}));console.log('made')\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "made" } }
+    },
+    {
+      "run": "settings.importFromEditor",
+      "input": { "dir": "vsc", "dryRun": true },
+      "expect": {
+        "settings": { "add": { "$contains": "editor.fontSize" } },
+        "keybindings": { "add": 1, "skipped": 1 },
+        "snippets": ["vsimport-test.json"],
+        "mcp": ["memtest"],
+        "extensions": [
+          { "id": "formulahendry.auto-rename-tag", "kind": "setting" },
+          { "kind": "missing" }
+        ]
+      }
+    },
+    { "run": "settings.showImport", "input": { "dir": "vsc" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".vsimport-part[data-part='keybindings']" },
+      "expect": { "$contains": "1 shortcut to add" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.importFromEditor",
+      "input": { "dir": "vsc" },
+      "expect": {
+        "settings": { "$gte": 1 },
+        "keybindings": 1,
+        "snippets": 1,
+        "mcp": 1,
+        "extensions": 1
+      }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.fontSize\",\"value\":17" }
+    },
+    {
+      "run": "settings.importFromEditor",
+      "input": { "dir": "vsc" },
+      "expect": { "keybindings": 0, "snippets": 0, "mcp": 0 }
+    },
+    // ---- Reviews and agents in worktrees (D193) ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@e.st && git config user.name T && git config commit.gpgsign false && git add -A && git commit -qm init && echo committed",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "committed" } }
+    },
+    { "run": "git.refresh" },
+    {
+      "run": "agent.reviewChanges",
+      "input": { "scope": "uncommitted", "model": "ollama/mock-coder:1b" },
+      "expectError": "Nothing to review"
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo 'One more line' >> README.md && echo changed" },
+      "expect": { "output": { "$contains": "changed" } }
+    },
+    {
+      "run": "agent.reviewChanges",
+      "input": { "scope": "uncommitted", "model": "ollama/mock-coder:1b" },
+      "expect": { "reviewing": "the uncommitted changes", "model": "ollama/mock-coder:1b" }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "ask", "title": { "$contains": "Review" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "One more line" }
+    },
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Add a greeting to the readme" },
+      "expect": {
+        "branch": "agent/add-a-greeting-to-the",
+        "spawned": false,
+        "folder": { "$contains": "agent-add-a-greeting-to-the" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.worktrees",
+      "expect": { "worktrees": [{ "branch": "agent/add-a-greeting-to-the", "ahead": 0 }] }
+    },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/add-a-greeting-to-the", "action": "delete" },
+      "expect": { "deleted": "agent/add-a-greeting-to-the" }
+    },
+    { "run": "agent.worktrees", "expect": { "worktrees": [] } },
+    // ---- Next-edit suggestions (D193, off by default) ----
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/util.ts", "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.nextEdit.suggest", "expectError": true },
+    { "run": "settings.set", "input": { "key": "editor.nextEdit.enabled", "value": true } },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 20, "endLine": 1, "endColumn": 20 }
+    },
+    { "run": "editor.insertText", "input": { "text": "Num" } },
+    {
+      "run": "editor.nextEdit.suggest",
+      "expect": {
+        "suggestion": { "startLine": 2, "endLine": 2, "text": "  return a + b; // checked" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".next-edit" },
+      "expect": { "$contains": "Next edit" },
+      "timeoutMs": 5000
+    },
+    { "run": "editor.nextEdit.accept", "expect": { "applied": { "startLine": 2 } } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "sed -n 2p src/util.ts" },
+      "expect": { "output": { "$contains": "return a + b; // checked" } }
+    },
+    { "run": "settings.set", "input": { "key": "editor.nextEdit.enabled", "value": false } }
+  ]
+}

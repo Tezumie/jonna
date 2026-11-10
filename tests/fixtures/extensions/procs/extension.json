@@ -1,0 +1,43 @@
+{
+  "id": "acme.procs",
+  "version": "1.0.0",
+  "displayName": "Procs",
+  "description": "Test extension for D202: processes, its own folder, the platform, trust, context keys, state paths, command input schemas, readsSettings.",
+  "icon": "terminal",
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "permissions": ["shell", "fs.read"],
+  "readsSettings": ["terminal.fontSize", "search.*"],
+  "contributes": {
+    "commands": [
+      { "id": "procs.echo", "title": "Procs: echo through a shipped script", "effects": ["exec"] },
+      { "id": "procs.lines", "title": "Procs: lines from node -e", "effects": ["exec"] },
+      { "id": "procs.limit", "title": "Procs: start more than allowed", "effects": ["exec"] },
+      { "id": "procs.running", "title": "Procs: start a long-running process", "effects": ["exec"] },
+      { "id": "procs.lastExit", "title": "Procs: the long-running process's exit" },
+      { "id": "procs.info", "title": "Procs: environment and trust" },
+      { "id": "procs.state", "title": "Procs: register state paths" },
+      { "id": "procs.context", "title": "Procs: set a context key" },
+      { "id": "procs.settings", "title": "Procs: read settings" },
+      {
+        "id": "procs.greet",
+        "title": "Procs: greet",
+        "description": "Greets someone. Returns { text, caller }.",
+        "input": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string", "description": "Who to greet" },
+            "times": { "type": "integer", "minimum": 1, "maximum": 3 }
+          },
+          "required": ["name"]
+        }
+      },
+      {
+        "id": "procs.badInput",
+        "title": "Procs: command with an invalid input schema",
+        "input": { "type": "object", "properties": { "a": { "type": "date" } } }
+      }
+    ],
+    "state": [{ "path": "ide://ext/acme.procs/info", "description": "What Procs is running." }]
+  }
+}

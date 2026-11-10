@@ -1,0 +1,121 @@
+// D143: the activity bar keeps its view buttons (a broken selector hid them in m6.41), partial
+// undo of a multi-file replace, the folded long user message, the debugger and bookmarks.
+{
+  "name": "features-m6-42",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // The view buttons are laid out (not display: none) above Accounts and Manage.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-top" },
+      "expect": [{ "display": "flex" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".activitybar-top .activitybar-item", "limit": 1 },
+      "expect": [{ "display": "grid" }]
+    },
+    // Partial undo: replace all in two files, one changes afterwards. Undo refuses (nothing
+    // touched) unless asked to leave the changed file alone; then the other is undone.
+    { "run": "search.replace", "input": { "query": "hello", "replacement": "howdy" } },
+    { "run": "search.run", "input": { "query": "howdy" }, "expect": { "files": 2 } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo extra >> notes.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": null, "error": { "$contains": "notes.txt" } } },
+    { "run": "search.run", "input": { "query": "howdy" }, "expect": { "files": 2 } },
+    {
+      "run": "workspace.undo",
+      "input": { "skipChanged": true },
+      "expect": { "done": { "$contains": "Replace" }, "skipped": ["notes.txt"] }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "howdy" },
+      "expect": { "files": 1, "results": [{ "path": "notes.txt" }] }
+    },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "files": 1 } },
+
+    // A long message of the user's folds, with "Show more".
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": {
+        "message": "hello\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12"
+      },
+      "expect": { "answer": "Hello from mock." }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-text.is-clamped" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-more", "html": 200 },
+      "expect": [{ "html": { "$contains": "Show more" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-user-more" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-more", "html": 200 },
+      "expect": [{ "html": { "$contains": "Show less" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-text.is-clamped" },
+      "expect": { "$length": 0 }
+    },
+
+    // Bookmarks: in the margin, next / previous, they follow edits.
+    { "run": "editor.openFile", "input": { "path": "src/main.ts", "line": 1, "column": 1 } },
+    { "state": "ide://editors/active", "expect": { "path": "src/main.ts" }, "timeoutMs": 5000 },
+    {
+      "run": "bookmarks.toggle",
+      "input": { "path": "src/main.ts", "line": 3 },
+      "expect": { "added": true }
+    },
+    {
+      "run": "bookmarks.toggle",
+      "input": { "path": "src/main.ts", "line": 4, "label": "the log" },
+      "expect": { "bookmark": { "label": "the log" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .bookmark-glyph" },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    { "run": "bookmarks.next", "expect": { "line": 3 } },
+    { "state": "ide://editors/active", "expect": { "cursor": { "line": 3 } }, "timeoutMs": 3000 },
+    { "run": "bookmarks.next", "expect": { "line": 4 } },
+    { "run": "bookmarks.next", "expect": { "line": 3 } },
+    { "run": "bookmarks.previous", "expect": { "line": 4 } },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts", "line": 1, "column": 1 } },
+    { "run": "editor.insertText", "input": { "text": "// note\n" } },
+    {
+      "state": "ide://bookmarks",
+      "expect": { "bookmarks": [{ "line": 4 }, { "line": 5, "label": "the log" }] },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "bookmarks.list",
+      "expect": { "bookmarks": [{ "text": "const total: number = \"not a number\";" }] }
+    },
+    { "run": "bookmarks.clear", "expect": { "removed": 2 } }
+  ]
+}

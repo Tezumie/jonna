@@ -1,0 +1,164 @@
+// D143: the debugger. Node (its inspector, in a terminal): a breakpoint stops in the function,
+// variables and the call stack show, stepping and evaluating work, a condition is respected,
+// breakpoints follow edits, and the session ends with the program. Python (debugpy over DAP):
+// the same basics. The breakpoint margin is drawn in the editor.
+{
+  "name": "debug-m6-42",
+  "requires": ["python:debugpy"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbg && printf 'function add(a, b) {\\n  const sum = a + b;\\n  return sum;\\n}\\nlet total = 0;\\nfor (let i = 0; i < 3; i++) {\\n  total = add(total, i);\\n}\\nconsole.log(\"total\", total);\\n' > dbg/app.js && printf 'def add(a, b):\\n    s = a + b\\n    return s\\n\\ntotal = 0\\nfor i in range(3):\\n    total = add(total, i)\\nprint(\"total\", total)\\n' > dbg/app.py",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+
+    // The view is in the activity bar; F5 with nothing configured offers the active file.
+    { "run": "debug.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-start", "html": 300 },
+      "expect": [{ "html": { "$contains": "Run and debug" } }],
+      "timeoutMs": 5000
+    },
+
+    // A breakpoint (in the margin of the open file).
+    { "run": "editor.openFile", "input": { "path": "dbg/app.js" } },
+    { "state": "ide://editors/active", "expect": { "path": "dbg/app.js" }, "timeoutMs": 5000 },
+    {
+      "run": "debug.toggleBreakpoint",
+      "input": { "path": "dbg/app.js", "line": 2 },
+      "expect": { "added": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .debug-bp" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "debug.listConfigurations",
+      "expect": { "configurations": [], "activeFile": { "name": "Run app.js", "type": "node" } }
+    },
+
+    // Start: stops in add() on the first call.
+    { "run": "debug.start", "input": { "program": "dbg/app.js" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "stopped": { "reason": "breakpoint" },
+        "frames": [{ "name": "add", "path": "dbg/app.js", "line": 2 }, { "line": 7 }],
+        "breakpoints": [{ "line": 2, "verified": true }]
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "debug.variables",
+      "expect": {
+        "scopes": { "$contains": "Local" },
+        "variables": { "$contains": "{\"name\":\"a\",\"value\":\"0\"" }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .debug-current-line" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "a + b + 40" },
+      "expect": { "value": "40" }
+    },
+
+    // Step over: line 3; continue: the next call; the call stack's second frame.
+    { "run": "debug.stepOver" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 3 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 2 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "b" }, "expect": { "value": "1" } },
+    { "run": "debug.selectFrame", "input": { "index": 1 } },
+    { "run": "debug.evaluate", "input": { "expression": "i" }, "expect": { "value": "1" } },
+
+    // A condition: only the call where b is 2.
+    {
+      "run": "debug.setBreakpoint",
+      "input": { "path": "dbg/app.js", "line": 2, "condition": "b === 2" }
+    },
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 2 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "b" }, "expect": { "value": "2" } },
+
+    // Continuing to the end ends the session; the program's output is in its terminal.
+    { "run": "debug.continue" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    { "state": "ide://debug", "expect": { "console": { "$contains": "Session ended" } } },
+
+    // Edits move breakpoints with their lines.
+    { "run": "editor.openFile", "input": { "path": "dbg/app.js", "line": 1, "column": 1 } },
+    { "run": "editor.insertText", "input": { "text": "// a comment\n" } },
+    {
+      "state": "ide://debug",
+      "expect": { "breakpoints": [{ "line": 3, "condition": "b === 2" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "debug.removeAllBreakpoints", "expect": { "breakpoints": 0 } },
+
+    // Python through debugpy (a DAP adapter), with the program in a terminal.
+    { "run": "debug.setBreakpoint", "input": { "path": "dbg/app.py", "line": 2 } },
+    { "run": "debug.start", "input": { "program": "dbg/app.py" }, "timeoutMs": 60000 },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "frames": [{ "name": "add", "path": "dbg/app.py", "line": 2 }]
+      },
+      "timeoutMs": 60000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "a + b" }, "expect": { "value": "0" } },
+    {
+      "run": "debug.variables",
+      "expect": { "variables": { "$contains": "\"name\":\"b\"" } }
+    },
+    { "run": "debug.stepOver" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "line": 3 }] },
+      "timeoutMs": 15000
+    },
+    { "run": "debug.stop" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    // A missing debugger says what to install.
+    { "run": "settings.set", "input": { "key": "debug.pythonPath", "value": "/bin/false" } },
+    {
+      "run": "debug.start",
+      "input": { "program": "dbg/app.py" },
+      "expectError": "pip install debugpy",
+      "timeoutMs": 30000
+    },
+    { "state": "ide://debug", "expect": { "state": "inactive" } },
+
+    // launch.json: created with a starter configuration, and listed.
+    { "run": "debug.openLaunchJson", "expect": { "path": ".jonna/launch.json", "created": true } },
+    {
+      "run": "debug.listConfigurations",
+      "expect": { "configurations": [{ "name": "Run current file", "type": "node" }] }
+    }
+  ]
+}

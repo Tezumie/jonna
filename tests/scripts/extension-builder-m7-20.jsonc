@@ -1,0 +1,51 @@
+// D255: the agent builds an extension the way the built-in build-extension skill says. The skill
+// is listed in the prompt (and in ide://agent/skills as built in); the mock model loads it,
+// creates an extension (the user allows changing the IDE), validates it, reads its status and
+// tries its command. Against tests/fixtures/mock-ollama.mjs (d254Scripted).
+{
+  "name": "extension-builder-m7-20",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"name\":\"build-extension\"" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "skills": { "$contains": "\"builtIn\":true" } }
+    },
+    { "run": "agent.send", "input": { "message": "d254 build extension", "wait": false } },
+    // Changing the IDE asks first (even with full access): allowed for this chat.
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": { "$not": { "$length": 0 } } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "always" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "items": {
+          "$contains": "Listed: yes; Skill: yes; Created: yes; Valid: yes; Active: yes; Tried: yes"
+        }
+      },
+      "print": true,
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "local.word-count" }
+    }
+  ]
+}

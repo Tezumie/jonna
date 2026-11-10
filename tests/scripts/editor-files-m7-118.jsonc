@@ -1,0 +1,182 @@
+// D393: a file made read-only for the session (VS Code's commands, the status bar's lock) and by
+// files.readonlyInclude; secret values covered in .env files with editor.hideSecrets (off by
+// default) except on the cursor's line; Paste from history listing what was copied, previewing
+// the selected entry below the cursor and pasting the one picked.
+{
+  "name": "editor-files-m7-118",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'API_KEY=sk-secret-123\\n# a note\\nDB_URL=postgres://u:p@h/db\\n' > .env && printf 'alpha\\nbeta\\n' > notes.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+
+    // ---- Read-only ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "notes.txt", "readOnly": false, "cursor": { "$exists": true } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id=\"editor.readOnly\"]",
+        "limit": 1,
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "lock-open" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".statusbar-item[data-id=\"editor.readOnly\"]" } },
+    { "state": "ide://editors/active", "expect": { "readOnly": true }, "timeoutMs": 3000 },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id=\"editor.readOnly\"]",
+        "limit": 1,
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "i-lock\"" } }]
+    },
+    { "run": "editor.insertText", "input": { "text": "x" }, "expectError": "read-only" },
+    { "run": "editor.toggleReadOnlyInSession", "expect": { "readOnly": false } },
+    { "run": "editor.insertText", "input": { "text": "x" }, "expect": { "inserted": 1 } },
+    { "run": "editor.runAction", "input": { "action": "undo" } },
+
+    // files.readonlyInclude, overridden for the session, then deciding again after a reset (the
+    // toggles above left the session's "writable" in place: it wins until reset).
+    { "run": "editor.resetReadOnlyInSession", "expect": { "readOnly": false } },
+    {
+      "run": "settings.set",
+      "input": { "key": "files.readonlyInclude", "value": { "**/*.txt": true } }
+    },
+    { "state": "ide://editors/active", "expect": { "readOnly": true }, "timeoutMs": 3000 },
+    { "run": "editor.setWritableInSession", "expect": { "readOnly": false } },
+    { "run": "editor.resetReadOnlyInSession", "expect": { "readOnly": true } },
+    { "run": "settings.set", "input": { "key": "files.readonlyInclude", "value": {} } },
+    { "state": "ide://editors/active", "expect": { "readOnly": false }, "timeoutMs": 3000 },
+
+    // ---- Secret values ----
+    { "run": "editor.openFile", "input": { "path": ".env" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": ".env", "cursor": { "$exists": true } },
+      "timeoutMs": 8000
+    },
+    // Off by default: nothing covered.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .editor-secret", "limit": 5 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "settings.set", "input": { "key": "editor.hideSecrets", "value": true } },
+    { "run": "editor.gotoLine", "input": { "line": 2 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .editor-secret", "limit": 10, "html": 200 },
+      "expect": [{ "$exists": true }],
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // On a value's line it shows; the other one stays covered.
+    { "run": "editor.gotoLine", "input": { "line": 1 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-line .editor-secret", "limit": 10, "html": 400 },
+      "expect": { "$not": { "$contains": "sk-secret" } },
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "editor.hideSecrets", "value": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .editor-secret", "limit": 5 },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+
+    // ---- Paste from history ----
+    { "run": "editor.clearClipboardHistory" },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "state": "ide://editors/active", "expect": { "path": "notes.txt" }, "timeoutMs": 5000 },
+    { "run": "editor.gotoLine", "input": { "line": 1 } },
+    { "run": "editor.runAction", "input": { "action": "editor.action.clipboardCopyAction" } },
+    { "run": "editor.gotoLine", "input": { "line": 2 } },
+    { "run": "editor.runAction", "input": { "action": "editor.action.clipboardCopyAction" } },
+    { "state": "ide://editors/active", "expect": { "lineCount": 3, "dirty": false } },
+    { "run": "editor.pasteFromHistory", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 3, "html": 600 },
+      "expect": [{ "html": { "$contains": "beta" } }, { "html": { "$contains": "alpha" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".paste-preview-text", "limit": 1, "html": 600 },
+      "expect": { "$contains": "beta" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "ArrowDown" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".paste-preview-text", "limit": 1, "html": 600 },
+      "expect": { "$contains": "alpha" },
+      "timeoutMs": 3000
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "lineCount": 4, "dirty": true },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".paste-preview", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "editor.runAction", "input": { "action": "undo" } },
+    { "state": "ide://editors/active", "expect": { "dirty": false }, "timeoutMs": 3000 },
+
+    // ---- Restricted mode: VS Code's badge at the left of the status bar ----
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id=\"workspace.trust\"]",
+        "limit": 1,
+        "html": 600
+      },
+      "expect": { "$contains": "Restricted mode" },
+      "timeoutMs": 3000
+    },
+    // The first item at the left (no remote connection here): VS Code's place for it.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-left .statusbar-item:not([hidden])",
+        "limit": 1,
+        "html": 600
+      },
+      "expect": [{ "html": { "$contains": "Restricted mode" } }]
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm -f .env notes.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    }
+  ]
+}

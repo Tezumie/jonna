@@ -1,0 +1,79 @@
+// D192: m6.93. Pinned recent folders, Find in files seeded with the word at the cursor,
+// centered layout, auto-closed tags, and the update check in a build without an update key.
+{
+  "name": "m6-93",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- Pinned folders in the recent list ----
+    {
+      "run": "workspace.pinRecent",
+      "input": { "path": "/nowhere/pinned" },
+      "expect": { "pinned": 1 }
+    },
+    {
+      "run": "workspace.pinRecent",
+      "input": { "path": "/nowhere/pinned", "pinned": false },
+      "expect": { "pinned": 0 }
+    },
+    { "run": "workspace.removeRecent", "input": { "path": "/nowhere/pinned" } },
+    // ---- search.seedWithNearestWord: the word at the cursor starts the search ----
+    { "run": "settings.set", "input": { "key": "search.seedWithNearestWord", "value": true } },
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    // The editor (not just its preview) is up before the cursor moves.
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/util.ts", "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 18, "endLine": 1, "endColumn": 18 }
+    },
+    { "run": "search.show" },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "query": "add" } },
+      "timeoutMs": 8000
+    },
+    { "run": "settings.set", "input": { "key": "search.seedWithNearestWord", "value": false } },
+    // ---- Centered layout ----
+    { "run": "layout.toggleCenteredLayout", "expect": { "centered": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench.is-centered-layout" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "layout.toggleCenteredLayout", "expect": { "centered": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench.is-centered-layout" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // ---- Auto-closed tags ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf '' > page.html && echo made", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "made" } }
+    },
+    { "run": "editor.openFile", "input": { "path": "page.html" } },
+    { "run": "editor.insertText", "input": { "text": "<section class=\"a\"" } },
+    { "run": "editor.insertText", "input": { "text": ">" } },
+    { "run": "editor.insertText", "input": { "text": "hi" } },
+    { "run": "editor.insertText", "input": { "text": "<br" } },
+    { "run": "editor.insertText", "input": { "text": ">" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat page.html; echo", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "<section class=\"a\">hi<br></section>" } }
+    },
+    // ---- Updates: a build without an update key never checks anywhere ----
+    {
+      "run": "update.check",
+      "expect": { "configured": false }
+    },
+    { "state": "ide://update", "expect": { "mode": "default" } }
+  ]
+}

@@ -1,0 +1,109 @@
+// Every card the agent's chat can show, in one chat to scroll through and judge by eye: the plan,
+// chapters, review findings, widgets, skill / MCP server / extension suggestions, the MCP status
+// card, a proposed task, a hand-off, a workflow, background work (the chip), a browser recording,
+// a monitor, the plan-first question (answered), Plan mode's plan document, and last the wrap-up
+// box (only the latest turn shows it). A second chat keeps an ask_user card waiting. The window
+// stays open for an hour (close it when done). Not part of the regular runs: no checks, a look.
+// Run: node scripts/ui-test.mjs <binary> agent-card-gallery
+{
+  "name": "agent-card-gallery",
+  // Never in a batch or by a filter: only `node scripts/ui-test.mjs <binary> agent-card-gallery`.
+  "manual": true,
+  "testTimeout": 4200,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 950 } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.registryUrl", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.autoApprove", "value": { "browser": { "localhost": true } } }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "gallery" },
+
+    // ---- The cards, one turn each ----
+    { "run": "agent.send", "input": { "message": "d300 plan: look around" } },
+    { "run": "agent.send", "input": { "message": "pkga chapters two" } },
+    { "run": "agent.send", "input": { "message": "pkgc findings" } },
+    { "run": "agent.send", "input": { "message": "pkgi widgets" } },
+    { "run": "agent.send", "input": { "message": "pkgm suggest a skill for release notes" } },
+    { "run": "agent.send", "input": { "message": "pkgm find a weather server" } },
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "pkgm-broken",
+        "command": "node",
+        "args": ["${workspaceFolder}/pkgm-missing-server.mjs"]
+      }
+    },
+    { "run": "agent.send", "input": { "message": "pkgm check the mcp servers" } },
+    { "run": "agent.send", "input": { "message": "gallery extension" } },
+    { "run": "agent.send", "input": { "message": "pkga propose something" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgh handoff: a new question while the long task runs" }
+    },
+    { "run": "agent.send", "input": { "message": "pkgk run a workflow" } },
+    { "run": "agent.send", "input": { "message": "pkgg start work" } },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/upload.html" },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.send", "input": { "message": "pkgl record a short gif" } },
+    { "run": "agent.send", "input": { "message": "pkgf monitor" } },
+    // The plan-first question, answered "Keep going" (full access never asks it).
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "gallery plan first", "session": "${gallery.session}" },
+      "background": true
+    },
+    { "wait": 2000 },
+    {
+      "run": "agent.answer",
+      "input": { "session": "${gallery.session}", "text": "Keep going" }
+    },
+    { "wait": 2000 },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    // Plan mode's plan document card, then back to Agent.
+    { "run": "agent.setChatMode", "input": { "mode": "plan" } },
+    { "run": "agent.send", "input": { "message": "pkgh plan doc: plan a readme" } },
+    { "run": "agent.setChatMode", "input": { "mode": "agent" } },
+    // D354: a recording of the IDE window (the recording card, "IDE recording").
+    { "run": "agent.send", "input": { "message": "pkgq record the ide" } },
+    // D350: the sandbox allowance card (the tool is offered while the sandbox is on).
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "auto" } },
+    { "run": "agent.send", "input": { "message": "pkgo sandbox card" } },
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "off" } },
+    // Last: the wrap-up box (only the latest turn shows one).
+    { "run": "agent.send", "input": { "message": "pkga wrapup: look around" } },
+
+    // ---- A second chat with a question card waiting for an answer ----
+    { "run": "agent.newSession", "save": "questions" },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgc ask", "session": "${questions.session}" },
+      "background": true
+    },
+    { "wait": 3000 },
+    // Back to the gallery chat; the question chat is in the chats list.
+    { "run": "agent.openThread", "input": { "session": "${gallery.session}" } },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Open for an hour to scroll through (close the window to end it).
+    { "wait": 3600000 }
+  ]
+}

@@ -1,0 +1,179 @@
+// D141: undoing a folder delete brings everything back (and the tree shows it), undo never
+// overwrites what's in the way (and keeps the entry), renames update imports in the same undo
+// step, and Ctrl+Z in a file that replace all changed offers to undo it in every file.
+{
+  "name": "history-m6-40",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p proj/src/deep proj/assets && echo one > proj/a.txt && echo two > proj/src/b.ts && echo three > proj/src/deep/c.ts && echo four > proj/assets/d.css",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name", "limit": 20, "html": 100 },
+      "expect": { "$contains": ">proj<" },
+      "timeoutMs": 5000
+    },
+    { "run": "explorer.reveal", "input": { "path": "proj/src/deep/c.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name", "limit": 20, "html": 100 },
+      "expect": { "$contains": "c.ts" },
+      "timeoutMs": 5000
+    },
+
+    // Delete the folder, undo: every file is back, and the expanded folders list them.
+    { "run": "explorer.delete", "input": { "path": "proj" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test ! -e proj" },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": "Delete proj" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test -f proj/a.txt && test -f proj/src/b.ts && test -f proj/src/deep/c.ts && test -f proj/assets/d.css"
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name", "limit": 20, "html": 100 },
+      "expect": { "$contains": "c.ts" },
+      "timeoutMs": 5000
+    },
+    // Redo deletes again; undo again restores.
+    { "run": "workspace.redo", "expect": { "done": "Delete proj" } },
+    { "run": "workspace.undo", "expect": { "done": "Delete proj" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test -f proj/src/deep/c.ts" },
+      "expect": { "exitCode": 0 }
+    },
+
+    // Something in the way: undo refuses, changes nothing, and keeps the entry for later.
+    { "run": "explorer.delete", "input": { "path": "proj/a.txt" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo new > proj/a.txt" },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": null, "error": { "$contains": "a.txt" } } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "grep -q new proj/a.txt" },
+      "expect": { "exitCode": 0 }
+    },
+    { "state": "ide://history", "expect": { "undo": [{ "label": "Delete a.txt" }] } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm proj/a.txt" },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": "Delete a.txt" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "grep -q one proj/a.txt" },
+      "expect": { "exitCode": 0 }
+    },
+
+    // Rename with import updates: one undo step for both.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'export const h = 1;\\n' > proj/src/helper.ts && printf 'import { h } from \"./helper\";\\nexport * from \"../src/helper.js\";\\n' > proj/src/use.ts"
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "explorer.rename",
+      "input": { "path": "proj/src/helper.ts", "newName": "helpers.ts", "updateImports": true },
+      "expect": { "importsUpdated": 1 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -q 'from \"./helpers\"' proj/src/use.ts && grep -q './helpers.js' proj/src/use.ts"
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": { "$contains": "Rename helper.ts" } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test -f proj/src/helper.ts && grep -q 'from \"./helper\"' proj/src/use.ts"
+      },
+      "expect": { "exitCode": 0 }
+    },
+
+    // Replace all, then Ctrl+Z in a changed file: undo it in every file.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "search.replace", "input": { "query": "hello", "replacement": "howdy" } },
+    { "run": "search.run", "input": { "query": "howdy" }, "expect": { "files": 2 } },
+    { "state": "ide://editors/active", "expect": { "path": "notes.txt" }, "timeoutMs": 5000 },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".editor-view:not([hidden]) .monaco-editor :is(.native-edit-context, textarea.inputarea)",
+        "key": "z",
+        "code": "KeyZ",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog-title" },
+      "expect": [{ "html": { "$contains": "in all files" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog-actions .button-primary" } },
+    {
+      "run": "search.run",
+      "input": { "query": "hello" },
+      "expect": { "files": 2 },
+      "timeoutMs": 5000
+    },
+    { "run": "search.run", "input": { "query": "howdy" }, "expect": { "files": 0 } },
+
+    // Ctrl+Z goes to the editor that has focus, never to another open one.
+    { "run": "editor.openFile", "input": { "path": "proj/src/b.ts" } },
+    { "run": "editor.insertText", "input": { "text": "X" } },
+    { "run": "editor.openFile", "input": { "path": "proj/src/deep/c.ts" } },
+    { "run": "editor.insertText", "input": { "text": "Y" } },
+    { "run": "editor.openFile", "input": { "path": "proj/src/b.ts" } },
+    { "state": "ide://editors/active", "expect": { "path": "proj/src/b.ts" }, "timeoutMs": 5000 },
+    {
+      "run": "dev.type",
+      "input": { "selector": ":focus", "key": "z", "code": "KeyZ", "ctrl": true }
+    },
+    {
+      "state": "ide://editors",
+      "expect": {
+        "documents": {
+          "$contains": "{\"path\":\"proj/src/b.ts\",\"language\":\"typescript\",\"dirty\":false"
+        }
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://editors",
+      "expect": {
+        "documents": {
+          "$contains": "{\"path\":\"proj/src/deep/c.ts\",\"language\":\"typescript\",\"dirty\":true"
+        }
+      }
+    },
+    // The app trash remembers where things came from ("Restore deleted files…").
+    { "run": "explorer.delete", "input": { "path": "proj/assets" } },
+    {
+      "run": "explorer.restoreDeleted",
+      "expect": { "deleted": { "$contains": "proj/assets" } }
+    }
+  ]
+}

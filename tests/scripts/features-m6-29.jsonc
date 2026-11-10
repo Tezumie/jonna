@@ -1,0 +1,83 @@
+// D130: web pages as agent context, column selection mode, settings profiles, keybinding search.
+{
+  "name": "features-m6-29",
+  "steps": [
+    // web.fetch: the page's title and main text (no scripts, no form), links made absolute.
+    {
+      "run": "web.fetch",
+      "input": { "url": "http://127.0.0.1:11998/" },
+      "expect": {
+        "title": "Dev app",
+        "status": 200,
+        "text": { "$contains": "# Counter" }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "web.fetch",
+      "input": { "url": "http://127.0.0.1:11998/" },
+      "expect": { "text": { "$contains": "[About](http://127.0.0.1:11998/about)" } }
+    },
+    {
+      "run": "web.fetch",
+      "input": { "url": "file:///etc/hosts" },
+      "expectError": "Only http and https"
+    },
+    { "run": "web.fetch", "input": { "url": "not a page" }, "expectError": "Not a web address" },
+    // @web: the address is kept as a chip; the page is fetched when the message is sent.
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@web http://127.0.0.1:11998/" },
+      "expect": { "attachments": ["@web http://127.0.0.1:11998/"] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-chip" },
+      "expect": [{ "html": { "$contains": "127.0.0.1:11998" } }],
+      "timeoutMs": 4000
+    },
+
+    // Column selection mode: a setting, a toggle, a status bar item while on.
+    { "run": "editor.toggleColumnSelection", "expect": { "editor.columnSelection": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-right", "html": 5000 },
+      "expect": [{ "html": { "$contains": "Column selection" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "editor.toggleColumnSelection", "expect": { "editor.columnSelection": false } },
+
+    // Profiles: export, change, import brings the value back (and a user snippet file).
+    { "run": "settings.set", "input": { "key": "editor.cursorWidth", "value": 3 } },
+    {
+      "run": "settings.exportProfile",
+      "input": { "path": "profile-test.json" },
+      "expect": { "saved": { "$contains": "profile-test.json" } }
+    },
+    { "run": "settings.set", "input": { "key": "editor.cursorWidth", "value": 5 } },
+    {
+      "run": "settings.importProfile",
+      "input": { "path": "profile-test.json" },
+      "expect": { "imported": { "$contains": "settings" } }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.cursorWidth\",\"value\":3" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "settings.importProfile",
+      "input": { "path": "README.md" },
+      "expectError": "isn't a settings profile"
+    },
+
+    // Keyboard shortcuts: a quoted key lists exactly the commands bound to it.
+    { "run": "keybindings.show", "input": { "query": "\"Ctrl+Shift+P\"" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".keybindings-row", "limit": 3, "html": 2000 },
+      "expect": [{ "html": { "$contains": "Ctrl+Shift+P" } }],
+      "timeoutMs": 4000
+    }
+  ]
+}

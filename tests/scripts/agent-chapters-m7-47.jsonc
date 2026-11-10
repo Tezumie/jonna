@@ -1,0 +1,105 @@
+// D302: mark_chapter. Refused at the chat's very start; in the second message, one chapter that
+// opens the turn (its divider above the message) and one mid-turn. The header's Chapters button
+// lists them; picking one (agent.showChapter) scrolls there.
+{
+  "name": "agent-chapters-m7-47",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkga chapters one" },
+      "expect": { "answer": "PkgA first (refused)." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chapters": { "$length": 0 } }
+    },
+    // No chapters: no Chapters button.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-header .agent-chapters:not([hidden])", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkga chapters two" },
+      "expect": { "answer": "PkgA chapters done." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "chapters": [
+          { "title": "Second look", "summary": "Looking again" },
+          { "title": "Wrapping up" }
+        ]
+      },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-chapter", "limit": 5, "html": 300 },
+      "expect": [
+        { "html": { "$contains": "Second look" } },
+        { "html": { "$contains": "Wrapping up" } }
+      ],
+      "print": true
+    },
+    // The first chapter opens its turn: its divider comes before the message that started it.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column > :has(.agent-chapter) + .agent-msg",
+        "limit": 2,
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "pkga chapters two" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-header .agent-chapters:not([hidden])", "limit": 1 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // The table of contents: the header button's menu lists them.
+    { "run": "dev.click", "input": { "selector": ".agent-header .agent-chapters" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-item", "limit": 5, "html": 300 },
+      "expect": [
+        { "html": { "$contains": "1. Second look" } },
+        { "html": { "$contains": "2. Wrapping up" } }
+      ],
+      "print": true
+    },
+    // The screenshot comes after the pick: taking it closes the menu.
+    { "run": "dev.click", "input": { "selector": ".menu-item" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .is-revealed .agent-chapter", "limit": 1, "html": 200 },
+      "expect": [{ "html": { "$contains": "Second look" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // By command too, by number or title.
+    {
+      "run": "agent.showChapter",
+      "input": { "chapter": "2" },
+      "expect": { "chapter": "Wrapping up" }
+    },
+    {
+      "run": "agent.showChapter",
+      "input": { "chapter": "second look" },
+      "expect": { "chapter": "Second look" }
+    }
+  ]
+}

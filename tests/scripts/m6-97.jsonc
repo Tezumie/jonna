@@ -1,0 +1,128 @@
+// D196: m6.97. External agents as the main agent (agent presets left in D287; header actions on by default:
+// workbench-m6-70), Vim mode, Add to project on attachments, the image viewer beside the chat, the Timeline and
+// search editors.
+{
+  "name": "m6-97",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    // ---- The main agent can be an external agent; new chats start with it ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    { "state": "ide://agent/session", "expect": { "model": "acp/Mock agent" } },
+    { "run": "agent.newSession" },
+    { "state": "ide://agent/session", "expect": { "model": "acp/Mock agent" } },
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ac-node[data-node='main'] .ac-model-name" },
+      "expect": { "$contains": "Mock agent" },
+      "timeoutMs": 5000
+    },
+    // ---- Vim mode ----
+    { "run": "editor.toggleVimMode", "expect": { "vimMode": true } },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".editor-engine .vim-status" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    { "run": "editor.toggleVimMode", "expect": { "vimMode": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".editor-engine .vim-status" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // ---- Timeline: a save shows up ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "editor.insertText", "input": { "text": "timeline " } },
+    { "run": "editor.save" },
+    { "run": "timeline.refresh", "expect": { "items": { "$gte": 1 } }, "timeoutMs": 5000 },
+    {
+      "state": "ide://timeline",
+      "expect": { "path": "notes.txt", "items": { "$contains": "save" } },
+      "timeoutMs": 5000
+    },
+    // ---- Search editor ----
+    {
+      "run": "search.openEditor",
+      "input": { "query": "Sample", "contextLines": 1 },
+      "expect": { "results": { "$gte": 1 } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://search/editor",
+      "expect": { "text": { "$contains": "# Query: Sample" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".search-editor-line:not(.is-context) mark", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "searchEditor.save",
+      "input": { "path": "found.code-search" },
+      "expect": { "saved": { "$contains": "found.code-search" } }
+    },
+    { "run": "layout.closeTab" },
+    { "run": "editor.openFile", "input": { "path": "found.code-search" } },
+    {
+      "state": "ide://search/editor",
+      "expect": { "query": { "query": "Sample", "contextLines": 1 }, "results": { "$gte": 1 } },
+      "timeoutMs": 10000
+    },
+    // ---- Add an attachment to the project; the image viewer beside the chat ----
+    { "run": "agent.newSession" },
+    { "run": "layout.focusAgent" },
+    {
+      "run": "agent.attachFiles",
+      "input": { "paths": ["assets/dot.png"] },
+      "expect": { "files": 1 }
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-attachments .agent-card[data-kind='image']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer.is-beside" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-close" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-attachments .agent-card-save" }
+    },
+    { "wait": 500 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "wait": 800 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "ls dot.png", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "dot" } },
+      "timeoutMs": 20000
+    }
+  ]
+}

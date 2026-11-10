@@ -1,0 +1,112 @@
+// D346: the built-in tab's input is a person's on Windows (WebView2's in-process DevTools
+// protocol, no debugging port). The mock dev server's /trusted.html records event.isTrusted for
+// clicks on its button and keys and input in its field. The browser commands click, type and
+// press there, then the agent does with browser_act, and with browser.trustedInput off the
+// events are synthesized again (isTrusted false) and the result says so. Browser actions on
+// localhost are allowed by agent.autoApprove so nothing stops for a question.
+{
+  "name": "browser-trusted-m7-90",
+  "platforms": ["win32"],
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.autoApprove", "value": { "browser": { "localhost": true } } }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 900 } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/trusted.html" },
+      "expect": { "connected": true, "title": "Trusted lab" },
+      "timeoutMs": 20000
+    },
+    // A click on an element (browser_act click by ref or selector runs this).
+    {
+      "run": "browser.click",
+      "input": { "selector": "#hit" },
+      "expect": { "input": "trusted" },
+      "print": true
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('clicks').textContent" },
+      "expect": { "result": "clicks: true" }
+    },
+    // A click at a point of the coordinate frame, then keystrokes at the focus.
+    {
+      "run": "browser.locate",
+      "input": { "selector": "#field" },
+      "save": "field"
+    },
+    {
+      "run": "browser.input",
+      "input": { "op": "click", "x": "${field.x}", "y": "${field.y}" },
+      "expect": { "input": "trusted", "focused": { "$contains": "Field" } },
+      "print": true
+    },
+    {
+      "run": "browser.input",
+      "input": { "op": "type", "text": "ab" },
+      "expect": { "input": "trusted", "value": "ab" }
+    },
+    {
+      "run": "browser.input",
+      "input": { "op": "key", "keys": [{ "key": "Backspace" }] },
+      "expect": { "input": "trusted", "value": "a" }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('keys').textContent" },
+      "expect": { "result": "keys: a=true b=true Backspace=true" },
+      "print": true
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('inputs').textContent" },
+      "expect": { "result": "inputs: true true true" }
+    },
+    // The agent: browser_act's click and type are trusted too.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgN press the button" },
+      "expect": { "answer": "pkgN press: trusted" }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgN type in the field" },
+      "expect": { "answer": "pkgN type: trusted" }
+    },
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "document.getElementById('clicks').textContent + ' / ' + document.getElementById('field').value"
+      },
+      "expect": { "result": "clicks: true true / Hi" },
+      "print": true
+    },
+    // Off: synthesized by the bridge, and the result says so.
+    { "run": "settings.set", "input": { "key": "browser.trustedInput", "value": false } },
+    {
+      "run": "browser.click",
+      "input": { "selector": "#hit" },
+      "expect": { "input": "synthesized", "inputNote": { "$contains": "isTrusted false" } }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('clicks').textContent" },
+      "expect": { "result": "clicks: true true false" }
+    },
+    { "run": "settings.set", "input": { "key": "browser.trustedInput", "value": true } },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "settings.set", "input": { "key": "agent.autoApprove", "value": {} } }
+  ]
+}

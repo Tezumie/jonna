@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg7/server.js"
+    },
+    {
+      "name": "Client",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg7/client.js"
+    },
+    {
+      "name": "Mock threads",
+      "type": "mock",
+      "request": "launch",
+      "program": "${workspaceFolder}/dbg7/client.js",
+      "debugAdapter": { "command": "node", "args": ["${workspaceFolder}/../setup/mock-dap.mjs"] }
+    }
+  ],
+  "compounds": [{ "name": "Both", "configurations": ["Server", "Client"], "stopAll": true }]
+}

@@ -1,0 +1,233 @@
+// The built-in agent against tests/fixtures/mock-ollama.mjs (started by scripts/ui-test.mjs on
+// port 11999): model discovery, streaming, tool calls, changeset review, checkpoints, permissions,
+// MCP tools and an ACP agent. agent.send steps have no timeoutMs: the runner would re-send them.
+{
+  "name": "agent",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock.", "error": null }
+    },
+    // Retry regenerates the last answer (the conversation stays one turn long).
+    { "run": "agent.retry", "expect": { "error": null } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Hello from mock." }, "status": "idle" }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "read the readme" },
+      "expect": { "answer": "The README says: # Sample workspace" }
+    },
+    // Browser tools appear with a browser tab: a snapshot (reads freely), then a click by ref
+    // (a page action: asks first).
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998" },
+      "expect": { "connected": true },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "press the first button on the page", "wait": false }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": { "$length": 1 } },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Clicked: Increment" } },
+      "timeoutMs": 30000
+    },
+    { "run": "browser.text", "input": { "selector": "#count" }, "expect": { "text": "1" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "rename the title" },
+      "expect": { "pending": { "$length": 1 } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": [{ "added": 1, "removed": 1 }], "status": "idle" }
+    },
+    // D199: the edit is on disk at once; accepting only clears the review.
+    {
+      "run": "search.run",
+      "input": { "query": "Renamed workspace" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.acceptAll", "expect": { "accepted": { "$length": 1 } } },
+    {
+      "run": "search.run",
+      "input": { "query": "Renamed workspace" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    // D119: an applied change still opens as a diff (before ↔ now, from local history).
+    {
+      "run": "agent.openAppliedDiff",
+      "input": { "path": "README.md" },
+      "expect": { "diff": true }
+    },
+    { "state": "ide://layout", "expect": { "groups": { "$contains": "README.md" } } },
+    { "state": "ide://agent/session", "expect": { "checkpoints": [5] } },
+    {
+      "run": "agent.restoreCheckpoint",
+      "input": { "turn": 5 },
+      "expect": { "restored": { "$length": 1 } }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "Sample workspace" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    // run_command asks first.
+    { "run": "agent.send", "input": { "message": "run something", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": { "$length": 1 } },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "The command printed agent-ran." } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent",
+      "expect": { "models": ["ollama/mock-coder:1b"], "sessions": { "$length": 2 } }
+    },
+    // D107: errors an edit introduces go back to the model (the file's existing error doesn't).
+    { "run": "agent.newSession" },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "state": "ide://diagnostics",
+      "expect": { "$contains": "not assignable" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "break the code" },
+      "expect": { "answer": { "$contains": "Cannot find name 'missingName'" } }
+    },
+    { "run": "agent.rejectAll" },
+    // D109: the plan tool, and summarizing the conversation (/compact). The step it was on is done
+    // once the turn ends normally (D300).
+    {
+      "run": "agent.send",
+      "input": { "message": "plan the work" },
+      "expect": { "answer": "Planned." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "plan": [
+          { "status": "done" },
+          { "text": "Make the change", "status": "done" },
+          { "status": "pending" }
+        ],
+        "usage": { "tokens": { "$gte": 1 } }
+      }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/compact the plan" },
+      "expect": { "compacted": { "$gte": 2 } }
+    },
+    { "state": "ide://agent/session", "expect": { "items": { "$contains": "mock summary" } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock." }
+    },
+    // @-mentions: the context goes with the next message.
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@problems" },
+      "expect": { "attachments": ["@problems"] }
+    },
+    { "run": "agent.mention", "input": { "mention": "README.md" } },
+    { "run": "agent.mention", "input": { "mention": "@nope" }, "expectError": "Unknown mention" },
+    // (The mock answers by keyword: the attached README makes it "read".)
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "error": null }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Problems" } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Attached file README.md" } }
+    },
+    // A leading `cd <the open folder> &&` is dropped: the card asks about the real command.
+    { "run": "agent.newSession" },
+    { "run": "agent.send", "input": { "message": "cd into the folder and echo", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Run `echo cd-ok`" }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "The command printed cd-ok." } },
+      "timeoutMs": 30000
+    },
+    // D110: project memory — a note written in one session is in the next one's index.
+    {
+      "run": "agent.send",
+      "input": { "message": "remember that tests use npm test" },
+      "expect": { "answer": { "$contains": "Saved to .jonna/memory/testing.md" } }
+    },
+    {
+      "state": "ide://agent/memory",
+      "expect": { "files": [{ "name": "testing.md", "notes": 1 }] }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "what do you remember" },
+      "expect": { "answer": "From memory: testing.md." }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "recall testing" },
+      "expect": { "answer": { "$contains": "npm test" } }
+    },
+    // Tidying up proposes the curated memory for review; the file changes only when accepted.
+    { "run": "agent.dream", "expect": { "files": 1 }, "timeoutMs": 30000 },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": [{ "path": { "$contains": "testing.md" } }] }
+    },
+    {
+      "state": "ide://agent/memory",
+      "expect": { "files": [{ "text": { "$not": { "$contains": "(tidied)" } } }] }
+    },
+    { "run": "agent.acceptAll", "expect": { "accepted": { "$length": 1 } } },
+    {
+      "state": "ide://agent/memory",
+      "expect": { "files": [{ "text": { "$contains": "(tidied)" } }] },
+      "timeoutMs": 5000
+    }
+  ]
+}

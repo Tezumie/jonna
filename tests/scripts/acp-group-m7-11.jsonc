@@ -1,0 +1,70 @@
+// D232: a group chat answered by an external agent (the mock ACP agent). Each turn it's told which
+// member it answers as; a reply opening a line with @Forge hands the next turn to Forge, as with
+// the IDE's own models, and each reply records its speaker.
+{
+  "name": "acp-group-m7-11",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\nrole: Researcher\\ndescription: Finds things in the code.\\n---\\n\\nResearch first.\\n' > .vscode/agents/scout.md && printf -- '---\\nname: forge\\nlabel: Forge\\nrole: Builder\\ndescription: Builds what was planned.\\n---\\n\\nBuild it.\\n' > .vscode/agents/forge.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    // Agent files are read when trust changes: trust again to read them.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:forge" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["scout", "forge"] },
+      "expect": { "members": ["scout", "forge"] },
+      "save": "grp"
+    },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "@Scout acpgroup check", "wait": true },
+      "expect": { "answer": { "$contains": "Scout via acp" } },
+      "timeoutMs": 30000
+    },
+    // Scout handed the turn to Forge: the external agent answers again, as Forge.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Forge via acp: built it." } },
+      "timeoutMs": 20000
+    },
+    // The reply's speaker is recorded when it ends, a moment after its text shows: retried.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "\"speaker\":\"forge\"" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "\"speaker\":\"scout\"" } },
+      "timeoutMs": 10000
+    }
+  ]
+}

@@ -1,0 +1,823 @@
+/* AI setup (D164): the "AI models" page and an empty chat's setup button (D166). Quiet: one column,
+   hairline rows, tiles on --bg-surface-raised, status shown by a small dot only. */
+@layer extensions {
+  .ai-page {
+    height: 100%;
+    overflow: auto;
+    background: var(--bg-surface);
+  }
+  .ai-page:focus-visible {
+    outline: none;
+  }
+  .ai-setup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    color: var(--fg-default);
+  }
+  .ai-page .ai-setup {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--space-10) var(--space-8) var(--space-12);
+  }
+
+  /* Header */
+  .ai-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-6);
+    flex-wrap: wrap;
+  }
+  .ai-title {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-2xl);
+    font-weight: 600;
+  }
+  .ai-lead,
+  .ai-card-lead {
+    margin: 0;
+    color: var(--fg-muted);
+  }
+  .ai-card-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+  }
+  .ai-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .ai-default {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--size-control-md);
+    padding: 0 var(--space-4) 0 var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+    cursor: pointer;
+    max-width: 100%;
+  }
+  .ai-default:hover {
+    border-color: var(--border-strong);
+  }
+  /* Buttons beside a selector chip in a page header look like it: same height, field and edge. */
+  .ai-header-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--size-control-md);
+    padding: 0 var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ai-header-button:hover {
+    border-color: var(--border-strong);
+  }
+  .ai-header-button .icon {
+    color: var(--fg-subtle);
+  }
+  .ai-default:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .ai-default-label {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .ai-default-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .ai-default .icon {
+    color: var(--fg-subtle);
+  }
+
+  /* Sections */
+  .ai-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .ai-section-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+  .ai-section-lead {
+    margin: calc(var(--space-3) * -1) 0 0;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+
+  /* Rows (connected providers, Ollama, agents) */
+  .ai-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .ai-list > * + * {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .ai-local {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .ai-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-height: 48px;
+    padding: var(--space-4) var(--space-5);
+  }
+  .ai-list-item.is-open {
+    background: var(--bg-surface-raised);
+  }
+  .ai-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .ai-row-name {
+    font-weight: 500;
+  }
+  .ai-row-detail {
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ai-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .ai-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fg-disabled);
+  }
+  .ai-dot.is-ok {
+    background: var(--status-success-fg);
+  }
+  .ai-dot.is-error,
+  .ai-dot.is-unreachable {
+    background: var(--status-warning-fg);
+  }
+  .ai-dot.is-loading {
+    background: var(--fg-subtle);
+    animation: ai-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes ai-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* Tiles */
+  .ai-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    grid-auto-rows: 1fr;
+    gap: var(--space-4);
+  }
+  .ai-tile {
+    --tint: var(--brand-custom);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    /* Flat (D227): the logo says which provider; the brand-color wash looked cheap. */
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    flex-wrap: wrap;
+    transition:
+      border-color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .ai-tile:hover {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+  }
+  /* Quiet selection (no accent edges, the owner's preference). */
+  .ai-tile.is-selected {
+    border-color: var(--border-strong);
+    background: var(--bg-selected);
+  }
+  .ai-tile-icon {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+  }
+  .ai-tile-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .ai-tile-name {
+    font-weight: 500;
+  }
+  .ai-tile-blurb {
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+
+  .ai-tag {
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: 18px;
+  }
+
+  /* The inline form */
+  .ai-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    animation: ai-form-in var(--motion-slow, 220ms) var(--ease-enter, ease-out);
+  }
+  @keyframes ai-form-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+  .ai-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .ai-field-label {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .ai-field .input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-input);
+  }
+  .ai-form-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .ai-grow {
+    flex: 1;
+  }
+  .ai-error {
+    font-size: var(--text-sm);
+    color: var(--status-danger-fg);
+  }
+  .ai-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--status-success-fg);
+  }
+
+  /* Text buttons */
+  .ai-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .ai-link:hover {
+    color: var(--fg-default);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .ai-link.is-danger:hover {
+    color: var(--status-danger-fg);
+  }
+  .ai-link .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .ai-more {
+    display: flex;
+    gap: var(--space-6);
+  }
+  .ai-list-item.is-open .ai-form {
+    margin: 0 var(--space-5) var(--space-5);
+  }
+
+  /* An empty chat without a model (D166): one button to the AI models page. */
+  .ai-start {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    width: 100%;
+    margin-top: var(--space-4);
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .ai-start:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-default);
+  }
+  .ai-start > .icon {
+    color: var(--fg-subtle);
+    flex: none;
+    align-self: center;
+  }
+  .ai-prompt .ai-link {
+    align-self: flex-start;
+  }
+
+  /* Badges (D167): a letter or two in the provider's or agent's color, not a logo. A status dot
+     sits on the corner in rows. */
+  [data-brand="anthropic"] {
+    --tint: var(--brand-anthropic);
+  }
+  [data-brand="openai"] {
+    --tint: var(--brand-openai);
+  }
+  [data-brand="gemini"] {
+    --tint: var(--brand-gemini);
+  }
+  [data-brand="xai"] {
+    --tint: var(--brand-xai);
+  }
+  [data-brand="openrouter"] {
+    --tint: var(--brand-openrouter);
+  }
+  [data-brand="groq"] {
+    --tint: var(--brand-groq);
+  }
+  [data-brand="lmstudio"] {
+    --tint: var(--brand-lmstudio);
+  }
+  [data-brand="llamacpp"] {
+    --tint: var(--brand-llamacpp);
+  }
+  [data-brand="ollama"] {
+    --tint: var(--brand-ollama);
+  }
+  [data-brand="claudecode"] {
+    --tint: var(--brand-anthropic);
+  }
+  [data-brand="codex"] {
+    --tint: var(--brand-openai);
+  }
+  [data-brand="geminicli"] {
+    --tint: var(--brand-gemini);
+  }
+  [data-brand="github"] {
+    --tint: var(--brand-github);
+  }
+  [data-brand="mistral"] {
+    --tint: var(--brand-mistral);
+  }
+  [data-brand="deepseek"] {
+    --tint: var(--brand-deepseek);
+  }
+  [data-brand="together"] {
+    --tint: var(--brand-together);
+  }
+  [data-brand="fireworks"] {
+    --tint: var(--brand-fireworks);
+  }
+  [data-brand="cerebras"] {
+    --tint: var(--brand-cerebras);
+  }
+  [data-brand="huggingface"] {
+    --tint: var(--brand-huggingface);
+  }
+  [data-brand="nvidia"] {
+    --tint: var(--brand-nvidia);
+  }
+  [data-brand="kimi"] {
+    --tint: var(--brand-kimi);
+  }
+  [data-brand="qwen"] {
+    --tint: var(--brand-qwen);
+  }
+  [data-brand="zai"] {
+    --tint: var(--brand-zai);
+  }
+  [data-brand="azure"] {
+    --tint: var(--brand-azure);
+  }
+  [data-brand="bedrock"] {
+    --tint: var(--brand-bedrock);
+  }
+  [data-brand="vllm"] {
+    --tint: var(--brand-vllm);
+  }
+  [data-brand="sambanova"] {
+    --tint: var(--brand-sambanova);
+  }
+  [data-brand="novita"] {
+    --tint: var(--brand-novita);
+  }
+  [data-brand="deepinfra"] {
+    --tint: var(--brand-deepinfra);
+  }
+  [data-brand="hyperbolic"] {
+    --tint: var(--brand-hyperbolic);
+  }
+  [data-brand="nebius"] {
+    --tint: var(--brand-nebius);
+  }
+  [data-brand="siliconflow"] {
+    --tint: var(--brand-siliconflow);
+  }
+  [data-brand="volcengine"] {
+    --tint: var(--brand-volcengine);
+  }
+  [data-brand="stepfun"] {
+    --tint: var(--brand-stepfun);
+  }
+  [data-brand="modelscope"] {
+    --tint: var(--brand-modelscope);
+  }
+  [data-brand="friendli"] {
+    --tint: var(--brand-friendli);
+  }
+  [data-brand="featherless"] {
+    --tint: var(--brand-featherless);
+  }
+  [data-brand="chutes"] {
+    --tint: var(--brand-chutes);
+  }
+  [data-brand="venice"] {
+    --tint: var(--brand-venice);
+  }
+  [data-brand="kluster"] {
+    --tint: var(--brand-kluster);
+  }
+  [data-brand="inference"] {
+    --tint: var(--brand-inference);
+  }
+  [data-brand="ppio"] {
+    --tint: var(--brand-ppio);
+  }
+  [data-brand="vercel"] {
+    --tint: var(--brand-vercel);
+  }
+  [data-brand="aihubmix"] {
+    --tint: var(--brand-aihubmix);
+  }
+  [data-brand="cometapi"] {
+    --tint: var(--brand-cometapi);
+  }
+  [data-brand="xinference"] {
+    --tint: var(--brand-xinference);
+  }
+  [data-brand="jan"] {
+    --tint: var(--brand-jan);
+  }
+  [data-brand="custom"] {
+    --tint: var(--brand-custom);
+  }
+  /* OpenCode (D239): no brand color of its own; its letters in the neutral chip. */
+  [data-brand="opencode"] {
+    --tint: var(--brand-custom);
+  }
+  .ai-mark {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--tint) 35%, transparent);
+    background: color-mix(in srgb, var(--tint) 22%, transparent);
+    color: color-mix(in srgb, var(--tint) 75%, var(--fg-default));
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .ai-mark .ai-dot {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    box-shadow: 0 0 0 2px var(--bg-surface);
+  }
+  /* Logos (src/assets/brands, D168). A colored logo stands on its own, with no chip. */
+  .ai-mark.has-logo:not(.is-mono) {
+    background: none;
+    border-color: transparent;
+  }
+  .ai-mark img {
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
+  }
+  /* A one-color logo: drawn in --chip-fg (white by default) on the brand's color. */
+  .ai-mark.is-mono {
+    background: var(--chip-bg, var(--tint));
+    border-color: transparent;
+  }
+  .ai-logo-mask {
+    width: 18px;
+    height: 18px;
+    background: var(--chip-fg, var(--brand-on));
+    -webkit-mask: var(--logo) center / contain no-repeat;
+    mask: var(--logo) center / contain no-repeat;
+  }
+  /* Black and white chips get a hairline: they'd melt into a dark or light theme. */
+  .ai-mark.is-mono[data-brand="openai"],
+  .ai-mark.is-mono[data-brand="xai"],
+  .ai-mark.is-mono[data-brand="zai"],
+  .ai-mark.is-mono[data-brand="nebius"],
+  .ai-mark.is-mono[data-brand="friendli"],
+  .ai-mark.is-mono[data-brand="chutes"],
+  .ai-mark.is-mono[data-brand="inference"],
+  .ai-mark.is-mono[data-brand="vercel"],
+  .ai-mark.is-mono[data-brand="github"],
+  .ai-mark.is-mono[data-brand="opencode"] {
+    --chip-bg: var(--brand-ink);
+    border-color: var(--border-default);
+  }
+  /* A light brand color: its logo in ink, not white. */
+  .ai-mark.is-mono[data-brand="huggingface"] {
+    --chip-fg: var(--brand-ink);
+  }
+  .ai-mark.is-mono[data-brand="ollama"] {
+    --chip-bg: var(--brand-on);
+    --chip-fg: var(--brand-ink);
+    border-color: var(--border-default);
+  }
+  .ai-start {
+    align-items: center;
+  }
+  /* Start free (D239): under Set up AI models, with where messages go in one muted line. */
+  .ai-start.ai-free-start {
+    margin-top: var(--space-2);
+  }
+  .ai-free-start-note {
+    display: block;
+    margin-top: var(--space-1);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .ai-start .ai-tile-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  /* The connectable services as an overlapping row of marks (D180). */
+  .ai-start-brands {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .ai-start-brands .ai-mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: var(--text-xs);
+  }
+  .ai-start-brands .ai-mark + .ai-mark {
+    margin-left: -6px;
+  }
+  .ai-start-brands .ai-mark.has-logo:not(.is-mono) {
+    background: var(--bg-surface);
+    border-color: var(--border-subtle);
+  }
+  .ai-start-brands .ai-mark img {
+    width: 16px;
+    height: 16px;
+  }
+  .ai-start-brands .ai-logo-mask {
+    width: 14px;
+    height: 14px;
+  }
+  .ai-start-more {
+    margin-left: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    white-space: nowrap;
+  }
+
+  /* Import from VS Code (D193): the AI page's layout, a checkbox per part. */
+  .vsimport-from {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .vsimport-source {
+    min-width: 160px;
+  }
+  .vsimport-source-name {
+    font-weight: 600;
+  }
+  .vsimport-row {
+    cursor: pointer;
+  }
+  .vsimport-row:has(.vsimport-check:disabled) {
+    cursor: default;
+    opacity: 0.7;
+  }
+  .vsimport-check {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+  .vsimport-details {
+    padding: 0 var(--space-5) var(--space-4) calc(var(--space-5) * 2 + 16px);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .vsimport-details summary {
+    cursor: pointer;
+  }
+  .vsimport-details ul {
+    margin: var(--space-2) 0 0;
+    padding-left: var(--space-6);
+    max-height: 200px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .vsimport-replace {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .vsimport-extensions {
+    max-height: 360px;
+    overflow: auto;
+  }
+  /* Rows keep their height in the scrolling list (a flex column would squeeze them). */
+  .vsimport-extensions > .vsimport-ext {
+    flex: none;
+    min-height: 0;
+    padding-block: var(--space-3);
+  }
+  .vsimport-actions {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-5);
+    padding: var(--space-4) 0;
+    background: var(--bg-surface);
+  }
+  .vsimport-status {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  /* D212: "View more" under the tiles, the custom form's preset suggestions and its image. */
+  .ai-more {
+    align-self: flex-start;
+    margin-top: var(--space-3);
+  }
+  .ai-more svg {
+    transition: transform var(--motion-fast, 120ms) var(--ease-standard, ease);
+  }
+  .ai-more[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+  }
+  .ai-field {
+    position: relative;
+  }
+  .ai-suggest {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: var(--z-dropdown);
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    max-height: 240px;
+    overflow: auto;
+    background: var(--bg-overlay);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    animation: ai-form-in var(--motion-slow, 220ms) var(--ease-enter, ease-out);
+  }
+  .ai-suggest[hidden] {
+    display: none;
+  }
+  .ai-suggest-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 32px;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ai-suggest-item:hover,
+  .ai-suggest-item.is-active {
+    background: var(--bg-hover);
+  }
+  .ai-suggest-item .ai-mark {
+    width: 22px;
+    height: 22px;
+    font-size: var(--text-xs);
+  }
+  .ai-suggest-item .ai-mark img {
+    width: 18px;
+    height: 18px;
+  }
+  .ai-suggest-item .ai-logo-mask {
+    width: 13px;
+    height: 13px;
+  }
+  .ai-suggest-name {
+    flex: none;
+  }
+  .ai-suggest-host {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-subtle);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .ai-image-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .ai-image-hint {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .ai-mark.has-logo img[src^="data:image/png"],
+  .ai-mark.has-logo img[src^="data:image/jpeg"],
+  .ai-mark.has-logo img[src^="data:image/webp"] {
+    border-radius: var(--radius-sm);
+  }
+}

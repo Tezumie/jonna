@@ -1,0 +1,71 @@
+// D120: merge conflicts resolved from the editor, terminal tab color and icon, the notebook
+// viewer.
+{
+  "name": "features-m6-19",
+  "steps": [
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "merge.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "merge.txt" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "top\n<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> feature\nmiddle\n<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> feature\n"
+      }
+    },
+    {
+      "run": "editor.resolveConflict",
+      "input": { "path": "merge.txt", "line": 3, "choice": "incoming" },
+      "expect": { "resolved": 1, "remaining": 1 }
+    },
+    {
+      "run": "editor.resolveConflict",
+      "input": { "path": "merge.txt", "choice": "both", "all": true },
+      "expect": { "resolved": 1, "remaining": 0 }
+    },
+    { "run": "editor.save" },
+    { "run": "search.run", "input": { "query": "theirs" }, "expect": { "matches": 1 } },
+    { "run": "search.run", "input": { "query": "<<<<<<<" }, "expect": { "matches": 0 } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo colors", "timeoutMs": 20000 },
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.setColor", "input": { "color": "red" }, "expect": { "color": "red" } },
+    { "run": "terminal.setIcon", "input": { "icon": "bot" }, "expect": { "icon": "bot" } },
+    // Jupyter notebooks are the built-in Jupyter extension's (D203): turned on first.
+    { "run": "extensions.enable", "input": { "id": "bundled.jupyter" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.jupyter", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } },
+      "timeoutMs": 10000
+    },
+    // A notebook: written as text, then shown by the notebook viewer.
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "nb.ipynb" } },
+    { "run": "editor.reopenWith", "input": { "path": "nb.ipynb", "with": "text" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "nb.ipynb" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{\"cells\":[{\"cell_type\":\"markdown\",\"source\":[\"# Notes\"]},{\"cell_type\":\"code\",\"execution_count\":1,\"source\":\"print(1)\",\"outputs\":[{\"output_type\":\"stream\",\"text\":\"1\\n\"}]}],\"metadata\":{},\"nbformat\":4}"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "editor.reopenWith",
+      "input": { "path": "nb.ipynb", "with": "notebook" },
+      "expect": { "with": "notebook" }
+    }
+  ]
+}

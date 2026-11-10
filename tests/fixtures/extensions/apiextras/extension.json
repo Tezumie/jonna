@@ -1,0 +1,27 @@
+{
+  "id": "acme.apiextras",
+  "version": "1.0.0",
+  "displayName": "API extras",
+  "description": "Test extension for D234: decoration types, more language providers (folding, links, colors, highlights, type definition, inline completions, workspace symbols), editor events, a file watcher, findFiles, workspaceState, settings.update and env.",
+  "icon": "box",
+  "author": "Acme tests",
+  "license": "MIT",
+  "categories": ["Testing"],
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "permissions": ["fs.read", "fs.write", "clipboard"],
+  "contributes": {
+    "commands": [
+      { "id": "apiextras.setup", "title": "API extras: register everything" },
+      { "id": "apiextras.stats", "title": "API extras: what happened" },
+      { "id": "apiextras.decorate", "title": "API extras: decorate TODO lines" },
+      { "id": "apiextras.findFiles", "title": "API extras: find Markdown files" },
+      { "id": "apiextras.state", "title": "API extras: workspaceState and settings" },
+      { "id": "apiextras.accepted", "title": "API extras: an inline completion was accepted" }
+    ],
+    "settings": {
+      "apiextras.level": { "type": "number", "default": 1, "description": "A number the test writes." }
+    },
+    "languages": [{ "id": "extrasfile", "extensions": [".extras"] }]
+  }
+}

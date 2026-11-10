@@ -1,0 +1,148 @@
+// D348–D350: the command sandbox's network filter, hidden secrets and per-project allowances
+// (Windows: low integrity, where they're verified). With the sandbox on for this test only and
+// agent.sandbox.denyRead naming a folder next to the test folder (not the real ~/.ssh): a
+// sandboxed read of that folder fails while the user's own shell still reads it; curl to a host
+// that isn't allowed is refused by the filter (nothing leaves the machine), the result names the
+// host, and the agent's suggest_sandbox_allowance card's Allow keeps it for this project. Then
+// the hidden folder is shown again (agent.sandboxUnhideSecrets) and the sandbox goes back off.
+// Against tests/fixtures/mock-ollama.mjs (pkgOScripted).
+{
+  "name": "agent-sandbox-net-m7-92",
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    // Full access: the commands run without asking.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    // A secret next to the test folder, hidden instead of the defaults (the real ~/.ssh stays
+    // as it is).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p ../pkgo-secret && printf pkgo-secret-value > ../pkgo-secret/key.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.sandbox.denyRead", "value": ["${ws.root}/../pkgo-secret"] }
+    },
+    // The sandbox is opt-in (it marks the folder for good): on for this test.
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "auto" } },
+    {
+      "state": "ide://agent/sandbox",
+      "expect": {
+        "setting": "auto",
+        "mechanism": "low-integrity",
+        "limitsReads": true,
+        "network": "proxy",
+        "policy": { "denyRead": { "$contains": "pkgo-secret" } }
+      },
+      "print": true,
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+
+    // ---- A hidden folder can't be read in the sandbox; the user's shell still reads it ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgo sandbox read the secret" },
+      "expect": { "answer": "PkgO read: hidden" },
+      "timeoutMs": 90000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -q pkgo-secret-value ../pkgo-secret/key.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+
+    // ---- A host that isn't allowed: refused, named, and the card to allow it ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgo sandbox net download" },
+      "expect": { "answer": "PkgO net: refused=yes sandboxed=yes card=yes" },
+      "timeoutMs": 90000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-sandbox-allow", "limit": 1, "html": 2000 },
+      "expect": [{ "html": { "$contains": "example.com" } }],
+      "print": true,
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .rb-sandbox-allow .rb-discovery-action" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-sandbox-allow", "limit": 1, "html": 2000 },
+      "expect": [{ "html": { "$contains": "Allowed" } }],
+      "timeoutMs": 10000
+    },
+    // Kept for this project, in the user's settings; the next commands run with it.
+    {
+      "state": "ide://agent/sandbox",
+      "expect": { "policy": { "allowHosts": { "$contains": "example.com" } } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"agent.sandbox.projects\"" }
+    },
+
+    // ---- D372: a background command's refused hosts show while it runs ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgo sandbox background" },
+      "expect": { "answer": "PkgO background started." },
+      "timeoutMs": 90000
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": [{ "kind": "command", "blockedHosts": ["example.org"] }] },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-detail.is-refused", "html": 400 },
+      "expect": [{ "html": { "$contains": "Refused by the sandbox: example.org" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "agent.stopBackgroundTask", "input": { "id": "bg1" } },
+
+    // ---- Shown again: the label comes off ----
+    {
+      "run": "agent.sandboxUnhideSecrets",
+      "input": {},
+      "expect": { "restored": { "$contains": "pkgo-secret" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm -rf ../pkgo-secret", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "off" } }
+  ]
+}

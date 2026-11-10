@@ -1,0 +1,82 @@
+// D132: file icon themes, Shiki color themes, TextMate tokens, title bar, maximize button.
+{
+  "name": "features-m6-31",
+  "steps": [
+    // The folder name lives in the status bar only.
+    { "run": "dev.inspectDom", "input": { "selector": ".titlebar-workspace" }, "expect": [] },
+
+    // Material Icon Theme by default: explorer rows and tabs show its icons.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row .icon-themed image", "limit": 3, "html": 300 },
+      "expect": [{ "html": { "$contains": "icon-themes/material/icons/" } }],
+      "timeoutMs": 6000
+    },
+    {
+      "run": "ui.selectFileIconTheme",
+      "input": { "id": "minimal" },
+      "expect": { "id": "minimal" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row .icon-themed" },
+      "expect": [],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "ui.selectFileIconTheme",
+      "input": { "id": "nope" },
+      "expectError": "No file icon theme"
+    },
+    { "run": "ui.selectFileIconTheme", "input": { "id": "material-icon-theme" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row .icon-themed", "limit": 1 },
+      "expect": [{ "tag": "svg" }],
+      "timeoutMs": 6000
+    },
+
+    // TextMate tokens: brackets in a comment or a string aren't paired (colored).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '// a (b\\nconst s = \"(\";\\nf([1]);\\n' > tok.ts",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "tok.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view-line", "limit": 3, "html": 2000 },
+      "expect": [
+        { "html": { "$not": { "$contains": "bracket-highlighting" } } },
+        { "html": { "$not": { "$contains": "bracket-highlighting" } } },
+        { "html": { "$contains": "bracket-highlighting-0" } }
+      ],
+      "timeoutMs": 8000
+    },
+
+    // Shiki's themes are color themes (the whole IDE and the syntax).
+    {
+      "run": "ui.selectColorTheme",
+      "input": { "label": "Dracula Theme" },
+      "expect": { "label": "Dracula Theme" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"workbench.colorTheme\",\"value\":\"Dracula Theme\"" }
+    },
+    { "run": "ui.selectColorTheme", "input": { "label": "Dark+" }, "expect": { "label": "Dark+" } },
+
+    // A maximized group's button restores it (inward arrows).
+    { "run": "layout.toggleMaximize" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-maximized button[aria-label='Restore group']" },
+      "expect": [{ "tag": "button" }],
+      "timeoutMs": 3000
+    },
+    { "run": "layout.toggleMaximize" }
+  ]
+}

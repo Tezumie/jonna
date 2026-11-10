@@ -1,0 +1,37 @@
+// D226: a file this window writes shows in the explorer at once. The real mouse input steps
+// (xdotool, Linux only) are in explorer-mouse-m7-7.
+{
+  "name": "explorer-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1200, "height": 800 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p deep/one/two && echo x > deep/one/two/f.txt && echo ok",
+        "timeoutMs": 10000
+      },
+      "timeoutMs": 20000
+    },
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "explorer.refresh" },
+    // A file this window writes (here through Add to project) shows at once, without waiting for
+    // the OS watcher (agents' writes and Accept all go the same way).
+    { "run": "explorer.collapseAll" },
+    {
+      "run": "agent.addAttachmentToProject",
+      "input": {
+        "attachment": { "name": "x.txt", "kind": "text", "data": "kept" },
+        "path": "made/by/agent.txt"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".explorer-segment[data-segment$='made'], .explorer-row[data-path$='made']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 1500
+    }
+  ]
+}

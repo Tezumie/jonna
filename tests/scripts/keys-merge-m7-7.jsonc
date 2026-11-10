@@ -1,0 +1,237 @@
+// D219: keybinding removals with a `when` (only the binding with that clause goes, as in VS
+// Code), a Monaco Ctrl+K chord's edit with synthetic keys; the merge editor with a file both
+// sides added (split into conflicts where they differ), a final newline only the incoming side
+// added, word highlights in the base, and each file's last sizes for its next merge tab.
+{
+  "name": "keys-merge-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 860 } },
+
+    // ---- A Monaco chord whose first key the IDE takes: Ctrl+K Ctrl+X trims trailing spaces ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'let a = 1   \\n' > kc.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "kc.txt" } },
+    {
+      "state": "ide://keybindings",
+      "expect": { "engineBindings": { "$gte": 50 } },
+      "timeoutMs": 10000
+    },
+    { "run": "log.setLevel", "input": { "level": "debug" } },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "k",
+        "code": "KeyK",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "x",
+        "code": "KeyX",
+        "ctrl": true
+      }
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": {
+        "recent": [{ "chord": "ctrl+x", "result": "command:editor.action.trimTrailingWhitespace" }]
+      },
+      "timeoutMs": 3000
+    },
+    // The second key ran the editor's command through editor.runAction (the window log says so).
+    // A plain-text file: Monaco trims only lines whose tokens are ready (strings and regexes keep
+    // their spaces), and a test window in the background may not have tokenized a JS file yet.
+    {
+      "run": "output.read",
+      "input": { "channel": "window" },
+      "expect": { "text": { "$contains": "[command:editor.runAction] ok" } },
+      "timeoutMs": 3000
+    },
+    { "run": "log.setLevel", "input": { "level": "info" } },
+    // The chord's edit landed.
+    {
+      "run": "editor.getText",
+      "input": { "path": "kc.txt" },
+      "expect": { "text": "let a = 1\n" },
+      "timeoutMs": 3000
+    },
+    // And the action run directly.
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 10, "endLine": 1, "endColumn": 10 }
+    },
+    { "run": "editor.insertText", "input": { "text": "   " } },
+    {
+      "run": "editor.getText",
+      "input": { "path": "kc.txt" },
+      "expect": { "text": "let a = 1   \n" }
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.trimTrailingWhitespace" },
+      "expect": { "ran": true }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "kc.txt" },
+      "expect": { "text": "let a = 1\n" },
+      "timeoutMs": 3000
+    },
+
+    // ---- A removal with a `when` takes only the binding with that clause ----
+    { "run": "keybindings.openJson" },
+    { "run": "editor.runAction", "input": { "action": "editor.action.selectAll" } },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "[{ \"key\": \"ctrl+k ctrl+x\", \"command\": \"-editor.action.trimTrailingWhitespace\", \"when\": \"somethingElse\" }]"
+      }
+    },
+    { "run": "editor.save" },
+    { "wait": 500 },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "editor.action.trimTrailingWhitespace" },
+      "expect": { "$length": 1 }
+    },
+    // The editor's own clause, written in another order: now it goes.
+    { "run": "editor.runAction", "input": { "action": "editor.action.selectAll" } },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "[{ \"key\": \"ctrl+k ctrl+x\", \"command\": \"-editor.action.trimTrailingWhitespace\", \"when\": \"!editorReadonly && editorTextFocus\" }]"
+      }
+    },
+    { "run": "editor.save" },
+    { "wait": 500 },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "editor.action.trimTrailingWhitespace" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "editor.runAction", "input": { "action": "editor.action.selectAll" } },
+    { "run": "editor.insertText", "input": { "text": "[]" } },
+    { "run": "editor.save" },
+    { "wait": 500 },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "editor.action.trimTrailingWhitespace" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+
+    // ---- The merge editor ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && printf 'one two three\\nsecond' > words.txt && git add words.txt && git commit -qm Base && git checkout -qb feature && printf 'one TWO three\\nsecond\\n' > words.txt && printf 'import a\\nuno\\nshared\\nend\\nextra\\n' > both.txt && git add -A && git commit -qm Theirs && git checkout -q main && printf 'one two four\\nsecond' > words.txt && printf 'import a\\none\\nshared\\ntwo\\nend\\n' > both.txt && git add -A && git commit -qm Ours && (git merge feature >/dev/null 2>&1 || true)",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": { "$length": 2 } },
+      "timeoutMs": 10000
+    },
+    // Both sides added the file: one conflict per difference, the common lines kept.
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "both.txt" },
+      "expect": { "conflicts": 3, "bothAdded": true },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "both.txt" },
+      "expect": { "text": "import a\nshared\nend\n" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "git.mergeEditor.accept", "input": { "conflict": 1, "choice": "incoming" } },
+    { "run": "git.mergeEditor.accept", "input": { "conflict": 2, "choice": "current" } },
+    {
+      "run": "git.mergeEditor.accept",
+      "input": { "conflict": 3, "choice": "incoming" },
+      "expect": { "unhandled": 0 }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "both.txt" },
+      "expect": { "text": "import a\nuno\nshared\ntwo\nend\nextra\n" }
+    },
+    {
+      "run": "git.completeMerge",
+      "input": { "path": "both.txt" },
+      "expect": { "completed": true, "staged": true }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": [{ "path": "words.txt" }] },
+      "timeoutMs": 10000
+    },
+    // A content conflict where only the incoming side added the final newline: kept.
+    { "run": "editor.openFile", "input": { "path": "words.txt" } },
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "words.txt" },
+      "expect": { "conflicts": 1, "inputsShare": 0.5, "bothAdded": false },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "words.txt" },
+      "expect": { "text": "one two three\nsecond\n" }
+    },
+    // The base shows the words each side changed.
+    {
+      "run": "git.mergeEditor.toggleBase",
+      "input": { "value": true },
+      "expect": { "showBase": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-pane-base .merge-word-in-base", "limit": 1 },
+      "expect": [{ "className": { "$contains": "merge-word-in-base" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Sizes set here come back in the file's next merge tab.
+    {
+      "run": "git.mergeEditor.setLayout",
+      "input": { "split": 0.35 },
+      "expect": { "inputsShare": 0.35 }
+    },
+    { "run": "layout.closeTab" },
+    { "wait": 300 },
+    { "state": "ide://git/mergeEditors", "expect": { "$length": 0 }, "timeoutMs": 3000 },
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "words.txt" },
+      "expect": { "conflicts": 1, "inputsShare": 0.35 },
+      "timeoutMs": 15000
+    },
+    { "run": "git.mergeEditor.accept", "input": { "conflict": 1, "choice": "current" } },
+    {
+      "run": "editor.getText",
+      "input": { "path": "words.txt" },
+      "expect": { "text": "one two four\nsecond\n" }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

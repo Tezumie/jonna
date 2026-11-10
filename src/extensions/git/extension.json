@@ -1,0 +1,512 @@
+{
+  "id": "builtin.git",
+  "version": "0.1.0",
+  "displayName": "Git",
+  "description": "Source control through the git CLI: changes, staging (files and hunks), commit, branches, fetch/pull/push, file decorations and editor change bars.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write", "process.spawn", "network"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "git.showView",
+        "title": "Show source control",
+        "category": "Git"
+      },
+      {
+        "id": "git.refresh",
+        "title": "Refresh source control",
+        "category": "Git"
+      },
+      {
+        "id": "git.status",
+        "title": "Show git status",
+        "category": "Git"
+      },
+      {
+        "id": "git.init",
+        "title": "Initialize repository",
+        "category": "Git"
+      },
+      {
+        "id": "git.stage",
+        "title": "Stage changes",
+        "category": "Git"
+      },
+      {
+        "id": "git.unstage",
+        "title": "Unstage changes",
+        "category": "Git"
+      },
+      {
+        "id": "git.discard",
+        "title": "Discard changes",
+        "category": "Git"
+      },
+      {
+        "id": "git.stageChange",
+        "title": "Stage change",
+        "category": "Git"
+      },
+      {
+        "id": "git.stageSelectedRanges",
+        "title": "Stage selected lines",
+        "category": "Git"
+      },
+      {
+        "id": "git.unstageChange",
+        "title": "Unstage change",
+        "category": "Git"
+      },
+      {
+        "id": "git.revertChange",
+        "title": "Revert change",
+        "category": "Git"
+      },
+      {
+        "id": "git.commit",
+        "title": "Commit",
+        "category": "Git"
+      },
+      {
+        "id": "git.checkout",
+        "title": "Checkout branch…",
+        "category": "Git"
+      },
+      {
+        "id": "git.branches",
+        "title": "List branches",
+        "category": "Git"
+      },
+      {
+        "id": "git.log",
+        "title": "Show commit history",
+        "category": "Git"
+      },
+      {
+        "id": "git.fetch",
+        "title": "Fetch",
+        "category": "Git"
+      },
+      {
+        "id": "git.pull",
+        "title": "Pull",
+        "category": "Git"
+      },
+      {
+        "id": "git.push",
+        "title": "Push",
+        "category": "Git"
+      },
+      {
+        "id": "git.sync",
+        "title": "Sync (pull, then push)",
+        "category": "Git"
+      },
+      {
+        "id": "git.stash",
+        "title": "Stash changes…",
+        "category": "Git"
+      },
+      {
+        "id": "git.stashIncludeUntracked",
+        "title": "Stash (include untracked)…",
+        "category": "Git"
+      },
+      {
+        "id": "git.stashList",
+        "title": "List stashes",
+        "category": "Git"
+      },
+      {
+        "id": "git.stashPop",
+        "title": "Pop stash…",
+        "category": "Git"
+      },
+      {
+        "id": "git.stashApply",
+        "title": "Apply stash…",
+        "category": "Git"
+      },
+      {
+        "id": "git.stashDrop",
+        "title": "Drop stash…",
+        "category": "Git"
+      },
+      {
+        "id": "git.clone",
+        "title": "Clone repository…",
+        "category": "Git"
+      },
+      {
+        "id": "git.blameLine",
+        "title": "Show who changed this line",
+        "category": "Git"
+      },
+      {
+        "id": "git.toggleInlineBlame",
+        "title": "Toggle inline blame",
+        "category": "Git"
+      },
+      {
+        "id": "git.fileHistory",
+        "title": "Show file history",
+        "category": "Git"
+      },
+      {
+        "id": "git.showCommit",
+        "title": "Show commit…",
+        "category": "Git"
+      },
+      {
+        "id": "git.openCommitFile",
+        "title": "Open file change in commit",
+        "category": "Git"
+      },
+      {
+        "id": "git.commitStaged",
+        "title": "Commit staged",
+        "category": "Git"
+      },
+      {
+        "id": "git.commitAll",
+        "title": "Commit all",
+        "category": "Git"
+      },
+      {
+        "id": "git.commitAmend",
+        "title": "Commit (amend)",
+        "category": "Git"
+      },
+      {
+        "id": "git.commitAndPush",
+        "title": "Commit & push",
+        "category": "Git"
+      },
+      {
+        "id": "git.commitAndSync",
+        "title": "Commit & sync",
+        "category": "Git"
+      },
+      {
+        "id": "git.undoLastCommit",
+        "title": "Undo last commit",
+        "category": "Git"
+      },
+      {
+        "id": "git.createBranchFrom",
+        "title": "Create branch from…",
+        "category": "Git"
+      },
+      {
+        "id": "git.renameBranch",
+        "title": "Rename branch…",
+        "category": "Git"
+      },
+      {
+        "id": "git.deleteBranch",
+        "title": "Delete branch…",
+        "category": "Git"
+      },
+      {
+        "id": "git.merge",
+        "title": "Merge branch…",
+        "category": "Git"
+      },
+      {
+        "id": "git.rebase",
+        "title": "Rebase branch…",
+        "category": "Git"
+      },
+      {
+        "id": "git.continueOperation",
+        "title": "Continue merge / rebase",
+        "category": "Git"
+      },
+      {
+        "id": "git.abortOperation",
+        "title": "Abort merge / rebase",
+        "category": "Git"
+      },
+      {
+        "id": "git.cherryPick",
+        "title": "Cherry-pick commit…",
+        "category": "Git"
+      },
+      {
+        "id": "git.revertCommit",
+        "title": "Revert commit…",
+        "category": "Git"
+      },
+      {
+        "id": "git.checkoutCommit",
+        "title": "Checkout commit (detached)…",
+        "category": "Git"
+      },
+      {
+        "id": "git.createTag",
+        "title": "Create tag…",
+        "category": "Git"
+      },
+      {
+        "id": "git.deleteTag",
+        "title": "Delete tag…",
+        "category": "Git"
+      },
+      {
+        "id": "git.addRemote",
+        "title": "Add remote…",
+        "category": "Git"
+      },
+      {
+        "id": "git.removeRemote",
+        "title": "Remove remote…",
+        "category": "Git"
+      },
+      {
+        "id": "git.ignore",
+        "title": "Add to .gitignore",
+        "category": "Git"
+      },
+      {
+        "id": "git.cancelCommitMessage",
+        "title": "Stop writing the commit message",
+        "category": "Git"
+      },
+      {
+        "id": "git.generateCommitMessage",
+        "title": "Generate commit message",
+        "category": "Git"
+      },
+      {
+        "id": "git.pullRebase",
+        "title": "Pull (rebase)",
+        "category": "Git"
+      },
+      {
+        "id": "git.pullMerge",
+        "title": "Pull (merge)",
+        "category": "Git"
+      },
+      {
+        "id": "git.pushForce",
+        "title": "Push (force with lease)",
+        "category": "Git"
+      },
+      {
+        "id": "git.pushTags",
+        "title": "Push tags",
+        "category": "Git"
+      },
+      {
+        "id": "git.toggleGraphAllBranches",
+        "title": "Toggle all branches in the commit graph",
+        "category": "Git"
+      },
+      {
+        "id": "git.showOutgoingChanges",
+        "title": "Show outgoing changes…",
+        "category": "Git"
+      },
+      {
+        "id": "git.showIncomingChanges",
+        "title": "Show incoming changes…",
+        "category": "Git"
+      },
+      {
+        "id": "git.worktrees",
+        "title": "Worktrees…",
+        "category": "Git"
+      },
+      {
+        "id": "git.createWorktree",
+        "title": "Create worktree…",
+        "category": "Git"
+      },
+      {
+        "id": "git.deleteWorktree",
+        "title": "Delete worktree…",
+        "category": "Git"
+      },
+      {
+        "id": "git.pruneWorktrees",
+        "title": "Prune worktrees",
+        "category": "Git"
+      },
+      {
+        "id": "git.rebaseInteractive",
+        "title": "Interactive rebase…",
+        "category": "Git"
+      },
+      {
+        "id": "github.pullRequests",
+        "title": "Pull requests…",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.openPullRequest",
+        "title": "Open pull request",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.checkoutPullRequest",
+        "title": "Checkout pull request…",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.createPullRequest",
+        "title": "Create pull request…",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.mergePullRequest",
+        "title": "Merge pull request",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.issues",
+        "title": "Issues…",
+        "category": "GitHub"
+      },
+      {
+        "id": "github.authStatus",
+        "title": "Check GitHub sign-in",
+        "category": "GitHub"
+      }
+    ],
+    "settings": {
+      "git.quickDiffBase": {
+        "type": "string",
+        "enum": ["index", "head", "mergeBase"],
+        "enumDescriptions": [
+          "Unstaged changes (VS Code)",
+          "Every uncommitted change",
+          "Everything since the branch left the default branch (what a pull request shows)"
+        ],
+        "default": "index",
+        "description": "What the editor's change bars compare the file with."
+      },
+      "git.autofetch": {
+        "type": "boolean",
+        "default": false,
+        "description": "Fetch from the remote every git.autofetchPeriod seconds, so the behind count stays current. Quiet; it stops after a failed sign-in until your next fetch."
+      },
+      "git.autofetchPeriod": {
+        "type": "number",
+        "default": 180,
+        "minimum": 30,
+        "description": "Seconds between automatic fetches (git.autofetch)."
+      },
+      "git.enableCommitSigning": {
+        "type": "boolean",
+        "default": false,
+        "description": "Sign commits (git commit -S) with your configured GPG or SSH key. git's own commit.gpgsign works without this."
+      },
+      "git.alwaysSignOff": {
+        "type": "boolean",
+        "default": false,
+        "description": "Add a Signed-off-by line to every commit (git commit --signoff)."
+      },
+      "git.defaultCloneDirectory": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Where \"Clone repository\" starts looking for the folder to clone into."
+      },
+      "git.blame.editorDecoration.enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show who last changed the cursor's line, and when, as faint text at the end of the line."
+      },
+      "git.blame.statusBarItem.enabled": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Show who last changed the cursor's line (git blame) in the status bar."
+      },
+      "git.aiCommitMessage.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Generate commit message: a button in the commit box writes the message from the staged changes with your model, only when you press it. Off: no AI button in Source control.",
+        "order": 4,
+        "category": "AI features",
+        "section": "Commit messages",
+        "title": "Generate commit message"
+      },
+      "git.aiCommitMessage.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Model for Generate commit message, as provider/model (e.g. ollama/qwen3:8b). Empty: the agent's model. Also on the AI models page.",
+        "order": 5,
+        "category": "AI features",
+        "section": "Commit messages",
+        "title": "Model"
+      },
+      "git.graph.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Draw the commit graph (branch lines) in Source control's Graph.",
+        "order": 40
+      },
+      "git.graph.allBranches": {
+        "type": "boolean",
+        "default": false,
+        "description": "The commit graph shows every branch, tag and remote branch, not only the current branch and its upstream.",
+        "order": 41
+      },
+      "git.graph.pageOnScroll": {
+        "type": "boolean",
+        "default": true,
+        "description": "The commit graph lists the next page of commits when you scroll to its end (VS Code's scm.graph.pageOnScroll), instead of waiting for Show more commits.",
+        "order": 42
+      },
+      "github.statusBar.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show the current branch's GitHub pull request in the status bar (needs the GitHub CLI, gh, signed in).",
+        "order": 42
+      },
+      "scm.repositories.selectionMode": {
+        "type": "string",
+        "enum": ["single", "multiple"],
+        "default": "single",
+        "description": "With several repositories in the folder: \"single\" shows the selected repository's changes (pick it in the Repositories list); \"multiple\" shows every repository's changes in one list, each under its own row (VS Code's). The message box commits the selected one either way.",
+        "order": 44
+      },
+      "git.repositoryScanMaxDepth": {
+        "type": "number",
+        "default": 1,
+        "minimum": 0,
+        "maximum": 8,
+        "description": "How many folders deep to look for other git repositories inside the open folder (0: none). Each one gets its own changes, branch and commit box in Source control.",
+        "order": 43
+      },
+      "git.repositoryScanIgnoredFolders": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["node_modules"],
+        "description": "Folder names never looked into for repositories.",
+        "order": 44
+      },
+      "git.detectSubmodules": {
+        "type": "boolean",
+        "default": true,
+        "description": "List the repository's submodules in Source control (up to 10).",
+        "order": 45
+      }
+    },
+    "keybindings": [
+      {
+        "key": "ctrl+shift+g",
+        "mac": "ctrl+shift+g",
+        "command": "git.showView"
+      },
+      {
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "command": "git.commit",
+        "when": "scmMessageFocus"
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+// A folder's .vscode: settings.json is a layer under the IDE's own .jonna (D189: read, never
+// written; values show as "vscode") (translated: terminal.integrated.fontSize → terminal.fontSize), tasks.json lists tasks that run in terminals; a server started in a
+// terminal is detected (the agent's background run_command uses terminal.start).
+{
+  "name": "workspace config",
+  "steps": [
+    {
+      "state": "ide://settings",
+      "expect": {
+        "$contains": "\"key\":\"editor.tabSize\",\"value\":2,\"source\":\"vscode\""
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"terminal.fontSize\",\"value\":12,\"source\":\"vscode\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "say done" } }
+    },
+    // Workspace trust (D103): tasks come from the folder's files; untrusted, they don't run.
+    { "state": "ide://workspace/trust", "expect": { "state": "unknown" } },
+    { "run": "tasks.run", "input": { "label": "say done" }, "expectError": "isn't trusted" },
+    {
+      "run": "workspace.setTrust",
+      "input": { "trusted": false },
+      "expect": { "state": "restricted" }
+    },
+    { "run": "tasks.run", "input": { "label": "say done" }, "expectError": "restricted mode" },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "tasks.run",
+      "input": { "label": "say done" },
+      "expect": { "output": { "$contains": "task-ran" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.start",
+      "input": { "command": "node tools/serve.mjs 11994", "waitMs": 15000 },
+      "expect": { "running": true, "urls": ["http://localhost:11994/"] },
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.servers", "expect": { "servers": { "$contains": "11994" } } },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11994/" },
+      "expect": { "connected": true, "title": "Served" },
+      "timeoutMs": 20000
+    },
+    { "state": "ide://terminals", "expect": { "servers": { "$contains": "11994" } } }
+  ]
+}

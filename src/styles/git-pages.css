@@ -1,0 +1,228 @@
+/* Git dock tabs (D139): the interactive rebase editor and a GitHub pull request. Tokens only. */
+@layer extensions {
+  /* ---- Interactive rebase ---- */
+  .rebase-view {
+    height: 100%;
+    overflow: auto;
+    background: var(--bg-app);
+    padding: var(--space-6) var(--space-8) var(--space-10);
+  }
+  .rebase-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+  .rebase-title {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .rebase-hint {
+    flex-basis: 100%;
+    order: 3;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .rebase-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+  }
+  .rebase-status {
+    color: var(--fg-muted);
+    margin-bottom: var(--space-3);
+    min-height: var(--text-md-lh);
+  }
+  .rebase-status.is-error {
+    color: var(--status-danger-fg);
+  }
+  .rebase-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rebase-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 34px;
+    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+  }
+  .rebase-row:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  .rebase-row.is-dragging {
+    opacity: 0.5;
+  }
+  .rebase-row.is-drop-target {
+    border-color: var(--accent-secondary-border);
+    background: var(--accent-secondary-subtle);
+  }
+  .rebase-row.is-squash,
+  .rebase-row.is-fixup {
+    margin-left: var(--space-6);
+  }
+  .rebase-grip {
+    display: flex;
+    color: var(--fg-subtle);
+    cursor: grab;
+  }
+  .rebase-action {
+    flex: none;
+    width: 88px;
+    height: var(--size-control-sm);
+  }
+  .rebase-hash {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .rebase-subject {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-default);
+  }
+  .rebase-message {
+    flex: 1;
+    min-width: 0;
+    resize: vertical;
+    padding-block: 3px;
+    font-family: inherit;
+    line-height: var(--text-md-lh);
+  }
+  .rebase-meta {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .rebase-row.is-drop .rebase-subject,
+  .rebase-row.is-drop .rebase-hash {
+    text-decoration: line-through;
+    color: var(--fg-subtle);
+  }
+
+  /* ---- GitHub pull request ---- */
+  .pr-view {
+    height: 100%;
+    overflow: auto;
+    background: var(--bg-app);
+  }
+  .pr-body {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-8) var(--space-10);
+  }
+  .pr-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .pr-title {
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .pr-number {
+    color: var(--fg-muted);
+    font-weight: 400;
+  }
+  .pr-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+  }
+  .pr-sub code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+  }
+  .pr-state {
+    padding: 1px var(--space-3);
+    border-radius: var(--radius-full);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    background: var(--bg-chip);
+    color: var(--fg-default);
+  }
+  .pr-state.is-open {
+    background: var(--status-success-bg);
+    color: var(--status-success-fg);
+  }
+  .pr-state.is-merged {
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+  }
+  .pr-state.is-closed {
+    background: var(--status-danger-bg);
+    color: var(--status-danger-fg);
+  }
+  .pr-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .pr-section {
+    margin: var(--space-6) 0 var(--space-2);
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .pr-muted {
+    color: var(--fg-muted);
+  }
+  .pr-error {
+    color: var(--status-danger-fg);
+    white-space: pre-wrap;
+  }
+  .pr-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+  }
+  .pr-check.is-passing .icon {
+    color: var(--status-success-fg);
+  }
+  .pr-check.is-failing .icon {
+    color: var(--status-danger-fg);
+  }
+  .pr-check.is-pending .icon {
+    color: var(--status-warning-fg);
+  }
+  .pr-comment {
+    margin-bottom: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+  }
+  .pr-comment-head {
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .pr-comment .pr-markdown {
+    padding: var(--space-1) var(--space-4);
+  }
+}

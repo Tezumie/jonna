@@ -1,0 +1,100 @@
+// D266: Reopen in container, end to end, with a fake docker (tests/fixtures/fake-docker) whose
+// "container" is WSL's Ubuntu: the folder's .devcontainer/devcontainer.json is read, the container
+// is started with the folder mounted (copied there) and its postCreateCommand run, then this
+// window works inside it through `docker exec` (files, a terminal), Reopen folder locally goes
+// back, and reopening finds the same container again by its labels. Windows with a WSL
+// distribution named Ubuntu only (like remote-wsl-m7-18).
+{
+  "name": "devcontainer-m7-24",
+  "requires": ["wsl"],
+  "platforms": ["win32"],
+  "fakeDocker": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+    // A clean start: nothing in WSL's /tmp from an earlier run.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "wsl.exe -d Ubuntu -e rm -rf /tmp/ide-devc-ui && echo cleaned",
+        "timeoutMs": 60000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "cleaned" } },
+      "timeoutMs": 70000
+    },
+    { "run": "explorer.newFolder", "input": { "parent": "${ws.root}", "name": ".devcontainer" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": "${ws.root}/.devcontainer", "name": "devcontainer.json" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{\n  // A test container (comments allowed, as VS Code reads it)\n  \"name\": \"Test\",\n  \"image\": \"fake/devcontainer\",\n  \"workspaceFolder\": \"/tmp/ide-devc-ui\",\n  \"postCreateCommand\": \"echo created-$(uname -s) > /tmp/ide-devc-ui/created.txt\",\n}\n"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "remote.reopenInContainer",
+      "expect": { "container": { "$exists": true }, "opened": "/tmp/ide-devc-ui" },
+      "save": "first",
+      "print": true,
+      "timeoutMs": 180000
+    },
+    {
+      "state": "ide://remote",
+      "expect": {
+        "authority": { "$contains": "container:" },
+        "label": { "$contains": "Dev container" },
+        "status": "connected",
+        "info": { "os": "linux" },
+        "container": { "localFolder": { "$contains": "sample" } }
+      },
+      "timeoutMs": 10000
+    },
+    { "state": "ide://workspace", "expect": { "root": "/tmp/ide-devc-ui" }, "timeoutMs": 10000 },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // The folder's files are there, and what postCreateCommand wrote.
+    { "run": "editor.openFile", "input": { "path": "/tmp/ide-devc-ui/notes.txt" } },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "hello world" } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.openFile", "input": { "path": "/tmp/ide-devc-ui/created.txt" } },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "created-Linux" } },
+      "timeoutMs": 10000
+    },
+    // A terminal in the container.
+    { "run": "terminal.create", "expect": { "cwd": "/tmp/ide-devc-ui" }, "save": "t" },
+    {
+      "run": "terminal.sendText",
+      "input": { "id": "${t.id}", "text": "echo in-$((40+2)) $(uname -s) $(pwd)\r" }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${t.id}" },
+      "expect": { "text": { "$contains": "in-42 Linux /tmp/ide-devc-ui" } },
+      "timeoutMs": 15000
+    },
+    // Back to the local folder, then into the same container again (found by its labels).
+    {
+      "run": "remote.reopenLocally",
+      "expect": { "opened": { "$contains": "sample" } },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://remote", "expect": null, "timeoutMs": 10000 },
+    {
+      "run": "remote.reopenInContainer",
+      "expect": { "container": "${first.container}", "opened": "/tmp/ide-devc-ui" },
+      "timeoutMs": 120000
+    },
+    {
+      "run": "remote.reopenLocally",
+      "expect": { "opened": { "$contains": "sample" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

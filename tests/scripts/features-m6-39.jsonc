@@ -1,0 +1,100 @@
+// D140: inline diagnostics, the project's formatter, the AI commit message (stage first), the
+// Accounts menu, the title bar's quick open and the welcome page.
+{
+  "name": "features-m6-39",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // The title bar opens quick open (Ctrl+P), like VS Code's command center.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".titlebar-command", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Ctrl+P<" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".welcome-links" },
+      "expect": { "$length": 0 }
+    },
+
+    // Inline diagnostics: main.ts line 3 has a type error, written after the line.
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .inline-diagnostic.is-error", "html": 2000 },
+      "expect": [{ "html": { "$exists": true } }],
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "editor.inlineDiagnostics", "value": "off" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .inline-diagnostic" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineDiagnostics", "value": "errorsAndWarnings" }
+    },
+
+    // The project's formatter: a "prettier" in node_modules/.bin (here one that uppercases; with
+    // the .cmd shim Windows runs).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p node_modules/.bin && cp ../setup/fake-prettier/* node_modules/.bin/ && chmod +x node_modules/.bin/prettier",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    { "state": "ide://editors/active", "expect": { "path": "src/util.ts" }, "timeoutMs": 5000 },
+    { "run": "editor.formatDocument", "expect": { "formatter": "prettier" } },
+    { "run": "editor.save" },
+    {
+      "run": "search.run",
+      "input": { "query": "EXPORT", "matchCase": true },
+      "expect": { "files": 1, "results": [{ "path": "src/util.ts" }] }
+    },
+    // Untrusted folders don't run project tools.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    { "run": "editor.formatDocument", "expect": { "formatter": "language" } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+
+    // The AI commit message (the mock model thinks inline first; that's stripped).
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    { "run": "git.stage" },
+    // On by default (D173); the setting turns it off.
+    { "run": "settings.set", "input": { "key": "git.aiCommitMessage.enabled", "value": false } },
+    { "run": "git.generateCommitMessage", "expectError": "not available" },
+    { "run": "settings.set", "input": { "key": "git.aiCommitMessage.enabled", "value": true } },
+    {
+      "run": "git.generateCommitMessage",
+      "expect": { "message": "Update the notes\n\nAdd a line about tests." }
+    },
+
+    // Accounts: the menu; the IDE account service is set (D414), nobody signed in.
+    {
+      "state": "ide://accounts",
+      "expect": { "ide": { "available": true, "signedIn": false } }
+    },
+    { "run": "dev.click", "input": { "selector": ".activitybar-accounts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Backup and sync settings" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } }
+  ]
+}

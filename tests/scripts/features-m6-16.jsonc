@@ -1,0 +1,49 @@
+// D117: dev servers started twice are reused; a short command started in a fresh terminal reports
+// its own end (not the first prompt's); project snippets from .vscode/*.code-snippets; the
+// agent's command-approval mode.
+{
+  "name": "features-m6-16",
+  "steps": [
+    {
+      "run": "terminal.start",
+      "input": { "command": "node tools/serve.mjs 11993", "waitMs": 15000 },
+      "expect": { "running": true, "urls": ["http://localhost:11993/"] },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.start",
+      "input": { "command": "node tools/serve.mjs 11993" },
+      "expect": { "running": true, "alreadyRunning": true, "urls": ["http://localhost:11993/"] }
+    },
+    {
+      "run": "terminal.start",
+      "input": { "command": "node -e \"console.log('done here')\"", "waitMs": 15000 },
+      "expect": { "running": false, "exitCode": 0, "output": { "$contains": "done here" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode", "name": "demo.code-snippets" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "demo.code-snippets" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "{ \"Greet\": { \"scope\": \"typescript\", \"prefix\": \"greetx\", \"body\": \"hello($1)\" } }"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "state": "ide://snippets",
+      "expect": { "$contains": "greetx" },
+      "timeoutMs": 10000
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "auto" }, "expect": { "mode": "auto" } },
+    { "state": "ide://settings", "expect": { "$contains": "agent.runCommands" } },
+    { "run": "agent.setCommandMode", "input": { "mode": "ask" } }
+  ]
+}

@@ -1,0 +1,115 @@
+// D234: the main agent's own name and face (agent.setMainAgent, ide://agent/mainAgent): the chats
+// bar, the Agents page and a group chat use them, and "@Name" reaches it. A chat's tab shows its
+// agents' faces instead of the generic icon.
+{
+  "name": "agent-m7-13",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\nrole: Researcher\\nicon: blob-3-happy\\ndescription: Finds things in the code.\\n---\\n\\nResearch first.\\n' > .vscode/agents/scout.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:scout" },
+      "timeoutMs": 10000
+    },
+
+    // ---- Rename the main agent and give it a face ----
+    // Named after the IDE until renamed (D237).
+    { "state": "ide://agent/mainAgent", "expect": { "id": "agent", "name": { "$exists": true } } },
+    {
+      "run": "agent.setMainAgent",
+      "input": { "name": "  Nova  ", "icon": "round-5-happy" },
+      "expect": { "name": "Nova", "icon": "round-5-happy" }
+    },
+    {
+      "state": "ide://agent/mainAgent",
+      "expect": { "name": "Nova", "icon": "round-5-happy" },
+      "timeoutMs": 3000
+    },
+    { "run": "agent.setMainAgent", "input": { "icon": "nope" }, "expectError": "face code" },
+
+    // The Agents page: its name and face open it in the agent editor (D286), with the picker.
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ag-card-main .ag-card-open", "html": 300 },
+      "expect": [{ "html": { "$contains": "Nova" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".ag-card-main .ag-card-open" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ae-page .ae-face-pick", "limit": 20 },
+      "expect": { "$length": 12 },
+      "timeoutMs": 3000
+    },
+
+    // ---- A group chat with it: the room calls it Nova, "@Nova" reaches it ----
+    {
+      "run": "agent.newGroupChat",
+      "input": { "members": ["agent", "scout"] },
+      "expect": { "members": ["agent", "scout"] },
+      "save": "grp"
+    },
+    // The chat's tab shows its agents' faces.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='agent'] > .agent-face-group" },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "@Nova say hi", "session": "${grp.session}", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "\"speaker\":\"agent\"" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${grp.session}'] .agent-speaker[data-speaker='agent'] .agent-speaker-name",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "Nova" } }],
+      "timeoutMs": 5000
+    },
+
+    // ---- A chat with one agent: its face on the tab ----
+    {
+      "run": "agent.chatWith",
+      "input": { "agent": "scout" },
+      "expect": { "mode": "custom:scout" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='agent'] > .agent-face" },
+      "expect": { "$not": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // Back to the default.
+    {
+      "run": "agent.setMainAgent",
+      "input": { "name": "", "icon": "" },
+      "expect": { "name": { "$not": "Nova" } }
+    }
+  ]
+}

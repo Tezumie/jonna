@@ -1,0 +1,178 @@
+/* Help (extensions/help, D204): the Report a problem tab. What's new reuses the docs page. */
+@layer extensions {
+  .report-view {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    overflow: auto;
+    background: var(--bg-surface);
+  }
+  .report-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    max-width: 760px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-10);
+  }
+  .report-heading {
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .report-subheading {
+    margin-top: var(--space-4);
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .report-lead,
+  .report-note {
+    color: var(--fg-muted);
+  }
+  .report-label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+  }
+  .report-title {
+    width: 100%;
+  }
+  .report-description {
+    width: 100%;
+    height: auto;
+    min-height: 96px;
+    padding: var(--space-3) var(--space-4);
+    resize: vertical;
+    font: inherit;
+  }
+  .report-parts {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .report-part + .report-part {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .report-part-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-height: var(--size-control-md);
+    padding: var(--space-2) var(--space-5);
+    cursor: pointer;
+    color: var(--fg-default);
+  }
+  .report-part-head:hover {
+    background: var(--bg-hover);
+  }
+  .report-part-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .report-part-size {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .report-check {
+    flex: none;
+    accent-color: var(--accent);
+  }
+  .report-part-text,
+  .report-preview {
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    color: var(--fg-muted);
+    background: var(--bg-input);
+  }
+  .report-preview {
+    max-height: 420px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .report-shot-image {
+    display: block;
+    max-width: 100%;
+    max-height: 240px;
+    margin: 0 var(--space-5) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+  }
+  .report-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  /* ---- The Output tab (D209) ---- */
+  .output-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .output-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    min-width: 0;
+  }
+  .output-channel {
+    min-width: 0;
+    max-width: 280px;
+  }
+  .output-level {
+    flex: none;
+    width: auto;
+  }
+  .output-filter {
+    flex: 0 1 220px;
+    min-width: 64px;
+  }
+  /* A ghost icon toggle (DESIGN.md: fills --accent-subtle when on), like the search toggles. */
+  .output-wrap[aria-pressed="true"] {
+    color: var(--fg-default);
+    background: var(--accent-subtle);
+  }
+  .output-spacer {
+    flex: 1;
+  }
+  .output-body {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-default);
+  }
+  .output-body.is-nowrap {
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+  .output-body.is-empty {
+    color: var(--fg-subtle);
+  }
+}

@@ -1,0 +1,137 @@
+// D204: suggestions as you type, toward Copilot / Cursor Tab. Off by default (the commands
+// refuse); on, a request goes to the model's fill-in-the-middle endpoint (the mock Ollama's
+// /api/generate with `suffix`) carrying a snippet of another open file as context (the mock's
+// middle says "context" when the prompt had one); the two-line suggestion shows as ghost text
+// and is accepted a word, then whole. With FIM off the chat prompt answers instead.
+{
+  "name": "ghost-m7-5",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/util.ts", "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    // Off by default: no suggestions, the commands refuse.
+    { "state": "ide://editor/inlineCompletions", "expect": { "enabled": false } },
+    { "run": "editor.inlineSuggest.trigger", "expectError": true },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": true }
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": {
+        "enabled": true,
+        "model": "ollama/mock-coder:1b",
+        "fim": "ollama",
+        "maxTokens": 128
+      },
+      "timeoutMs": 10000
+    },
+    // A new function after the last line; the cursor after "return ".
+    {
+      "run": "editor.select",
+      "input": { "startLine": 3, "startColumn": 2, "endLine": 3, "endColumn": 2 }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "\n\nexport function twice(n: number): number {\n  return " }
+    },
+    { "run": "editor.inlineSuggest.trigger" },
+    // Ghost text is drawn token by token: each word is checked on its own.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "fimDone" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "context" }
+    },
+    // Two lines: the second shows below the cursor's line.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text", "limit": 20 },
+      "expect": { "$contains": "second" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": {
+        "last": {
+          "mode": "fim",
+          "path": "src/util.ts",
+          "snippets": { "$contains": "src/main.ts" }
+        }
+      }
+    },
+    // Ctrl+Right's command: one word.
+    { "run": "editor.inlineSuggest.acceptWord" },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "  return fimDone" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$not": { "$contains": "second line" } } }
+    },
+    // The rest stays shown; Tab's command takes it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "context" },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.inlineSuggest.accept" },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "  return fimDone(end, context)\nsecond line" } },
+      "timeoutMs": 5000
+    },
+    // FIM off: the chat prompt (the mock's completion engine answers "completed()").
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.fim", "value": "never" }
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "fim": null, "fimMode": "never" },
+      "timeoutMs": 5000
+    },
+    { "run": "editor.insertText", "input": { "text": "\nconst thrice = (n: number) => " } },
+    { "run": "editor.inlineSuggest.trigger" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "completed" },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://editor/inlineCompletions", "expect": { "last": { "mode": "chat" } } },
+    { "run": "editor.inlineSuggest.accept" },
+    {
+      "run": "editor.getText",
+      "expect": { "text": { "$contains": "const thrice = (n: number) => completed()" } },
+      "timeoutMs": 5000
+    },
+    // Off again: nothing more is asked.
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": false }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.fim", "value": "auto" }
+    },
+    { "run": "editor.inlineSuggest.trigger", "expectError": true }
+  ]
+}

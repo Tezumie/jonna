@@ -1,0 +1,169 @@
+/* The ACP registry's agents as a gallery of cards (D215, view/agentGallery.ts) on the Models page,
+   under "Use an agent you already have". Quiet like the page: hairline cards on the surface, one
+   primary button per card, icons drawn in the text color (they're one-color SVGs). */
+@layer extensions {
+  .acp-gallery {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+  }
+  .acp-gallery-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .acp-gallery-search-box {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-subtle);
+  }
+  .acp-gallery-search-box > .icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+  .acp-gallery-search {
+    width: 100%;
+    padding-left: 28px;
+    background: var(--bg-input);
+  }
+  .acp-gallery-status {
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .acp-gallery-status.is-error {
+    color: var(--status-warning-fg);
+  }
+  .acp-gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    gap: var(--space-3);
+  }
+  .acp-gallery-empty {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .acp-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+  }
+  .acp-card.is-open {
+    grid-column: 1 / -1;
+    background: var(--bg-surface-raised);
+  }
+  .acp-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .acp-card-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .acp-card-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .acp-card-meta,
+  .acp-card-state {
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .acp-card.is-installed .acp-card-state {
+    color: var(--status-success-fg);
+  }
+  .acp-card-desc {
+    flex: 1;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .acp-card.is-open .acp-card-desc {
+    -webkit-line-clamp: unset;
+  }
+  .acp-card-progress {
+    width: 100%;
+    height: 4px;
+    accent-color: var(--accent);
+  }
+  .acp-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .acp-card-details {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-1) var(--space-4);
+    margin: var(--space-2) 0 0;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .acp-card-detail {
+    display: contents;
+  }
+  .acp-card-detail dt {
+    color: var(--fg-subtle);
+  }
+  .acp-card-detail dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .acp-card-link {
+    padding: 0;
+    text-align: left;
+  }
+  /* The agent's icon: a one-color SVG drawn in the text color on a chip, so it reads in both
+     themes; a colored one as it is; else its first letter. */
+  .acp-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .acp-icon img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+  }
+  .acp-icon-mask {
+    width: 18px;
+    height: 18px;
+    background: var(--fg-default);
+    -webkit-mask: var(--logo) center / contain no-repeat;
+    mask: var(--logo) center / contain no-repeat;
+  }
+}

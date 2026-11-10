@@ -1,0 +1,104 @@
+{
+  "id": "builtin.tasks",
+  "version": "0.1.0",
+  "displayName": "Tasks",
+  "description": "Run tasks from tasks.json (the folder's .vscode and IDE files, and the user's), package.json scripts and build files (tsc, Make, Cargo, Gradle, Maven, gulp, grunt) in terminals, with problem matchers, inputs and dependencies.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "terminal"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "tasks.run",
+        "title": "Run task…",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.runBuild",
+        "title": "Run build task",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.runTest",
+        "title": "Run test task",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.rerun",
+        "title": "Rerun last task",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.list",
+        "title": "List tasks",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.configure",
+        "title": "Configure tasks",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.configureDefaultBuild",
+        "title": "Configure default build task",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.configureDefaultTest",
+        "title": "Configure default test task",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.terminate",
+        "title": "Terminate task…",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.restart",
+        "title": "Restart running task…",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.showRunning",
+        "title": "Show running tasks…",
+        "category": "Terminal"
+      },
+      {
+        "id": "tasks.openUserTasks",
+        "title": "Open user tasks",
+        "category": "Preferences"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "command": "tasks.runBuild",
+        "when": "workspaceOpen"
+      }
+    ],
+    "settings": {
+      "task.allowAutomaticTasks": {
+        "type": "string",
+        "enum": ["on", "off"],
+        "default": "on",
+        "description": "Run tasks marked \"runOptions\": { \"runOn\": \"folderOpen\" } when a trusted folder opens.",
+        "order": 1
+      },
+      "task.autoDetect": {
+        "type": "string",
+        "enum": ["on", "off"],
+        "default": "on",
+        "description": "List tasks found in the folder's build files: tsc build and watch per tsconfig.json, Makefile targets, Cargo, Gradle, Maven, gulp and grunt (package.json scripts are always listed).",
+        "order": 2
+      },
+      "task.autoDetectDepth": {
+        "type": "integer",
+        "default": 2,
+        "minimum": 0,
+        "maximum": 3,
+        "description": "How many folder levels below the root task detection looks into (0: the root only; 2: `packages/app` too). Ignored, hidden and build or dependency folders are skipped, and at most 80 folders are looked at.",
+        "order": 3
+      }
+    }
+  }
+}

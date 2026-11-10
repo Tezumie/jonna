@@ -1,0 +1,69 @@
+// D202: showing the Chats view doesn't focus its search box; trees leave a row of room past their
+// last item; a double-click on a diagram's buttons in a Markdown preview doesn't open the source.
+{
+  "name": "ui-m7-3",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 900 } },
+    // ---- Chats view focus ----
+    { "run": "agent.showChats" },
+    { "wait": 500 },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": { "activeElement": { "$not": { "$contains": "chats-search" } } }
+    },
+    // ---- Room past the last row ----
+    { "run": "explorer.focus" },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-spacer", "html": 300, "limit": 1 },
+      "expect": [{ "html": { "$contains": "height" } }],
+      "timeoutMs": 3000
+    },
+    // ---- Double-click on a diagram's buttons ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# D\\n\\n```mermaid\\nflowchart LR\\n  A --> B\\n```\\n\\nText paragraph.\\n' > dbl.md",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "viewer.openPreview", "input": { "path": "dbl.md" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".md-diagram-body svg" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".md-diagram .md-pre-header .icon-button:nth-of-type(2)",
+        "double": true
+      }
+    },
+    { "wait": 600 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-active", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "Preview dbl.md" } }]
+    },
+    // The diagram body itself: a double-click fits it, the preview stays.
+    { "run": "dev.click", "input": { "selector": ".md-diagram-body", "double": true } },
+    { "wait": 600 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-active", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "Preview dbl.md" } }]
+    },
+    // Text still opens the source at its line.
+    { "run": "dev.click", "input": { "selector": ".markdown-preview p", "double": true } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "dbl.md" },
+      "timeoutMs": 5000
+    }
+  ]
+}

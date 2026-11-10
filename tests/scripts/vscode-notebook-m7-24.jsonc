@@ -1,0 +1,88 @@
+// D265: VS Code's notebook editor API through the shim: the active notebook editor (followed from
+// the IDE's notebook tab), its document's cells, and a WorkspaceEdit's NotebookEdits applied
+// through the IDE's cell commands (a cell inserted, the notebook's metadata replaced).
+{
+  "name": "vscode-notebook-m7-24",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    // Its code runs (and follows the editor) before the notebook opens.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.info" },
+      "timeoutMs": 60000
+    },
+    { "run": "notebook.new", "input": { "path": "nb/api.ipynb" } },
+    { "wait": 1000 },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.notebook" },
+      "expect": {
+        "result": {
+          "active": true,
+          "path": { "$contains": "api.ipynb" },
+          "type": "jupyter-notebook",
+          "before": 1,
+          "after": 3,
+          "applied": true,
+          "added": 2,
+          "first": "# From VS Code's API",
+          "firstKind": 1,
+          "hello": "yes",
+          "listed": true
+        }
+      },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    // D267: the inserted code cell came with its output and execution order.
+    {
+      "run": "notebook.read",
+      "input": { "outputs": true },
+      "expect": { "cells": { "$contains": "answer 42" } },
+      "print": true
+    },
+    // D267: an untitled notebook from an extension's data, shown and active.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.untitledNotebook" },
+      "expect": {
+        "result": {
+          "untitled": true,
+          "uri": "untitled:Untitled-1.ipynb",
+          "type": "jupyter-notebook",
+          "cells": 1,
+          "text": "x = 1",
+          "output": "answer 42\n",
+          "order": 7,
+          "active": true
+        }
+      },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "path": "untitled:Untitled-1.ipynb", "dirty": true } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "notebook.read",
+      "input": { "path": "nb/api.ipynb", "metadata": true },
+      "expect": {
+        "cells": { "$contains": "From VS Code's API" },
+        "metadata": { "$contains": "hello" }
+      }
+    }
+  ]
+}

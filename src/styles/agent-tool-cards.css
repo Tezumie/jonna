@@ -1,0 +1,468 @@
+/* The chat's cards for ask_user's questions (D312), report_findings (D313) and
+   suggest_extension (D314). Quiet like the other display cards: hairline borders, raised cards,
+   inputs on --bg-input, status colors only on an outcome. */
+@layer extensions {
+  /* ---- ask_user ---- */
+  .rb-ask:focus {
+    outline: none;
+  }
+  .rb-ask-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .rb-ask-tab,
+  .rb-ask-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: var(--space-1) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .rb-ask-tab {
+    cursor: pointer;
+    transition:
+      background var(--motion-fast) var(--ease-standard),
+      border-color var(--motion-fast) var(--ease-standard);
+  }
+  .rb-ask-tab:hover {
+    background: var(--bg-hover);
+  }
+  .rb-ask-tab.is-current {
+    border-color: var(--border-strong);
+    color: var(--fg-default);
+  }
+  .rb-ask-tab.is-done > .icon {
+    color: var(--status-success-fg);
+  }
+  .rb-ask-tab-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rb-ask-tab-number {
+    color: var(--fg-subtle);
+  }
+  .rb-ask-chip {
+    align-self: flex-start;
+    margin-bottom: var(--space-2);
+  }
+  .rb-ask-question {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    container-type: inline-size;
+  }
+  .rb-ask.is-answered .rb-ask-question + .rb-ask-question {
+    margin-top: var(--space-4);
+  }
+  /* Options, with the focused option's preview beside them (below in a narrow chat). */
+  .rb-ask-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .rb-ask-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  @container (min-width: 560px) {
+    .rb-ask-body.has-preview {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: start;
+    }
+  }
+  .rb-ask-preview {
+    margin: 0;
+    min-height: 3lh;
+    max-height: 320px;
+    overflow: auto;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-sunken);
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    white-space: pre;
+  }
+  .rb-choice-key {
+    flex: none;
+    display: grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    border-radius: var(--radius-xs);
+    background: var(--bg-chip);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .rb-ask .rb-choice:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+  .rb-ask-other {
+    width: 100%;
+    min-width: 0;
+    padding: var(--space-3) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    font: inherit;
+  }
+  .rb-ask-other:focus {
+    outline: none;
+    border-color: var(--border-input-focus);
+  }
+  .rb-ask-other:disabled {
+    display: none;
+  }
+  .rb-ask-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* The card itself (D335, Claude Code's AskUserQuestion): a raised card, the question in a
+     header area, options as quiet rows with a radio or checkbox, the picked one highlighted. */
+  .rb-ask {
+    padding: var(--space-5) var(--space-6);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--bg-surface-raised);
+  }
+  .rb-ask-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .rb-ask-header > .rb-ask-chip {
+    margin-bottom: 0;
+  }
+  .rb-ask .rb-choices-list {
+    gap: var(--space-1);
+  }
+  .rb-ask .rb-choice,
+  .rb-ask-other-row {
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+  }
+  .rb-ask .rb-choice:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--bg-hover);
+  }
+  .rb-ask .rb-choice.is-selected,
+  .rb-ask .rb-choice.is-chosen:disabled,
+  .rb-ask-other-row.is-selected {
+    border-color: var(--border-default);
+    background: var(--bg-selected);
+  }
+  .rb-choice-label {
+    display: block;
+    color: var(--fg-default);
+  }
+  .rb-ask .rb-choice-key {
+    margin-left: auto;
+  }
+  .rb-choice-mark {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    margin-top: var(--space-1);
+    border: 1px solid var(--border-strong);
+    background: var(--bg-input);
+    color: var(--fg-on-accent);
+  }
+  .rb-choice-mark.is-radio {
+    border-radius: var(--radius-full);
+  }
+  .rb-choice-mark.is-check {
+    border-radius: var(--radius-xs);
+  }
+  .rb-choice-mark.is-on {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .rb-choice-mark.is-radio.is-on {
+    box-shadow: inset 0 0 0 3px var(--bg-input);
+  }
+  .rb-ask .rb-choice-mark > .icon {
+    width: 10px;
+    height: 10px;
+  }
+  .rb-ask-other-row {
+    display: flex;
+    align-items: center;
+    cursor: text;
+  }
+  .rb-ask-other-row > .rb-choice-mark {
+    margin-top: 0;
+  }
+  .rb-ask-other-row:has(.rb-ask-other:disabled) {
+    display: none;
+  }
+  .rb-ask-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-left: auto;
+  }
+  .rb-ask-kbd {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .rb-ask-tab.is-skipped > .icon {
+    color: var(--fg-subtle);
+  }
+  .rb-ask-question.is-skipped .rb-choice {
+    opacity: 0.55;
+  }
+
+  /* ---- report_findings ---- */
+  .rb-findings {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .rb-findings-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+  }
+  .rb-findings-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .rb-findings-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rb-finding {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .rb-finding-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .rb-finding-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+  }
+  .rb-finding-title {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rb-finding-open:hover .rb-finding-title {
+    text-decoration: underline;
+  }
+  .rb-finding-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    min-width: 0;
+  }
+  .rb-finding-file {
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rb-finding-category {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+  }
+  .rb-finding-summary {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .rb-finding-scenario {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+  .rb-finding-fix,
+  .rb-findings-fix-all {
+    flex: none;
+  }
+  .rb-finding-outcome {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .rb-finding-outcome.is-fixed {
+    color: var(--status-success-fg);
+  }
+  .rb-finding.is-fixed .rb-finding-title,
+  .rb-finding.is-no_change_needed .rb-finding-title {
+    color: var(--fg-muted);
+  }
+
+  /* ---- suggest_extension ---- */
+  .rb-extensions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .rb-extensions-reason {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .rb-extension {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .rb-extension > .ext-avatar {
+    flex: none;
+  }
+  .rb-extension-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .rb-extension-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .rb-extension-name {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .rb-extension-name:hover {
+    text-decoration: underline;
+  }
+  .rb-extension-publisher {
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    white-space: nowrap;
+  }
+  .rb-extension-description {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rb-extension-install {
+    flex: none;
+  }
+
+  /* ---- A browser recording (D340): the GIF, what it holds, Save / Download ---- */
+  .agent-recording {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: min(100%, 560px);
+    padding: var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .agent-recording.is-gone {
+    flex-direction: row;
+    align-items: center;
+    color: var(--fg-muted);
+  }
+  .agent-recording-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    box-shadow: 0 0 0 1px var(--border-default);
+  }
+  .agent-recording-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .agent-recording-caption {
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-recording-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+}

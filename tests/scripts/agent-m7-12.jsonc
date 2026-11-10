@@ -1,0 +1,156 @@
+// D233 (agent area): an @mention in a chat with one agent brings that agent in and it answers;
+// a message a hook stops leaves the chat's members as they were (routing is committed only once
+// the turn starts); agent.inviteAgent brings an agent in by its label; an external agent without
+// git: a file no step names is found through the folder's listing; Codex-like /status text
+// becomes structured plan limits (ide://agent/session planLimits); the saved-chats watcher and
+// the pending helper reports store answer (no error). Against tests/fixtures/mock-ollama.mjs and
+// the sample's tools/mock-acp.mjs.
+{
+  "name": "agent-m7-12",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\nrole: Researcher\\ndescription: Finds things in the code.\\n---\\n\\nscout-instr-marker: research first.\\n' > .vscode/agents/scout.md && printf -- '---\\nname: forge\\nlabel: Forge\\nrole: Builder\\ndescription: Builds what was planned.\\n---\\n\\nforge-instr-marker: build it.\\n' > .vscode/agents/forge.md && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:scout" },
+      "timeoutMs": 10000
+    },
+
+    // ---- A message a hook stops: the mention brings nobody in ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.hooks",
+        "value": {
+          "UserPromptSubmit": [
+            { "hooks": [{ "type": "command", "command": "node ../setup/test-hook.mjs" }] }
+          ]
+        }
+      }
+    },
+    { "run": "agent.newSession", "save": "solo" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "ollama/mock-coder:1b" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "hook-blocks this, @Scout", "wait": true },
+      "expectError": "hook",
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "members": { "$exists": false },
+        "items": { "$not": { "$contains": "joined the chat" } }
+      }
+    },
+    { "run": "settings.set", "input": { "key": "agent.hooks", "value": {} } },
+
+    // ---- The same mention, sent: Scout joins and answers ----
+    {
+      "run": "agent.send",
+      "input": { "message": "grp231 both, @Scout what do you think?", "wait": true },
+      "expect": { "answer": { "$contains": "scout answered" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "members": ["agent", "scout"],
+        "items": { "$contains": "Scout joined the chat." }
+      },
+      "print": true
+    },
+
+    // ---- agent.inviteAgent by label ----
+    {
+      "run": "agent.inviteAgent",
+      "input": { "agent": "Forge" },
+      "expect": {
+        "members": ["agent", "scout", "forge"],
+        "joined": ["forge"],
+        "answersNext": false
+      }
+    },
+    { "run": "agent.inviteAgent", "input": { "agent": "Nobody" }, "expectError": "Scout" },
+    {
+      "run": "agent.inviteAgent",
+      "input": { "agent": "forge" },
+      "expect": { "joined": [] }
+    },
+
+    // ---- An external agent without git: the listing finds what no step names ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please, agent writes itself", "wait": true },
+      "expect": { "answer": { "$contains": "Wrote the files myself" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$contains": "made-by-agent.txt" } },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "state": "ide://agent/session", "expect": { "pending": { "$contains": "notes.txt" } } },
+
+    // ---- /status: plan limits as data ----
+    {
+      "run": "agent.send",
+      "input": { "message": "/status", "wait": true },
+      "expect": { "answer": { "$contains": "Weekly limit" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "planLimits": {
+          "agent": "Mock agent",
+          "limits": [
+            { "label": "5h", "usedPercent": 30, "resets": "14:32" },
+            { "label": "Weekly", "usedPercent": 5, "resets": "09:00 on 3 Nov" }
+          ]
+        }
+      },
+      "print": true
+    }
+  ]
+}

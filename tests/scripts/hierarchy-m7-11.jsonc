@@ -1,0 +1,239 @@
+// Call and type hierarchies and document colors from a language server, against
+// tests/fixtures/setup/mock-hierarchy-lsp.mjs (Node): "a calls b" lines are calls, "class A
+// extends B" lines are subtypes, "#rrggbb" are colors. Agents' data (lsp.callHierarchy,
+// lsp.typeHierarchy), the hierarchy tab (lazy rows, the direction switch, a row opening its call
+// site), the editor's menu and Shift+Alt+H, and the color swatches.
+{
+  "name": "hierarchy-m7-11",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'alpha calls beta\\nbeta calls gamma\\ngamma returns\\nclass Base\\nclass Child extends Base\\ncolor orange here\\n' > hier.md && echo WROTE",
+        "timeoutMs": 10000
+      },
+      "expect": { "output": { "$contains": "WROTE" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "hier": {
+            "command": "node",
+            "args": ["${workspaceFolder}/../setup/mock-hierarchy-lsp.mjs"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "hier.md", "line": 2, "column": 1 } },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"name\":\"hier\",\"command\":\"node\"" },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"state\":\"running\"" },
+      "timeoutMs": 15000
+    },
+
+    // ---- For agents: the calls as data ----
+    {
+      "run": "lsp.callHierarchy",
+      "input": { "path": "hier.md", "line": 2, "column": 1 },
+      "expect": {
+        "direction": "incoming",
+        "items": [
+          {
+            "name": "beta",
+            "kind": "function",
+            "path": "hier.md",
+            "line": 2,
+            "column": 1,
+            "children": [
+              {
+                "name": "alpha",
+                "line": 1,
+                "column": 1,
+                "calls": { "path": "hier.md", "positions": [{ "line": 1, "column": 13 }] }
+              }
+            ]
+          }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    // Two levels of outgoing calls: alpha → beta → gamma (the call sites are in the caller).
+    {
+      "run": "lsp.callHierarchy",
+      "input": { "path": "hier.md", "line": 1, "column": 2, "direction": "outgoing", "depth": 2 },
+      "expect": {
+        "direction": "outgoing",
+        "items": [
+          {
+            "name": "alpha",
+            "children": [
+              {
+                "name": "beta",
+                "calls": { "positions": [{ "line": 1, "column": 13 }] },
+                "children": [
+                  {
+                    "name": "gamma",
+                    "line": 3,
+                    "calls": { "positions": [{ "line": 2, "column": 12 }] }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "lsp.typeHierarchy",
+      "input": { "path": "hier.md", "line": 4, "column": 8 },
+      "expect": {
+        "direction": "subtypes",
+        "items": [
+          {
+            "name": "Base",
+            "kind": "class",
+            "children": [{ "name": "Child", "line": 5, "column": 7 }]
+          }
+        ]
+      }
+    },
+    {
+      "run": "lsp.typeHierarchy",
+      "input": { "path": "hier.md", "line": 5, "column": 8, "direction": "supertypes" },
+      "expect": { "items": [{ "name": "Child", "children": [{ "name": "Base", "line": 4 }] }] }
+    },
+    // No symbol there: nothing, not an error.
+    {
+      "run": "lsp.callHierarchy",
+      "input": { "path": "hier.md", "line": 7, "column": 1 },
+      "expect": { "items": { "$length": 0 } }
+    },
+
+    // ---- The editor's menu offers it while the server does ----
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".monaco-editor .view-lines", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Show call hierarchy" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 12000 },
+      "expect": { "$contains": "Show type hierarchy" }
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+
+    // ---- The hierarchy tab: Shift+Alt+H on beta (the cursor is on line 2) ----
+    { "run": "editor.openFile", "input": { "path": "hier.md", "line": 2, "column": 2 } },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor textarea",
+        "key": "H",
+        "code": "KeyH",
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "kind": "call",
+        "direction": "incoming",
+        "server": "hier",
+        "items": [{ "name": "beta", "children": [{ "name": "alpha" }] }]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-view", "html": 6000 },
+      "expect": { "$contains": "Callers of beta" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-row", "limit": 5, "html": 2000 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // The toolbar's switch: outgoing calls from the same root.
+    {
+      "run": "lsp.setHierarchyDirection",
+      "input": {},
+      "expect": { "direction": "outgoing" }
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "direction": "outgoing",
+        "items": [{ "name": "beta", "children": [{ "name": "gamma" }] }]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-view", "html": 6000 },
+      "expect": { "$contains": "Calls from beta" },
+      "timeoutMs": 5000
+    },
+    // A click on gamma's row opens the call in beta (line 2, column 12).
+    { "run": "dev.click", "input": { "selector": ".hierarchy-row[aria-level=\"2\"]" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "hier.md", "cursor": { "line": 2, "column": 12 } },
+      "timeoutMs": 5000
+    },
+    // A type has no outgoing calls.
+    {
+      "run": "lsp.setHierarchyDirection",
+      "input": { "direction": "subtypes" },
+      "expectError": true
+    },
+    // Type hierarchy in the same tab.
+    {
+      "run": "lsp.showTypeHierarchy",
+      "input": { "path": "hier.md", "line": 4, "column": 8 },
+      "expect": { "opened": true, "direction": "subtypes" }
+    },
+    {
+      "state": "ide://lsp/hierarchy",
+      "expect": {
+        "kind": "type",
+        "items": [{ "name": "Base", "children": [{ "name": "Child" }] }]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hierarchy-view", "html": 6000 },
+      "expect": { "$contains": "Subtypes of Base" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Document colors: the engine's swatch before "orange" (only the server knows it) ----
+    { "run": "editor.openFile", "input": { "path": "hier.md", "line": 6, "column": 1 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .colorpicker-color-decoration" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "lsp.stop", "input": { "all": true } }
+  ]
+}

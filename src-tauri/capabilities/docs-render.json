@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "docs-render",
+  "description": "Hidden windows that render documentation pages needing JavaScript for @docs: the page's script may only post its text back.",
+  "windows": ["docs-render-*"],
+  "webviews": ["docs-render-*"],
+  "remote": { "urls": ["https://*", "https://*:*", "http://*", "http://*:*"] },
+  "permissions": ["allow-docs-render-post"]
+}

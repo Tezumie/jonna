@@ -1,0 +1,156 @@
+// D353: desktop control (the computer tool). Off by default: the tool isn't offered. Turned on, a
+// screenshot first asks for access to the screen and a click asks for the app under the point
+// ("Allow …?"); the test denies both, so nothing is captured or clicked. A card number is refused
+// before anything is asked. While a turn controls the desktop, ide://agent/computerUse lists it
+// (the banner and status bar item are up); when the turn ends it lets go. Windows only: elsewhere
+// the tool doesn't exist. Against tests/fixtures/mock-ollama.mjs (pkgQScripted).
+{
+  "name": "agent-desktop-m7-95",
+  "platforms": ["win32"],
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+
+    // ---- Off (the default): no computer tool ----
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "enabled": false, "supported": true, "active": { "$length": 0 } },
+      "print": true
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have" },
+      "expect": { "answer": { "$not": { "$contains": "computer" } } },
+      "timeoutMs": 60000
+    },
+
+    // ---- On: offered ----
+    { "run": "settings.set", "input": { "key": "agent.computerUse.enabled", "value": true } },
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have" },
+      "expect": { "answer": { "$contains": "computer" } },
+      "timeoutMs": 60000
+    },
+
+    // ---- A screenshot asks for the screen first; denied, nothing is captured ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgq desktop look" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Allow your screen?" }] },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-permission", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "Allow for this chat" } }],
+      "print": true
+    },
+    // The chat controls the desktop while it waits: listed (the banner and status bar item show).
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "enabled": true, "active": { "$length": 1 } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id='agent.computerUse']",
+        "limit": 1,
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "Controlling your computer" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgQ look: denied" } },
+      "timeoutMs": 60000
+    },
+    // The turn ended: it let go.
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "active": { "$length": 0 }, "grants": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+
+    // ---- A click is never just done: what's at the point (whatever window is there on this
+    // desktop) is either asked about (an access card, left unanswered) or refused by its tier
+    // (a browser can only be looked at). Stop ends either; nothing was granted. ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgq desktop click" },
+      "background": true
+    },
+    { "wait": 5000 },
+    { "run": "agent.stop" },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$not": { "$contains": "PkgQ click: clicked" } } },
+      "timeoutMs": 30000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "active": { "$length": 0 }, "grants": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+
+    // ---- A card number is refused before anything is asked ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgq desktop card" },
+      "expect": { "answer": "PkgQ card: refused" },
+      "timeoutMs": 60000
+    },
+    // ---- D374: the clipboard is asked for once (allowed for this chat here), then written and
+    // read back; an app card offers "Remember in every chat", which the user's command keeps ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgq desktop clipboard" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Allow your clipboard?" }] },
+      "timeoutMs": 60000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "always" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgQ clipboard: read back" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.computerUse.rememberApp",
+      "input": { "app": "Notepad" },
+      "expect": { "app": "Notepad", "changed": true }
+    },
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "remembered": ["notepad"] }
+    },
+    {
+      "run": "agent.computerUse.rememberApp",
+      "input": { "app": "notepad", "remember": false },
+      "expect": { "changed": true }
+    },
+    {
+      "state": "ide://agent/computerUse",
+      "expect": { "remembered": { "$length": 0 } }
+    },
+    { "run": "settings.set", "input": { "key": "agent.computerUse.enabled", "value": false } }
+  ]
+}

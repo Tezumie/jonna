@@ -1,0 +1,210 @@
+// D189: m6.90. The workspace folders (.jonna first, .vscode and .codevre read too, never made;
+// overridden ones marked, merged into .jonna), a setting changed back to its default isn't
+// "modified", a development copy of an installed extension replaces it and updates it, views of
+// deleted files close, notebook outputs that run code get a frame, notebook diffs show cells.
+{
+  "name": "m6-90",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- Workspace folders ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode .codevre/memory && printf '{ \"editor.tabSize\": 3, \"editor.fontSize\": 15 }' > .vscode/settings.json && printf '# Style\\n- tabs\\n' > .codevre/memory/style.md && echo made",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "made" } }
+    },
+    { "run": "explorer.refresh" },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.fontSize\",\"value\":15,\"source\":\"vscode\"" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.tabSize", "value": 5, "scope": "workspace" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.tabSize\",\"value\":5,\"source\":\"workspace\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat .jonna/settings.json", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "\"editor.tabSize\": 5" } },
+      // The file is written a moment after the setting changes: read again until it's there.
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://workspace",
+      "expect": {
+        "workspaceFolder": ".jonna",
+        "existingWorkspaceFolders": [".jonna", ".vscode", ".codevre"]
+      },
+      "timeoutMs": 8000
+    },
+    // .vscode sets editor.tabSize differently: marked as overridden.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-badge" },
+      "expect": { "$contains": ">!<" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "workspace.mergeFolder",
+      "input": { "folder": ".codevre", "confirm": false, "removeAfter": true },
+      "expect": { "merged": true, "copied": ["memory/style.md"], "trashed": true }
+    },
+    {
+      "run": "workspace.mergeFolder",
+      "input": { "folder": ".vscode", "confirm": false },
+      "expect": { "merged": true, "combined": ["settings.json"], "trashed": false }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "cat .jonna/settings.json .jonna/memory/style.md; ls -a",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "\"editor.fontSize\": 15" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test -d .codevre || echo no-codevre", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "no-codevre" } }
+    },
+    // ---- A setting changed back to its default is no longer set ----
+    { "run": "settings.set", "input": { "key": "editor.wordWrap", "value": "on" } },
+    { "run": "settings.open", "input": { "query": "editor.wordWrap" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row[data-key='editor.wordWrap'].is-modified" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // ---- Updating an installed extension from a development copy ----
+    {
+      "run": "extensions.copyForDevelopment",
+      "input": { "id": "bundled.todo-tree" },
+      "expect": { "copied": true, "id": "bundled.todo-tree", "folder": { "$contains": ".jonna" } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "\"replaces\"" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.installPermanently",
+      "input": { "id": "bundled.todo-tree", "mode": "new" },
+      "expect": { "id": "bundled.todo-tree-2" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "extensions.copyForDevelopment",
+      "input": { "id": "bundled.todo-tree" },
+      "expect": { "copied": true },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "extensions.installPermanently",
+      "input": { "id": "bundled.todo-tree", "mode": "replace" },
+      "expect": { "id": "bundled.todo-tree", "customized": true },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "\"customized\":true" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.revertToBundled",
+      "input": { "id": "bundled.todo-tree" },
+      "expect": { "reverted": true },
+      "timeoutMs": 15000
+    },
+    // ---- Notebooks ----
+    // Jupyter notebooks are the built-in Jupyter extension's (D203): turned on first.
+    { "run": "extensions.enable", "input": { "id": "bundled.jupyter" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.jupyter", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.new", "input": { "path": "nb/frames.ipynb" } },
+    {
+      "run": "notebook.editCell",
+      "input": {
+        "index": 0,
+        "source": "class H:\n    def _repr_html_(self):\n        return '<div id=\"x\" style=\"height:120px\">wait</div><script>document.getElementById(\"x\").textContent=\"ran\"</script>'\ndisplay(H())"
+      }
+    },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 0 },
+      "expect": { "status": "ok" },
+      "timeoutMs": 60000
+    },
+    // The scripted output runs in its frame, which grows to the page's height.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "iframe.nb-out-frame" },
+      "expect": [{ "html": { "$contains": "sandbox=\"allow-scripts" } }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "iframe.nb-out-frame" },
+      "expect": [{ "html": { "$contains": "height: 1" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "notebook.save" },
+    // Compared with an older copy: the diff shows cells, not JSON.
+    { "run": "explorer.duplicate", "input": { "paths": ["nb/frames.ipynb"] } },
+    {
+      "run": "notebook.editCell",
+      "input": { "path": "nb/frames.ipynb", "index": 0, "source": "print('changed')" }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "path": "nb/frames.ipynb", "index": 1, "source": "1 + 1" }
+    },
+    { "run": "notebook.save", "input": { "path": "nb/frames.ipynb" } },
+    {
+      "run": "editor.compareFiles",
+      "input": { "path": "nb/frames.ipynb", "against": "nb/frames copy.ipynb" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nbd-summary", "html": 2000 },
+      "expect": [{ "html": { "$contains": "1 changed, 1 added" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // A notebook deleted on disk (by anything): its tab closes.
+    { "run": "editor.openFile", "input": { "path": "nb/frames copy.ipynb" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "open": { "$contains": "frames copy" } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm 'nb/frames copy.ipynb' && echo gone", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "gone" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "open": { "$not": { "$contains": "frames copy" } } },
+      "timeoutMs": 10000
+    }
+  ]
+}

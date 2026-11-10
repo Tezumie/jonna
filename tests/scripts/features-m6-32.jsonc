@@ -1,0 +1,134 @@
+// D133: quick access prefixes, the user guide (tab and agent).
+{
+  "name": "features-m6-32",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // Quick access: ">" lists commands; deleting it searches files; ":" goes to a line.
+    { "run": "palette.show", "background": true },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": ">toggle sidebar" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "sidebar" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "text": "READ" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "README.md" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "state": "ide://editors/active", "expect": { "path": "README.md" }, "timeoutMs": 5000 },
+    // The editor is up (its cursor known) before going to a line in it.
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "$exists": true } },
+      "timeoutMs": 8000
+    },
+    { "run": "quickOpen.show", "input": { "query": ":3" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "Go to line 3" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "state": "ide://editors/active", "expect": { "cursor": { "line": 3 } }, "timeoutMs": 5000 },
+    { "run": "quickOpen.show", "input": { "query": "?" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 8 },
+      "expect": { "$length": 8 },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+
+    {
+      "run": "help.readDocs",
+      "expect": { "pages": [{ "title": "Getting started" }, { "title": "Quick access" }] }
+    },
+    {
+      "run": "help.readDocs",
+      "input": { "page": "agent" },
+      "expect": { "title": "The agent", "markdown": { "$contains": "openrouter/free" } }
+    },
+    // "#": declarations across the folder (agents: quickOpen.findSymbols).
+    {
+      "run": "quickOpen.findSymbols",
+      "input": { "query": "diagnse" },
+      "expect": {
+        "symbols": [
+          { "name": "diagnose", "kind": "function", "path": "tools/mock-lsp.mjs", "line": 40 }
+        ]
+      }
+    },
+    {
+      "run": "quickOpen.findSymbols",
+      "input": { "query": "add" },
+      "expect": { "symbols": { "$contains": "src/util.ts" } }
+    },
+    { "run": "quickOpen.goToWorkspaceSymbol", "background": true },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "#add" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "src/util.ts" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/util.ts", "cursor": { "line": 1, "column": 17 } },
+      "timeoutMs": 5000
+    },
+    // Ctrl+Tab: open editors by recent use; Tab again moves on, releasing Ctrl opens.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "key": "Tab", "code": "Tab", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row.is-active", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "notes.txt" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "key": "Tab", "code": "Tab", "ctrl": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row.is-active", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "util.ts" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "keyUp": "Control" } },
+    { "state": "ide://editors/active", "expect": { "path": "src/util.ts" }, "timeoutMs": 3000 },
+    { "run": "help.readDocs", "input": { "page": "nope" }, "expectError": "No page" },
+    { "run": "help.showDocs", "input": { "page": "git" }, "expect": { "page": "08-git.md" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-nav-item.is-active" },
+      "expect": [{ "html": { "$contains": "Source control" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-page h1" },
+      "expect": [{ "html": { "$contains": "Source control" } }]
+    },
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"docs\"" } }
+  ]
+}

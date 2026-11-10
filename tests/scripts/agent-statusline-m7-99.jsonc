@@ -1,0 +1,160 @@
+// D357: a scriptable status line, as Claude Code's statusLine. agent.statusLine runs
+// tests/fixtures/setup/pkgr-statusline.mjs in the folder with the active chat as JSON on stdin; the
+// first line it prints shows in the status bar beside the agent's model, its ANSI colors as spans
+// (the second line doesn't show). It runs again when the conversation changes (the output style's
+// name follows the setting). An untrusted folder doesn't run it.
+{
+  "name": "agent-statusline-m7-99",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 950 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.statusLine",
+        "value": { "type": "command", "command": "node ../setup/pkgr-statusline.mjs" }
+      }
+    },
+    {
+      "state": "ide://agent/statusLine",
+      "expect": {
+        "command": "node ../setup/pkgr-statusline.mjs",
+        "text": { "$contains": "pkgr-line" },
+        "error": null,
+        "skipped": null
+      },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/statusLine",
+      "expect": { "text": { "$not": { "$contains": "second line" } } }
+    },
+    // In the status bar, colored by spans (no escape characters as text).
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id='agent.statusLine']",
+        "limit": 1,
+        "html": 1500
+      },
+      "expect": [{ "html": { "$contains": "terminal-ansi-green" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id='agent.statusLine'] span",
+        "limit": 3,
+        "html": 300
+      },
+      "expect": [{ "html": { "$contains": "pkgr-line" } }]
+    },
+    // D373: its OSC 8 links are clickable: a file opens at its line, a command that changes
+    // nothing runs; one that changes things doesn't.
+    {
+      "state": "ide://agent/statusLine",
+      "expect": { "text": { "$contains": "readme-link | tasks-link" } }
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".statusbar-item[data-id='agent.statusLine'] .statusline-link" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "README.md" }, "cursor": { "line": 2 } },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".statusbar-item[data-id='agent.statusLine'] .statusline-link[title^='command:']"
+      }
+    },
+    // A command link asks once per command (D379): run it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog", "html": 600 },
+      "expect": [{ "html": { "$contains": "agent.showBackgroundTasks" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog-actions .button-primary" } },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "agent.backgroundTasks" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.openStatusLineLink",
+      "input": { "href": "command:editor.closeAll" },
+      "expectError": "doesn't run from a status line link"
+    },
+    // The conversation changes: it runs again, with the chat's session id and the output style.
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr status ping" },
+      "expect": { "answer": "PkgR status pong." }
+    },
+    { "run": "settings.set", "input": { "key": "agent.outputStyle", "value": "explanatory" } },
+    {
+      "state": "ide://agent/statusLine",
+      "expect": { "text": { "$contains": "Explanatory" }, "runs": { "$gte": 2 } },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The input as the script got it: Claude Code's fields (grep fails without a match).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '\"session_id\":\"${chat.session}\"' .statusline-log.jsonl",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "print": true
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '\"output_style\":{\"name\":\"Explanatory\"}' .statusline-log.jsonl",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '\"workspace\":{\"current_dir\"' .statusline-log.jsonl",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // An untrusted folder: not run, and the line goes.
+    { "run": "workspace.setTrust", "input": { "trusted": false } },
+    {
+      "state": "ide://agent/statusLine",
+      "expect": { "text": "", "skipped": "the folder isn't trusted" },
+      "timeoutMs": 10000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "settings.set", "input": { "key": "agent.statusLine", "value": {} } },
+    { "run": "settings.set", "input": { "key": "agent.outputStyle", "value": "default" } },
+    {
+      "state": "ide://agent/statusLine",
+      "expect": { "command": null, "text": "" },
+      "timeoutMs": 5000
+    }
+  ]
+}

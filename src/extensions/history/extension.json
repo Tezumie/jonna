@@ -1,0 +1,44 @@
+{
+  "id": "builtin.history",
+  "version": "0.1.0",
+  "displayName": "History",
+  "description": "Workspace undo/redo for file operations, replace all and accepted agent edits; local history (timeline) of every file the app writes.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      { "id": "workspace.undo", "title": "Undo file operation", "category": "Edit" },
+      { "id": "workspace.redo", "title": "Redo file operation", "category": "Edit" },
+      { "id": "edit.undo", "title": "Undo", "category": "Edit" },
+      { "id": "edit.redo", "title": "Redo", "category": "Edit" },
+      { "id": "history.show", "title": "Open timeline", "category": "File" },
+      { "id": "history.list", "title": "List local history", "category": "File" },
+      {
+        "id": "history.restore",
+        "title": "Restore version from local history",
+        "category": "File"
+      },
+      { "id": "timeline.show", "title": "Show timeline", "category": "View" },
+      { "id": "timeline.refresh", "title": "Refresh timeline", "category": "View" }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+z",
+        "mac": "cmd+z",
+        "command": "workspace.undo",
+        "when": "explorerFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+y",
+        "mac": "cmd+shift+z",
+        "command": "workspace.redo",
+        "when": "explorerFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+shift+z",
+        "command": "workspace.redo",
+        "when": "explorerFocus && !inputFocus && !quickInputVisible && !isMac"
+      }
+    ]
+  }
+}

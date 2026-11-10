@@ -1,0 +1,100 @@
+// Git on a fresh copy of tests/fixtures/sample: init, stage, commit, hunk staging, revert, branches,
+// diff tab. Needs `git` on PATH (CI runners have it).
+{
+  "name": "git",
+  "steps": [
+    { "run": "git.status", "expectError": true },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    // A repo-local identity: CI machines have no global one.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git config user.email test@example.com", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git config user.name Test" },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git config commit.gpgsign false" },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "git.status",
+      "expect": {
+        "staged": { "$length": 0 },
+        "changes": { "$contains": "{\"path\":\"README.md\",\"status\":\"U\"}" }
+      }
+    },
+    { "run": "git.stage", "expect": { "changes": { "$length": 0 }, "staged": { "$length": 18 } } },
+    {
+      "run": "git.commit",
+      "input": { "message": "Initial commit" },
+      "expect": { "commit": { "$exists": true }, "summary": "Initial commit" }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "head": { "$exists": true } }, "changes": { "$length": 0 } }
+    },
+
+    // Two separate changes in README.md (lines 1 and 3), one in notes.txt.
+    {
+      "run": "search.replace",
+      "input": { "query": "Sample workspace", "replacement": "Example workspace" }
+    },
+    { "run": "search.replace", "input": { "query": "hello", "replacement": "hi" } },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": { "$length": 2 }, "staged": { "$length": 0 } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    // Stage only the first change: README.md is then both staged and changed.
+    {
+      "run": "git.stageChange",
+      "input": { "path": "README.md", "line": 1 },
+      "expect": { "staged": ["README.md"], "changes": { "$length": 2 } }
+    },
+    { "run": "git.stageChange", "input": { "path": "README.md", "line": 2 }, "expectError": true },
+    {
+      "run": "git.unstageChange",
+      "input": { "path": "README.md", "line": 1 },
+      "expect": { "staged": { "$length": 0 } }
+    },
+    {
+      "run": "git.revertChange",
+      "input": { "path": "notes.txt", "line": 1 },
+      "expect": { "changes": ["README.md"] }
+    },
+    {
+      "run": "editor.openDiff",
+      "input": { "path": "README.md" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "state": "ide://layout", "expect": { "$contains": "\"diff\"" } },
+
+    // Branches and history.
+    {
+      "run": "git.checkout",
+      "input": { "branch": "feature", "create": true },
+      "expect": { "branch": "feature" }
+    },
+    {
+      "run": "git.commit",
+      "input": { "message": "Rename the sample\n\nBody text." },
+      "expect": { "summary": "Rename the sample" }
+    },
+    {
+      "run": "git.log",
+      "expect": [{ "subject": "Rename the sample" }, { "subject": "Initial commit" }]
+    },
+    { "run": "git.branches", "expect": { "$length": 2 } },
+    { "run": "git.commit", "input": { "message": "nothing" }, "expectError": true },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "head": "feature" }, "changes": { "$length": 0 } }
+    }
+  ]
+}

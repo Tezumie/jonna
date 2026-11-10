@@ -1,0 +1,44 @@
+// D268: with no folder open, a VS Code extension's code runs (an empty window is trusted, as
+// VS Code's is by default): loaded and allowed in an empty window, its command runs in Node.
+// Opening a folder that isn't trusted yet stops that code again. Needs Node on PATH.
+{
+  "name": "empty-window-ext-m7-25",
+  "requires": ["node"],
+  "steps": [
+    { "state": "ide://workspace", "save": "ws" },
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "state": "ide://workspace", "expect": { "root": null }, "timeoutMs": 5000 },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "${ws.root}/../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.linked" },
+      "expect": { "result": "" },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://extensions", "expect": { "$contains": "vscode hello activated" } },
+    // A folder nobody decided about yet opens here: the Node code stops (until it's trusted).
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}/../extensions/apiextras" } },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": [{ "id": "acme.vscode-hello", "running": false }] },
+      "timeoutMs": 10000
+    },
+    // D273: trusting the folder starts it again (it starts with the IDE), as VS Code activates
+    // it then: an extension whose icon waits on its own context keys came back only when used.
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": [{ "id": "acme.vscode-hello", "running": true }] },
+      "timeoutMs": 30000
+    }
+  ]
+}

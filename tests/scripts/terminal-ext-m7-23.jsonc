@@ -1,0 +1,63 @@
+// D264: what VS Code extensions add to the terminal. Their environment variable collections
+// reach new terminals (replace, append), and the terminal profiles they declare are in the
+// profile menu and open through their provider. Needs Node on PATH (the fixture's code).
+{
+  "name": "terminal-ext-m7-23",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    // Its code runs (onStartupFinished) and sets the collection.
+    {
+      "state": "ide://extensions?id=acme.vscode-hello",
+      "expect": { "$contains": "vscode hello activated" },
+      "timeoutMs": 20000
+    },
+    { "wait": 1000 },
+    // A terminal started from now on (the first one was open before its code ran: as in VS
+    // Code, a collection reaches new terminals).
+    { "run": "terminal.create", "save": "t" },
+    { "wait": 2000 },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "echo \"[$HELLO_ENV][$HELLO_PATH]\"",
+        "id": "${t.id}",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "[from-hello][" } },
+      "print": true
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo \"[$HELLO_PATH]\"", "id": "${t.id}", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "-tail]" } }
+    },
+    // Its profile: listed, and opened by its provider.
+    {
+      "state": "ide://extensions?id=acme.vscode-hello",
+      "expect": {},
+      "print": false
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "Hello shell" },
+      "expect": { "profile": "Hello shell" },
+      "timeoutMs": 20000
+    },
+    { "wait": 1500 },
+    {
+      "state": "ide://terminals",
+      "expect": { "$contains": "Hello shell" },
+      "print": true
+    }
+  ]
+}

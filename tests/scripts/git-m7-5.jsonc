@@ -1,0 +1,415 @@
+// D204: the 3-way merge editor (a conflict made in the sample repo, resolved there, Complete merge
+// stages it), file blame annotations, line history, compare, stashes (list, show, apply), GitHub
+// review (pull request files, a review thread replied to and resolved, its mark in the margin,
+// notifications marked read; the fake gh CLI) and a nested repository listed with its own changes.
+// D208: blame, line history, compare, the Stashes section and notifications come from the bundled
+// Git tools extension (on by default); turned off, its sections and commands are gone while
+// Source control and the stash commands stay. Needs `git` on PATH.
+{
+  "name": "git-m7-5",
+  "fakeGh": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "state": "ide://extensions?id=bundled.gittools",
+      "expect": { "extensions": [{ "id": "bundled.gittools", "status": "active" }] },
+      "timeoutMs": 10000
+    },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git symbolic-ref HEAD refs/heads/main && git add -A && git commit -qm Base && git checkout -qb feature && printf 'hello incoming\\nsecond line\\n' > notes.txt && git commit -qam Theirs && git checkout -q main && printf 'hello current\\nsecond line\\n' > notes.txt && git commit -qam Ours && (git merge feature >/dev/null 2>&1 || true)",
+        "timeoutMs": 30000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 40000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": [{ "path": "notes.txt" }] },
+      "timeoutMs": 10000
+    },
+    // The Source control row offers the merge editor.
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row [aria-label='Resolve in merge editor']", "limit": 1 },
+      "expect": [{ "tag": "button" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.openMergeEditor",
+      "input": { "path": "notes.txt" },
+      "expect": { "conflicts": 1, "unhandled": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-count", "html": 200 },
+      "expect": [{ "html": { "$contains": "1 of 1 conflict left" } }],
+      "timeoutMs": 5000
+    },
+    // Both sides and the result are editors; the conflict has its actions above it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-pane .monaco-editor", "limit": 4 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".merge-pane-result .merge-actions.is-unhandled .merge-action",
+        "limit": 4,
+        "html": 200
+      },
+      "expect": [
+        { "html": { "$contains": "Accept incoming" } },
+        { "html": { "$contains": "Accept current" } },
+        { "html": { "$contains": "Accept both" } },
+        { "html": { "$contains": "Ignore" } }
+      ],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "git.mergeEditor.toggleBase",
+      "input": { "value": true },
+      "expect": { "showBase": true }
+    },
+    { "run": "git.mergeEditor.nextConflict", "expect": { "conflict": 1 } },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A click on the result's "Accept incoming" handles the conflict.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".merge-pane-result .merge-actions.is-unhandled .merge-action" }
+    },
+    {
+      "state": "ide://git/mergeEditors",
+      "expect": [{ "unhandled": 0, "changes": [{ "choice": "incoming", "handled": true }] }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-count", "html": 200 },
+      "expect": [{ "html": { "$contains": "The conflict is handled" } }],
+      "timeoutMs": 5000
+    },
+    // Both sides, then back to incoming.
+    {
+      "run": "git.mergeEditor.accept",
+      "input": { "conflict": 1, "choice": "both" },
+      "expect": { "unhandled": 0 }
+    },
+    {
+      "run": "git.mergeEditor.accept",
+      "input": { "conflict": 1, "choice": "incoming" },
+      "expect": { "changes": [{ "choice": "incoming" }] }
+    },
+    {
+      "run": "git.completeMerge",
+      "input": { "path": "notes.txt" },
+      "expect": { "completed": true, "staged": true },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "conflicts": { "$length": 0 }, "staged": [{ "path": "notes.txt" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '<<<<<<<' notes.txt; head -1 notes.txt && git commit -q --no-edit && git log -1 --format=%s",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "hello incoming" } },
+      "timeoutMs": 30000
+    },
+
+    // File blame beside the lines.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "git.toggleFileBlame",
+      "input": { "path": "notes.txt", "value": true },
+      "expect": { "shown": true, "lines": 2 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .line-annotation", "limit": 2, "html": 300 },
+      "expect": [{ "html": { "$contains": "Test" } }],
+      "timeoutMs": 8000
+    },
+    { "state": "ide://git/fileBlame", "expect": ["notes.txt"] },
+    {
+      "run": "git.toggleFileBlame",
+      "input": { "path": "notes.txt", "value": false },
+      "expect": { "shown": false }
+    },
+
+    // Line history of line 1: the merge's two sides changed it.
+    {
+      "run": "git.lineHistory",
+      "input": { "path": "notes.txt", "startLine": 1, "endLine": 1 },
+      "expect": { "commits": { "$contains": "Theirs" } },
+      "timeoutMs": 10000
+    },
+    // Compare: the merge brought notes.txt into main.
+    {
+      "run": "git.compareBranches",
+      "input": { "left": "HEAD~1", "right": "HEAD" },
+      "expect": { "files": [{ "path": "notes.txt" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://git/lens",
+      "expect": { "comparison": { "files": [{ "path": "notes.txt" }] } }
+    },
+
+    // Stashes: stash a change, see it listed, its files, apply it.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'stashed\\n' >> notes.txt", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": [{ "path": "notes.txt" }] },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "git.stash",
+      "input": { "message": "wip notes" },
+      "expect": { "stashed": true, "stashes": 1 }
+    },
+    { "run": "git.stashList", "expect": [{ "index": 0, "message": { "$contains": "wip notes" } }] },
+    { "run": "view.show", "input": { "id": "git.stashesView" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='git.stashesView'] .ext-tree-row", "html": 300 },
+      "expect": [{ "html": { "$contains": "wip notes" } }],
+      "timeoutMs": 8000
+    },
+    // Its header's "Stash changes…" button (D209).
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-section-id='git.stashesView'] [aria-label='Stash changes…']"
+      },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "git.stashShow",
+      "input": { "index": 0 },
+      "expect": { "files": [{ "path": "notes.txt" }] }
+    },
+    {
+      "run": "git.stashShow",
+      "input": { "index": 0, "path": "notes.txt" },
+      "expect": { "opened": "notes.txt" }
+    },
+    { "run": "git.stashApply", "input": { "index": 0 }, "expect": { "applied": true } },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": [{ "path": "notes.txt" }] },
+      "timeoutMs": 10000
+    },
+    { "run": "git.stashDrop", "input": { "index": 0 }, "expect": { "dropped": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git checkout -q -- notes.txt && git checkout -q feature && printf 'new feature\\n' > feature.txt && git add feature.txt && git commit -qm Feature && git checkout -q main",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+
+    // GitHub review (fake gh): pull request #7 is feature → main.
+    {
+      "run": "github.pullRequestFiles",
+      "input": { "number": 7, "open": true },
+      "expect": {
+        "number": 7,
+        "files": [{ "path": "feature.txt", "status": "added" }],
+        "threads": [{ "id": "PRRT_fake1", "path": "feature.txt", "line": 1, "resolved": false }]
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".pr-files-view .pr-file", "html": 300 },
+      "expect": [{ "html": { "$contains": "feature.txt" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "github.openPullRequestFile",
+      "input": { "number": 7, "path": "feature.txt" },
+      "expect": { "opened": "feature.txt" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "github.replyToReviewThread",
+      "input": { "number": 7, "thread": "PRRT_fake1", "body": "Done, thanks" },
+      "expect": { "replied": true },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://github/review",
+      "expect": { "pullRequest": { "threads": [{ "id": "PRRT_fake1", "comments": 2 }] } }
+    },
+    {
+      "run": "github.resolveReviewThread",
+      "input": { "number": 7, "thread": "PRRT_fake1", "resolved": true },
+      "expect": { "resolved": true },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://github/review",
+      "expect": { "pullRequest": { "threads": [{ "resolved": true }] } }
+    },
+    // With the pull request's branch checked out, the thread marks its line.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git checkout -q feature", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "head": "feature" } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.openFile", "input": { "path": "feature.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .review-comment-mark", "limit": 1 },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git checkout -q main", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    // Notifications: two unread, one marked read.
+    { "run": "view.show", "input": { "id": "github.notificationsView" } },
+    {
+      "run": "github.notifications",
+      "expect": [
+        { "id": "1001", "type": "PullRequest", "url": "https://github.com/tester/sample/pull/7" },
+        { "id": "1002" }
+      ],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-section-id='github.notificationsView'] .ext-tree-row.is-strong",
+        "limit": 5
+      },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "github.markNotificationRead",
+      "input": { "id": "1001" },
+      "expect": { "read": "1001" }
+    },
+    { "run": "github.notifications", "expect": { "$length": 1 } },
+    { "state": "ide://github/notifications", "expect": [{ "id": "1002", "unread": true }] },
+
+    // A nested repository: listed with its own branch and changes, committed on its own.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir inner && cd inner && git init -q && git symbolic-ref HEAD refs/heads/trunk && git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'inner\\n' > inner.txt && git add -A && git commit -qm 'Inner base' && printf 'changed\\n' >> inner.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "git.repositories",
+      "expect": [
+        { "name": "sample", "kind": "workspace" },
+        { "name": "inner", "kind": "nested", "branch": "trunk" }
+      ],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "git.status",
+      "input": { "repository": "inner" },
+      "expect": {
+        "repository": "inner",
+        "branch": { "head": "trunk" },
+        "changes": [{ "status": "M" }]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-repo-row", "limit": 4, "html": 300 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "git.selectRepository",
+      "input": { "repository": "inner" },
+      "expect": { "selected": "inner" }
+    },
+    {
+      "state": "ide://git/repositories",
+      "expect": [{ "selected": false }, { "name": "inner", "selected": true, "changes": 1 }]
+    },
+    {
+      "run": "git.commit",
+      "input": { "repository": "inner", "message": "Inner change", "all": true },
+      "expect": { "commit": { "$exists": true } }
+    },
+    {
+      "run": "git.status",
+      "input": { "repository": "inner" },
+      "expect": { "changes": { "$length": 0 } }
+    },
+    // The workspace's own repository is untouched by it.
+    {
+      "run": "git.log",
+      "input": { "repository": "sample", "limit": 1 },
+      "expect": [{ "subject": "Merge branch 'feature'" }]
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+
+    // Git tools turned off: its sections and commands go; Source control and the stash commands stay.
+    { "run": "extensions.disable", "input": { "id": "bundled.gittools" } },
+    {
+      "state": "ide://extensions?id=bundled.gittools",
+      "expect": { "extensions": [{ "status": "disabled" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "git.lineHistory", "expectError": "Unknown command" },
+    { "run": "git.toggleFileBlame", "expectError": "Unknown command" },
+    { "run": "github.notifications", "expectError": "Unknown command" },
+    { "run": "view.show", "input": { "id": "git.stashesView" }, "expectError": "Unknown view" },
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='git.stashesView']", "limit": 1 },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "git.stashList", "input": { "repository": "sample" }, "expect": { "$length": 0 } },
+    // Back on: the sections return.
+    { "run": "extensions.enable", "input": { "id": "bundled.gittools" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='git.compareView']", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    }
+  ]
+}

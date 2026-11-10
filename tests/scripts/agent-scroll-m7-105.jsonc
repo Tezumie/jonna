@@ -1,0 +1,58 @@
+// D370: a chat keeps where the reader scrolled to while another tab of its group is in front
+// (hidden, the log has no size; it used to stick back to the end). Against
+// tests/fixtures/mock-ollama.mjs ("write a long answer").
+{
+  "name": "agent-scroll-m7-105",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.send", "input": { "message": "Please write a long answer" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Paragraph 80" } },
+      "timeoutMs": 15000
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.scroll",
+      "input": { "selector": ".agent-log", "top": 400 },
+      "expect": { "scrollTop": 400 }
+    },
+    { "wait": 300 },
+    // Background tasks opens beside it: the split rebuilds the dock, re-parenting the chat.
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-log", "html": 0 },
+      "expect": [{ "scrollTop": { "$gte": 300 } }],
+      "timeoutMs": 3000
+    },
+    // Moved in front of the chat, in its group (the chat hidden), then the chat again.
+    { "run": "layout.moveTabToGroup", "input": { "direction": "left" } },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[hidden] .agent-log", "html": 0 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "layout.previousTab", "input": {} },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-log", "html": 0 },
+      "expect": [{ "display": "block", "scrollTop": { "$gte": 300 } }],
+      "timeoutMs": 3000,
+      "print": true
+    }
+  ]
+}

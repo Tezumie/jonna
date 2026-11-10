@@ -1,0 +1,62 @@
+// D284: Go Live leaves the status bar when its setting is off (and while a Live Server extension
+// is on); a preview open in an outside browser hears of a changed file through the proxy's
+// /__ide/live (the bridge reloads on it): here curl waits on it while a file changes.
+{
+  "name": "go-live-m7-34",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='browser.live']", "html": 300 },
+      "expect": [{ "html": { "$contains": "Go Live" } }]
+    },
+    { "run": "settings.set", "input": { "key": "browser.goLive.statusBar", "value": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='browser.live']", "html": 300 },
+      "expect": [{ "html": { "$contains": "hidden" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "browser.goLive.statusBar", "value": true } },
+    {
+      "run": "browser.goLive",
+      "input": { "path": "site/index.html" },
+      "expect": { "connected": true },
+      "save": "live",
+      "timeoutMs": 20000
+    },
+    // While it runs the item shows the port, whatever the setting says.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='browser.live']", "html": 300 },
+      "expect": [{ "html": { "$contains": "Port" } }],
+      "timeoutMs": 5000
+    },
+    // The preview's origin (the proxy), as an outside browser would open it.
+    { "run": "browser.eval", "input": { "code": "location.origin" }, "save": "origin" },
+    // Like a browser outside the IDE: wait on the counter in the background...
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "o='${origin.result}'; n=$(curl -s \"$o/__ide/live\"); echo \"n=$n\" > ../live-out.txt; (curl -s -m 25 \"$o/__ide/live?since=$n\" | sed 's/^/m=/' >> ../live-out.txt) > /dev/null 2>&1 & echo started",
+        "timeoutMs": 15000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // ...while a file of the folder is edited and saved in the editor.
+    { "run": "editor.openFile", "input": { "path": "site/style.css" } },
+    { "run": "editor.insertText", "input": { "text": "/* changed */ " } },
+    { "run": "editor.save" },
+    { "wait": 2000 },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "cat ../live-out.txt; n=$(sed -n 's/^n=//p' ../live-out.txt); m=$(sed -n 's/^m=//p' ../live-out.txt); test -n \"$m\" && test \"$m\" -gt \"$n\"",
+        "timeoutMs": 15000
+      },
+      "expect": { "exitCode": 0 },
+      "print": true
+    },
+    { "run": "browser.stopLive" }
+  ]
+}

@@ -1,0 +1,209 @@
+// D227: the model picker (a provider rail, Favorites and Recent, search, bookmarks), the composer's
+// toolbar order (model, effort, permissions last), the Chats sidebar's "This project" group,
+// terminal.runCommand's long timeouts, agent hooks, custom chat modes, read-only paths and the
+// codebase index. Against tests/fixtures/mock-ollama.mjs (scripted replies and embeddings).
+{
+  "name": "agent-m7-7-picker",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    // Picking keeps it in Recent.
+    {
+      "state": "ide://settings",
+      "expect": {
+        "$contains": "\"key\":\"agent.recentModels\",\"value\":[\"ollama/mock-coder:1b\""
+      }
+    },
+
+    // ---- The toolbar: the model (with its logo), then effort, then permissions last ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-composer-footer", "html": 6000 },
+      "expect": { "$contains": "mock-coder:1b" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-composer-footer > :last-child" },
+      "expect": { "$contains": "Review" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill .ai-mark" },
+      "expect": { "$contains": "ai-mark" }
+    },
+
+    // ---- The picker ----
+    { "run": "dev.click", "input": { "selector": ".agent-model-pill" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker", "html": 6000 },
+      "expect": { "$contains": "Recent" },
+      "timeoutMs": 5000
+    },
+    // Nothing bookmarked yet: Recent opens, with the model just picked.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker-list", "html": 6000 },
+      "expect": { "$contains": "mock-coder:1b" }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": false }, "print": true },
+    // Search across providers.
+    { "run": "dev.type", "input": { "selector": ".model-picker-search", "text": "mock" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker-title" },
+      "expect": { "$contains": "match" }
+    },
+    // The star: a favorite.
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".model-picker-row[data-key='ollama/mock-coder:1b'] .model-picker-star"
+      }
+    },
+    {
+      "state": "ide://settings",
+      "expect": {
+        "$contains": "\"key\":\"agent.favoriteModels\",\"value\":[\"ollama/mock-coder:1b\"]"
+      },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": false }, "print": true },
+    // A click outside closes it.
+    { "run": "dev.click", "input": { "selector": ".agent-input" } },
+    { "wait": 200 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".model-picker", "html": 6000 },
+      "expect": { "$not": { "$contains": "model-picker" } }
+    },
+    {
+      "run": "agent.toggleFavoriteModel",
+      "input": { "model": "ollama/mock-coder:1b" },
+      "expect": { "favorite": false }
+    },
+
+    // ---- terminal.runCommand takes a long wait (capped, not refused) ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo picker-ok", "timeoutMs": 1800000 },
+      "expect": { "$contains": "picker-ok" },
+      "timeoutMs": 30000
+    },
+
+    // ---- Hooks: a PreToolUse hook blocks the command, the agent hears why ----
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.hooks",
+        "value": {
+          "PreToolUse": [
+            {
+              "matcher": "Bash",
+              "hooks": [{ "type": "command", "command": "node ../setup/test-hook.mjs" }]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "please run the echo", "wait": true },
+      "expect": { "answer": { "$contains": "didn't run" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "blocked by a hook" } }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": ".hook-log.jsonl" },
+      "expect": { "text": { "$contains": "PreToolUse" } }
+    },
+    { "run": "settings.reset", "input": { "keys": ["agent.hooks", "agent.runCommands"] } },
+
+    // ---- Read-only paths: the editor settings aren't written ----
+    {
+      "run": "agent.send",
+      "input": { "message": "write the editor settings", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "read-only path" } }
+    },
+
+    // ---- Custom chat modes: a mode file, its tools ----
+    {
+      "run": "agent.createChatMode",
+      "input": { "name": "Inspector" },
+      "expect": { "id": "custom:inspector" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:inspector" },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.setChatMode", "input": { "mode": "custom:inspector" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have", "wait": true },
+      "expect": {
+        "answer": { "$contains": "edit_file", "$not": { "$contains": "run_command" } }
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-chat-mode" },
+      "expect": { "$contains": "nspector" }
+    },
+    { "run": "agent.setChatAgent", "input": { "agent": "agent" } },
+
+    // ---- The codebase index: embeddings from the mock, a search by words ----
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.codebaseIndex.model", "value": "ollama/mock-embed" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.codebaseIndex.enabled", "value": true } },
+    {
+      "run": "agent.rebuildCodebaseIndex",
+      "expect": { "state": "ready" },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.codebaseSearch",
+      "input": { "query": "sample workspace readme", "limit": 3 },
+      "expect": { "$contains": "README.md" },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.reset",
+      "input": { "keys": ["agent.codebaseIndex.enabled", "agent.codebaseIndex.model"] }
+    },
+
+    // ---- Chats (D291): the folder's chats, a plain list ----
+    { "run": "agent.showChats" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "nav.ch-body[aria-label='Chats']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+// D367: a background command that's up at an address (a dev server) is a server, not work in
+// progress: the chip shows a server icon (no spinner) and "1 server running", the Background tasks
+// row a server icon, and ide://agent/background marks it serving. Against
+// tests/fixtures/mock-ollama.mjs ("start the background server").
+{
+  "name": "agent-bg-server-m7-104",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please start the background server", "wait": false }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "node -e" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Server: started" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": {
+        "running": [{ "kind": "command", "detail": "http://localhost:11996/", "serving": true }],
+        "chip": { "detail": "1 server running" }
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip", "html": 800 },
+      "expect": [{ "html": { "$contains": "1 server running" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-spinner" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-status", "html": 600, "limit": 1 },
+      "expect": [{ "html": { "$not": { "$contains": "agent-spinner" } } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    // The chat's details panel lists it with a server icon too.
+    { "run": "agent.toggleDetails", "input": { "show": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-row.is-task .agent-details-lead", "html": 400 },
+      "expect": [{ "html": { "$not": { "$contains": "agent-spinner" } } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "agent.stopBackgroundTask", "input": { "id": "bg1" } },
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$length": 0 } },
+      "timeoutMs": 10000
+    }
+  ]
+}

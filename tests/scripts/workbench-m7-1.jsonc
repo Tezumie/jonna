@@ -1,0 +1,285 @@
+// D200: m7.1 workbench parity. Multi-line search, quick access providers (% view task debug term
+// edt @:, Ctrl+Enter to the side), settings search filters, the keyboard shortcuts reference,
+// workspace trust with "trust the parent folder", install from VSIX, configure default build task.
+{
+  "name": "workbench-m7-1",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 900 } },
+
+    // ---- Multi-line search: a regex with \n matches across lines, reported on its first line ----
+    {
+      "run": "search.run",
+      "input": {
+        "query": "export function add\\(a: number, b: number\\): number \\{\\n\\s*return",
+        "isRegex": true
+      },
+      "expect": {
+        "matches": 1,
+        "results": [{ "path": { "$contains": "util.ts" }, "line": 1 }]
+      },
+      "timeoutMs": 10000
+    },
+    // A literal backslash-n (no regex) is not a line break.
+    {
+      "run": "search.run",
+      "input": { "query": "number {\\n", "isRegex": false },
+      "expect": { "matches": 0 },
+      "timeoutMs": 10000
+    },
+
+    // ---- Quick access providers ----
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    // The editor takes focus once its file has loaded: let it, before the box opens.
+    { "wait": 1500 },
+    { "run": "quickOpen.show", "input": { "query": "task " }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": "say done" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    { "run": "quickOpen.show", "input": { "query": "view " }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Side bar" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "text": "view expl" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 1500 },
+      // The typed part is highlighted: <mark>Expl</mark>orer.
+      "expect": [{ "html": { "$contains": "</mark>orer" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    { "state": "ide://layout", "expect": { "$contains": "explorer.view" }, "timeoutMs": 3000 },
+    { "run": "quickOpen.show", "input": { "query": "edt " }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    { "run": "quickOpen.show", "input": { "query": "term " }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Create new terminal" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    { "run": "quickOpen.show", "input": { "query": "debug " }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Add configuration" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    // "%": text in the files; Enter opens the match's line.
+    { "run": "quickOpen.show", "input": { "query": "%return a + b" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 1500 },
+      "expect": [{ "html": { "$contains": "util.ts:2" } }],
+      "timeoutMs": 8000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "util.ts" }, "cursor": { "line": 2 } },
+      "timeoutMs": 5000
+    },
+    // "@:": the active editor's symbols grouped by kind (a line and the group's name). The
+    // outline comes from the language service: give it a moment (the list doesn't refresh).
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "symbols": [{ "name": "add" }] },
+      "timeoutMs": 10000
+    },
+    { "run": "quickOpen.show", "input": { "query": "@:" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".quick-input-list .vlist-row.has-separator",
+        "limit": 1,
+        "html": 1500
+      },
+      "expect": [{ "html": { "$contains": "functions (1)" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    // Ctrl+Enter opens the picked file to the side.
+    { "run": "editor.openFile", "input": { "path": "src/util.ts" } },
+    { "wait": 1000 },
+    { "run": "quickOpen.show", "input": { "query": "main.ts" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 1, "html": 1500 },
+      "expect": [{ "html": { "$contains": "main.ts" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "key": "Enter", "ctrl": true }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "main.ts" } },
+      "timeoutMs": 5000
+    },
+    { "run": "layout.getTree", "print": true },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // "?" lists the new prefixes.
+    { "run": "quickOpen.show", "input": { "query": "?" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list", "html": 6000 },
+      "expect": [{ "html": { "$contains": "view " } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+
+    // ---- Settings search filters ----
+    {
+      "run": "settings.open",
+      "input": { "query": "@id:update.mode,security.workspace.trust.startupPrompt" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-page-title", "limit": 1 },
+      "expect": [{ "html": { "$contains": "2 settings found" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.open", "input": { "query": "@ext:builtin.tasks" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-list", "limit": 1, "html": 20000 },
+      "expect": [{ "html": { "$contains": "task.allowAutomaticTasks" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.open", "input": { "query": "@tag:ai" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-page-title", "limit": 1 },
+      "expect": [{ "html": { "$contains": "found" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.open", "input": { "query": "@lang:markdown" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-page-title", "limit": 1 },
+      "expect": [{ "html": { "$contains": "for markdown files" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.open", "input": { "query": "@modified @tag:nothing-has-this" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-page-title", "limit": 1 },
+      "expect": [{ "html": { "$contains": "0 settings found" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.open", "input": { "query": "" } },
+
+    // ---- Help → Keyboard shortcuts reference ----
+    {
+      "run": "keybindings.showReference",
+      "expect": { "tabId": { "$exists": true }, "text": { "$contains": "Show all commands" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".shortcuts-section-title", "limit": 3 },
+      "expect": [
+        { "html": { "$contains": "General" } },
+        { "html": { "$contains": "Basic editing" } }
+      ],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "keybindings.printReference", "expect": { "printed": false } },
+
+    // ---- Configure default build task ----
+    {
+      "run": "tasks.configureDefaultBuild",
+      "input": { "label": "check" },
+      "expect": { "label": "check", "path": { "$contains": "tasks.json" } }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": ".vscode/tasks.json" },
+      "expect": { "text": { "$contains": "\"isDefault\": true" } }
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": [{}, {}, { "label": "check", "group": "build", "default": true }] }
+    },
+    // Another one becomes the default; "check" stays a build task.
+    {
+      "run": "tasks.configureDefaultBuild",
+      "input": { "label": "say done" },
+      "expect": { "label": "say done" }
+    },
+    {
+      "run": "tasks.list",
+      "expect": {
+        "tasks": [
+          { "label": "say done", "group": "build", "default": true },
+          {},
+          { "label": "check", "group": "build", "default": false }
+        ]
+      }
+    },
+    { "run": "tasks.configureDefaultTest", "input": { "label": "nope" }, "expectError": "No task" },
+
+    // ---- Install from VSIX ----
+    {
+      "run": "extensions.installFromVsix",
+      "input": { "file": "../extensions/dawn-theme.vsix" },
+      "expect": { "id": "tester.dawn-theme" },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://extensions?id=tester.dawn-theme",
+      "expect": { "$contains": "Dawn" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "extensions.installFromVsix",
+      "input": { "file": "src/util.ts" },
+      "expectError": ".vsix"
+    },
+    { "run": "extensions.uninstall", "input": { "id": "tester.dawn-theme" } },
+
+    // ---- Workspace trust: the dialog offers to trust the parent folder ----
+    { "run": "workspace.manageTrust", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog-check-text", "limit": 1 },
+      "expect": [{ "html": { "$contains": "parent folder" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog-actions .button-primary" } },
+    { "state": "ide://workspace/trust", "expect": { "state": "trusted" }, "timeoutMs": 3000 },
+    // Trust set elsewhere closes an open trust dialog.
+    { "run": "workspace.manageTrust", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog-check-text" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true, "parent": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog-check-text" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    }
+  ]
+}

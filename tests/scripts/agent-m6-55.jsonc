@@ -1,0 +1,75 @@
+// D158: attachments open in the viewer, which pages through a message's attachments in order:
+// images as images, pasted text and files as a text page. A project file opens in the editor.
+{
+  "name": "agent-m6-55",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "layout.focusAgent" },
+    {
+      "run": "agent.attachFiles",
+      "input": { "paths": ["../extensions/hello/main.js", "assets/dot.png", "README.md"] },
+      "expect": { "files": 3 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments .agent-card.is-openable", "limit": 5 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 4000
+    },
+    // In the box: the text upload opens as text, → goes to the image.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-attachments .agent-card[data-kind='file']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer .agent-viewer-text:not([hidden])", "html": 600 },
+      "expect": [{ "html": { "$contains": "main.js" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer-count", "html": 300 },
+      "expect": [{ "html": { "$contains": "1 of 2" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-nav:last-of-type" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer .agent-viewer-image:not([hidden])" },
+      "expect": [{ "tag": "img" }]
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-close" } },
+
+    // Sent: the message's cards page through all three (the project file as text too).
+    {
+      "run": "agent.send",
+      "input": { "message": "what are these?", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-sent-cards .agent-card.is-openable", "limit": 5 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 4000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-sent-cards .agent-card.is-image" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer-count", "html": 300 },
+      "expect": [{ "html": { "$contains": "of 3" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-nav" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer .agent-viewer-text:not([hidden])", "html": 600 },
+      "expect": [{ "html": { "$contains": "main.js" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-close" } }
+  ]
+}

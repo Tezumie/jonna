@@ -1,0 +1,317 @@
+{
+  "id": "builtin.explorer",
+  "version": "0.1.0",
+  "displayName": "Explorer",
+  "description": "Workspace folder, file tree and file operations.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "workbench.newWindow",
+        "title": "New window",
+        "category": "File"
+      },
+      {
+        "id": "workspace.openFolder",
+        "title": "Open folder…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.addFolder",
+        "title": "Add folder to workspace…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.removeFolder",
+        "title": "Remove folder from workspace…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.renameFolder",
+        "title": "Rename folder in workspace…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.saveAs",
+        "title": "Save workspace as…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.openWorkspaceFile",
+        "title": "Open workspace from file…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.reloadWorkspaceFile",
+        "title": "Reload workspace file",
+        "category": "File"
+      },
+      {
+        "id": "workspace.openWslFolder",
+        "title": "Open WSL folder…",
+        "category": "File"
+      },
+      {
+        "id": "explorer.focus",
+        "title": "Show explorer",
+        "category": "View"
+      },
+      {
+        "id": "explorer.refresh",
+        "title": "Refresh explorer",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.collapseAll",
+        "title": "Collapse folders in explorer",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.reveal",
+        "title": "Reveal in explorer",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.find",
+        "title": "Find in explorer",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.closeFind",
+        "title": "Close find in explorer",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.dragOut",
+        "title": "Drag files out of the window",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.newFile",
+        "title": "New file…",
+        "category": "File"
+      },
+      {
+        "id": "explorer.newFolder",
+        "title": "New folder…",
+        "category": "File"
+      },
+      {
+        "id": "explorer.rename",
+        "title": "Rename…",
+        "category": "File"
+      },
+      {
+        "id": "explorer.delete",
+        "title": "Delete",
+        "category": "File"
+      },
+      {
+        "id": "explorer.restoreDeleted",
+        "title": "Restore deleted files…",
+        "category": "File"
+      },
+      {
+        "id": "explorer.cut",
+        "title": "Cut",
+        "category": "File"
+      },
+      {
+        "id": "explorer.copy",
+        "title": "Copy",
+        "category": "File"
+      },
+      {
+        "id": "explorer.paste",
+        "title": "Paste",
+        "category": "File"
+      },
+      {
+        "id": "explorer.move",
+        "title": "Move to folder",
+        "category": "File"
+      },
+      {
+        "id": "workspace.closeFolder",
+        "title": "Close folder",
+        "category": "File"
+      },
+      {
+        "id": "workspace.openRecent",
+        "title": "Open recent…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.newFile",
+        "title": "New file…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.pinRecent",
+        "title": "Pin folder in recent",
+        "category": "File"
+      },
+      {
+        "id": "workspace.removeRecent",
+        "title": "Remove from recent",
+        "category": "File"
+      },
+      {
+        "id": "explorer.revealInOs",
+        "title": "Reveal in file manager",
+        "category": "File"
+      },
+      {
+        "id": "explorer.moreActions",
+        "title": "Explorer: more actions",
+        "category": "Explorer"
+      },
+      {
+        "id": "explorer.toggleExcludedFiles",
+        "title": "Toggle hidden files",
+        "category": "Explorer"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "shift+alt+r",
+        "mac": "alt+cmd+r",
+        "command": "explorer.revealInOs",
+        "when": "sideBarFocus && !inputFocus"
+      },
+      {
+        "key": "shift+alt+c",
+        "mac": "alt+cmd+c",
+        "command": "explorer.copyPath",
+        "when": "sideBarFocus && !inputFocus"
+      },
+      {
+        "key": "ctrl+k ctrl+o",
+        "mac": "cmd+o",
+        "command": "workspace.openFolder"
+      },
+      {
+        "key": "ctrl+shift+e",
+        "mac": "shift+cmd+e",
+        "command": "explorer.focus"
+      },
+      {
+        "key": "f2",
+        "command": "explorer.rename",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "delete",
+        "mac": "cmd+backspace",
+        "command": "explorer.delete",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+x",
+        "mac": "cmd+x",
+        "command": "explorer.cut",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "command": "explorer.copy",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "command": "explorer.paste",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+alt+f",
+        "mac": "alt+cmd+f",
+        "command": "explorer.find",
+        "when": "sideBarFocus && !inputFocus && !quickInputVisible"
+      },
+      {
+        "key": "ctrl+shift+n",
+        "mac": "shift+cmd+n",
+        "command": "workbench.newWindow"
+      }
+    ],
+    "views": [
+      {
+        "id": "explorer.view",
+        "title": "Explorer",
+        "location": "sidebar"
+      }
+    ],
+    "settings": {
+      "explorer.compactFolders": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show a chain of folders that each hold only one folder as one row (src/main/java).",
+        "order": 2
+      },
+      "explorer.autoReveal": {
+        "type": "boolean",
+        "default": true,
+        "description": "Reveal and select the active editor's file in the explorer.",
+        "order": 1
+      },
+      "explorer.folderIcons": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show folder icons next to the chevrons, with any file icon theme (workbench.iconTheme). Off: folders show only their chevrons; files keep their icons.",
+        "order": 2
+      },
+      "explorer.confirmUndo": {
+        "type": "string",
+        "enum": ["default", "verbose", "light"],
+        "enumDescriptions": [
+          "Ask before an undo or redo that deletes files",
+          "Ask before every file undo or redo",
+          "Never ask"
+        ],
+        "default": "default",
+        "description": "Whether undoing file operations in the explorer asks first (VS Code's explorer.confirmUndo)."
+      },
+      "editor.updateImportsOnFileMove": {
+        "type": "string",
+        "enum": ["prompt", "always", "never"],
+        "enumDescriptions": ["Ask each time", "Update without asking", "Leave imports alone"],
+        "default": "prompt",
+        "description": "When a JavaScript or TypeScript file (or a folder with some) is renamed or moved, update the imports that point at it (VS Code's updateImportsOnFileMove)."
+      },
+      "explorer.fileNesting.enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "List related files under one file of the same folder, with a chevron (a.js and a.js.map under a.ts, the lock files under package.json), as explorer.fileNesting.patterns says.",
+        "order": 5
+      },
+      "explorer.fileNesting.expand": {
+        "type": "boolean",
+        "default": true,
+        "description": "Files with nested files start expanded.",
+        "order": 5.1
+      },
+      "explorer.fileNesting.patterns": {
+        "type": "object",
+        "default": {
+          "*.ts": "${capture}.js",
+          "*.js": "${capture}.js.map, ${capture}.min.js, ${capture}.d.ts",
+          "*.jsx": "${capture}.js",
+          "*.tsx": "${capture}.ts",
+          "tsconfig.json": "tsconfig.*.json",
+          "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb, bun.lock"
+        },
+        "description": "Which files nest under which: a file name (one * at most) → the names nested under it, comma-separated, with * and ${capture} (what the parent's * matched), ${basename} (its name without the extension), ${extname} (its extension), ${dirname} (its folder's name).",
+        "order": 5.2
+      },
+      "explorer.showExcludedFiles": {
+        "type": "boolean",
+        "default": false,
+        "description": "List the files and folders files.exclude hides (dimmed). They stay out of search and quick open.",
+        "order": 4.1
+      }
+    }
+  }
+}

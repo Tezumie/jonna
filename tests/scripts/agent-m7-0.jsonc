@@ -1,0 +1,113 @@
+// D199: agent edits land on disk at once and stay under review (reject restores the file),
+// per-change keep / undo, the agent ignore file (a .env read is refused, @-mention too), and the
+// cost of a chat in ide://agent/usage with its budget. Against tests/fixtures/mock-ollama.mjs.
+{
+  "name": "agent-m7-0",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.prices",
+        "value": { "ollama/mock-coder:1b": { "input": 1000, "output": 1000 } }
+      }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    // Review mode: the edit is on disk at once, and still under review.
+    {
+      "run": "agent.send",
+      "input": { "message": "rename the title" },
+      "expect": { "pending": { "$length": 1 } }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "Renamed workspace" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/review",
+      "expect": { "files": [{ "changes": [{ "added": 1, "removed": 1 }] }] },
+      "timeoutMs": 5000
+    },
+    // Reject puts back what the file held before the turn.
+    { "run": "agent.rejectAll", "expect": { "rejected": { "$length": 1 } } },
+    {
+      "run": "search.run",
+      "input": { "query": "Renamed workspace" },
+      "expect": { "matches": 0 },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://agent/review", "expect": { "files": { "$length": 0 } }, "timeoutMs": 5000 },
+    // Two separate changes in one file: undo the first, keep the second.
+    { "run": "agent.send", "input": { "message": "make the hunk file" } },
+    { "run": "agent.acceptAll", "expect": { "accepted": { "$length": 1 } } },
+    { "run": "agent.send", "input": { "message": "change the hunk file" } },
+    {
+      "state": "ide://agent/review",
+      "expect": { "files": [{ "changes": { "$length": 2 } }] },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.rejectHunk",
+      "input": { "path": "hunks.txt", "index": 0 },
+      "expect": { "remaining": 1 }
+    },
+    {
+      "run": "agent.acceptHunk",
+      "input": { "path": "hunks.txt", "index": 0 },
+      "expect": { "remaining": 0, "pending": 0 }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "epsilon-new" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "alpha-new" },
+      "expect": { "matches": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.acceptHunk", "input": { "path": "hunks.txt" }, "expectError": true },
+    // The agent ignore file: .env is excluded by default.
+    { "run": "explorer.newFile", "input": { "name": ".env" } },
+    { "state": "ide://agent/ignore", "expect": { "sources": { "$exists": true } } },
+    { "run": "agent.mention", "input": { "mention": ".env" }, "expectError": "excluded" },
+    {
+      "run": "agent.send",
+      "input": { "message": "read the env file" },
+      "expect": { "answer": "Refused: excluded." }
+    },
+    // The cost, from agent.prices: every request costs 10 + 5 tokens at $1000 per million.
+    {
+      "state": "ide://agent/usage",
+      "expect": { "total": { "cost": { "$gte": 0.001 } } }
+    },
+    // A budget already spent: the next turn asks before going on, and "deny" stops it.
+    { "run": "settings.set", "input": { "key": "agent.budget.perChat", "value": 0.01 } },
+    { "run": "agent.send", "input": { "message": "hello", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "budget" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle" },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://agent/usage", "expect": { "sessions": { "$contains": "\"budget\":0.01" } } },
+    { "run": "settings.set", "input": { "key": "agent.budget.perChat", "value": 0 } }
+  ]
+}

@@ -1,0 +1,96 @@
+// m7.12: coming back to a spot shows its cached suggestion even when Monaco wouldn't ask again
+// (the suggestion was dismissed, an undo, a delete run outside the keyboard). Mock Ollama: after
+// "return " the FIM answer is "fimDone(end)" (nothing follows the cursor; "(suffix)" when
+// something does); anything else typed gets "fim_middle()". The
+// request count shows whether the model was asked again (the cache answers instead).
+{
+  "name": "ghost-text-m7-12",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": true }
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "enabled": true, "fim": "ollama", "requests": 0 },
+      "timeoutMs": 10000
+    },
+    { "run": "explorer.newFile", "input": { "parent": "src", "name": "ghost12.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/ghost12.ts" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "export function twice(n: number): number {\n  return " }
+    },
+    { "run": "editor.inlineSuggest.trigger" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "fimDone" },
+      "timeoutMs": 15000
+    },
+    // Typing through it: the rest from the cache.
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "fimDone" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": ">end</span>" },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://editor/inlineCompletions", "expect": { "requests": 1 } },
+    // Something else: asked again (the second request), then dismissed (Esc).
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "X" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "fim_middle" },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://editor/inlineCompletions", "expect": { "requests": 2 } },
+    { "run": "editor.inlineSuggest.hide" },
+    { "wait": 300 },
+    // Deleting back to "fimDone" with no suggestion session: the cached rest shows again, and
+    // the model isn't asked.
+    { "run": "editor.runAction", "input": { "action": "deleteLeft" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": ">end</span>" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "requests": 2, "cache": { "hits": { "$gte": 1 } } }
+    },
+    // Undo after typing something else and dismissing it: the same.
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "Y" } } },
+    { "wait": 200 },
+    { "run": "editor.inlineSuggest.hide" },
+    { "wait": 300 },
+    { "run": "editor.runAction", "input": { "action": "undo" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": ">end</span>" },
+      "timeoutMs": 5000
+    },
+    // How imported names were placed ("server" when a TypeScript server runs, else "regex").
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "last": { "importsVia": { "$exists": true } } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": false }
+    }
+  ]
+}

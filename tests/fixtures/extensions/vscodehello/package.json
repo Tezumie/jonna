@@ -1,0 +1,166 @@
+{
+  "publisher": "acme",
+  "name": "vscode-hello",
+  "displayName": "%displayName%",
+  "description": "A VS Code extension written against VS Code's API, for the shim's test (D256, D257).",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onTerminalProfile:vscodeHello.shell"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-hello.info",
+        "title": "%info.title%",
+        "category": "Hello"
+      },
+      {
+        "command": "vscodeHello.check",
+        "title": "Check the problem it set"
+      },
+      {
+        "command": "vscodeHello.showPage",
+        "title": "Show its page"
+      },
+      {
+        "command": "vscodeHello.openHello",
+        "title": "Open a .hello file"
+      },
+      {
+        "command": "vscodeHello.pages",
+        "title": "What its pages said"
+      },
+      {
+        "command": "vscodeHello.git",
+        "title": "What VS Code's git API says"
+      },
+      {
+        "command": "vscodeHello.reveal",
+        "title": "Reveal a row of its tree"
+      },
+      {
+        "command": "vscodeHello.selection",
+        "title": "Its tree's selection"
+      },
+      {
+        "command": "vscodeHello.linked",
+        "title": "Hello: last followed terminal link"
+      },
+      {
+        "command": "vscodeHello.otherApi",
+        "title": "Hello: use another extension's API"
+      },
+      {
+        "command": "vscodeHello.hiddenTerminal",
+        "title": "Hello: make a hidden terminal"
+      },
+      {
+        "command": "vscodeHello.showHiddenTerminal",
+        "title": "Hello: show the hidden terminal"
+      },
+      {
+        "command": "vscodeHello.notebook",
+        "title": "Hello: edit the active notebook"
+      },
+      {
+        "command": "vscodeHello.untitledNotebook",
+        "title": "Hello: open an untitled notebook"
+      },
+      {
+        "command": "vscodeHello.providers",
+        "title": "Hello: ask every language provider"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Hello Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/hello-dark.json"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "hello_echo",
+        "displayName": "Echo",
+        "modelDescription": "Says the text back.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Hello",
+      "properties": {
+        "vscodeHello.greeting": {
+          "type": "string",
+          "default": "Hello from the settings",
+          "description": "What it says."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "helloSide",
+          "title": "Hello",
+          "icon": "$(heart)"
+        }
+      ]
+    },
+    "views": {
+      "helloSide": [
+        {
+          "id": "vscodeHello.page",
+          "name": "Page",
+          "type": "webview"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "vscodeHello.tree",
+          "name": "Hello tree"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "vscodeHello.editor",
+        "displayName": "Hello editor",
+        "selector": [
+          {
+            "filenamePattern": "*.hello"
+          }
+        ]
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "hello",
+        "properties": {
+          "word": {
+            "type": "string"
+          }
+        }
+      }
+    ],
+    "terminal": {
+      "profiles": [
+        {
+          "id": "vscodeHello.shell",
+          "title": "Hello shell",
+          "icon": "$(heart)"
+        }
+      ]
+    }
+  }
+}

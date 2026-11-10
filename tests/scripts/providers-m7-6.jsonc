@@ -1,0 +1,217 @@
+// D212: more provider presets. The add-provider tiles show the common ones; View more shows the
+// rest. In Other server, typing a name suggests a preset ("groqai" → Groq): picking it turns the
+// form into Groq's, with its logo. Arrow keys and Enter pick too; a name of your own suggests
+// nothing. A custom server can have an image of its own, and one at a known host (api.groq.com)
+// shows that service's logo.
+{
+  "name": "providers-m7-6",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": false } },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.showSetup" },
+    // The first rows: the tiles the page always had; Mistral waits under View more.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=groq] .ai-mark.has-logo" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=mistral]" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-more", "html": 300 },
+      "expect": [{ "html": { "$contains": "View more" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".ai-page .ai-more" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=mistral] .ai-mark.has-logo" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=deepseek]" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-more", "html": 300 },
+      "expect": [{ "html": { "$contains": "View fewer" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ai-page .ai-more" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-tile[data-preset=mistral]" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // Other server: "groqai" suggests Groq, with its logo.
+    { "run": "dev.click", "input": { "selector": ".ai-page .ai-tile[data-preset=custom]" } },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".ai-form[data-form=custom] input[aria-label=Name]",
+        "text": "groqai"
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-suggest:not([hidden]) .ai-suggest-item", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Groq" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-suggest-item[data-preset=groq] .ai-mark.has-logo" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ai-suggest-item[data-preset=groq]" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-form[data-form=groq] input", "html": 400 },
+      "expect": [{ "html": { "$contains": "Groq API key" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-tile.is-selected[data-preset=groq]" },
+      "expect": { "$length": 1 }
+    },
+    // The keyboard: ArrowDown highlights the first suggestion, Enter picks it (a preset under
+    // View more opens it, its tile shown).
+    { "run": "dev.click", "input": { "selector": ".ai-page .ai-tile[data-preset=custom]" } },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".ai-form[data-form=custom] input[aria-label=Name]",
+        "text": "together",
+        "key": "ArrowDown"
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-suggest-item.is-active[data-preset=together]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".ai-form[data-form=custom] input[aria-label=Name]", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-form[data-form=together]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-tile.is-selected[data-preset=together]" },
+      "expect": { "$length": 1 }
+    },
+    // A name of your own: no suggestions; the form stays a custom server's, with its image field.
+    { "run": "dev.click", "input": { "selector": ".ai-page .ai-tile[data-preset=custom]" } },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".ai-form[data-form=custom] input[aria-label=Name]",
+        "text": "Office box"
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-suggest-item" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-form[data-form=custom] .ai-image-field", "html": 600 },
+      "expect": [{ "html": { "$contains": "Choose image" } }]
+    },
+    // The commands behind it.
+    {
+      "run": "agent.matchProviderPresets",
+      "input": { "name": "groqai", "baseUrl": "https://api.groq.com/openai/v1" },
+      "expect": { "matches": [{ "id": "groq" }], "forAddress": "groq" }
+    },
+    {
+      "run": "agent.chooseProviderImage",
+      "input": { "path": "assets/dot.png" },
+      "expect": { "ok": true, "dataUrl": { "$contains": "data:image/png;base64," } }
+    },
+    {
+      "run": "agent.chooseProviderImage",
+      "input": { "path": "notes.txt" },
+      "expect": { "ok": false }
+    },
+    // A custom server with an image of its own.
+    {
+      "run": "agent.connectProvider",
+      "input": {
+        "name": "Office box",
+        "baseUrl": "http://127.0.0.1:11999/v1",
+        "apiKey": "good-key"
+      },
+      "expect": { "ok": true, "id": "office-box" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-row[data-provider=office-box] .ai-mark.has-logo" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.setProviderImage",
+      "input": { "id": "office-box", "path": "assets/dot.png" },
+      "expect": { "ok": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-row[data-provider=office-box] .ai-mark.has-logo img" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/providerPresets",
+      "expect": { "providers": { "$contains": "\"image\":true" } }
+    },
+    // One added by hand at Groq's host shows Groq's logo.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          { "id": "office-box", "name": "Office box", "baseUrl": "http://127.0.0.1:11999/v1" },
+          { "id": "fast", "name": "Fast one", "baseUrl": "https://api.groq.com/openai/v1" }
+        ]
+      }
+    },
+    { "run": "agent.refreshModels" },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ai-row[data-provider=fast][data-brand-preset=groq] .ai-mark.has-logo"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Removing a provider forgets its image.
+    { "run": "agent.removeProvider", "input": { "id": "office-box" } },
+    { "run": "agent.removeProvider", "input": { "id": "fast" } },
+    {
+      "state": "ide://agent/providerPresets",
+      "expect": { "providers": { "$length": 0 } }
+    }
+  ]
+}

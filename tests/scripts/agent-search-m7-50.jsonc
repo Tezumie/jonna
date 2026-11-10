@@ -1,0 +1,51 @@
+// D306, D307, D311: the agent's search after Claude Code's Grep (context lines, count mode, paging
+// that names the next offset), find_files with a glob, and a cut command output kept whole and
+// read back with process_output. Against tests/fixtures/mock-ollama.mjs ("pkgb …" scenarios).
+{
+  "name": "agent-search-m7-50",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgb search the sample" },
+      "expect": { "answer": "PKGB search: context=yes count=yes paging=yes glob=yes" },
+      "timeoutMs": 30000,
+      "print": true
+    },
+    // The calls with their new arguments, as the chat shows them.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "\"output_mode\":\"count\"" }
+      },
+      "print": true
+    },
+    // The search view wasn't touched by the agent's searches.
+    {
+      "state": "ide://search/last",
+      "expect": { "$not": { "$contains": "\"query\":\"hello\"" } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // A long command output is cut, kept whole, and read back by line.
+    { "run": "agent.setCommandMode", "input": { "mode": "full" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgb output of a long command" },
+      "expect": { "answer": "PKGB output: kept=yes read=yes" },
+      "timeoutMs": 60000,
+      "print": true
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "ask" } }
+  ]
+}

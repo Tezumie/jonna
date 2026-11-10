@@ -1,0 +1,26 @@
+// D239: with no model, an empty chat offers "Start free with OpenCode" under Set up AI models, and
+// the AI models page lists OpenCode with the agents you may already have: since D401 the ACP
+// registry's OpenCode V2, with Install. (Not clicked here: it downloads OpenCode.)
+{
+  "name": "free-start-m7-15",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "agent.ollama.enabled", "value": false } },
+    { "run": "agent.refreshModels" },
+    { "run": "agent.newSession" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-prompt .ai-free-start", "html": 600 },
+      "expect": [{ "html": { "$contains": "Start free with OpenCode" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "agent.showSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-page .ai-row[data-agent='OpenCode V2']", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Free models, no account needed" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.reset", "input": { "keys": ["agent.ollama.enabled"] } }
+  ]
+}

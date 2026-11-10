@@ -1,0 +1,15 @@
+{
+  "nameShort": "Jonna",
+  "nameLong": "Jonna",
+  "identifier": "dev.jonna.app",
+  "dataFolderName": ".jonna",
+  "workspaceFolderName": ".jonna",
+  "serverDataFolderName": ".jonna-server",
+  "workspaceFolderAliases": [".vscode", ".codevre"],
+  "urlScheme": "jonna",
+  "extensionApiGlobal": "ide",
+  "accountsUrl": "https://jonna.dev",
+  "extensionsRepo": "",
+  "issuesUrl": "https://github.com/Tezumie/jonna/issues",
+  "updates": { "endpoint": "", "betaEndpoint": "", "pubkey": "" }
+}

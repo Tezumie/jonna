@@ -1,0 +1,161 @@
+// D181: the bundled Canvas extension (seeded disabled, then turned on): the agent's commands
+// draw a diagram in one call, the viewer opens beside the editor and reports itself, bad ops fail
+// whole, new canvases get unique names.
+{
+  "name": "canvas-m6-80",
+  "steps": [
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "bundled.canvas" } },
+      "timeoutMs": 10000
+    },
+    // Seeded disabled: its commands aren't there until it's turned on.
+    { "run": "canvas.read", "expectError": "Unknown command" },
+    { "run": "extensions.enable", "input": { "id": "bundled.canvas" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.canvas", "grant": true },
+      "expect": { "granted": true }
+    },
+    { "state": "ide://workspace", "expect": { "workspaceFolder": { "$exists": true } } },
+    // Its page offers what it can open (the Canvases view and Canvas): one Open menu (D181).
+    { "run": "extensions.showDetails", "input": { "id": "bundled.canvas" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-open" },
+      "expect": [{ "html": { "$contains": ">Open<" } }],
+      "timeoutMs": 10000
+    },
+    // Nothing yet.
+    {
+      "run": "canvas.read",
+      "expect": { "exists": false, "nodes": { "$length": 0 } },
+      "timeoutMs": 15000
+    },
+    // A diagram in one call: cards by ref, arrows, a tree layout; it opens beside the editor.
+    {
+      "run": "canvas.edit",
+      "input": {
+        "ops": [
+          { "op": "add", "ref": "ui", "text": "## UI\nViews and the dock" },
+          { "op": "add", "ref": "core", "text": "## Core\n- dispatcher\n- [ ] state tree" },
+          { "op": "add", "ref": "rust", "text": "## Rust\nIPC, files, PTYs", "color": "cyan" },
+          { "op": "add", "ref": "readme", "file": "README.md", "near": "rust", "side": "below" },
+          {
+            "op": "add",
+            "ref": "logo",
+            "file": "assets/shape.svg",
+            "near": "rust",
+            "side": "right"
+          },
+          { "op": "connect", "from": "ui", "to": "core", "label": "commands" },
+          { "op": "connect", "from": "core", "to": "rust", "label": "IPC" },
+          { "op": "layout", "style": "tree" },
+          { "op": "group", "ids": ["ui", "core"], "label": "Frontend" }
+        ]
+      },
+      "expect": {
+        "path": { "$contains": "canvas/main.canvas" },
+        "added": { "ui": { "$exists": true }, "rust": { "$exists": true } },
+        "cards": 6,
+        "arrows": 2
+      }
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "extviewer:canvas.viewer" },
+      "timeoutMs": 10000
+    },
+    // The page loaded and said so (canvas.read's `open`).
+    {
+      "run": "canvas.read",
+      "expect": {
+        "open": true,
+        "nodes": { "$length": 6 },
+        "edges": [{ "label": "commands" }, { "label": "IPC" }]
+      },
+      "timeoutMs": 15000
+    },
+    // A bad op changes nothing and says which one.
+    {
+      "run": "canvas.edit",
+      "input": {
+        "ops": [{ "op": "add", "text": "x" }, { "op": "connect", "from": "x", "to": "nope" }]
+      },
+      "expectError": "ops[1] (connect)"
+    },
+    { "run": "canvas.read", "expect": { "nodes": { "$length": 6 } } },
+    { "run": "canvas.focus", "input": {} },
+    // D184: export (drawn by the page, saved beside the canvas) and the explorer's Add to canvas.
+    {
+      "run": "canvas.export",
+      "input": { "format": "png" },
+      "expect": { "path": { "$contains": "canvas/main.png" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "canvas.export",
+      "input": { "format": "svg", "privacy": true },
+      "expect": { "path": { "$contains": "canvas/main.svg" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "canvas.addFiles",
+      "input": { "path": "src" },
+      "expect": { "added": 2, "path": { "$contains": "main.canvas" } }
+    },
+    { "run": "canvas.read", "expect": { "nodes": { "$length": 8 } } },
+    {
+      "run": "editor.renderFile",
+      "input": { "path": "src/main.ts", "maxLines": 5 },
+      "expect": { "language": "typescript", "html": { "$contains": "<span style=\"color:" } },
+      "timeoutMs": 20000
+    },
+    // New tab lists extensions' tools: opening one runs its command in that group.
+    { "run": "layout.newTab", "input": { "tool": "canvas.open" } },
+    { "state": "ide://layout", "expect": { "$contains": "main.canvas" } },
+    // New canvases get unique names; the list finds them.
+    { "run": "canvas.new", "expect": { "path": { "$contains": "canvas/untitled.canvas" } } },
+    { "run": "canvas.new", "expect": { "path": { "$contains": "canvas/untitled-2.canvas" } } },
+    { "run": "canvas.list", "expect": { "canvases": { "$length": 3 } } },
+    // The sidebar's Canvases view lists them, the main one first.
+    { "run": "view.show", "input": { "id": "canvas.list" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-tree-label", "limit": 10 },
+      "expect": [
+        { "html": { "$contains": ">main<" } },
+        { "html": { "$contains": ">untitled<" } },
+        { "html": { "$contains": ">untitled-2<" } }
+      ],
+      "timeoutMs": 5000
+    },
+    // Closing its tab is heard (from the IDE, not the page): no longer open.
+    {
+      "run": "canvas.read",
+      "input": { "path": ".jonna/../.jonna/canvas/untitled-2.canvas" },
+      "expect": { "open": true },
+      "timeoutMs": 10000
+    },
+    { "run": "layout.closeTab", "input": {} },
+    {
+      "run": "canvas.read",
+      "input": { "path": ".jonna/canvas/untitled-2.canvas" },
+      "expect": { "open": false },
+      "timeoutMs": 5000
+    },
+    // Uninstalled, it stays gone until Restore bundled extensions brings it back, off (D183).
+    { "run": "extensions.uninstall", "input": { "id": "bundled.canvas" } },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$not": { "$contains": "bundled.canvas" } } }
+    },
+    { "run": "extensions.restoreBundled", "expect": { "restored": ["bundled.canvas"] } },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "bundled.canvas" } },
+      "timeoutMs": 5000
+    },
+    { "run": "canvas.read", "expectError": "Unknown command" }
+  ]
+}

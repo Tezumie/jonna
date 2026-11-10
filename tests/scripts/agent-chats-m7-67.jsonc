@@ -1,0 +1,86 @@
+// D325: messages between chats. Chat A's agent lists the folder's chats (list_chats) and sends
+// chat B a message (message_chat), which asks the user first; B's agent answers it in a turn of
+// its own, the message shown in B as from A; with notify_when_idle, A gets one note when B goes
+// idle, with B's answer. Against tests/fixtures/mock-ollama.mjs (pkgFScripted).
+{
+  "name": "agent-chats-m7-67",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    // Chat B: something in it, so it's listed.
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "b"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock." },
+      "timeoutMs": 20000
+    },
+    // Chat A messages it.
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "a"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgF message a chat", "session": "${a.session}" },
+      "background": true
+    },
+    // Asked once: it spends the user's tokens in the other chat.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": "${a.session}",
+        "permissions": [{ "title": { "$contains": "Message chat" } }]
+      },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    {
+      "run": "agent.respondPermission",
+      "input": { "session": "${a.session}", "answer": "once" }
+    },
+    // B answered, and A heard back once B went idle.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": "${a.session}",
+        "status": "idle",
+        "items": { "$contains": "PkgF got the idle note: with the answer" }
+      },
+      "timeoutMs": 45000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // In B, the message shows as from A, and B's answer follows it.
+    { "run": "agent.openThread", "input": { "session": "${b.session}", "newTab": true } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": "${b.session}",
+        "items": { "$contains": "PkgF relay answered" }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-news.is-chat", "limit": 3, "html": 600 },
+      "expect": [{ "html": { "$contains": "pkgF-relay: please say hi" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

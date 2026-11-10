@@ -1,0 +1,105 @@
+// D363: Send now. A message sent while the agent works waits for its next step; Send now on it
+// cuts short what the agent is doing (a running command, a reply being written) and the turn goes
+// on with the message at once, instead of after the 60 s the mock's command and reply take. A
+// call waiting for approval is turned down instead.
+// Against tests/fixtures/mock-ollama.mjs ("start the long job" / "start the long essay").
+{
+  "name": "agent-send-now-m7-103",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- A command waiting for approval is turned down ----
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.send", "input": { "message": "Please start the long job", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "sleep 60" } }] },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "forget it" },
+      "expect": { "queued": { "$exists": true } }
+    },
+    { "run": "agent.sendNow", "input": {} },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Read at once: forget it" } },
+      "timeoutMs": 15000
+    },
+
+    // ---- A running command is cut short ----
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.send", "input": { "message": "Please start the long job", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "sleep 60" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "running" }, "permissions": { "$length": 0 } },
+      "timeoutMs": 5000
+    },
+    { "wait": 1000 },
+    {
+      "run": "agent.send",
+      "input": { "message": "switch to the short one" },
+      "expect": { "queued": { "$exists": true } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-user-wrap.is-queued .agent-queued-note", "html": 600 },
+      "expect": [{ "html": { "$contains": "Send now" } }],
+      "timeoutMs": 3000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-queued-now" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "Read at once: switch to the short one" }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "long job is done" } } },
+      "print": true
+    },
+
+    // ---- A reply being written is cut short ----
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.send", "input": { "message": "Please start the long essay", "wait": false } },
+    { "wait": 1500 },
+    {
+      "run": "agent.send",
+      "input": { "message": "make it a haiku" },
+      "expect": { "queued": { "$exists": true } }
+    },
+    { "run": "agent.sendNow", "input": {} },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Read at once: make it a haiku" } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "The essay, at last" } } }
+    },
+
+    // ---- Nothing waiting: refused ----
+    { "run": "agent.sendNow", "input": {}, "expectError": "No message is waiting" }
+  ]
+}

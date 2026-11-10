@@ -1,0 +1,72 @@
+// D292: the agent's tools brought up to a coding agent's: ask_user with a note under each option
+// and several picks sent together, edit_file with several edits in one call, and web_fetch as a
+// tool of its own (it was call_command web.fetch). One scripted turn of the mock model uses all
+// three and says what each gave.
+{
+  "name": "agent-tools-m7-39",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // The mock's page is read without asking (web approval is agentA-m7-6's).
+    { "run": "settings.set", "input": { "key": "agent.webFetch.autoApprove", "value": true } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "d292 tools (no title)", "wait": false }
+    },
+
+    // ---- ask_user: notes under the options, several picks, then Send ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choice-note", "limit": 5, "html": 200 },
+      "expect": [
+        { "html": { "$contains": "Run the suite" } },
+        { "html": { "$contains": "Update the guide" } }
+      ],
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choices-send[disabled]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".rb-choice:nth-child(1)" } },
+    { "run": "dev.click", "input": { "selector": ".rb-choice:nth-child(3)" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choice.is-selected", "limit": 5 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "dev.click", "input": { "selector": ".rb-choices-send" } },
+
+    // ---- Then the edits in one call and the page: the reply says what each gave ----
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "D292 answered=Tests, Lint edit=ok fetch=ok" }
+      },
+      "timeoutMs": 30000
+    },
+    // D294: its first reply came without a title (a tool call first): one request names it.
+    { "state": "ide://agent/session", "expect": { "title": "Named by mock" }, "timeoutMs": 10000 },
+    // Both picks show as chosen.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choice.is-chosen", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

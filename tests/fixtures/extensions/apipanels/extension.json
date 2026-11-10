@@ -1,0 +1,23 @@
+{
+  "id": "acme.apipanels",
+  "version": "1.0.0",
+  "displayName": "API panels",
+  "description": "Test extension: a webview panel made at run time, a test controller in the Testing view, and a debug configuration provider for Add configuration.",
+  "icon": "box",
+  "author": "Acme tests",
+  "license": "MIT",
+  "categories": ["Testing"],
+  "main": "main.js",
+  "activation": ["onStartupFinished", "onDebugInitialConfigurations"],
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      { "id": "apipanels.open", "title": "API panels: open the panel" },
+      { "id": "apipanels.post", "title": "API panels: send the page a message" },
+      { "id": "apipanels.retitle", "title": "API panels: change the panel" },
+      { "id": "apipanels.close", "title": "API panels: close the panel" },
+      { "id": "apipanels.stats", "title": "API panels: what happened" }
+    ],
+    "debuggers": [{ "type": "panels-dbg", "label": "Panels debugger" }]
+  }
+}

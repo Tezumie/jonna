@@ -1,0 +1,25 @@
+// D270: Escape pressed in a bash terminal, then a command typed for the user (an agent's or a
+// task's): it keeps its first letter. Bash held the Escape, so `cd .` ran as `d .` (Alt+C).
+{
+  "name": "terminal-escape-m7-26",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo ready", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "ready" } },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.click", "input": { "selector": ".xterm-screen" } },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".xterm-helper-textarea:focus", "key": "Escape", "code": "Escape" }
+    },
+    { "wait": 300 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cd . && echo kept-first-letter", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "kept-first-letter" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

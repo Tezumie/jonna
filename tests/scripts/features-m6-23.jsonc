@@ -1,0 +1,24 @@
+// D125: hiding the shown sidebar view switches away from it; pinning a chat.
+{
+  "name": "features-m6-23",
+  "steps": [
+    { "run": "agent.showChats" },
+    { "state": "ide://layout", "expect": { "$contains": "\"activeView\":\"agent.chats\"" } },
+    { "run": "view.setHidden", "input": { "id": "agent.chats", "hidden": true } },
+    {
+      "state": "ide://layout",
+      "expect": { "$not": { "$contains": "\"activeView\":\"agent.chats\"" } }
+    },
+    { "run": "view.setHidden", "input": { "id": "agent.chats", "hidden": false } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "agent.newSession" },
+    { "run": "agent.send", "input": { "message": "hello" }, "expect": { "error": null } },
+    { "run": "agent.pinSession", "expect": { "pinned": true } },
+    { "run": "agent.pinSession", "expect": { "pinned": false } },
+    { "run": "agent.pinSession", "input": { "pinned": true }, "expect": { "pinned": true } }
+  ]
+}

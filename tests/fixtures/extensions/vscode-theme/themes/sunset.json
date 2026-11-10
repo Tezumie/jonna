@@ -1,0 +1,8 @@
+{
+  // VS Code themes may include a base theme.
+  "name": "Sunset Dark",
+  "type": "dark",
+  "include": "./base.json",
+  "colors": { "focusBorder": "#ff8a5c", "button.background": "#ff8a5c" },
+  "tokenColors": [{ "scope": ["keyword", "storage"], "settings": { "foreground": "#ff8a5c" } }]
+}

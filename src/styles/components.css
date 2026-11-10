@@ -1,0 +1,1186 @@
+/* Shared components (DESIGN.md §12): icons, buttons, inputs, lists/trees, sidebar view header,
+ * menus, command palette, notifications, dialogs, empty states. */
+@layer components {
+  /* ---- Busy panel: 2px indeterminate line at the top edge (§16): views, the agent, source control (D118) ---- */
+  .progress-line {
+    position: relative;
+    flex: none;
+    height: 2px;
+    margin-top: -2px;
+    overflow: hidden;
+  }
+  .progress-line::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 30%;
+    background: var(--accent);
+    animation: progress-sweep 1.2s ease-in-out infinite;
+  }
+  @keyframes progress-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .progress-line::before {
+      animation: none;
+      width: 100%;
+      opacity: 0.6;
+    }
+  }
+
+  /* A file icon theme's icon (D132): an image or font glyph, not a stroked outline. */
+  .icon.icon-themed {
+    stroke: none;
+  }
+  /* An extension's own icon file, drawn in the icon color like VS Code's (D260, ui/Icon.ts). */
+  .icon-image {
+    display: inline-block;
+    background-color: currentColor;
+    mask: var(--icon-image) center / contain no-repeat;
+  }
+  .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ---- Buttons (§12.1) ---- */
+  .icon-button {
+    cursor: pointer;
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    transition:
+      background-color var(--motion-fast),
+      color var(--motion-fast);
+  }
+  .icon-button:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .icon-button:active {
+    background: var(--bg-active);
+  }
+  .button {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    height: var(--size-control-md);
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      background-color var(--motion-fast),
+      color var(--motion-fast),
+      border-color var(--motion-fast),
+      transform var(--motion-fast);
+  }
+  .button:active {
+    transform: scale(0.98);
+  }
+  .button-sm {
+    height: var(--size-control-sm);
+    padding: 0 var(--space-4);
+    font-size: var(--text-sm);
+  }
+  .button-primary {
+    background: var(--fg-default);
+    color: var(--bg-app);
+  }
+  .button-primary:hover {
+    background: color-mix(in srgb, var(--fg-default) 88%, var(--bg-app));
+  }
+  .button-accent {
+    background: var(--accent);
+    color: var(--fg-on-accent);
+  }
+  .button-accent:hover {
+    background: var(--accent-hover);
+  }
+  .button-secondary {
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    border: 1px solid var(--border-default);
+  }
+  .button-secondary:hover {
+    border-color: var(--border-strong);
+  }
+  .button-danger {
+    color: var(--status-danger-fg);
+    border: 1px solid var(--status-danger-border);
+  }
+  .button-danger:hover {
+    background: var(--status-danger-bg);
+  }
+
+  /* ---- Banners (§12.12) ---- */
+  .banner {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-5);
+    font-size: var(--text-sm);
+    color: var(--fg-default);
+    background: var(--status-info-bg);
+    border-bottom: 1px solid var(--status-info-border);
+  }
+  .banner[hidden] {
+    display: none;
+  }
+  .banner.is-warning {
+    background: var(--status-warning-bg);
+    border-bottom-color: var(--status-warning-border);
+  }
+  .banner.is-warning > .icon {
+    color: var(--status-warning-fg);
+  }
+  .banner-message {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* ---- Inputs (§12.2) ---- */
+  .input,
+  .quick-input-box {
+    height: var(--size-control-md);
+    padding: 0 var(--space-4);
+    color: var(--fg-default);
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    user-select: text;
+    transition: border-color var(--motion-fast);
+  }
+  .input:hover {
+    border-color: var(--border-strong);
+  }
+  /* The native dropdown list doesn't get the field's translucent tint. */
+  select.input option {
+    color: var(--fg-default);
+    background: var(--bg-overlay);
+  }
+  /* Focus is the border alone, as the chat prompt's (D245): no ring or halo around a field; a
+     brighter border, not the accent (D385). */
+  .input:focus,
+  .input:focus-visible {
+    border-color: var(--border-input-focus);
+    outline: none;
+  }
+  .input::placeholder,
+  .quick-input-box::placeholder {
+    color: var(--fg-subtle);
+  }
+
+  /* ---- Lists and trees (§12.4) ---- */
+  .vlist {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    contain: strict;
+  }
+  .vlist:focus-visible {
+    outline: none; /* the active row shows focus instead */
+  }
+  /* No active row yet (the first Tab into a list): the list itself shows focus (D254). */
+  .vlist:focus-visible:not(:has(.vlist-row.is-active)) {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .vlist-spacer {
+    width: 1px;
+  }
+  .vlist-row {
+    position: absolute;
+    top: 0;
+    left: var(--space-2);
+    right: var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--fg-default);
+  }
+  .vlist-row:hover {
+    background: var(--bg-hover);
+  }
+  .vlist .vlist-row.is-active {
+    background: var(--bg-selected);
+    font-weight: 500;
+  }
+  .vlist:focus .vlist-row.is-active,
+  .vlist:focus-within .vlist-row.is-active {
+    background: var(--bg-selected-focus);
+  }
+  .vlist:focus-visible .vlist-row.is-active {
+    outline: 2px solid var(--accent-secondary);
+    outline-offset: -2px;
+  }
+  /* Trees (§12.4): selection is a set; the active row is only the keyboard cursor. */
+  .vlist .tree-row.is-active {
+    background: none;
+    font-weight: normal;
+  }
+  .vlist .tree-row:hover {
+    background: var(--bg-hover);
+  }
+  .vlist .tree-row.is-selected {
+    background: var(--bg-selected);
+  }
+  .vlist:focus .tree-row.is-selected,
+  .vlist:focus-within .tree-row.is-selected {
+    background: var(--bg-selected-focus);
+    color: var(--fg-default);
+  }
+  /* Lists and trees show focus and selection in the second accent (D276). */
+  .vlist:focus .tree-row.is-active,
+  .vlist:focus-within .tree-row.is-active {
+    outline: 1px solid var(--accent-secondary);
+    outline-offset: -1px;
+  }
+  /* Drop target while dragging rows (or OS files): the folder row is outlined, its contents tinted. */
+  .vlist .tree-row.is-drop-target {
+    background: var(--accent-secondary-subtle);
+  }
+  .vlist .tree-row.is-drop-folder {
+    background: var(--accent-secondary-subtle);
+    box-shadow: inset 0 0 0 1px var(--accent-secondary-border);
+  }
+  .vlist.is-drop-root {
+    box-shadow: inset 0 0 0 1px var(--accent-secondary-border);
+    background: color-mix(in srgb, var(--accent-secondary-subtle) 50%, transparent);
+  }
+
+  /* Sticky folder rows (tree sticky scroll): opaque, full width, a hairline under the stack. */
+  .tree-sticky {
+    position: sticky;
+    top: 0;
+    height: 0;
+    z-index: 3;
+  }
+  /* Full width (no gutters to see through), but the gutters are transparent borders, not
+     padding: the row keeps its own padding, so its content and indent guides line up with the
+     rows under it (they sit one gutter in from the edge). */
+  .vlist .tree-sticky-row {
+    left: 0;
+    right: 0;
+    border-left: var(--space-2) solid transparent;
+    border-right: var(--space-2) solid transparent;
+    border-radius: 0;
+    background: var(--bg-surface);
+  }
+  /* Always opaque: the row states (hover, selected, the keyboard cursor's "none") are translucent
+     or transparent, and the rows scrolling underneath would show through. */
+  .vlist .tree-sticky .tree-sticky-row,
+  .vlist .tree-sticky .tree-sticky-row.is-active {
+    background: var(--bg-surface);
+  }
+  .vlist .tree-sticky .tree-sticky-row:hover {
+    background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-surface);
+  }
+  .vlist .tree-sticky .tree-sticky-row.is-selected {
+    background: linear-gradient(var(--bg-selected), var(--bg-selected)), var(--bg-surface);
+  }
+  .vlist:focus .tree-sticky .tree-sticky-row.is-selected,
+  .vlist:focus-within .tree-sticky .tree-sticky-row.is-selected {
+    background:
+      linear-gradient(var(--bg-selected-focus), var(--bg-selected-focus)), var(--bg-surface);
+  }
+  .vlist .tree-sticky .tree-sticky-row.is-drop-target,
+  .vlist .tree-sticky .tree-sticky-row.is-drop-folder {
+    background:
+      linear-gradient(var(--accent-secondary-subtle), var(--accent-secondary-subtle)),
+      var(--bg-surface);
+  }
+  .tree-sticky.has-rows .tree-sticky-row:last-child {
+    box-shadow: var(--shadow-sticky);
+  }
+  .tree-row.is-cut {
+    opacity: 0.5;
+  }
+  .vlist-row.is-disabled {
+    opacity: 0.45;
+  }
+
+  /* ---- Sidebar view container ---- */
+  .view-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+    height: var(--size-tab);
+    padding: 0 var(--space-3) 0 var(--space-5);
+  }
+  .view-title {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    font-weight: 500;
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A description its code set beside the title (VS Code's TreeView.description). */
+  .view-description {
+    margin-left: var(--space-2);
+    font-weight: 400;
+    color: var(--fg-subtle);
+  }
+  .view-actions {
+    display: flex;
+    gap: var(--space-1);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+  }
+  .sidebar:hover .view-actions,
+  .sidebar:focus-within .view-actions {
+    opacity: 1;
+  }
+  .view-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .view,
+  .view-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* With sections below it, what doesn't fit scrolls instead of running under them (the
+     Explorer's "No folder open"). */
+  .view:has(> .view-section) > .view-main {
+    overflow: auto;
+  }
+  /* A view docked at the bottom of another (Outline under the Explorer, D129): a section header
+     like the Source control / Extensions groups, a sash above it while expanded. */
+  .view-section {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .view-section > .sash {
+    flex: none;
+    margin-top: -1px;
+  }
+  .view-section-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    height: var(--size-row);
+    padding-right: var(--space-2);
+  }
+  /* Small buttons inside the header row, clear of the sash's hit area above it. */
+  .view-section-head .icon-button {
+    width: 20px;
+    height: 20px;
+  }
+  .view-section > .sash.sash-horizontal::after {
+    top: -4px;
+    height: 5px;
+    margin-top: 0;
+  }
+  /* A narrow ▾ against the action before it (D236: New chat's agent menu). */
+  .view-actions .icon-button.view-action-dropdown {
+    width: auto;
+    min-width: 0;
+    padding: 0 var(--space-1);
+    margin-left: calc(var(--space-1) * -1);
+  }
+  .view-actions .icon-button.view-action-dropdown .icon {
+    width: 12px;
+    height: 12px;
+  }
+  /* A view action with text (D220: the Graph's "Auto" / "All" filter). */
+  .view-actions .icon-button.view-action-labeled,
+  .view-section-head .icon-button.view-action-labeled {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    gap: var(--space-1);
+    padding: 0 var(--space-1);
+  }
+  .view-action-label {
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+  .view-section-actions {
+    opacity: 0;
+  }
+  .view-section-actions[hidden] {
+    display: none;
+  }
+  .view-section-head:hover .view-section-actions,
+  .view-section:focus-within .view-section-actions {
+    opacity: 1;
+  }
+  .view-section-header {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-row);
+    padding: 0 var(--space-3);
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    text-align: left;
+    cursor: pointer;
+  }
+  .view-section-header:hover {
+    color: var(--fg-default);
+  }
+  .view-section-chevron {
+    display: inline-flex;
+  }
+  .view-section-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .view-section-body {
+    flex: none;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---- Empty states (§12.13) ---- */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 320px;
+    margin: auto;
+    padding: var(--space-8) var(--space-5);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  /* In the sidebar, empty states sit near the top (VS Code's welcome views), not mid-height
+     under a filter box or below an empty list (D126). */
+  .sidebar .empty-state {
+    margin: 0 auto auto;
+    padding-top: clamp(var(--space-8), 10vh, 96px);
+    justify-content: flex-start;
+  }
+  .empty-state > .icon,
+  .empty-state-icon .icon {
+    width: var(--size-icon-lg);
+    height: var(--size-icon-lg);
+    color: var(--fg-subtle);
+  }
+  .empty-state-title {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .empty-state-text {
+    color: var(--fg-muted);
+    margin-bottom: var(--space-3);
+  }
+  /* Narrow sidebars: the buttons wrap under each other instead of running off the edge. */
+  .empty-state-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
+    max-width: 100%;
+  }
+  .empty-state-actions > .button {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Auxiliary windows (D101): the moved view fills the window. */
+  body.aux-window {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+    background: var(--bg-surface);
+    color: var(--fg-default);
+    font: var(--text-md-font);
+  }
+  .aux-window-host {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+  .aux-window-host > * {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* ---- Overlays ---- */
+  .overlay-host {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: var(--z-palette);
+  }
+  .overlay-host > * {
+    pointer-events: auto;
+  }
+
+  /* ---- Menus (§12.5) ---- */
+  /* The panel takes focus while waiting for the pointer (opened by a click): no ring on it. */
+  .menu:focus {
+    outline: none;
+  }
+  .menu {
+    position: fixed;
+    z-index: var(--z-dropdown);
+    min-width: 200px;
+    max-width: 360px;
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    /* Menus must feel instant: a short fade, no scale (submenus and hover switching reopen often). */
+    animation: menu-in var(--motion-fast) var(--ease-enter);
+    transform-origin: top left;
+    /* Menus use the window's height before scrolling (no scrollbar while they fit); long
+       searchable lists are capped shorter, the search box staying on top. */
+    max-height: calc(100vh - 8px);
+  }
+  .menu.has-search {
+    max-height: min(70vh, 520px);
+  }
+  .menu-items {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .menu-search {
+    flex: none;
+    height: 26px;
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+  }
+  .menu-item[hidden],
+  .menu-separator[hidden] {
+    display: none;
+  }
+  /* In a scrolling list (a flex column with a max height), rows keep their full height. */
+  .menu-items > * {
+    flex-shrink: 0;
+  }
+  .menu-empty {
+    padding: var(--space-3) var(--space-4);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .menu-item {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    height: 26px;
+    padding: 0 var(--space-4);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    color: var(--fg-default);
+  }
+  .menu-item:hover,
+  .menu-item:focus {
+    background: var(--bg-hover);
+  }
+  .menu-item:focus-visible {
+    outline-offset: -2px;
+  }
+  .menu-item.is-open {
+    background: var(--bg-hover);
+  }
+  /* Readable, but clearly off: between the subtle and disabled grays, on every theme (D162). */
+  .menu-item[aria-disabled="true"] {
+    color: color-mix(in srgb, var(--fg-subtle) 70%, var(--fg-disabled));
+    cursor: default;
+  }
+  .menu-item[aria-disabled="true"]:hover {
+    background: none;
+  }
+  .menu-chevron {
+    display: grid;
+    place-items: center;
+    margin-right: calc(var(--space-2) * -1);
+    color: var(--fg-subtle);
+  }
+  .menu-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .menu-item.is-destructive {
+    color: var(--status-danger-fg);
+  }
+  .menu-icon {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .menu-icon-placeholder {
+    width: 16px;
+  }
+  .menu-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Long right-hand text (a preset's models) truncates instead of widening the menu past its
+     maximum and scrolling it sideways. */
+  .menu-keybinding {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-left: var(--space-8);
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .menu-item[aria-disabled="true"] .menu-icon,
+  .menu-item[aria-disabled="true"] .menu-keybinding {
+    color: inherit;
+  }
+  .menu-heading {
+    padding: var(--space-2) var(--space-4) var(--space-1);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .menu-check {
+    display: inline-flex;
+    color: var(--fg-muted);
+  }
+  .menu-separator {
+    height: 1px;
+    margin: var(--space-2) var(--space-1);
+    background: var(--border-subtle);
+  }
+  /* A menu replacing another (menu bar hover switch): no fade, so nothing blinks (D180). */
+  .menu.is-instant {
+    animation: none;
+  }
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* ---- Command palette / quick pick (§12.6) ---- */
+  /* Anchored directly under the title bar's command field (QuickInput sets --quick-input-x). */
+  .quick-input {
+    position: absolute;
+    top: calc(var(--size-titlebar) + 4px);
+    left: clamp(
+      calc(min(640px, 90vw) / 2 + 8px),
+      var(--quick-input-x, 50vw),
+      calc(100vw - min(640px, 90vw) / 2 - 8px)
+    );
+    width: min(640px, 90vw);
+    max-width: calc(100vw - 16px);
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+    animation: palette-in var(--motion-deliberate) var(--ease-standard);
+  }
+  .quick-input .quick-input-box {
+    height: 24px;
+    margin: 6px;
+    padding: 0 var(--space-4);
+    font-size: var(--text-md);
+    /* The box's own background (D262: a darker field sat in it); the border marks the field. */
+    background: var(--bg-overlay);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+  }
+  .quick-input .quick-input-box:focus {
+    border-color: var(--border-input-focus);
+  }
+  .quick-input .quick-input-box ~ .quick-input-message,
+  .quick-input .quick-input-box ~ .quick-input-message:empty + .quick-input-list {
+    border-top: 1px solid var(--border-subtle);
+  }
+  /* A session's title bar (VS Code's): Back at the left, the title and step, buttons at the right. */
+  .quick-input-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) 0;
+    min-height: var(--size-control-sm);
+  }
+  .quick-input-title[hidden] {
+    display: none;
+  }
+  .quick-input-title-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  /* Busy: the 2px line right under the box (§16). */
+  .quick-input .quick-input-progress {
+    margin: -5px 7px 3px;
+  }
+  .quick-input-message.is-warning {
+    color: var(--status-warning-fg);
+  }
+  .quick-input-message.is-info {
+    color: var(--fg-muted);
+  }
+  .quick-pick-check {
+    flex: none;
+    pointer-events: none;
+  }
+  /* A row's buttons show on hover and on the active row (VS Code's item buttons). */
+  .quick-pick-buttons {
+    display: none;
+    flex: none;
+    margin-left: auto;
+    gap: var(--space-1);
+  }
+  .quick-input-list .vlist-row:hover .quick-pick-buttons,
+  .quick-input-list .vlist-row.is-active .quick-pick-buttons {
+    display: inline-flex;
+  }
+  .quick-pick-separator + .quick-pick-buttons,
+  .quick-pick-keybinding + .quick-pick-buttons {
+    margin-left: var(--space-3);
+  }
+  .quick-input-message {
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .quick-input-message:empty {
+    display: none;
+  }
+  .quick-input-message.is-error {
+    color: var(--status-danger-fg);
+  }
+  .quick-input-list {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) 0;
+  }
+  .quick-input-list .vlist-row {
+    gap: var(--space-4);
+    padding: 0 var(--space-4);
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .quick-input-list .vlist .vlist-row.is-active {
+    background: var(--bg-selected-focus);
+    color: var(--fg-default);
+    font-weight: 400;
+    outline: none;
+  }
+  .quick-pick-image {
+    flex: none;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    object-fit: contain;
+  }
+  .quick-pick-label {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .quick-pick-label mark {
+    color: var(--fg-default);
+  }
+  .quick-pick-description {
+    flex: 1;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .quick-pick-keybinding {
+    margin-left: auto;
+  }
+  /* The first row of a group (VS Code's separators): a line above, the group's name at the right. */
+  .quick-input-list .vlist-row.has-separator {
+    box-shadow: inset 0 1px 0 var(--border-subtle);
+  }
+  .quick-pick-separator {
+    flex: none;
+    margin-left: auto;
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .quick-pick-separator + .quick-pick-keybinding {
+    margin-left: var(--space-3);
+  }
+  @keyframes palette-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -6px);
+    }
+  }
+
+  /* ---- Notifications (§12.11) ---- */
+  .notifications {
+    position: absolute;
+    right: var(--space-5);
+    bottom: calc(var(--size-statusbar) + var(--space-5));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: min(360px, calc(100vw - 24px));
+    z-index: var(--z-toast);
+  }
+  .notification {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    user-select: text;
+    animation: toast-in var(--motion-slow) var(--ease-enter);
+  }
+  .notification-icon {
+    display: grid;
+    place-items: center;
+    height: var(--text-md-lh);
+    color: var(--status-info-fg);
+  }
+  .notification.is-success .notification-icon {
+    color: var(--status-success-fg);
+  }
+  .notification.is-warning .notification-icon {
+    color: var(--status-warning-fg);
+  }
+  .notification.is-error .notification-icon {
+    color: var(--status-danger-fg);
+  }
+  .notification-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .notification-title {
+    font-weight: 500;
+  }
+  .notification-message {
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+  }
+  .notification-title + .notification-message {
+    color: var(--fg-muted);
+  }
+  /* The same notice again while it shows (D345): one toast, "×3". */
+  .notification-count {
+    display: inline-block;
+    margin-left: var(--space-2);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    vertical-align: 1px;
+  }
+  .notification-count[hidden] {
+    display: none;
+  }
+  .notification-content > .notification-message:only-child {
+    color: var(--fg-default);
+  }
+  .notification-actions {
+    display: flex;
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+  }
+  /* Work under way (Notifications.progress): the busy line, or how far it got. */
+  .notification-progress {
+    margin-top: var(--space-3);
+  }
+  .progress-line.is-determinate::before {
+    width: var(--progress, 0%);
+    animation: none;
+    transition: width var(--motion-fast);
+  }
+  .notification-close {
+    width: var(--size-control-xs);
+    height: var(--size-control-xs);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+  }
+  .notification:hover .notification-close,
+  .notification-close:focus-visible {
+    opacity: 1;
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  /* ---- Dialogs (§12.10) ---- */
+  .dialog-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: grid;
+    place-items: center;
+    background: var(--bg-scrim);
+    animation: fade-in var(--motion-deliberate) var(--ease-standard);
+  }
+  .dialog {
+    width: min(440px, calc(100vw - 32px));
+    /* A long message in a short window scrolls instead of pushing the actions off screen. */
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    background: var(--bg-overlay);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-3);
+    animation: dialog-in var(--motion-deliberate) var(--ease-standard);
+  }
+  /* Focusable only so a click on its text keeps focus (and Esc / Tab) inside it. */
+  .dialog:focus {
+    outline: none;
+  }
+  .dialog-md {
+    width: min(560px, calc(100vw - 32px));
+  }
+  .dialog-lg {
+    width: min(720px, calc(100vw - 32px));
+  }
+  .dialog-title {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .dialog-body p {
+    margin: 0;
+    white-space: pre-line;
+  }
+  /* An option under the message (D166). */
+  .dialog-check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    margin-top: var(--space-2);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    cursor: pointer;
+    user-select: none;
+  }
+  .dialog-check-input {
+    margin: 2px 0 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .dialog-check-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .dialog-check-detail {
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-4);
+    margin-top: var(--space-6);
+  }
+  .dialog-actions-left {
+    display: flex;
+    gap: var(--space-4);
+    margin-right: auto;
+  }
+  .dialog-title.has-icon {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  /* A dialog holding a form (D205): the form scrolls, the title and actions stay. At most 600 px
+     tall (D383), so a long list (the built-in server's tools) doesn't fill a tall window. */
+  .dialog:has(.dialog-form) {
+    max-height: min(600px, calc(100vh - 64px));
+  }
+  .dialog-body:has(.dialog-form) {
+    min-height: 0;
+    overflow: auto;
+    margin: 0 calc(var(--space-8) * -1);
+    padding: 0 var(--space-8);
+  }
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* ---- Tooltip (§12.8) ---- */
+  /* Multi-line labels (a chat's title, then when and where). */
+  .tooltip > span {
+    white-space: pre-line;
+  }
+  .tooltip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: var(--z-tooltip);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    max-width: 280px;
+    padding: var(--space-2) var(--space-4);
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-1);
+    pointer-events: none;
+    animation: fade-in var(--motion-base) var(--ease-enter);
+    /* Long unbroken text (a path, a command line, JSON) wraps inside instead of running past the
+       edge; a very long one is cut at about half the window. */
+    overflow-wrap: anywhere;
+    max-height: 50vh;
+    overflow: hidden;
+  }
+  .tooltip > * {
+    min-width: 0;
+  }
+  /* A link's card (D190): the site, then the rest of the address. */
+  .tooltip.is-link {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    max-width: 340px;
+    padding: var(--space-3) var(--space-4);
+  }
+  .tooltip-link-title {
+    font-weight: 600;
+  }
+  .tooltip-link-url {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+  }
+
+  /* Hover cards (ui/HoverCard, D148): an interactive tooltip, beside what it describes. */
+  .hover-card {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-tooltip);
+    width: max-content;
+    max-width: min(420px, calc(100vw - 16px));
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-2);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    animation: fade-in var(--motion-fast) var(--ease-enter);
+  }
+  .hover-card[hidden] {
+    display: none;
+  }
+
+  /* Disabled controls (§11). */
+  button:disabled,
+  [aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+/* Inputs inside floating surfaces use the low-contrast raised input color. */
+:where(.menu, .quick-input, .dialog) .input {
+  background: var(--bg-input-raised);
+}

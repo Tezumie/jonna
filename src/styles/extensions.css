@@ -1,0 +1,1242 @@
+/* Styles for built-in extensions' views (explorer, editor, terminal, welcome, agent, dev). Tokens only. */
+@layer extensions {
+  /* ---- Explorer (§12.4) ---- */
+  .explorer-tree {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* The folder's own row (VS Code's root section): uppercase name, actions on hover. */
+  .explorer-root {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--size-row, 24px);
+    padding: 0 var(--space-2) 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--fg-default);
+    cursor: pointer;
+    user-select: none;
+  }
+  .explorer-root:hover {
+    background: var(--bg-hover);
+  }
+  .explorer-root-chevron {
+    display: flex;
+    color: var(--fg-subtle);
+  }
+  .explorer-root-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .explorer-root-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .explorer-tree.is-root-collapsed > :not(.explorer-root) {
+    display: none;
+  }
+  .explorer-tree.is-drop-root .explorer-root {
+    background: var(--accent-secondary-subtle);
+  }
+  .explorer-row {
+    padding-left: var(--space-2);
+    padding-right: var(--space-4);
+  }
+  .explorer-row .icon {
+    color: var(--fg-muted);
+  }
+  /* VS Code's compact tree (8px per level): every row starts with this indent, pulled back by
+     the row gap so a level is exactly one step; one 1px guide per ancestor level, under that
+     ancestor's chevron (7px into its 14px icon), shown on hover. */
+  .explorer-tree {
+    --tree-step: 8px;
+  }
+  .tree-indent {
+    flex: none;
+    align-self: stretch;
+    width: calc(var(--depth, 0) * var(--tree-step, 8px));
+    margin-right: calc(var(--space-2) * -1);
+    background-image: linear-gradient(
+      to right,
+      transparent 6px,
+      var(--border-strong) 6px,
+      var(--border-strong) 7px,
+      transparent 7px
+    );
+    background-size: var(--tree-step, 8px) 100%;
+    background-repeat: repeat-x;
+    visibility: hidden;
+  }
+  .explorer-tree:hover .tree-indent,
+  .explorer-tree:focus-within .tree-indent {
+    visibility: visible;
+  }
+  .explorer-row .icon-chevron-right,
+  .explorer-row .icon-chevron-down {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  /* A file's icon sits 1px right of the chevron column (more room on its left, the name stays put). */
+  .explorer-row .explorer-file-icon {
+    transform: translateX(1px);
+  }
+  .explorer-row .explorer-folder-icon {
+    color: var(--fg-subtle);
+  }
+  /* A compact row's folders (D191): each one is a target of its own (menu, rename). */
+  .explorer-segment:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .explorer-segment-sep {
+    padding: 0 1px;
+    color: var(--fg-subtle);
+  }
+  .explorer-name.is-compact .explorer-inline {
+    display: inline-flex;
+    min-width: 80px;
+  }
+  .twistie-spacer {
+    width: var(--size-icon-sm);
+    flex: none;
+  }
+  .explorer-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* files.exclude entries listed by "Show hidden files" (D142): there, but clearly set apart. */
+  .explorer-row.is-excluded {
+    opacity: 0.5;
+    font-style: italic;
+  }
+  .explorer-row.is-ignored {
+    color: var(--fg-subtle);
+  }
+  /* A multi-root workspace's folders: its top rows (D251). */
+  .explorer-row.is-workspace-folder {
+    font-weight: 600;
+  }
+  .explorer-row.is-editing {
+    z-index: 5;
+  }
+  .explorer-inline {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+  .explorer-inline-input {
+    flex: 1;
+    min-width: 0;
+    height: calc(var(--size-row, 24px) - 4px);
+    padding: 0 var(--space-2);
+    font: inherit;
+  }
+  .explorer-inline-input.is-invalid {
+    border-color: var(--status-danger-fg);
+    box-shadow: none;
+  }
+  .explorer-inline-message {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    z-index: 4;
+    padding: var(--space-2) var(--space-3);
+    white-space: normal;
+    font-size: var(--text-sm);
+    color: var(--fg-default);
+    background:
+      linear-gradient(var(--status-danger-bg), var(--status-danger-bg)), var(--bg-overlay);
+    border: 1px solid var(--status-danger-border);
+    border-radius: var(--radius-sm);
+  }
+  .explorer-loading {
+    color: var(--fg-subtle);
+  }
+
+  /* ---- Editor view (§15.1, §16) ---- */
+  .editor-view {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .editor-engine {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* Vim mode (D196): the mode and the : command line, at the bottom of the editor. */
+  .vim-status {
+    position: absolute;
+    left: var(--space-4);
+    bottom: var(--space-3);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    max-width: calc(100% - var(--space-8));
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    color: var(--fg-muted);
+    font: var(--text-sm) / 1.4 var(--font-mono);
+    pointer-events: auto;
+  }
+  .vim-status:empty {
+    display: none;
+  }
+  .vim-status input {
+    min-width: 12ch;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--fg-default);
+    font: inherit;
+  }
+  /* editor.hideSecrets: a value covered by a bar of its own width (the columns don't move). */
+  .monaco-editor .editor-secret {
+    border-radius: var(--radius-xs);
+    background: var(--fg-disabled);
+    color: transparent !important;
+  }
+  /* Paste from history: the entry selected in the picker, shown below the cursor's line. */
+  .paste-preview {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 2px 0;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    overflow: hidden;
+  }
+  .paste-preview-text {
+    flex: 1;
+    margin: 0;
+    padding: 0 var(--space-3);
+    overflow: hidden;
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: inherit;
+    white-space: pre;
+  }
+  .paste-preview-more {
+    padding: 0 var(--space-3);
+    color: var(--fg-subtle);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+  }
+  /* Centered layout (layout.toggleCenteredLayout): a readable width in wide groups. */
+  .workbench.is-centered-layout .editor-engine {
+    width: 100%;
+    max-width: var(--centered-layout-width);
+    align-self: center;
+  }
+  /* Plain-text preview of the first lines while Monaco loads (no spinner). */
+  .editor-preview {
+    flex: 1;
+    margin: 0;
+    padding: var(--space-4) 0 0 64px;
+    overflow: hidden;
+    font: 13px / 1.6 var(--font-mono);
+    color: var(--fg-default);
+    white-space: pre;
+    tab-size: 4;
+  }
+  .editor-view:focus-visible {
+    outline: none;
+  }
+
+  /* ---- Breadcrumbs and the per-file status bar (chrome.ts) ---- */
+  .breadcrumbs {
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 22px;
+    padding: 0 var(--space-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+  .breadcrumbs[hidden],
+  .file-status[hidden],
+  .file-problems[hidden] {
+    display: none;
+  }
+  .breadcrumbs-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 18px;
+    padding: 0 var(--space-1);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .breadcrumbs-item:hover,
+  .breadcrumbs-item.is-open {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .breadcrumbs-item:last-child {
+    color: var(--fg-default);
+  }
+  .breadcrumbs-item .icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+  .breadcrumbs-sep {
+    display: inline-flex;
+    color: var(--fg-subtle);
+  }
+  .breadcrumbs-sep .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .file-status {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: var(--space-1);
+    height: 22px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+  .file-status-spacer {
+    flex: 1;
+  }
+  .file-status-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 18px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
+  .file-status-item .icon {
+    width: 13px;
+    height: 13px;
+  }
+  button.file-status-item {
+    cursor: pointer;
+  }
+  button.file-status-item:hover,
+  .file-status-item.is-active {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .file-status-item.has-errors > .icon:first-child {
+    color: var(--status-danger-fg);
+  }
+  .file-problems {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    max-height: 35%;
+    min-height: 0;
+    border-top: 1px solid var(--border-subtle);
+    font-size: var(--text-xs);
+  }
+  .file-problems-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 26px;
+    padding: 0 var(--space-1) 0 var(--space-3);
+    color: var(--fg-muted);
+  }
+  .file-problems-list {
+    overflow-y: auto;
+    padding-bottom: var(--space-1);
+  }
+  .file-problem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-height: 22px;
+    padding: 0 var(--space-3);
+    border: 0;
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .file-problem:hover {
+    background: var(--bg-hover);
+  }
+  .file-problem:focus-visible {
+    outline: 1px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  /* The copy button shows on the hovered or focused row (it keeps its space: no jumping text). */
+  .file-problem-copy,
+  .problems-copy {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    visibility: hidden;
+  }
+  .file-problem:is(:hover, :focus-within) .file-problem-copy,
+  .problems-row:is(:hover, .is-selected) .problems-copy {
+    visibility: visible;
+  }
+  .file-problem .icon {
+    width: 13px;
+    height: 13px;
+    flex: none;
+  }
+  .file-problem.is-error .icon {
+    color: var(--status-danger-fg);
+  }
+  .file-problem.is-warning .icon {
+    color: var(--status-warning-fg);
+  }
+  .file-problem-message {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-problem-where {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .file-problems-empty {
+    padding: var(--space-1) var(--space-3) var(--space-2);
+    color: var(--fg-muted);
+  }
+
+  /* ---- Terminal view (§15.4) ---- */
+  /* overflow: clip (not hidden): a clipped box can't be scrolled, so typing never yanks the
+     terminal around to reveal xterm's input element. No right padding: the scrollbar and the
+     overview ruler sit at the edge, like VS Code. */
+  .terminal-view {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: clip;
+    background: var(--bg-surface);
+  }
+  /* Split terminals (D209): side by side in a wide tab, stacked in a tall one; a hairline sash. */
+  .terminal-view.is-column {
+    flex-direction: column;
+  }
+  .terminal-pane {
+    position: relative;
+    display: flex;
+    flex: 1 1 0px;
+    min-width: 0;
+    min-height: 0;
+    overflow: clip;
+    padding: var(--space-4) 0 var(--space-4) var(--space-5);
+  }
+  /* Inline blame after the cursor's line (D127). */
+  /* Inline diagnostics (D140): the message after the line, a faint tint on the line. */
+  .monaco-editor .inline-diagnostic {
+    font-style: italic;
+  }
+  .monaco-editor .inline-diagnostic.is-error {
+    color: var(--status-danger-fg);
+  }
+  .monaco-editor .inline-diagnostic.is-warning {
+    color: var(--status-warning-fg);
+  }
+  .monaco-editor .inline-diagnostic.is-info,
+  .monaco-editor .inline-diagnostic.is-hint {
+    color: var(--status-info-fg);
+  }
+  .monaco-editor .inline-diagnostic-line.is-error {
+    background: color-mix(in srgb, var(--status-danger-fg) 7%, transparent);
+  }
+  .monaco-editor .inline-diagnostic-line.is-warning {
+    background: color-mix(in srgb, var(--status-warning-fg) 6%, transparent);
+  }
+  .monaco-editor .margin-view-overlays .inline-diagnostic-line {
+    background: none;
+  }
+  .monaco-editor .line-annotation {
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
+  /* "Fix" on a failed command (D124, D150): a small quiet button at the right end of the
+     command's line, shown only while the pointer is on that line (view.ts places it). Above the
+     sticky line (z-index 5) so it's never hidden behind it. */
+  .terminal-fix {
+    position: absolute;
+    top: 0;
+    right: var(--space-8);
+    z-index: 6;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 2px);
+    height: 20px;
+    padding: 0 var(--space-2) 0 var(--space-1, 2px);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.92;
+  }
+  .terminal-fix:hover {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+    color: var(--fg-default);
+    opacity: 1;
+  }
+  .terminal-fix .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .terminal-fix:hover .icon {
+    color: var(--accent-text);
+  }
+  .terminal-fix[hidden] {
+    display: none;
+  }
+  /* Find in the terminal: a small bar over the top right, like the editor's find widget. */
+  .terminal-find {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-6, 24px);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1, 2px);
+    padding: var(--space-1, 2px) var(--space-2);
+    background: var(--bg-overlay);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+  }
+  .terminal-find[hidden] {
+    display: none;
+  }
+  .terminal-find-input {
+    width: 180px;
+    height: 24px;
+  }
+  .terminal-find.is-empty .terminal-find-input {
+    border-color: var(--status-danger-border);
+  }
+  .terminal-find-count {
+    min-width: 64px;
+    padding: 0 var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  /* The terminal never grows its container (DESIGN.md §15.4): the host is a fixed box, the
+     xterm element is absolutely positioned inside it, fit measures only the host. */
+  .terminal-surface {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: clip;
+  }
+  .terminal-instance {
+    position: absolute;
+    inset: 0;
+    overflow: clip;
+  }
+
+  .terminal-instance :focus-visible,
+  .terminal-instance:focus-visible {
+    outline: none;
+  }
+  /* The command whose output is on screen, pinned at the top (click: back to it): a copy of that
+     very line (features.ts places it on the first row, same font and colors) on the terminal's
+     background, so it reads as the line staying put; only a soft shadow sets it apart. */
+  .terminal-sticky {
+    position: absolute;
+    z-index: 5;
+    box-sizing: border-box;
+    overflow: hidden;
+    white-space: pre;
+    background: var(--bg-surface);
+    color: var(--fg-default);
+    box-shadow: var(--shadow-sticky-soft);
+    cursor: pointer;
+  }
+  .terminal-sticky[hidden] {
+    display: none;
+  }
+  .terminal-sticky:hover {
+    background: color-mix(in srgb, var(--fg-default) 4%, var(--bg-surface));
+  }
+  /* The pinned command's status dot, in the gutter like the line's own (vendor.css). */
+  .terminal-sticky-dot {
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-full);
+    background: var(--fg-subtle);
+  }
+  .terminal-sticky-dot.is-success {
+    background: var(--status-success-fg);
+  }
+  .terminal-sticky-dot.is-error {
+    background: var(--status-danger-fg);
+  }
+  .terminal-link-tip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--z-tooltip);
+    pointer-events: none;
+  }
+  /* Command suggestions under the cursor (D204), like the editor's suggest widget. */
+  .terminal-suggest {
+    position: absolute;
+    z-index: var(--z-dropdown);
+    min-width: 220px;
+    max-width: min(420px, 90%);
+    padding: var(--space-1, 2px);
+    background: var(--bg-overlay);
+    color: var(--fg-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+    font-size: var(--text-sm);
+  }
+  .terminal-suggest[hidden] {
+    display: none;
+  }
+  .terminal-suggest-list {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(var(--size-control-sm) * 8);
+    overflow-y: auto;
+  }
+  .terminal-suggest-item {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-3);
+    height: var(--size-control-sm);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .terminal-suggest-item:hover {
+    background: var(--bg-hover);
+  }
+  .terminal-suggest-item.is-selected {
+    background: var(--bg-selected);
+  }
+  .terminal-suggest-item .icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+  }
+  .terminal-suggest-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+  }
+  .terminal-suggest-kind {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  /* The selected suggestion's details (D229): what an alias runs, a function's definition. */
+  .terminal-suggest-details {
+    max-height: calc(var(--size-control-sm) * 3);
+    margin-top: var(--space-1, 2px);
+    padding: var(--space-2) var(--space-3);
+    overflow: hidden;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .terminal-suggest-details[hidden] {
+    display: none;
+  }
+
+  /* ---- Welcome (D121) ---- */
+  .welcome-view {
+    display: flex;
+    overflow: auto;
+    background: var(--bg-surface);
+  }
+  .welcome-view:focus-visible,
+  .agent-view:focus-visible {
+    outline: none;
+  }
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-6);
+    width: 100%;
+    max-width: 440px;
+    box-sizing: border-box;
+    margin: auto;
+    padding: var(--space-10) var(--space-6);
+    /* The cards' layout follows the tab's width (D162). */
+    container-type: inline-size;
+  }
+  .welcome-logo {
+    display: block;
+    margin-bottom: var(--space-4);
+  }
+  /* "Coming from VS Code?" (D193): a quiet link under the cards; its × shows on hover (D194). */
+  .welcome-import {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: calc(var(--space-2) * -1);
+  }
+  .welcome-import[hidden] {
+    display: none;
+  }
+  .welcome-import-open {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .welcome-import-open:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .welcome-import-hide {
+    opacity: 0;
+  }
+  .welcome-import:hover .welcome-import-hide,
+  .welcome-import-hide:focus-visible {
+    opacity: 1;
+  }
+  /* A quiet bento (D162): the rows split 3/2 then 2/3, the first row a little taller, so the
+     cards read as a set rather than a table. One column when the tab is narrow. */
+  .welcome-cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-4);
+    width: 100%;
+  }
+  .welcome-card:nth-child(4n + 1),
+  .welcome-card:nth-child(4n + 4) {
+    grid-column: span 3;
+  }
+  .welcome-card:nth-child(4n + 2),
+  .welcome-card:nth-child(4n + 3) {
+    grid-column: span 2;
+  }
+  .welcome-card:nth-child(-n + 2) {
+    min-height: 84px;
+  }
+  @container (max-width: 340px) {
+    .welcome-cards {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .welcome-cards .welcome-card {
+      grid-column: auto;
+      min-height: 0;
+    }
+  }
+  .welcome-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-height: 64px;
+    padding: var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background-color var(--motion-fast),
+      border-color var(--motion-fast);
+  }
+  /* Clicked: a press, and while its command runs (a dialog, a clone) a line along its foot. */
+  .welcome-card:active {
+    transform: scale(0.985);
+  }
+  .welcome-card.is-busy {
+    border-color: var(--border-strong);
+    overflow: hidden;
+  }
+  .welcome-card.is-busy::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 30%;
+    height: 2px;
+    background: var(--accent);
+    animation: progress-sweep 1.2s ease-in-out infinite;
+  }
+  .welcome-card:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-default);
+  }
+  .welcome-card .icon {
+    color: var(--fg-muted);
+  }
+  .welcome-card-label {
+    font-size: var(--text-md);
+  }
+  .welcome-card kbd {
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-4);
+  }
+  .welcome-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 var(--space-4) var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .welcome-view-all {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .welcome-view-all:hover {
+    color: var(--fg-default);
+  }
+  .welcome-recent {
+    width: 100%;
+    margin-top: var(--space-2);
+  }
+  .welcome-recent-item {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-sm);
+  }
+  .welcome-recent-item:hover {
+    background: var(--bg-hover);
+  }
+  .welcome-recent-open {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex: 1;
+    min-width: 0;
+    height: var(--size-control-md);
+    padding: 0 var(--space-4);
+    text-align: left;
+    cursor: pointer;
+  }
+  .welcome-recent-name {
+    flex: none;
+    color: var(--fg-default);
+  }
+  .welcome-recent-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .welcome-recent-remove {
+    margin-right: var(--space-1);
+  }
+  /* Pin, unpin and remove show on hover, like VS Code's. Hidden ones take no room: the path runs
+     to the edge, and makes room (truncating) when they show. */
+  .welcome-recent-pin,
+  .welcome-recent-remove {
+    display: none;
+  }
+  .welcome-recent-item:hover .welcome-recent-remove,
+  .welcome-recent-item:focus-within .welcome-recent-remove,
+  .welcome-recent-item:hover .welcome-recent-pin,
+  .welcome-recent-item:focus-within .welcome-recent-pin {
+    display: inline-flex;
+    /* Shown as flex (not the button's own grid): the icon centered both ways. */
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-icon {
+    object-fit: contain;
+  }
+
+  /* ---- Dev: iframe-layer test view ---- */
+  .iframe-test-view {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+  }
+  .iframe-test-bar {
+    flex: none;
+    padding: var(--space-3) var(--space-5);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .iframe-test-slot {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ---- Edit with AI (D106, D172): prompt bar above the lines; each change (hunk) with its old
+     lines struck through and its own Accept / Reject ---- */
+  .editor-zone {
+    z-index: 5;
+  }
+  /* ---- Next-edit suggestions (D193): the lines tinted, their new text in a box below ---- */
+  .next-edit-target {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .next-edit {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 2px 0;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--diff-added-bg);
+    overflow: hidden;
+  }
+  .next-edit-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 0 var(--space-3);
+    color: var(--accent);
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+  }
+  .next-edit-hint {
+    color: var(--fg-muted);
+  }
+  .next-edit-text {
+    flex: 1;
+    margin: 0;
+    padding: 0 var(--space-3);
+    overflow: hidden;
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: inherit;
+    white-space: pre;
+  }
+  .inline-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100%;
+    padding: 3px 0;
+    box-sizing: border-box;
+  }
+  .inline-edit-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 32px;
+    flex: none;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-editor-widget);
+    box-shadow: var(--shadow-sticky-soft);
+    font-family: var(--font-ui);
+    font-size: var(--text-md);
+  }
+  .inline-edit-bar > .icon {
+    flex: none;
+    color: var(--accent);
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .inline-edit-input {
+    flex: 1;
+    min-width: 140px;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg-default);
+    font: inherit;
+  }
+  .inline-edit-input:focus,
+  .inline-edit-input:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+  .inline-edit-input::placeholder {
+    color: var(--fg-subtle);
+  }
+  .inline-edit-status {
+    flex: none;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .inline-edit-status.is-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .inline-edit-actions {
+    display: inline-flex;
+    flex: none;
+    gap: var(--space-1);
+  }
+  .inline-edit-actions[hidden] {
+    display: none;
+  }
+  .inline-edit-key {
+    margin-left: var(--space-1);
+    opacity: 0.7;
+    font-size: var(--text-xs);
+  }
+  .inline-edit-model {
+    flex: none;
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .inline-edit-removed {
+    flex: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: inherit;
+    line-height: inherit;
+    color: var(--fg-muted);
+    background: var(--diff-removed-bg);
+    text-decoration: line-through;
+    text-decoration-color: var(--status-danger-fg);
+    white-space: pre;
+  }
+  .inline-edit-removed[hidden] {
+    display: none;
+  }
+  .inline-edit-added {
+    background: var(--diff-added-bg);
+  }
+  .inline-edit-first:empty {
+    display: none;
+  }
+  .inline-edit-hunk {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+  }
+  .inline-edit-hunk-bar {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+    gap: var(--space-1);
+    height: 26px;
+    align-items: center;
+    padding-right: var(--space-2);
+    font-family: var(--font-ui);
+  }
+  .inline-edit-hunk-bar .button {
+    height: 20px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-xs);
+  }
+
+  /* workbench.view.alwaysShowHeaderActions (D169): header buttons without hovering. */
+  :root[data-header-actions] .view-actions,
+  :root[data-header-actions] .view-section-actions,
+  :root[data-header-actions] .dock-strip-actions,
+  :root[data-header-actions] .titlebar-toggles {
+    opacity: 1;
+  }
+  /* A folder opening (D169): the rest of the page steps back, its row shimmers. */
+  .welcome-view.is-opening .welcome-cards,
+  .welcome-view.is-opening .welcome-recent-item:not(.is-opening) {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity var(--motion-slow);
+  }
+  .welcome-recent-item.is-opening .welcome-recent-name {
+    background:
+      linear-gradient(90deg, var(--fg-muted) 0%, var(--fg-default) 50%, var(--fg-muted) 100%) 0 0 /
+      200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: welcome-shimmer 1.4s linear infinite;
+  }
+  @keyframes welcome-shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  /* The title bar's line while a folder opens. */
+  .titlebar:has(> .workspace-opening) {
+    position: relative;
+  }
+  .workspace-opening {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    margin: 0;
+  }
+
+  /* ---- Folder browser (a folder dropped on the dock, D190) ---- */
+  .folder-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .folder-view-header {
+    flex: none;
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .folder-view-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-1) 0;
+    outline: none;
+  }
+  .folder-view-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-row, 24px);
+    padding: 0 var(--space-4);
+    cursor: pointer;
+    user-select: none;
+  }
+  .folder-view-row:hover {
+    background: var(--bg-hover);
+  }
+  .folder-view-list:focus .folder-view-row.is-active {
+    background: var(--bg-selected-focus);
+  }
+  .folder-view-row.is-active {
+    background: var(--bg-selected);
+  }
+  .folder-view-row.is-ignored {
+    color: var(--fg-subtle);
+  }
+  .folder-view-row .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .folder-view-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .folder-view-empty {
+    padding: var(--space-4);
+    color: var(--fg-muted);
+  }
+}
+/* The explorer's find bar (D200). */
+@layer extensions {
+  .explorer-find {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  }
+  .explorer-find[hidden] {
+    display: none;
+  }
+  .explorer-find-input {
+    flex: 1;
+    min-width: 0;
+  }
+  .explorer-find.is-empty .explorer-find-input {
+    border-color: var(--status-danger-fg);
+  }
+  .explorer-find-count {
+    flex: none;
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    white-space: nowrap;
+  }
+  .explorer-find .icon-button.is-active {
+    background: var(--bg-active);
+    color: var(--fg-default);
+  }
+  .vlist-row.is-find-match .explorer-name {
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: var(--fg-subtle);
+    text-underline-offset: 2px;
+  }
+}

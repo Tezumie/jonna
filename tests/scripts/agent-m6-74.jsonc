@@ -1,0 +1,25 @@
+// D174: the repository map a chat starts with: ranked code files and their symbols.
+{
+  "name": "agent-m6-74",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "agent.showRepoMap",
+      "input": { "refresh": true },
+      "expect": {
+        "files": { "$gte": 3 },
+        "text": { "$contains": "src/util.ts:" }
+      },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://agent/repoMap", "expect": { "files": { "$gte": 3 }, "building": false } },
+    // Focus on a file puts it first; a small budget keeps the map short.
+    {
+      "run": "agent.showRepoMap",
+      "input": { "focus": ["tools/mock-lsp.mjs"], "maxChars": 400 },
+      "expect": { "text": { "$contains": "tools/mock-lsp.mjs:" } }
+    },
+    { "run": "settings.set", "input": { "key": "agent.repoMap.enabled", "value": false } },
+    { "run": "agent.showRepoMap", "expect": { "text": "" } }
+  ]
+}

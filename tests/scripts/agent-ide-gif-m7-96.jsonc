@@ -1,0 +1,98 @@
+// D354: recording the whole IDE window as a GIF. The agent's screenshot tool with record: start
+// (target ide), a step, then record: stop: the chat shows the GIF as a card ("IDE recording") with
+// Save and Download. Then the user's own recording: workbench.recordGif starts it (a status bar
+// item counts the time), a click in the IDE adds a frame with a marker, and the command again
+// stops it; the GIF is saved into the project. Against tests/fixtures/mock-ollama.mjs (pkgQ).
+{
+  "name": "agent-ide-gif-m7-96",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 900 } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+
+    // ---- The agent records the IDE ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgq record the ide" },
+      "expect": { "answer": "PkgQ ide gif: card" },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/recordings",
+      "expect": {
+        "recording": { "$length": 0 },
+        "recordings": [{ "target": "ide", "frames": { "$gte": 1 }, "bytes": { "$gte": 100 } }]
+      },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-recording", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "blob:" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-recording-caption", "limit": 1 },
+      "expect": [{ "html": { "$contains": "IDE recording" } }],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-recording-action", "limit": 2 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // ---- The user records the IDE (a bug report) ----
+    { "run": "workbench.recordGif", "input": {}, "expect": { "recording": true } },
+    {
+      "state": "ide://agent/recordings",
+      "expect": { "recording": [{ "session": "user", "target": "ide" }] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".statusbar-item[data-id='workbench.recordGif']",
+        "limit": 1,
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "Recording" } }],
+      "print": true
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-column" } },
+    { "wait": 1500 },
+    {
+      "run": "workbench.recordGif",
+      "input": { "stop": true },
+      "expect": { "recording": false, "id": { "$exists": true }, "frames": { "$gte": 2 } },
+      "save": "mine",
+      "print": true
+    },
+    {
+      "state": "ide://agent/recordings",
+      "expect": { "recording": { "$length": 0 } }
+    },
+    {
+      "run": "agent.saveRecording",
+      "input": { "id": "${mine.id}", "path": "ide-recording-test.gif" },
+      "expect": { "path": { "$contains": "ide-recording-test.gif" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "head -c 6 ide-recording-test.gif && rm -f ide-recording-test.gif",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "GIF89a" } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

@@ -1,0 +1,84 @@
+// D301: wrap_up. A recap too long is refused with the count it ran; then the box under the turn's
+// answer (after the plan) shows the recap, the question and two replies; the plan is finished;
+// the chat needs the user (blocked); a click on the first reply sends its label as the user's
+// message, and the box goes with the turn.
+{
+  "name": "agent-wrapup-m7-46",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkga wrapup: look around" },
+      "expect": { "answer": "PkgA wrapped up (first try: ran 303)." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "wrapUp": {
+          "recap": "You have a folder with a few files. Nothing changed yet.",
+          "ask": "Want me to tidy it up?",
+          "actions": [{ "label": "Yes, tidy" }, { "label": "Not now" }],
+          "blocked": true
+        },
+        "plan": [
+          { "text": "Look at the folder", "status": "done" },
+          { "text": "Report back", "status": "done" }
+        ]
+      },
+      "print": true
+    },
+    // The box: after the answer, its recap, question and two buttons (the first the primary).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-wrapup", "limit": 2, "html": 600 },
+      "expect": [{ "html": { "$contains": "Want me to tidy it up?" } }],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-wrapup button:not([disabled])", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-wrapup .button-primary", "limit": 1 },
+      "expect": [{ "html": { "$contains": "Yes, tidy" } }]
+    },
+    // wrap_up isn't a row of the work.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column", "limit": 1, "html": 6000 },
+      "expect": { "$not": { "$contains": "Wrapped up" } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // A reply's button sends its label as the user's message.
+    { "run": "dev.click", "input": { "selector": ".agent-column .agent-wrapup .button-primary" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "wrapUp": null, "items": { "$contains": "\"text\":\"Yes, tidy\"" } },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Hello from mock." } },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-wrapup", "limit": 2 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

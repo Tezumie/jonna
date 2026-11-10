@@ -1,0 +1,40 @@
+// Close folder with a notebook open while a VS Code extension follows notebooks (Jupyter does):
+// the notebook's tab is gone afterwards and nothing opens it again.
+{
+  "name": "close-folder-vscode-notebook-m7-43",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.info" },
+      "timeoutMs": 60000
+    },
+    { "run": "notebook.new", "input": { "path": "nb/close.ipynb" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "wait": 1500 },
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "wait": 4000 },
+    { "state": "ide://notebook", "print": true },
+    { "state": "ide://notebook", "expect": { "open": [] } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".notebook-editor", "limit": 5 },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

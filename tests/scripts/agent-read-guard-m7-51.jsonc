@@ -1,0 +1,78 @@
+// D308, D309: edit_file on a file the agent hasn't read is refused (the error names the read to
+// make), a read then the edit works; a file changed on disk since the agent read it comes back as
+// a note with a short diff, with the user's next message and with the next tool result, and a
+// change shown whole counts as read. Against tests/fixtures/mock-ollama.mjs ("pkgb guard …").
+{
+  "name": "agent-read-guard-m7-51",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'alpha\\nbeta\\n' > pkgb-guard.txt && echo made",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "made" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgb guard edit the file" },
+      "expect": { "answer": "PKGB guard: refused=yes edited=yes" },
+      "timeoutMs": 30000,
+      "print": true
+    },
+    // The refused call shows as an error row; the read and the edit after it as done.
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "\"summary\":\"not read yet\"" },
+        "pending": { "$length": 1 }
+      }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "ALPHA", "matchCase": true, "include": ["pkgb-guard.txt"] },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    // Someone else changes the file between two messages, and a command the agent runs changes
+    // it during the next turn.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'gamma\\n' >> pkgb-guard.txt && echo appended",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "appended" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "full" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgb guard notice what changed" },
+      "expect": { "answer": "PKGB notice: between=yes mid=yes edit=yes" },
+      "timeoutMs": 60000,
+      "print": true
+    },
+    { "run": "agent.setCommandMode", "input": { "mode": "ask" } },
+    {
+      "run": "search.run",
+      "input": { "query": "GAMMA", "matchCase": true, "include": ["pkgb-guard.txt"] },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "agent.rejectAll" }
+  ]
+}

@@ -1,0 +1,119 @@
+// D231: helpers in their own git worktree. `delegate` with isolated: true (or to an agent whose
+// file says isolation: worktree) starts a worktree agent instead of running in the chat. Test runs
+// open no windows, so this checks the tool's decisions: not in a folder that isn't a git
+// repository, not from a chat that can't change files, and in a repository the worktree is made
+// and, with no window to work in, removed again with a clear message. Plus the state, the limit
+// setting and the commands. Against tests/fixtures/mock-ollama.mjs. Needs git.
+{
+  "name": "isolated-m7-10",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    // Starting a helper asks first; full access answers for the user here.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    // This script covers the window mode (a window per helper); headless helpers, the default
+    // since D246, are helpers-headless-m7-16.jsonc.
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.window", "value": true } },
+
+    // ---- The state and the limit ----
+    { "state": "ide://agent/helpers", "expect": { "helpers": [], "max": 3 } },
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.max", "value": 5 } },
+    { "state": "ide://agent/helpers", "expect": { "max": 5 } },
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.max", "value": 3 } },
+    { "run": "agent.helpers", "input": { "action": "open" }, "expect": { "helpers": [] } },
+    { "run": "agent.stopHelper", "input": { "helper": "nope" }, "expect": { "stopped": false } },
+
+    // ---- Not a git repository: the tool says so, and the model can delegate normally ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate isolated work", "wait": true },
+      "expect": { "answer": { "$contains": "isn't a git repository" } },
+      "timeoutMs": 60000
+    },
+
+    // ---- A repository ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && mkdir -p .claude/agents && printf -- '---\\nname: forge\\nlabel: Forge\\ndescription: Builds things in its own worktree\\nisolation: worktree\\n---\\nYou build things.\\n' > .claude/agents/forge.md && mkdir -p .vscode/agents && cp .claude/agents/forge.md .vscode/agents/forge.md && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+
+    // A chat that only reads (Ask mode) can't start a helper that writes.
+    { "run": "agent.newSession" },
+    { "run": "agent.setChatMode", "input": { "mode": "ask" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate isolated work", "wait": true },
+      "expect": { "answer": { "$contains": "can't change files" } },
+      "timeoutMs": 60000
+    },
+
+    // Agent mode: the worktree is made, no window opens in a test run, so it's removed again.
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate isolated work", "wait": true },
+      "expect": { "answer": { "$contains": "window didn't open" } },
+      "timeoutMs": 90000
+    },
+    { "state": "ide://agent/worktrees", "expect": { "agents": [] }, "timeoutMs": 10000 },
+    { "state": "ide://agent/helpers", "expect": { "helpers": [] } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git rev-parse --verify --quiet refs/heads/agent/general-add-a-line-to",
+        "timeoutMs": 20000
+      },
+      // The branch went with the worktree.
+      "expect": { "exitCode": 1 },
+      "timeoutMs": 30000
+    },
+
+    // An agent whose file says isolation: worktree isolates without being asked to.
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "delegate to forge", "wait": true },
+      "expect": { "answer": { "$contains": "Forge's window didn't open" } },
+      "timeoutMs": 90000
+    },
+    { "state": "ide://agent/worktrees", "expect": { "agents": [] }, "timeoutMs": 10000 },
+
+    // agent.startInWorktree runs one of the user's agents in its chat mode.
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Nothing", "agent": "nobody", "setup": false },
+      "expectError": "No agent named nobody"
+    },
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Tidy the notes", "agent": "forge", "setup": false },
+      "expect": { "branch": "agent/tidy-the-notes", "spawned": false },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/tidy-the-notes", "action": "delete" },
+      "expect": { "deleted": "agent/tidy-the-notes" },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "agent.isolatedHelpers.window", "value": false } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } }
+  ]
+}

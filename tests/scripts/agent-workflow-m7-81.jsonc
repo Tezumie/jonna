@@ -1,0 +1,180 @@
+// D338: workflow scripts (run_workflow). The agent runs a two-phase script of three agents; the
+// user is asked first with its name, description and phases; it runs in the background (the tool
+// returns at once), shows in the chat as a card with its phases and agents, and its result comes
+// back as an automatic message the agent answers. Run again with resume_from and a changed judge
+// prompt, the two scouts come from the cache and only the judge runs.
+// Against tests/fixtures/mock-ollama.mjs (pkgKScripted).
+{
+  "name": "agent-workflow-m7-81",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // Asked as a tool is: not in full access.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgK run a workflow" },
+      "background": true
+    },
+    // The permission card: the workflow's name, description and phases.
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Run workflow pkgk-demo" }] },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-cards .agent-permission", "limit": 1, "html": 3000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "PkgK demo: two scouts, then a judge"
+          }
+        }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-cards .agent-permission", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "Scout → Judge" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    // The tool returned at once; the workflow's end comes back as a message the agent answers.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "wf1 · in the background" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgK result: pick=alpha, cached=0" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/workflows",
+      "expect": {
+        "workflows": [
+          {
+            "id": "wf1",
+            "name": "pkgk-demo",
+            "status": "done",
+            "phases": ["Scout", "Judge"],
+            "agents": [
+              { "label": "scout alpha", "phase": "Scout", "status": "done" },
+              { "label": "scout beta", "phase": "Scout", "status": "done" },
+              { "label": "judge", "phase": "Judge", "status": "done" }
+            ],
+            "result": { "$contains": "pkgk found alpha.txt" },
+            "logs": ["scouts done: 2"]
+          }
+        ]
+      },
+      "print": true
+    },
+    { "state": "ide://agent/workflows", "expect": { "workflows": { "$length": 1 } } },
+    // The card under the conversation: its phases and agents, no Stop once it's done.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-workflow", "limit": 2, "html": 4000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Workflow pkgk-demo"
+          }
+        }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-workflow .agent-workflow-phase-title",
+        "limit": 3
+      },
+      "expect": [{ "html": { "$contains": ">Scout<" } }, { "html": { "$contains": ">Judge<" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-workflow .agent-workflow-agent.is-done",
+        "limit": 5
+      },
+      "expect": { "$length": 3 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-workflow-stop", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    // The end message is a quiet line in the chat.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-auto", "limit": 5, "html": 400 },
+      "expect": { "$contains": "Workflow wf1 (pkgk-demo) finished" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // ---- Resume: an edited script reuses the unchanged calls' results ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgK resume the workflow" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": "Run workflow pkgk-demo" }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgK result: pick=alpha, cached=2" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/workflows",
+      "expect": {
+        "workflows": [
+          { "id": "wf1" },
+          {
+            "id": "wf2",
+            "status": "done",
+            "resumedFrom": "wf1",
+            "agents": [
+              { "label": "scout alpha", "status": "cached" },
+              { "label": "scout beta", "status": "cached" },
+              { "label": "judge", "status": "done" }
+            ]
+          }
+        ]
+      },
+      "print": true
+    },
+    // Only the new run's card shows under the new message.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-workflow", "limit": 3, "html": 200 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

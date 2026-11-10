@@ -1,0 +1,44 @@
+// Viewers and tab actions: images open in the image viewer, Markdown and SVG previews (to the
+// side), "Reopen with" the text editor, zoom; search results can be dismissed.
+{
+  "name": "viewers",
+  "steps": [
+    {
+      "run": "editor.openFile",
+      "input": { "path": "assets/dot.png" },
+      "expect": { "viewer": "image", "tabId": { "$exists": true } }
+    },
+    { "run": "viewer.zoom", "input": { "direction": "in" }, "expect": { "zoom": { "$gte": 1 } } },
+    { "run": "viewer.zoom", "input": { "direction": "fit" }, "expect": { "zoom": "fit" } },
+    {
+      "run": "editor.reopenWith",
+      "input": { "path": "assets/dot.png", "with": "text" },
+      "expect": { "with": "text" }
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "groups": { "$contains": "dot.png" } }
+    },
+    {
+      "run": "viewer.openPreview",
+      "input": { "path": "README.md", "toSide": true },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "state": "ide://layout", "expect": { "groups": { "$contains": "Preview README.md" } } },
+    {
+      "run": "viewer.open",
+      "input": { "path": "assets/shape.svg" },
+      "expect": { "viewer": "svg" }
+    },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "matches": { "$gte": 2 } } },
+    {
+      "run": "search.dismiss",
+      "input": { "path": "README.md" },
+      "expect": { "dismissed": true }
+    },
+    {
+      "state": "ide://search/last",
+      "expect": { "files": { "$not": { "$contains": "README.md" } } }
+    }
+  ]
+}

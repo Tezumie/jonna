@@ -1,0 +1,90 @@
+// D339: files into a page, on the mock dev server's /upload.html. The agent sets a workspace file
+// on the page's file input (browser_act upload: the page shows its name, size and type), drops a
+// screenshot it took on the drop zone, and is refused a path outside the workspace; then the user
+// command does the same with a file. Browser actions on localhost are allowed by agent.autoApprove
+// so nothing stops for a question.
+{
+  "name": "browser-upload-m7-82",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.autoApprove", "value": { "browser": { "localhost": true } } }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf 'hello upload\\n' > upload-me.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1400, "height": 900 } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/upload.html" },
+      "expect": { "connected": true, "title": "Upload lab" },
+      "timeoutMs": 20000
+    },
+    // A workspace file on the file input: the page saw its name, size and type.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgL upload the file" },
+      "expect": { "answer": "pkgL upload: set" }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('out').textContent" },
+      "expect": { "result": "upload-me.txt 13 text/plain" },
+      "print": true
+    },
+    // A screenshot the agent took, dropped on the drop zone.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgL drop a screenshot" },
+      "expect": { "answer": "pkgL drop: dropped" }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('dropped').textContent" },
+      "expect": { "result": { "$contains": ".png" } },
+      "print": true
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('dropped').textContent" },
+      "expect": { "result": { "$contains": "image/png" } }
+    },
+    // Never a file outside the workspace.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgL outside the folder" },
+      "expect": { "answer": "pkgL outside: refused" }
+    },
+    // The user command: a file dropped on the zone.
+    {
+      "run": "browser.upload",
+      "input": { "selector": "#zone", "files": ["upload-me.txt"] },
+      "expect": { "mode": "drop", "dropped": ["upload-me.txt"] }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('dropped').textContent" },
+      "expect": { "result": "upload-me.txt 13 text/plain" }
+    },
+    // A single-file input refuses two files.
+    {
+      "run": "browser.upload",
+      "input": { "selector": "#photo", "files": ["upload-me.txt", "upload-me.txt"] },
+      "expectError": "takes one file"
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "settings.set", "input": { "key": "agent.autoApprove", "value": {} } }
+  ]
+}

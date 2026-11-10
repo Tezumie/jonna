@@ -1,0 +1,59 @@
+// D257: the extension store's pages, icons and recommendations, against the live Open VSX (needs
+// the network): a search's rows get their icons, an extension that isn't installed opens on a
+// page of its own (README, side panel, features), and a workspace's .vscode/extensions.json
+// recommends what it names.
+{
+  "name": "store-pages-m7-21",
+  "testTimeout": 180000,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode && printf '{ \"recommendations\": [\"esbenp.prettier-vscode\"] }' > .vscode/extensions.json && echo done",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "extensions.show", "input": {} },
+    {
+      "run": "extensions.searchStore",
+      "input": { "query": "prettier" },
+      "expect": { "items": { "$contains": "esbenp.prettier-vscode" } },
+      "timeoutMs": 30000
+    },
+    { "run": "extensions.show", "input": { "query": "prettier" } },
+    { "wait": 3000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-store-row .ext-avatar img", "limit": 3, "html": 300 },
+      "expect": { "$contains": "blob:" },
+      "print": true,
+      "timeoutMs": 20000
+    },
+    { "run": "extensions.showStoreDetails", "input": { "id": "esbenp.prettier-vscode" } },
+    { "wait": 4000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-name", "limit": 1 },
+      "expect": { "$contains": "Prettier" },
+      "print": true,
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-body", "limit": 1, "html": 400 },
+      "expect": { "$contains": "Prettier" },
+      "timeoutMs": 20000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // The workspace's recommendation (the search box empty again).
+    { "run": "extensions.show", "input": { "query": "" } },
+    {
+      "state": "ide://extensions/store",
+      "expect": { "recommendations": { "$contains": "esbenp.prettier-vscode" } },
+      "print": true,
+      "timeoutMs": 30000
+    }
+  ]
+}

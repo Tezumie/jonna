@@ -1,0 +1,133 @@
+// D204: notebooks at VS Code's level. The notebook's outline (Markdown headings with the code
+// cells under them, in the Outline view too); find across cells (matches in Markdown and code,
+// next, replace all as one undo step). The language server in the cells is
+// notebooks-lsp-m7-5 (D264: it needs Pyright).
+{
+  "name": "notebooks-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "extensions.enable", "input": { "id": "bundled.jupyter" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.jupyter", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.new", "input": { "path": "nb/lsp.ipynb" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "import os\nvalue = 41" } },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 1, "kind": "markdown", "source": "# Intro\n\nThe data value." }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 2, "source": "print(value + undefined_name)\nvalue" }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 3, "kind": "markdown", "source": "## Results" }
+    },
+    { "run": "notebook.insertCell", "input": { "index": 4, "source": "result = value * 2" } },
+
+    // ---- Outline ----
+    {
+      "run": "notebook.outline",
+      "expect": {
+        "entries": [
+          { "name": "import os", "kind": "code", "index": 0, "depth": 0 },
+          { "name": "Intro", "kind": "heading", "index": 1, "depth": 0 },
+          { "name": "print(value + undefined_name)", "kind": "code", "index": 2, "depth": 1 },
+          { "name": "Results", "kind": "heading", "index": 3, "depth": 1 },
+          { "name": "result = value * 2", "kind": "code", "index": 4, "depth": 2 }
+        ]
+      }
+    },
+    { "run": "outline.show" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".outline-row .outline-name", "limit": 10 },
+      "expect": { "$contains": "Results" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "path": { "$contains": "lsp.ipynb" }, "symbols": { "$contains": "Intro" } }
+    },
+    // Going to a cell (what clicking an outline entry runs).
+    {
+      "run": "notebook.revealCell",
+      "input": { "index": 4, "line": 1, "column": 3 },
+      "expect": { "index": 4 }
+    },
+    { "state": "ide://notebook", "expect": { "active": { "selected": 4 } } },
+
+    // ---- Find across cells ----
+    {
+      "run": "notebook.find",
+      "input": { "query": "value", "wholeWord": true },
+      "expect": { "matches": 5 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-find-count" },
+      "expect": { "$contains": "of 5" },
+      "timeoutMs": 5000
+    },
+    // Matches are highlighted in the cells' editors.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell .findMatch, .nb-cell .currentFindMatch" },
+      "expect": [{}],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "notebook.findNext",
+      "expect": { "matches": 5, "match": { "index": { "$gte": 0 } } }
+    },
+    {
+      "run": "notebook.find",
+      "input": { "query": "data", "wholeWord": false },
+      "expect": { "matches": 1, "match": { "index": 1, "where": "source" } }
+    },
+    {
+      "run": "notebook.replaceAll",
+      "input": { "query": "value", "wholeWord": true, "replacement": "amount" },
+      "expect": { "replaced": 5, "matches": 0 }
+    },
+    {
+      "run": "notebook.read",
+      "expect": {
+        "cells": [
+          { "source": "import os\namount = 41" },
+          { "source": "# Intro\n\nThe data amount." },
+          { "source": "print(amount + undefined_name)\namount" }
+        ]
+      }
+    },
+    // One undo step puts every cell's text back.
+    { "run": "notebook.undo" },
+    {
+      "run": "notebook.read",
+      "expect": {
+        "cells": [
+          { "source": "import os\nvalue = 41" },
+          { "source": "# Intro\n\nThe data value." },
+          { "source": "print(value + undefined_name)\nvalue" }
+        ]
+      }
+    },
+    { "run": "notebook.closeFind" },
+    { "state": "ide://notebook", "expect": { "active": { "find": null } } },
+
+    { "run": "notebook.save", "input": { "path": "nb/lsp.ipynb" } }
+  ]
+}

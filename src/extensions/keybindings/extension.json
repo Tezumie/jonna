@@ -1,0 +1,39 @@
+{
+  "id": "builtin.keybindings",
+  "version": "0.1.0",
+  "displayName": "Keybindings",
+  "description": "keybindings.json (live reload) and the keyboard shortcuts tab with conflict flags.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      { "id": "keybindings.show", "title": "Keyboard shortcuts", "category": "Preferences" },
+      {
+        "id": "keybindings.openJson",
+        "title": "Open keyboard shortcuts (JSON)",
+        "category": "Preferences"
+      },
+      { "id": "keybindings.set", "title": "Change keybinding", "category": "Preferences" },
+      { "id": "keybindings.remove", "title": "Remove keybinding", "category": "Preferences" },
+      { "id": "keybindings.reset", "title": "Reset keybinding", "category": "Preferences" },
+      {
+        "id": "keybindings.changeKey",
+        "title": "Change one keybinding",
+        "category": "Preferences"
+      },
+      {
+        "id": "keybindings.changeWhen",
+        "title": "Change when expression",
+        "category": "Preferences"
+      },
+      { "id": "keybindings.add", "title": "Add keybinding", "category": "Preferences" },
+      { "id": "keybindings.list", "title": "List keybindings", "category": "Preferences" },
+      {
+        "id": "keybindings.showReference",
+        "title": "Keyboard shortcuts reference",
+        "category": "Help"
+      }
+    ],
+    "keybindings": [{ "key": "ctrl+k ctrl+s", "mac": "cmd+k cmd+s", "command": "keybindings.show" }]
+  }
+}

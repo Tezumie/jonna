@@ -1,0 +1,51 @@
+// D124: the model names the chat in its first reply (the tag never shows), rename and clear
+// chats, "Fix with agent" for a failed terminal command.
+{
+  "name": "features-m6-22",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello" },
+      "expect": { "answer": "Hello from mock.", "error": null }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "title": "Mock chat title",
+        "items": { "$not": { "$contains": "<title>" } }
+      }
+    },
+    // A second message doesn't rename it.
+    { "run": "agent.send", "input": { "message": "hello again" }, "expect": { "error": null } },
+    { "state": "ide://agent/session", "expect": { "title": "Mock chat title" } },
+    {
+      "run": "agent.renameSession",
+      "input": { "title": "Greeting test" },
+      "expect": { "renamed": true, "title": "Greeting test" }
+    },
+    { "state": "ide://agent/session", "expect": { "title": "Greeting test" } },
+    { "run": "agent.clearChats", "input": { "scope": "all" }, "expect": { "deleted": 1 } },
+    // A failed command goes to the agent with its output.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "ls /definitely/not/here", "timeoutMs": 20000 },
+      "expect": { "exitCode": { "$not": 0 } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.fixWithAgent",
+      "expect": { "sent": true, "command": { "$contains": "ls /definitely" } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "No such file" } },
+      "timeoutMs": 10000
+    }
+  ]
+}

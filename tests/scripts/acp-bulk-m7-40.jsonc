@@ -1,0 +1,60 @@
+// D294: an external agent's command makes a folder of files (a clone) in a folder without git.
+// The new folder isn't put under review file by file (it kept the chat "working" while each was
+// compared): the turn's "Changed files" note names it, and the file made beside it is reviewed.
+// The review bar isn't left waiting.
+{
+  "name": "acp-bulk-m7-40",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": { "command": "node", "args": ["${workspaceFolder}/tools/mock-acp.mjs"] }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please clone a folder", "wait": true },
+      "expect": { "answer": { "$contains": "Cloned it." } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        // One file changed (the note): the folder's 120 aren't in the review (its note says so).
+        "items": {
+          "$contains": "\"title\":\"Changed files\"},\"status\":\"done\",\"summary\":\"1 file\""
+        },
+        "pending": { "$contains": "clone-note.txt" }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "pending": { "$not": { "$contains": "cloned-repo" } } }
+    },
+    // The bar's buttons work again once the changes are gathered.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-changes .button[disabled]" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

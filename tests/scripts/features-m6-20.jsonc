@@ -1,0 +1,45 @@
+// D121: the bundled TODO tree extension (seeded disabled, then turned on), the extension API's
+// detached text search, recent folders removed from the welcome list, the Chats sidebar.
+{
+  "name": "features-m6-20",
+  "steps": [
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "bundled.todo-tree" } },
+      "timeoutMs": 10000
+    },
+    { "run": "todoTree.list", "expectError": "Unknown command" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "todo-sample.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "todo-sample.ts" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "// TODO(ada): write the parser\nconst x = 1; // FIXME: off by one\n" }
+    },
+    { "run": "editor.save" },
+    // The search view's own search isn't replaced by the extension's.
+    { "run": "search.run", "input": { "query": "write the parser" }, "expect": { "matches": 1 } },
+    { "run": "extensions.enable", "input": { "id": "bundled.todo-tree" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.todo-tree", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "todoTree.list",
+      "expect": {
+        "items": {
+          "$contains": "{\"path\":\"todo-sample.ts\",\"line\":2,\"tag\":\"FIXME\",\"text\":\"off by one\"}"
+        }
+      },
+      "timeoutMs": 15000
+    },
+    { "run": "view.show", "input": { "id": "todoTree.view" } },
+    // Chats sidebar.
+    { "run": "agent.showChats" },
+    { "run": "workspace.removeRecent", "input": { "path": "/nowhere/at/all" } }
+  ]
+}

@@ -1,0 +1,200 @@
+// D147: Performance records like Chrome's — record, or reload and record from the page's start,
+// shown on a timeline (frames, FPS, main thread, network, timings, memory) with a hover readout;
+// metric cards rate with a pill and a scale; "…" in Elements opens the element; DevTools fits
+// small windows (tabs to icons, panes stacking, the console's levels in one menu).
+{
+  "name": "features-m6-46",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "browser.open", "input": { "url": "site/index.html" }, "timeoutMs": 20000 },
+
+    // Elements: the collapsed "…" opens the element, like its arrow.
+    { "run": "browser.devtools", "input": { "panel": "elements" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-dom-toggle.is-expandable", "limit": 1 },
+      "expect": [{ "tag": "span" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-elements .dt-dom", "html": 20000 },
+      "expect": [{ "html": { "$not": { "$contains": "&lt;title" } } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".dt-ellipsis" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-elements .dt-dom", "html": 20000 },
+      "expect": [{ "html": { "$contains": "&lt;title" } }],
+      "timeoutMs": 5000
+    },
+
+    // Performance: the load metrics rate with a pill and a scale.
+    { "run": "browser.devtools", "input": { "panel": "performance" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-metric.is-good .dt-metric-rating", "html": 200 },
+      "expect": [{ "html": { "$contains": "Good" } }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-metric .dt-gauge-mark" },
+      "expect": [{ "tag": "span" }]
+    },
+
+    // Record: frames, the page's own measure and a request land on the timeline.
+    { "run": "browser.record", "input": { "action": "start" }, "expect": { "recording": true } },
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "performance.mark('work-start'); const t = performance.now(); while (performance.now() - t < 60) {} performance.measure('work', 'work-start'); Promise.all(Array.from({ length: 24 }, (_, i) => fetch('style.css?again=' + i).then((r) => r.text()))).then(() => 'fetched')"
+      }
+    },
+    { "wait": 1500 },
+    {
+      "run": "browser.record",
+      "input": { "action": "stop" },
+      "expect": {
+        "recording": false,
+        "recorded": {
+          "duration": { "$gte": 1000 },
+          "frames": { "$gte": 1 },
+          "requests": { "$gte": 1 }
+        }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-track.is-frames" },
+      "expect": [{ "tag": "div" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-track.is-network" },
+      "expect": [{ "tag": "div" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-block.is-measure" },
+      "expect": [{ "tag": "div" }]
+    },
+    // Many requests at once: each its own row (readable), the track scrolls.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-lane.is-network.is-scrolling" },
+      "expect": [{ "tag": "div" }]
+    },
+    // Clicking a request opens Network; back in Performance the same timeline is there.
+    { "run": "dev.click", "input": { "selector": ".dt-tl-block.is-request" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tab[aria-selected=\"true\"]", "html": 300 },
+      "expect": [{ "html": { "$contains": "Network" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "browser.devtools", "input": { "panel": "performance" } },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl", "limit": 5 },
+      "expect": { "$length": 1 }
+    },
+    // The pointer over a request: its readout.
+    { "run": "dev.click", "input": { "selector": ".dt-tl-block.is-request", "hover": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-readout:not([hidden])", "html": 400 },
+      "expect": [{ "html": { "$contains": "style.css" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-summary-title", "html": 300 },
+      "expect": [{ "html": { "$contains": "Whole recording" } }]
+    },
+
+    // Reload and record: from the new page's start, until stopped, with its load markers.
+    { "run": "browser.record", "input": { "action": "reload" }, "expect": { "recording": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-perf-status:not([hidden]) strong", "html": 200 },
+      "expect": [{ "html": { "$contains": "Recording the page from its load" } }],
+      "timeoutMs": 10000
+    },
+    { "wait": 1000 },
+    {
+      "run": "browser.record",
+      "input": { "action": "stop" },
+      "expect": { "recorded": { "fromNavigation": true, "markers": { "$contains": "Load" } } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tl-marker.is-l" },
+      "expect": [{ "tag": "div" }]
+    },
+
+    // The same on a dev server's page (as with Vite).
+    { "run": "browser.navigate", "input": { "url": "http://localhost:11998" }, "timeoutMs": 20000 },
+    { "wait": 1500 },
+    { "run": "browser.devtools", "input": { "panel": "performance" } },
+    { "run": "browser.record", "input": { "action": "reload" }, "expect": { "recording": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-perf-status:not([hidden]) strong", "html": 200 },
+      "expect": [{ "html": { "$contains": "Recording the page from its load" } }],
+      "timeoutMs": 10000
+    },
+    { "wait": 800 },
+    {
+      "run": "browser.record",
+      "input": { "action": "stop" },
+      "expect": { "recorded": { "fromNavigation": true } }
+    },
+
+    // Wide DevTools: every tab with its icon and name.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tablist[data-fit=\"full\"]" },
+      "expect": [{ "tag": "div" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tab .icon", "limit": 20 },
+      "expect": { "$length": 6 }
+    },
+
+    // A small window: icons only (the selected tab keeps its name), panes stack, the console's
+    // levels are one menu.
+    { "run": "dev.setWindowSize", "input": { "width": 760, "height": 640 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tablist[data-fit=\"icons\"]" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-tab[aria-selected=\"true\"] .dt-tab-label.is-short" },
+      "expect": [{ "display": { "$not": "none" } }]
+    },
+    { "run": "browser.devtools", "input": { "panel": "application" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-application .dt-split.is-stacked" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 3000
+    },
+    { "run": "browser.devtools", "input": { "panel": "console" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-levels" },
+      "expect": [{ "display": { "$not": "none" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dt-level-chip", "limit": 1 },
+      "expect": [{ "display": "none" }]
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 800 } }
+  ]
+}

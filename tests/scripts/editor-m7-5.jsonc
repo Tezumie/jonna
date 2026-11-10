@@ -1,0 +1,369 @@
+// D204: legacy encodings (a Shift JIS file guessed, readable, saved back byte-identical), the
+// editor's own keys in the keyboard shortcuts editor (listed, rebound, when clause changed), and
+// the language-server leftovers: semantic token deltas, workspace pull diagnostics for a file
+// that isn't open, a server's settings (sent with didChangeConfiguration, no restart).
+{
+  "name": "editor-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- Encodings ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '\\x82\\xb1\\x82\\xea\\x82\\xcd\\x93\\xfa\\x96\\x7b\\x8c\\xea\\x82\\xcc\\x83\\x65\\x83\\x4c\\x83\\x58\\x83\\x67\\x82\\xc5\\x82\\xb7\\x81\\x42\\x83\\x47\\x83\\x93\\x83\\x52\\x81\\x5b\\x83\\x66\\x83\\x42\\x83\\x93\\x83\\x4f\\x82\\xcc\\x90\\x84\\x91\\xaa\\x82\\xf0\\x83\\x65\\x83\\x58\\x83\\x67\\x82\\xb5\\x82\\xc4\\x82\\xa2\\x82\\xdc\\x82\\xb7\\x81\\x42\\x0a\\x82\\xd0\\x82\\xe7\\x82\\xaa\\x82\\xc8\\x81\\x41\\x83\\x4a\\x83\\x5e\\x83\\x4a\\x83\\x69\\x81\\x41\\x8a\\xbf\\x8e\\x9a\\x82\\xaa\\x8d\\xac\\x82\\xb4\\x82\\xc1\\x82\\xbd\\x95\\x81\\x92\\xca\\x82\\xcc\\x95\\xb6\\x8f\\xcd\\x82\\xc5\\x82\\xb7\\x81\\x42\\x0a' > sjis.txt && cp sjis.txt sjis.orig && printf 'foo bar foo\\n' > dup.txt && printf 'closed file\\n' > closed.md && printf 'let a = 1   \\n' > chord.js && wc -c sjis.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "122" } },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "files.autoGuessEncoding", "value": true } },
+    { "run": "editor.openFile", "input": { "path": "sjis.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "sjis.txt", "encoding": "shift_jis", "dirty": false },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": "sjis.txt" },
+      "expect": { "$contains": "これは日本語のテキストです。" }
+    },
+    // The status bar names it; the file is writable (no read-only banner).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".file-status-item", "html": 300, "limit": 12 },
+      "expect": { "$contains": "Japanese (Shift JIS)" },
+      "timeoutMs": 5000
+    },
+    // An edit, saved in Shift JIS: the new characters are Shift JIS bytes.
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1 }
+    },
+    { "run": "editor.insertText", "input": { "text": "日本" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "head -c 6 sjis.txt | od -An -tx1", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "93 fa 96 7b 82 b1" } },
+      "timeoutMs": 20000
+    },
+    // Undone and saved again: byte for byte the original.
+    { "run": "editor.runAction", "input": { "action": "undo" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cmp sjis.txt sjis.orig && echo IDENTICAL", "timeoutMs": 10000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "IDENTICAL" } },
+      "timeoutMs": 20000
+    },
+    // A character Shift JIS can't hold stops the save with a message, and nothing is written.
+    { "run": "editor.insertText", "input": { "text": "😀" } },
+    { "run": "editor.save", "expectError": "can't hold" },
+    { "run": "editor.runAction", "input": { "action": "undo" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cmp sjis.txt sjis.orig && echo STILL", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "STILL" } },
+      "timeoutMs": 20000
+    },
+    { "run": "settings.set", "input": { "key": "files.autoGuessEncoding", "value": false } },
+    // ---- The editor's own keys in the shortcuts editor ----
+    {
+      "run": "keybindings.list",
+      "input": { "query": "addSelectionToNextFindMatch" },
+      "expect": { "$contains": "\"label\":\"Ctrl+D\"" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "editor.action.moveLinesUpAction" },
+      "expect": { "$contains": "\"engine\":true" }
+    },
+    { "run": "keybindings.show", "input": { "query": "\"ctrl+d\"" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".keybindings-row", "html": 600, "limit": 5 },
+      "expect": { "$contains": "addSelectionToNextFindMatch" },
+      "timeoutMs": 5000
+    },
+    // Rebinding: Ctrl+Alt+D adds the next match; Ctrl+D no longer does.
+    {
+      "run": "keybindings.changeKey",
+      "input": {
+        "command": "editor.action.addSelectionToNextFindMatch",
+        "key": "ctrl+d",
+        "newKey": "ctrl+alt+d"
+      },
+      "expect": { "label": "Ctrl+Alt+D" }
+    },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "addSelectionToNextFindMatch" },
+      "expect": { "$contains": "\"label\":\"Ctrl+Alt+D\"" },
+      "timeoutMs": 5000
+    },
+    { "run": "editor.openFile", "input": { "path": "dup.txt" } },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "d",
+        "code": "KeyD",
+        "ctrl": true,
+        "alt": true
+      }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "dup.txt", "selections": { "$length": 2 } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "d",
+        "code": "KeyD",
+        "ctrl": true
+      }
+    },
+    { "wait": 300 },
+    { "state": "ide://editors/active", "expect": { "selections": { "$length": 1 } } },
+    // Change when expression: only in a read-only editor now, so Ctrl+Alt+D does nothing here.
+    {
+      "run": "keybindings.changeWhen",
+      "input": {
+        "command": "editor.action.addSelectionToNextFindMatch",
+        "key": "ctrl+alt+d",
+        "when": "editorReadonly"
+      },
+      "expect": { "when": "editorReadonly", "changed": true }
+    },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "addSelectionToNextFindMatch" },
+      "expect": { "$contains": "\"when\":\"editorReadonly\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "d",
+        "code": "KeyD",
+        "ctrl": true,
+        "alt": true
+      }
+    },
+    { "wait": 300 },
+    { "state": "ide://editors/active", "expect": { "selections": { "$length": 1 } } },
+    // Remove the user's binding, then reset: Ctrl+D is back.
+    {
+      "run": "keybindings.remove",
+      "input": {
+        "command": "editor.action.addSelectionToNextFindMatch",
+        "key": "ctrl+alt+d",
+        "when": "editorReadonly"
+      },
+      "expect": { "source": "user" }
+    },
+    {
+      "run": "keybindings.reset",
+      "input": { "command": "editor.action.addSelectionToNextFindMatch" }
+    },
+    {
+      "run": "keybindings.list",
+      "input": { "query": "addSelectionToNextFindMatch" },
+      "expect": { "$contains": "\"label\":\"Ctrl+D\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 4 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "d",
+        "code": "KeyD",
+        "ctrl": true
+      }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "selections": { "$length": 2 } },
+      "timeoutMs": 3000
+    },
+    // A Monaco chord whose first key the IDE takes (Ctrl+K): Ctrl+K Ctrl+X trims trailing spaces.
+    { "run": "editor.openFile", "input": { "path": "chord.js" } },
+    {
+      "run": "editor.select",
+      "input": { "startLine": 1, "startColumn": 1, "endLine": 1, "endColumn": 1 }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "k",
+        "code": "KeyK",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".monaco-editor.focused :is(.native-edit-context, textarea.inputarea)",
+        "key": "x",
+        "code": "KeyX",
+        "ctrl": true
+      }
+    },
+    // The IDE took Ctrl+K and resolved the second key to Monaco's command, which it runs in the
+    // editor (the edit itself is a manual test: from a synthetic key event inside a test command
+    // the run isn't reliable here).
+    {
+      "state": "ide://dev/keyboard",
+      "expect": {
+        "recent": [{ "chord": "ctrl+x", "result": "command:editor.action.trimTrailingWhitespace" }]
+      },
+      "timeoutMs": 3000
+    },
+    // ---- Language servers: semantic token deltas, workspace diagnostics, settings ----
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "mock": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-lsp.mjs", "--d204"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"state\":\"running\"" },
+      "timeoutMs": 15000
+    },
+    // closed.md isn't open: its problem comes from workspace/diagnostic (a partial result).
+    {
+      "run": "problems.list",
+      "input": { "path": "closed.md" },
+      "expect": { "$contains": "Mock workspace: closed" },
+      "timeoutMs": 10000
+    },
+    // Once Monaco has the file's full tokens (it asks for the visible range first), an edit:
+    // Monaco asks again with the result id it has; the server answers with a delta.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "for i in $(seq 50); do grep -q 'semanticTokens/full' .mock-lsp-calls.txt && break; sleep 0.2; done; grep -c 'semanticTokens/full' .mock-lsp-calls.txt",
+        "timeoutMs": 15000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.insertText", "input": { "text": "more\n" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "for i in $(seq 50); do grep -q 'semantic delta from' .mock-lsp-calls.txt && break; sleep 0.2; done; cat .mock-lsp-calls.txt",
+        "timeoutMs": 10000
+      },
+      "expect": {
+        "output": { "$contains": "semantic delta from" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "grep -c '^textDocument/semanticTokens/full$' .mock-lsp-calls.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    // A server setting: sent with didChangeConfiguration, the server isn't restarted.
+    {
+      "run": "lsp.setServerSetting",
+      "input": { "server": "mock", "key": "mock.flag", "value": true },
+      "expect": { "target": "settings", "value": true }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "cat .mock-lsp-calls.txt; echo; echo INIT=$(grep -c '^initialize$' .mock-lsp-calls.txt)",
+        "timeoutMs": 10000
+      },
+      "expect": {
+        "output": { "$contains": "workspace/didChangeConfiguration {\"mock\":{\"flag\":true}}" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "echo INIT=$(grep -c '^initialize$' .mock-lsp-calls.txt)",
+        "timeoutMs": 10000
+      },
+      "expect": { "output": { "$contains": "INIT=1" } },
+      "timeoutMs": 20000
+    },
+    // The settings page of a built-in server: its known settings, written to lsp.servers.
+    { "run": "lsp.openServerSettings", "input": { "server": "pyright" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".lsp-settings-view .setting-row", "html": 400, "limit": 3 },
+      "expect": { "$contains": "python.analysis.typeCheckingMode" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "lsp.setServerSetting",
+      "input": { "server": "pyright", "key": "python.analysis.typeCheckingMode", "value": "strict" }
+    },
+    {
+      "run": "lsp.serverSettings",
+      "input": { "server": "pyright" },
+      "expect": {
+        "settings": { "python": { "analysis": { "typeCheckingMode": "strict" } } },
+        "fields": {
+          "$contains": "\"key\":\"python.analysis.typeCheckingMode\",\"target\":\"settings\",\"type\":\"enum\""
+        }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".lsp-settings-view .setting-row.is-modified",
+        "html": 400,
+        "limit": 3
+      },
+      "expect": { "$contains": "typeCheckingMode" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+    {
+      "run": "lsp.setServerSettingsJson",
+      "input": { "server": "pyright", "settings": null },
+      "expect": { "settings": null }
+    }
+  ]
+}

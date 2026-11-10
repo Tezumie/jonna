@@ -1,0 +1,145 @@
+// D316–D318: the agent's browser tools that match Claude Code's, on the mock dev server's
+// /agent-lab.html: find (browser_snapshot find), a browser_batch of input by coordinate (clicks
+// with counts and buttons, typing at the focus, keys with repeat and modifiers, drag and drop,
+// wheel scroll in a box, a zoomed screenshot), a batch stopping at its first error, the page's
+// main text, browser_eval (REPL: top-level await and the last expression, JSON, errors), dark
+// color scheme emulation, and tabs (new, list, close). Browser actions on localhost are allowed
+// by agent.autoApprove so the batch doesn't stop for questions.
+{
+  "name": "browser-agent-m7-58",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.autoApprove", "value": { "browser": { "localhost": true } } }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 1000 } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/agent-lab.html" },
+      "expect": { "connected": true, "title": "Agent lab" },
+      "timeoutMs": 20000
+    },
+    // find: outline lines with refs.
+    {
+      "run": "browser.find",
+      "input": { "query": "drop" },
+      "expect": { "matches": [{ "line": { "$contains": "Drop here" } }] },
+      "print": true
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD find" },
+      "expect": { "answer": "pkgD find: found" }
+    },
+    // A batch of input by coordinate, then what the page saw.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD batch" },
+      "expect": { "answer": "pkgD batch: all ran" }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "document.getElementById('log').textContent" },
+      "expect": { "result": "clicks=3 double=yes menu=yes key=shift+Enter dropped=yes" },
+      "print": true
+    },
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "document.getElementById('field').value + '|' + document.getElementById('box').scrollTop"
+      },
+      "expect": { "result": "hel|200" }
+    },
+    // The batch's row shows the first action's action_summary.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column", "limit": 1, "html": 20000 },
+      "expect": { "$contains": "Clicks the counter" }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD stop" },
+      "expect": { "answer": "pkgD stop: stopped at 1" }
+    },
+    // The page's main text.
+    {
+      "run": "browser.text",
+      "input": { "main": true },
+      "expect": { "from": "main", "text": { "$contains": "input tools are tried out" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD text" },
+      "expect": { "answer": "pkgD text: main" }
+    },
+    // Scripts: the last expression after an await, a string as JSON, an error.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD eval" },
+      "expect": {
+        "answer": "pkgD eval: 42 | log: clicks=3 double=yes menu=yes key=shift+Enter dropped=yes | error: ReferenceError"
+      }
+    },
+    // Dark mode by prefers-color-scheme, then back.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD dark" },
+      "expect": { "answer": { "$contains": "\"rgb(20, 20, 20)\", true" } },
+      "print": true
+    },
+    // Light, whatever the system's scheme is.
+    { "run": "browser.resize", "input": { "colorScheme": "light" } },
+    {
+      "run": "browser.eval",
+      "input": {
+        "code": "getComputedStyle(document.body).backgroundColor + '|' + matchMedia('(prefers-color-scheme: dark)').matches"
+      },
+      "expect": { "result": "rgb(255, 255, 255)|false" }
+    },
+    // Dark again, kept across a reload.
+    { "run": "browser.resize", "input": { "colorScheme": "dark" } },
+    { "run": "browser.reload" },
+    { "run": "browser.wait", "input": { "text": "Agent lab" }, "expect": { "found": true } },
+    {
+      "run": "browser.eval",
+      "input": { "code": "getComputedStyle(document.body).backgroundColor" },
+      "expect": { "result": "rgb(20, 20, 20)" },
+      "timeoutMs": 5000
+    },
+    { "run": "browser.resize", "input": { "colorScheme": "auto" } },
+    // Ending the emulation leaves the page navigating for a moment ("navigating" answers): settled
+    // before the click.
+    { "wait": 1500 },
+    { "run": "browser.wait", "input": { "text": "Agent lab" }, "expect": { "found": true } },
+    // Input by coordinate, as a user command (the frame is the viewport here).
+    {
+      "run": "browser.input",
+      "input": { "op": "click", "x": 80, "y": 28 },
+      "expect": { "clicked": { "$contains": "Count clicks" } }
+    },
+    {
+      "run": "browser.screenshot",
+      "input": { "inline": true, "region": [0, 0, 330, 210] },
+      "expect": { "frame": { "width": { "$gte": 330 } }, "png": { "$exists": true } }
+    },
+    // Tabs: a new one is current, listed, then closed.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgD tabs" },
+      "expect": { "answer": "pkgD tabs: 2 listed, new is current, closed" }
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } } },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "settings.set", "input": { "key": "agent.autoApprove", "value": {} } }
+  ]
+}

@@ -1,0 +1,39 @@
+// D298: an extension pack's page lists its members above the README (VS Code's "Extension Pack
+// (N)"), each a card that opens its own page. Against the live Open VSX (needs the network):
+// Jupyter is a pack (its keymap, renderers, cell tags, slideshow).
+{
+  "name": "store-pack-m7-42",
+  "testTimeout": 180000,
+  "steps": [
+    { "run": "extensions.show", "input": {} },
+    { "run": "extensions.showStoreDetails", "input": { "id": "ms-toolsai.jupyter" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-pack-title", "limit": 1 },
+      "expect": { "$contains": "Extension Pack (" },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-pack-card .ext-pack-name", "limit": 8 },
+      "expect": { "$contains": "Keymap" },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    { "wait": 2000 },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // A card opens that member's page.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ext-pack-card[data-pack-id$='jupyter-keymap']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-name", "limit": 3 },
+      "expect": { "$contains": "Keymap" },
+      "print": true,
+      "timeoutMs": 30000
+    }
+  ]
+}

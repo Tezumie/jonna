@@ -1,0 +1,38 @@
+// D379 / D380: completions in a JavaScript file of a trusted folder, where the TypeScript server
+// runs and Monaco's own TypeScript service is silent: typing "fu" offers the `function` keyword.
+{
+  "name": "editor-ts-suggest-m7-109",
+  "requires": ["typescript-language-server"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p scripts && printf 'const root = 1;\\n\\n' > scripts/x.mjs",
+        "timeoutMs": 10000
+      },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "scripts/x.mjs" } },
+    {
+      "state": "ide://lsp",
+      // Running, not only configured: the takeover from the built-in service is done.
+      "expect": {
+        "servers": {
+          "$contains": "\"source\":\"builtin.language-servers\",\"state\":\"running\""
+        }
+      },
+      "timeoutMs": 30000
+    },
+    { "wait": 5000 },
+    { "run": "editor.select", "input": { "startLine": 2, "endLine": 2 } },
+    { "run": "editor.insertText", "input": { "text": "fu" } },
+    { "run": "editor.runAction", "input": { "action": "editor.action.triggerSuggest" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".suggest-widget", "html": 4000, "limit": 1 },
+      "expect": [{ "html": { "$contains": "function, Keyword" } }],
+      "timeoutMs": 15000
+    }
+  ]
+}

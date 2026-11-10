@@ -1,0 +1,134 @@
+// D205: Customize → Commands (new, open, delete) and MCP servers (a server's Configure dialog
+// with its tools turned on or off, the server turned off, Remove taking the row away at once).
+{
+  "name": "customize-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- Commands ----
+    {
+      "run": "agent.newSlashCommand",
+      "input": { "scope": "workspace", "name": "doit" },
+      "expect": { "created": true }
+    },
+    { "run": "agent.showSlashCommands" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".commands-page [data-scope='workspace'] [data-command='doit']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.slash", "input": { "pick": false }, "expect": { "$contains": "doit" } },
+    {
+      "run": "agent.deleteSlashCommand",
+      "input": { "name": "doit" },
+      "expect": { "deleted": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".commands-page [data-command='doit']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // ---- An agent of your own: deleted from its card's menu (D230) ----
+    {
+      "run": "agent.createAgent",
+      "input": { "label": "tom", "description": "Helps.", "scope": "project" },
+      "expect": { "name": "tom" }
+    },
+    { "run": "agent.showAgentConfig" },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ac-node[data-node='subagent:tom'] .ag-more" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".menu .menu-item.is-destructive" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-danger" }, "timeoutMs": 3000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ac-node[data-node='subagent:tom']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    // ---- MCP servers ----
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "extra",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp-extra.mjs"]
+      },
+      "expect": { "added": true }
+    },
+    { "run": "agent.showMcpPage" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-page .mcp-row[data-server='extra']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.mcpServers", "input": { "restart": "extra" } },
+    {
+      "state": "ide://agent/mcp",
+      "expect": { "$contains": "\"state\":\"running\"" },
+      "timeoutMs": 20000
+    },
+    // The Configure dialog: its tools as switches.
+    { "run": "agent.configureMcpServer", "input": { "server": "extra" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .mcp-config-tool", "limit": 1 },
+      "expect": { "$contains": "mcp-config-tool" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.setMcpToolEnabled",
+      "input": { "server": "extra", "tools": ["*"], "enabled": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .mcp-config-tool input:checked", "limit": 20 },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".dialog", "key": "Escape" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-row[data-server='extra'] .mcp-row-detail" },
+      "expect": { "$contains": "0 tools enabled" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.setMcpToolEnabled",
+      "input": { "server": "extra", "tools": ["*"], "enabled": true }
+    },
+    {
+      "run": "agent.setMcpServerEnabled",
+      "input": { "server": "extra", "enabled": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-row[data-server='extra'] .mcp-row-detail" },
+      "expect": { "$contains": "Off" },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.setMcpServerEnabled", "input": { "server": "extra", "enabled": true } },
+    // The built-in row: the IDE's own tools and commands.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-row[data-builtin] .mcp-row-detail" },
+      "expect": { "$contains": " IDE commands" }
+    },
+    // Remove: gone from the list at once.
+    { "run": "agent.removeMcpServer", "input": { "name": "extra" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-row[data-server='extra']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    }
+  ]
+}

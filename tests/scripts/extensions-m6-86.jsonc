@@ -1,0 +1,74 @@
+// D185: New tab opens every page; extensions install from a git repository (here a local one) and
+// update from it; authors show with their pictures; no official repository yet.
+{
+  "name": "extensions-m6-86",
+  "steps": [
+    // Every page the IDE opens in a tab is in New tab.
+    { "run": "layout.newTab", "input": { "kind": "docs" } },
+    { "state": "ide://layout", "expect": { "$contains": "docs" } },
+    { "run": "layout.newTab", "input": { "kind": "debugConsole" } },
+    { "state": "ide://layout", "expect": { "$contains": "debugConsole" } },
+    // A repository holding one extension, with two authors.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p extrepo/hello && printf '%s' '{\"id\":\"acme.hello\",\"version\":\"1.0.0\",\"displayName\":\"Hello\",\"authors\":[{\"name\":\"Claude\",\"avatar\":\"brand:anthropic\"},{\"name\":\"Tezumie\",\"github\":\"Tezumie\"}]}' > extrepo/hello/extension.json && (cd extrepo && git init -q && git add . && git -c user.email=t@e.st -c user.name=T commit -qm one)",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "extensions.installFromRepo",
+      "input": { "repo": "./extrepo" },
+      "expect": { "id": "acme.hello", "path": "hello" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"source\"" } },
+      "timeoutMs": 5000
+    },
+    // A new version in the repository: Update fetches it.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "(cd extrepo && printf '%s' '{\"id\":\"acme.hello\",\"version\":\"1.1.0\",\"displayName\":\"Hello\",\"authors\":[{\"name\":\"Claude\",\"avatar\":\"brand:anthropic\"},{\"name\":\"Tezumie\",\"github\":\"Tezumie\"}]}' > hello/extension.json && git -c user.email=t@e.st -c user.name=T commit -qam two)",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "extensions.updateFromRepo",
+      "input": { "id": "acme.hello" },
+      "expect": { "id": "acme.hello", "version": "1.1.0" },
+      "timeoutMs": 30000
+    },
+    // Its page: the authors' pictures and names, the source.
+    { "run": "extensions.showDetails", "input": { "id": "acme.hello" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-authors-names" },
+      "expect": [{ "html": { "$contains": "Claude and Tezumie" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-author-avatar.is-brand" },
+      "expect": { "$length": 2 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-side-value" },
+      "expect": { "$contains": "From " }
+    },
+    // A folder with no extension says so.
+    {
+      "run": "extensions.installFromRepo",
+      "input": { "repo": "./extrepo", "path": "nope" },
+      "expectError": "no extension in nope"
+    },
+    // No official repository yet: a note, nothing installed.
+    { "run": "extensions.browseOfficial", "expect": { "id": null } },
+    { "run": "extensions.uninstall", "input": { "id": "acme.hello" } }
+  ]
+}

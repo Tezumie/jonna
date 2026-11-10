@@ -1,0 +1,139 @@
+// Browser: a local dev server through the preview proxy (bridge injected, X-Frame-Options dropped,
+// WebSocket upgrade), page actions through the bridge, console and failed requests, and a static
+// preview of workspace files with reload on change.
+{
+  "name": "browser",
+  "steps": [
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998" },
+      "expect": { "connected": true, "title": "Dev app" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "browser.snapshot",
+      "expect": { "snapshot": { "$contains": "button \"Increment\"" } }
+    },
+    { "run": "browser.click", "input": { "name": "Increment" } },
+    { "run": "browser.text", "input": { "selector": "#count" }, "expect": { "text": "1" } },
+    { "run": "browser.type", "input": { "name": "Your name", "text": "Ada", "submit": true } },
+    { "run": "browser.wait", "input": { "text": "Welcome, Ada" }, "expect": { "found": true } },
+    {
+      "run": "browser.select",
+      "input": { "selector": "#color", "value": "Green" },
+      "expect": { "selected": "Green" }
+    },
+    { "run": "browser.wait", "input": { "text": "ws: pong" }, "expect": { "found": true } },
+    {
+      "run": "browser.console",
+      "input": { "level": "warn" },
+      "expect": {
+        "console": { "$contains": "dev warning" },
+        "failedRequests": { "$contains": "/missing" }
+      }
+    },
+    {
+      "run": "browser.network",
+      "input": { "failed": true },
+      "expect": {
+        "requests": [{ "url": "http://localhost:11998/missing", "status": 404, "type": "fetch" }]
+      }
+    },
+    {
+      "run": "browser.network",
+      "input": { "type": "doc" },
+      "expect": { "requests": [{ "url": "http://localhost:11998/", "status": 200 }] }
+    },
+    {
+      "run": "browser.request",
+      "input": { "id": "p1" },
+      "expect": { "status": 200, "responseBody": { "$contains": "<h1>Counter</h1>" } }
+    },
+    {
+      "run": "browser.dom",
+      "input": { "selector": "#count" },
+      "expect": { "html": "<span id=\"count\">1</span>" }
+    },
+    {
+      "run": "browser.styles",
+      "input": { "selector": "h1" },
+      "expect": { "computed": { "display": "block" }, "box": { "display": "block" } }
+    },
+    {
+      "run": "browser.setStorage",
+      "input": { "action": "set", "area": "local", "key": "theme", "value": "dark" }
+    },
+    { "run": "browser.storage", "expect": { "local": [["theme", "dark"]] } },
+    { "run": "browser.resize", "input": { "device": "iPhone SE" }, "expect": { "width": 375 } },
+    {
+      "run": "browser.devtools",
+      "input": { "panel": "elements" },
+      "expect": { "panel": "elements" }
+    },
+    {
+      "run": "browser.highlight",
+      "input": { "selector": "button" },
+      "expect": { "ref": { "$exists": true } }
+    },
+    { "run": "browser.resize", "input": { "device": "responsive" } },
+    // The page settles at its new size first: a click measured mid-resize missed the link (D379).
+    { "wait": 500 },
+    { "run": "browser.click", "input": { "name": "About" } },
+    { "run": "browser.wait", "input": { "text": "About this app" }, "expect": { "found": true } },
+    { "state": "ide://browser", "expect": { "$contains": "http://localhost:11998/about" } },
+
+    {
+      "run": "browser.open",
+      "input": { "path": "site/index.html", "newTab": true },
+      "expect": { "connected": true, "title": "Static page" },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.click", "input": { "name": "Break it" } },
+    {
+      "run": "browser.console",
+      "input": { "level": "error" },
+      "expect": { "console": { "$contains": "static boom" } }
+    },
+    {
+      "run": "browser.eval",
+      "input": { "code": "getComputedStyle(document.querySelector('h1')).color" },
+      "expect": { "result": "rgb(102, 51, 153)" }
+    },
+    {
+      "run": "viewer.openPreview",
+      "input": { "path": "site/page2.html", "toSide": true },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Page two" },
+      "expect": { "found": true, "title": "Second page" }
+    },
+    {
+      "run": "browser.open",
+      "input": { "path": "site/index.html" },
+      "expect": { "title": { "$contains": "Static" } }
+    },
+    {
+      "run": "search.replace",
+      "input": { "query": "Static site", "replacement": "Static web" },
+      "expect": { "files": 1 }
+    },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Static web", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998", "window": true },
+      "expect": { "connected": true, "title": "Dev app" },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.click", "input": { "name": "Increment" } },
+    { "run": "browser.text", "input": { "selector": "#count" }, "expect": { "text": "1" } },
+    { "state": "ide://browser", "expect": { "$contains": "\"shownIn\":\"window\"" } }
+  ]
+}

@@ -1,0 +1,154 @@
+// D381: images in the chat. The mock has an OpenAI-compatible provider whose model draws
+// (mock-images.mjs). The chat's agent calls generate_image with that model: the image shows under
+// the turn's work line with its id (img1) and lands in the project; save_image then saves img1
+// again as a JPEG (converted). Then the drawing model is the chat's own: its reply carries the
+// picture (img2), and the chat's state lists the ids.
+{
+  "name": "agent-images-m7-110",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          {
+            "id": "drawer",
+            "name": "Drawer",
+            "kind": "openai",
+            "baseUrl": "http://127.0.0.1:11999/img/v1"
+          }
+        ]
+      }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.imageGeneration.model", "value": "drawer/mock-drawer" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": { "$contains": "drawer/mock-drawer" },
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 900 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgimg generate", "wait": false }
+    },
+    // While it draws (the mock takes 2.5 s): "Creating image" over a field of dots.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-image-pending", "limit": 2, "html": 200 },
+      "expect": [{ "html": { "$contains": "Creating image" } }],
+      "timeoutMs": 10000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": {
+          "$contains": "PkgImg: Made an image with mock-drawer. Saved assets/red.png"
+        }
+      },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "\"images\":[{\"id\":\"img1\",\"mime\":\"image/png\"" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test -s assets/red.png" },
+      "expect": { "exitCode": 0 }
+    },
+    // The gallery under the work line: the image, its id, its actions.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-images .agent-image", "limit": 3, "html": 300 },
+      "expect": [{ "html": { "$contains": "img1" } }],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-image .agent-image-float", "limit": 3 },
+      "expect": { "$length": 2 }
+    },
+    // On hover: the id, Add to project and Download float on the picture.
+    { "run": "dev.click", "input": { "selector": ".agent-image-open", "hover": true } },
+    { "wait": 300 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // save_image: the same image as a JPEG.
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgimg save", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgImg: Saved assets/red.jpg" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "(converted from png)" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test \"$(head -c 3 assets/red.jpg | od -An -tx1 | tr -d ' \\n')\" = ffd8ff"
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // The drawing model as the chat's own: its reply carries the picture.
+    {
+      "run": "agent.chooseModel",
+      "input": { "for": "main", "model": "drawer/mock-drawer" },
+      "expect": { "model": "drawer/mock-drawer" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "draw me a flag", "wait": true },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": {
+          "$contains": "\"speaker\":\"agent\",\"images\":[{\"id\":\"img2\",\"mime\":\"image/png\"}]"
+        }
+      },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-assistant .agent-image",
+        "limit": 3,
+        "html": 200
+      },
+      "expect": [{ "html": { "$contains": "img2" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The viewer opens on the picture.
+    { "run": "dev.click", "input": { "selector": ".agent-assistant .agent-image-open" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer .agent-viewer-count", "limit": 1, "html": 200 },
+      "expect": [{ "html": { "$contains": "img2" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

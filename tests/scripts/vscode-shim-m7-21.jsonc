@@ -1,0 +1,215 @@
+// D256: an extension written for VS Code (tests/fixtures/extensions/vscodehello: package.json,
+// package.nls.json and `require("vscode")`) runs in the Node host behind the shim: its localized
+// commands are the IDE's, its settings are read before it activates, it opens documents, reads
+// its own files, keeps state, sets problems, follows the editor's events. Needs Node on PATH.
+{
+  "name": "vscode-shim-m7-21",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "VS Code hello" } }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    // VS Code's "vscode-hello.info" is the IDE's vscodeHello.info.
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "vscodeHello.info" }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.info" },
+      "expect": {
+        "result": {
+          "greeting": "Hello from the settings",
+          "version": "1.106.0",
+          "runs": 1,
+          "firstLine": "# Sample workspace",
+          "word": "Sample",
+          "ownName": "vscode-hello",
+          "id": "acme.vscode-hello",
+          "contains": true,
+          "trusted": true
+        }
+      },
+      "print": true,
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://diagnostics",
+      "expect": { "items": { "$contains": "Hello from VS Code's API" } },
+      "timeoutMs": 5000
+    },
+    // The editor's events reach it: a file opened, the active editor.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "wait": 600 },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.check" },
+      "expect": {
+        "result": { "problems": 1, "opened": { "$contains": "notes.txt" }, "active": "notes.txt" }
+      },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    // Its state stays: a second run counts 2.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.info" },
+      "expect": { "result": { "runs": 2 } },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://extensions", "expect": { "$contains": "vscode hello activated" } },
+    // D257: a webview view whose page its code writes, talking through acquireVsCodeApi.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.showPage" }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.pages" },
+      "expect": { "result": { "$contains": "\"echo\":\"ping view\"" } },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    // A custom editor: a .hello file opens in it, its page gets the document's text.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.openHello" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.pages" },
+      "expect": {
+        "result": { "$contains": "\"echo\":\"ping editor\",\"from\":\"editor:hi there\"" }
+      },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // A task type, a source control and a test controller.
+    {
+      "state": "ide://extensions/providers",
+      "expect": { "$contains": "Hello changes" },
+      "print": true,
+      "timeoutMs": 10000
+    },
+    { "state": "ide://extensions/providers", "expect": { "$contains": "hello" } },
+    {
+      "run": "tests.runExtension",
+      "input": { "controller": "acme.vscode-hello/helloTests" },
+      "expect": { "passed": 1, "failed": 1 },
+      "print": true,
+      "timeoutMs": 20000
+    },
+    // VS Code's git API, on the IDE's git.
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.git" },
+      "expect": { "result": { "state": "initialized" } },
+      "timeoutMs": 15000
+    },
+    // vscode.execute…Provider: the editor asks every provider of notes.txt (the extension's own
+    // here) and the answers come back as VS Code's classes; the theme's kind (Dark, 2).
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "wait": 600 },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.providers" },
+      "expect": {
+        "result": {
+          "symbols": { "$contains": "hello-symbol" },
+          "hovers": { "$contains": "hello-hover" },
+          "theme": 2
+        }
+      },
+      "print": true,
+      "timeoutMs": 20000
+    },
+    // D258: badges on Explorer rows, a tree with its own icons revealed and selected.
+    { "run": "explorer.focus", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-badge", "limit": 3, "html": 200 },
+      // After its problem count when it also set problems on the file ("1, H", D279).
+      "expect": { "$contains": "H<" },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.reveal" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-tree-row.is-selected", "limit": 1, "html": 400 },
+      "expect": { "$contains": "a/1" },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-tree-img", "limit": 1, "html": 200 },
+      "expect": { "$contains": "blob:" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.selection" },
+      "expect": { "result": { "$contains": "a/1" } },
+      "timeoutMs": 15000
+    },
+    // Its language model tool is a command the agent can call.
+    {
+      "run": "vscodeHello.tool.helloEcho",
+      "input": { "text": "hi" },
+      "expect": { "result": "echo hi" },
+      "timeoutMs": 15000
+    },
+    // VS Code's extension actions: Set Color Theme, Auto update, recommendations, workspace disable.
+    {
+      "run": "extensions.setColorTheme",
+      "input": { "id": "acme.vscode-hello" },
+      "expect": { "theme": "Hello Dark" }
+    },
+    { "run": "ui.selectColorTheme", "input": { "label": "" } },
+    {
+      "run": "extensions.setAutoUpdate",
+      "input": { "id": "acme.vscode-hello", "on": true },
+      "expect": { "autoUpdate": true }
+    },
+    {
+      "run": "extensions.addToRecommendations",
+      "input": { "id": "acme.vscode-hello" },
+      "expect": { "added": true }
+    },
+    {
+      "run": "editor.getText",
+      "input": { "path": ".vscode/extensions.json" },
+      "expect": { "text": { "$contains": "acme.vscode-hello" } }
+    },
+    { "run": "extensions.disableWorkspace", "input": { "id": "acme.vscode-hello" } },
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "Disabled in this workspace." },
+      "timeoutMs": 10000
+    },
+    { "run": "extensions.enableWorkspace", "input": { "id": "acme.vscode-hello" } },
+    {
+      "state": "ide://extensions",
+      "expect": { "$not": { "$contains": "Disabled in this workspace." } },
+      "timeoutMs": 10000
+    }
+  ]
+}

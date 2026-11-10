@@ -1,0 +1,98 @@
+// D384: dictation without a key. With no speech service and no model, the mic's first click
+// offers the download; the model (a small synthetic whisper.cpp file from the mock,
+// tests/fixtures/mock-speech.mjs, at its fixed SHA-256) downloads, is checked and used: an audio
+// file turns into text on this computer. A download whose SHA-256 differs isn't kept; removing
+// the model sends dictation back to setup.
+{
+  "name": "agent-dictation-m7-114",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "state": "ide://agent/voice",
+      "expect": {
+        "enabled": true,
+        "route": { "kind": "setup", "model": "base" },
+        "models": [{ "id": "base", "installed": false }, { "id": "small", "installed": false }]
+      },
+      "print": true
+    },
+
+    // ---- The mic's first click: the setup dialog ----
+    { "run": "layout.focusAgent" },
+    { "run": "dev.click", "input": { "selector": ".agent-box > .agent-mic" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Set up dictation" } }],
+      "print": true,
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .button-primary", "html": 200 },
+      "expect": [{ "html": { "$contains": "Download (60 MB)" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.type", "input": { "selector": ".dialog", "key": "Escape" } },
+
+    // ---- Download (the mock's stand-in), then it's used ----
+    {
+      "run": "agent.voice.downloadModel",
+      "input": {
+        "model": "base",
+        "url": "http://127.0.0.1:11999/speech/model.bin",
+        "sha256": "a2e42f4f5eedc0fedafe093849f4ad9cb1c64e6f48da823681c7b275180bd9d3"
+      },
+      "expect": { "model": "base", "path": { "$contains": "ggml-base-q5_1.bin" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/voice",
+      "expect": {
+        "route": { "kind": "local", "model": "base" },
+        "models": [{ "id": "base", "installed": true }, { "installed": false }]
+      }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/tone-wav.mjs tone.wav 2", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "wrote tone.wav" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.voice.transcribeFile",
+      "input": { "path": "tone.wav" },
+      "expect": { "engine": "this computer (base)", "text": { "$exists": true } },
+      "print": true,
+      "timeoutMs": 60000
+    },
+
+    // ---- A download that isn't the expected file isn't kept ----
+    {
+      "run": "agent.voice.downloadModel",
+      "input": {
+        "model": "small",
+        "url": "http://127.0.0.1:11999/speech/model.bin",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expectError": "SHA-256",
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/voice",
+      "expect": { "models": [{ "installed": true }, { "id": "small", "installed": false }] }
+    },
+
+    // ---- Removing it: back to setup ----
+    {
+      "run": "agent.voice.removeModel",
+      "input": { "model": "base" },
+      "expect": { "removed": ["base"] }
+    },
+    { "state": "ide://agent/voice", "expect": { "route": { "kind": "setup" } } }
+  ]
+}

@@ -1,0 +1,476 @@
+/* ---- Testing (extensions/testing, D149) ---- */
+@layer extensions {
+  .test-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-4);
+  }
+  .test-filter-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .test-filter {
+    flex: 1;
+    min-width: 0;
+    height: var(--size-control-md);
+  }
+  .test-failed-toggle[aria-pressed="true"] {
+    color: var(--status-danger-fg);
+    background: var(--bg-selected);
+  }
+  .test-continuous-toggle[aria-pressed="true"] {
+    color: var(--fg-default);
+    background: var(--bg-selected);
+  }
+  /* A file or test continuous run is on for (VS Code's eye). */
+  .test-watching {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+  }
+  .test-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    min-height: 18px;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .test-summary > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .test-summary .icon {
+    width: 13px;
+    height: 13px;
+  }
+  .test-summary .is-passed .icon {
+    color: var(--status-success-fg);
+  }
+  .test-summary .is-failed .icon {
+    color: var(--status-danger-fg);
+  }
+  .test-summary .is-skipped .icon,
+  .test-total,
+  .test-time {
+    color: var(--fg-subtle);
+  }
+  .test-running .icon {
+    animation: test-spin 1s linear infinite;
+  }
+  .test-tree {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .test-empty[hidden] {
+    display: none;
+  }
+  .test-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-3));
+    padding-right: var(--space-3);
+  }
+  .test-row > .icon {
+    flex: none;
+  }
+  .test-row .icon-chevron-right,
+  .test-row .icon-chevron-down {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .test-chevron-space {
+    flex: none;
+    width: var(--size-icon-sm);
+  }
+  .test-status {
+    width: 14px;
+    height: 14px;
+  }
+  .test-status.is-passed {
+    color: var(--status-success-fg);
+  }
+  .test-status.is-failed {
+    color: var(--status-danger-fg);
+  }
+  .test-status.is-skipped,
+  .test-status.is-unknown {
+    color: var(--fg-subtle);
+  }
+  .test-status.is-running {
+    color: var(--accent-text);
+    animation: test-spin 1s linear infinite;
+  }
+  .test-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .test-name.is-group {
+    font-weight: 600;
+  }
+  .test-meta {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .test-message {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--status-danger-fg);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .test-row .icon-circle-alert {
+    width: 13px;
+    height: 13px;
+    color: var(--status-danger-fg);
+  }
+  .test-row-actions {
+    display: none;
+    flex: none;
+    margin-left: auto;
+  }
+  .test-row:hover .test-row-actions,
+  .test-row.is-focused .test-row-actions {
+    display: inline-flex;
+  }
+  .test-row-action {
+    width: 20px;
+    height: 20px;
+  }
+
+  @keyframes test-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* A test's last result in the editor's margin. */
+  .monaco-editor .test-glyph::before {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin: 6px auto 0;
+    border-radius: var(--radius-full);
+  }
+  .monaco-editor .test-glyph.is-passed::before {
+    background: var(--status-success-fg);
+  }
+  .monaco-editor .test-glyph.is-failed::before {
+    background: var(--status-danger-fg);
+  }
+  .monaco-editor .test-glyph.is-skipped::before {
+    border: 1px solid var(--fg-subtle);
+  }
+}
+/* ---- Testing: coverage and results (extensions/testing, D204) ---- */
+@layer extensions {
+  /* Covered / uncovered lines in the editor's margin: a thin bar at the lane's right edge, so a
+     test's result dot on the same line stays visible. */
+  .monaco-editor .coverage-glyph::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 1px;
+    bottom: 0;
+    width: 3px;
+    border-radius: var(--radius-full);
+  }
+  .monaco-editor .coverage-glyph.is-covered::after {
+    background: var(--diff-added-fg);
+    opacity: 0.6;
+  }
+  .monaco-editor .coverage-glyph.is-uncovered::after {
+    background: var(--status-danger-fg);
+  }
+  .monaco-editor .coverage-glyph.is-partial::after {
+    background: var(--status-warning-fg);
+  }
+
+  /* The Test coverage tab. */
+  .coverage-view,
+  .test-results-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .coverage-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+  }
+  .coverage-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .coverage-filter {
+    flex: 1;
+    min-width: 0;
+    max-width: 320px;
+    height: var(--size-control-md);
+  }
+  .coverage-sort[aria-pressed="true"],
+  .coverage-inline-toggle[aria-pressed="true"] {
+    color: var(--fg-default);
+    background: var(--bg-selected);
+  }
+  .coverage-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    min-height: 18px;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .coverage-summary:empty {
+    display: none;
+  }
+  .coverage-total {
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .coverage-meta {
+    color: var(--fg-subtle);
+  }
+  .coverage-problem {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--status-warning-fg);
+  }
+  .coverage-problem .icon {
+    width: 13px;
+    height: 13px;
+  }
+  .coverage-body,
+  .test-results-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .test-results-view {
+    container-type: inline-size;
+  }
+  /* The runs beside the selected test's output (D209); stacked in a narrow tab. */
+  .test-results-split {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  .test-results-split > .test-results-body {
+    min-width: 0;
+  }
+  .test-result-detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+  .test-result-detail[hidden] {
+    display: none;
+  }
+  .test-result-detail-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    min-width: 0;
+  }
+  .test-result-detail-head .test-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .test-result-output {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-default);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  @container (max-width: 520px) {
+    .test-results-split {
+      flex-direction: column;
+    }
+    .test-result-detail {
+      border-left: none;
+      border-top: 1px solid var(--border-subtle);
+    }
+  }
+  .coverage-empty[hidden] {
+    display: none;
+  }
+  .coverage-run {
+    margin-top: var(--space-3);
+  }
+  .coverage-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-3));
+    padding-right: var(--space-4);
+  }
+  .coverage-row > .icon {
+    flex: none;
+  }
+  .coverage-row .icon-chevron-right,
+  .coverage-row .icon-chevron-down {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .coverage-declaration {
+    flex: none;
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .coverage-declaration.is-uncovered {
+    color: var(--status-danger-fg);
+  }
+  .coverage-indent {
+    flex: none;
+    width: var(--size-icon-sm);
+  }
+  .coverage-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .coverage-spacer {
+    flex: 1;
+  }
+  .coverage-bar {
+    flex: none;
+    width: 80px;
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+  }
+  .coverage-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--fg-subtle);
+  }
+  .coverage-bar-fill.is-good {
+    background: var(--status-success-fg);
+  }
+  .coverage-bar-fill.is-fair {
+    background: var(--status-warning-fg);
+  }
+  .coverage-bar-fill.is-poor {
+    background: var(--status-danger-fg);
+  }
+  .coverage-pct {
+    flex: none;
+    width: 48px;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  @container (max-width: 360px) {
+    .coverage-bar {
+      display: none;
+    }
+  }
+
+  /* The Test results tab: a run's coverage mark. */
+  .test-result-row > .icon-shield {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    color: var(--fg-subtle);
+  }
+}
+/* VS Code's floating coverage toolbar over the editor (D233), and a branch not taken marked at
+   its column (drawn by the editor from a mark's `columns`). */
+@layer extensions {
+  .coverage-float {
+    position: fixed;
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-1);
+    font-size: var(--text-sm);
+  }
+  .coverage-float[hidden],
+  .coverage-float [hidden] {
+    display: none;
+  }
+  .coverage-float-summary,
+  .coverage-float-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--size-control-sm);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .coverage-float-filter {
+    background: var(--bg-chip);
+  }
+  .coverage-float-label {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .coverage-float-summary:hover,
+  .coverage-float-filter:hover {
+    background: var(--bg-hover);
+  }
+  .coverage-float-filter .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .monaco-editor .coverage-branch-missed::before {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0.9em;
+    margin-right: 1px;
+    border-left: 2px solid var(--status-warning-fg);
+    vertical-align: middle;
+  }
+}

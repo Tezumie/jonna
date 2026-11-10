@@ -1,0 +1,150 @@
+// D335: the ask_user card as Claude Code's AskUserQuestion: options as rows with a radio (a
+// checkbox for several picks), a last "Other" row to type in, and a footer with Skip and Submit
+// (Ctrl+Enter). Skip on a one-question card answers at once (the model reads that the user
+// skipped it); on a two-question card it skips the question on screen, and Ctrl+Enter submits.
+{
+  "name": "agent-ask-skip-m7-78",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+
+    // ---- One question: rows with radios, the Other row, Skip ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgI ask skip", "wait": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-ask-panel .rb-choice .rb-choice-mark.is-radio",
+        "limit": 5
+      },
+      "expect": { "$length": 2 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-other-row .rb-ask-other", "limit": 2 },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-footer", "limit": 1, "html": 1000 },
+      "expect": [
+        {
+          "html": { "$contains": "Ctrl+Enter" }
+        }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-footer .rb-ask-skip", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-column .rb-ask-skip" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "questions": { "$length": 0 },
+        "items": { "$contains": "PkgI ask result: The user skipped this question" }
+      },
+      "timeoutMs": 30000
+    },
+    // Answered: the card says it was skipped, nothing chosen.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask.is-answered .rb-ask-skipped", "limit": 5 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask.is-answered .rb-choice.is-chosen", "limit": 5 },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- Two questions: a number key picks, Skip skips the second, Ctrl+Enter submits ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgI ask two", "wait": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab", "limit": 5, "html": 300 },
+      "expect": [{ "html": { "$contains": "Color" } }, { "html": { "$contains": "Sizes" } }],
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice:nth-child(1)", "key": "2" }
+    },
+    // On to the second question: checkboxes, several picks.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab.is-current", "limit": 2, "html": 300 },
+      "expect": [{ "html": { "$contains": "Sizes" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-ask-panel .rb-choice .rb-choice-mark.is-check",
+        "limit": 5
+      },
+      "expect": { "$length": 3 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-submit[disabled]", "limit": 1 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-column .rb-ask-skip" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab.is-skipped", "limit": 2, "html": 300 },
+      "expect": [{ "html": { "$contains": "Sizes" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-submit:not([disabled])", "limit": 1 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Ctrl+Enter from the Other field submits the card.
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".agent-column .rb-ask-panel .rb-ask-other",
+        "key": "Enter",
+        "ctrl": true
+      }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "questions": { "$length": 0 },
+        "items": { "$contains": "PkgI ask two: color=Blue sizes=(skipped)" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask.is-answered .rb-ask-skipped", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

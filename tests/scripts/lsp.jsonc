@@ -1,0 +1,83 @@
+// The language-server client against tests/fixtures/sample/tools/mock-lsp.mjs (Node).
+{
+  "name": "lsp",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "mock": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-lsp.mjs"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "lsp.list", "expect": { "$contains": "\"name\":\"mock\"" } },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://lsp",
+      "expect": {
+        "$contains": "\"name\":\"mock\",\"command\":\"node\",\"languages\":[\"markdown\"],\"source\":\"settings\",\"state\":\"running\""
+      },
+      "timeoutMs": 15000
+    },
+    // Diagnostics flow into the problems model.
+    {
+      "run": "problems.list",
+      "expect": {
+        "items": [
+          {
+            "path": "README.md",
+            "line": 1,
+            "severity": "warning",
+            "message": "Mock warning: workspace"
+          }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "lsp.hover",
+      "input": { "path": "README.md", "line": 3, "column": 1 },
+      "expect": { "text": "mock hover: Used" }
+    },
+    {
+      "run": "lsp.definition",
+      "input": { "path": "README.md", "line": 3, "column": 5 },
+      "expect": [{ "path": "README.md", "line": 1 }]
+    },
+    {
+      "run": "lsp.symbols",
+      "input": { "path": "README.md" },
+      "expect": [{ "name": "Sample workspace", "line": 1 }]
+    },
+    // A file that isn't open is opened in the server just for the query.
+    { "run": "lsp.symbols", "input": { "path": "notes.txt" }, "expectError": true },
+    // Edits are synced: the warning follows the text.
+    {
+      "run": "search.replace",
+      "input": { "query": "Sample workspace", "replacement": "Sample folder" }
+    },
+    { "run": "editor.reloadFromDisk", "input": { "path": "README.md" } },
+    { "run": "problems.list", "expect": { "items": { "$length": 0 } }, "timeoutMs": 10000 },
+    { "run": "lsp.restart", "input": { "server": "mock" }, "expect": { "state": "running" } },
+    { "run": "lsp.stop", "input": { "all": true } },
+    { "state": "ide://lsp", "expect": { "$contains": "\"state\":\"stopped\"" } },
+    // A server that isn't installed is reported, not fatal.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": { "nope": { "command": "no-such-server-xyz", "languages": ["markdown"] } }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    { "run": "lsp.restart", "input": { "server": "nope" } },
+    { "state": "ide://lsp", "expect": { "$contains": "\"name\":\"nope\"" }, "timeoutMs": 5000 },
+    { "state": "ide://lsp", "expect": { "$contains": "\"state\":\"missing\"" }, "timeoutMs": 5000 }
+  ]
+}

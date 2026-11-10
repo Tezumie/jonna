@@ -1,0 +1,110 @@
+// D332: /loop without an interval, self-paced. The first check is the /loop message itself; its
+// turn ends with schedule_wakeup (the next check in 2 minutes, a reason). The strip above the box
+// shows the loop. Each check is sent now with agent.runScheduleNow (instead of waiting): two
+// quiet ones (noop) fold into one line "2 quiet checks", and the fourth stops the loop.
+// Against tests/fixtures/mock-ollama.mjs (pkgHScripted).
+{
+  "name": "agent-loop-m7-76",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "chat"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/loop pkgh loop check the build" },
+      "expect": { "answer": { "$contains": "PkgH loop check 1 done." } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/loops",
+      "expect": {
+        "loops": [
+          {
+            "session": "${chat.session}",
+            "pace": "self-paced",
+            "checks": 1,
+            "quiet": 0,
+            "reason": "Builds take a few minutes.",
+            "scheduleId": { "$exists": true }
+          }
+        ]
+      },
+      "timeoutMs": 5000,
+      "save": "one",
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-loop:not([hidden])", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "Loop · self-paced · next check" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Check 2: quiet.
+    { "run": "agent.runScheduleNow", "input": { "id": "${one.loops.0.scheduleId}" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgH loop check 2 done." } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/loops",
+      "expect": { "loops": [{ "checks": 2, "quiet": 1, "scheduleId": { "$exists": true } }] },
+      "timeoutMs": 5000,
+      "save": "two"
+    },
+    // Check 3: quiet too; the two fold into one line.
+    { "run": "agent.runScheduleNow", "input": { "id": "${two.loops.0.scheduleId}" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgH loop check 3 done." } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/loops",
+      "expect": { "loops": [{ "checks": 3, "quiet": 2, "scheduleId": { "$exists": true } }] },
+      "timeoutMs": 5000,
+      "save": "three"
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-notice", "limit": 5, "html": 300 },
+      "expect": { "$contains": "2 quiet checks" },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Check 4: the agent stops the loop; the strip goes.
+    { "run": "agent.runScheduleNow", "input": { "id": "${three.loops.0.scheduleId}" } },
+    {
+      "state": "ide://agent/loops",
+      "expect": { "loops": { "$length": 0 } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Loop ended: The build is green." } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-loop:not([hidden])", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

@@ -1,0 +1,52 @@
+// D106: Edit with AI against tests/fixtures/mock-ollama.mjs (port 11999; it answers
+// a fixed edit to Edit with AI requests, in a code fence the IDE strips).
+{
+  "name": "editor ai",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    // Off by default.
+    { "run": "editor.inlineEdit", "input": { "instruction": "x" }, "expectError": "not available" },
+    { "run": "settings.set", "input": { "key": "editor.inlineEdit.enabled", "value": true } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "README.md" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.inlineEdit",
+      "input": { "instruction": "greet", "startLine": 1, "endLine": 1 },
+      "expect": {
+        "phase": "review",
+        "text": "# Edited by mock",
+        "range": { "startLine": 1, "endLine": 1 }
+      }
+    },
+    { "run": "editor.inlineEdit.reject" },
+    // Rejected: the file is exactly as before (undone, not dirty).
+    { "state": "ide://editors/active", "expect": { "dirty": false }, "timeoutMs": 3000 },
+    {
+      "run": "editor.inlineEdit",
+      "input": { "startLine": 1, "endLine": 1 },
+      "expect": { "phase": "prompt", "text": "# Sample workspace" }
+    },
+    { "run": "editor.inlineEdit.reject" },
+    { "run": "editor.inlineEdit.reject", "expectError": "not available" },
+    {
+      "run": "editor.inlineEdit",
+      "input": { "instruction": "greet", "startLine": 1, "endLine": 1 },
+      "expect": { "text": "# Edited by mock" }
+    },
+    { "run": "editor.inlineEdit.accept" },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    { "run": "editor.inlineEdit.accept", "expectError": "not available" }
+  ]
+}

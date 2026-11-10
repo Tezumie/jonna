@@ -1,0 +1,43 @@
+/* News in a chat (D322–D325): a monitor's events, a watched pull request, another chat's message.
+   Quiet: a muted line like the other automatic messages; the icon isn't an alarm. */
+.agent-auto.is-news .icon {
+  color: var(--fg-muted);
+}
+.agent-news-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-news.is-chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.agent-news-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-default);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.agent-news-link:hover {
+  text-decoration-color: currentColor;
+}
+.agent-news-body {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+  color: var(--fg-default);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}

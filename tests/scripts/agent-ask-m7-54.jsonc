@@ -1,0 +1,128 @@
+// D312: ask_user as good as Claude Code's AskUserQuestion: two questions in one card, their header
+// chips as tabs, a preview beside the first question's options that follows the focused option,
+// a number key to pick, several picks plus the user's own words on the second, then Submit. The
+// answers reach the model as one result keyed by question (the mock repeats them back), and the
+// waiting questions show under ide://agent/session.
+{
+  "name": "agent-ask-m7-54",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgC ask", "wait": false }
+    },
+
+    // ---- The card: two header chips, the first question, a preview ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab", "limit": 5, "html": 300 },
+      "expect": [{ "html": { "$contains": "Auth method" } }, { "html": { "$contains": "Parts" } }],
+      "timeoutMs": 30000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "waiting",
+        "questions": [
+          {
+            "questions": [
+              {
+                "question": "Which auth method?",
+                "header": "Auth method",
+                "options": { "$length": 2 }
+              },
+              { "question": "Which parts?", "header": "Parts", "multiSelect": true }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-preview", "limit": 1, "html": 300 },
+      "expect": [{ "html": { "$contains": "signIn" } }]
+    },
+    // Focusing the second option shows its preview.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice:nth-child(2)" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-preview", "limit": 1, "html": 300 },
+      "expect": [{ "html": { "$contains": "[ password ]" } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Key 2 picks the second option and moves on to the next question.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice:nth-child(2)", "key": "2" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab.is-done", "limit": 5, "html": 300 },
+      "expect": [{ "html": { "$contains": "Auth method" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-tab.is-current", "limit": 5, "html": 300 },
+      "expect": [{ "html": { "$contains": "Parts" } }]
+    },
+
+    // ---- The second question: two picks and the user's own words, then Submit ----
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice:nth-child(1)" }
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice:nth-child(3)" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-panel .rb-choice.is-selected", "limit": 5 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "dev.type", "input": { "selector": ".agent-column .rb-ask-other", "text": "CI" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .rb-ask-submit:not([disabled])", "limit": 1 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-column .rb-ask-submit" } },
+
+    // ---- The model got both answers, keyed by question ----
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "questions": { "$length": 0 },
+        "items": { "$contains": "pkgC asked: auth=Password; parts=Tests, Lint, CI" }
+      },
+      "timeoutMs": 30000
+    },
+    // Answered: the picks and the typed answer show as chosen.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .rb-ask.is-answered .rb-choice.is-chosen",
+        "limit": 10
+      },
+      "expect": { "$length": 4 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

@@ -1,0 +1,37 @@
+// D128: language configurations (Ctrl+/ comments, brackets), new defaults, more editor settings.
+{
+  "name": "features-m6-26",
+  "steps": [
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.minimap.enabled\",\"value\":true" }
+    },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "comment.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "language": "typescript", "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.insertText", "input": { "text": "const total = [1, (2 + 3)];" } },
+    // The language's configuration loads with its first file (its own chunk).
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "sleep 2", "timeoutMs": 20000 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.commentLine" },
+      "expect": { "ran": true }
+    },
+    { "run": "editor.save" },
+    { "run": "search.run", "input": { "query": "// const total" }, "expect": { "matches": 1 } },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.scrollbar.verticalScrollbarSize", "value": 20 }
+    },
+    { "run": "settings.set", "input": { "key": "workbench.scrollbarSize", "value": 12 } },
+    { "run": "settings.set", "input": { "key": "editor.cursorStyle", "value": "block" } },
+    { "run": "settings.reset", "input": { "key": "editor.cursorStyle" } }
+  ]
+}

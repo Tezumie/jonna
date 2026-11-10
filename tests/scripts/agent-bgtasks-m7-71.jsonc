@@ -1,0 +1,143 @@
+// D326–D328: finished background tasks and a monitor over a WebSocket. A subagent the turn waited
+// for and two background commands that end (one fails) are listed as finished; the finished
+// subagent still opens its transcript; the trash button clears them (the chip goes). Then a
+// monitor watches the mock dev server's /pkgg-events WebSocket: its frames come as one message
+// (a two-line frame stays one, the binary frame as its size), its close as another, with the code.
+// Against tests/fixtures/mock-ollama.mjs (pkgGScripted) and mock-devserver.mjs (port 11998).
+{
+  "name": "agent-bgtasks-m7-71",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    // `node -e` asks even in automatic mode: full access, nothing waits on the user.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgG quick work" },
+      "expect": { "answer": "PkgG quick done." },
+      "timeoutMs": 30000
+    },
+    // All three end: the subagent done, one command done, one failed (exit 3).
+    {
+      "state": "ide://agent/background",
+      "expect": { "running": { "$length": 0 }, "finished": { "$length": 3 } },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "finished": { "$contains": "\"title\":\"Pkgg quick check\"" } }
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "finished": { "$contains": "\"status\":\"failed\"" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip .agent-bgchip-detail", "html": 300 },
+      "expect": [{ "html": { "$contains": "2 completed, 1 failed" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtasks .agent-bgtasks-section-title", "html": 200 },
+      "expect": [{ "html": { "$contains": "Finished (3)" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask.is-command.is-failed", "limit": 2 },
+      "expect": { "$length": 1 }
+    },
+    // A finished subagent still opens its transcript, with its report.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtask.is-subagent .agent-bgtask-title" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtask-transcript", "html": 4000 },
+      "expect": [{ "html": { "$contains": "PkgG quick report" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtasks-head.is-transcript .agent-bgtask-time", "html": 200 },
+      "expect": [{ "html": { "$not": { "$contains": "agent-spinner" } } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "agent.showBackgroundTasks", "input": {} },
+    { "wait": 400 },
+    // The trash button clears what finished; the chip goes with it.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-bgtasks-head [data-action=\"clear\"]" }
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "finished": { "$length": 0 }, "chip": null },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-bgchip" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-bgtasks .agent-bgtasks-empty", "html": 200 },
+      "expect": [{ "html": { "$contains": "Nothing is working" } }],
+      "timeoutMs": 5000
+    },
+    // ---- A monitor over a WebSocket (D328) ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgG watch socket" },
+      "expect": { "answer": "PkgG socket monitor started: yes" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/monitors",
+      "expect": {
+        "monitors": {
+          "$contains": "\"command\":\"ws://127.0.0.1:11998/pkgg-events\",\"description\":\"pkgg frames\""
+        }
+      },
+      "print": true
+    },
+    // Its three frames as one message: two text frames (one of two lines) and a binary one.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "PkgG frames: 2, multiline: yes, binary: yes" } },
+      "timeoutMs": 20000
+    },
+    // Then the close, with its code and reason.
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgG socket closed: yes" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/monitors",
+      "expect": { "monitors": { "$contains": "\"events\":3" } }
+    },
+    {
+      "state": "ide://agent/background",
+      "expect": { "finished": [{ "kind": "monitor", "title": "pkgg frames" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

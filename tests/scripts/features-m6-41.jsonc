@@ -1,0 +1,57 @@
+// D142: a model stuck repeating itself is stopped; "Show hidden files"; the Accounts menu opens
+// at once.
+{
+  "name": "features-m6-41",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "please ramble" },
+      "expect": { "error": { "$contains": "repeating itself" } }
+    },
+
+    // files.exclude entries listed, dimmed, and hidden again.
+    {
+      "run": "settings.set",
+      "input": { "key": "files.exclude", "value": { "notes.txt": true } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-name", "limit": 20, "html": 100 },
+      "expect": { "$not": { "$contains": ">notes.txt<" } },
+      "timeoutMs": 5000
+    },
+    { "run": "explorer.toggleExcludedFiles", "expect": { "showing": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row.is-excluded", "html": 400 },
+      "expect": [{ "html": { "$contains": "notes.txt" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "explorer.toggleExcludedFiles", "expect": { "showing": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-row.is-excluded" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+
+    // The Accounts menu shows without waiting for the GitHub CLI.
+    { "run": "accounts.showMenu" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Backup and sync settings" } }]
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } }
+  ]
+}

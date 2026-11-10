@@ -1,0 +1,174 @@
+// D190: m6.91. A file from outside the open folder opens (that file only); several files and a
+// folder dropped together open in one group (a folder as a folder browser); a file opened again
+// comes back to where it was; a development extension gets an icon and screenshots.
+{
+  "name": "m6-91",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // ---- A file from outside the folder (item 12): next to it, so on every OS ----
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p ../ide-m691 && printf 'outside text\\n' > ../ide-m691/outside.txt && seq 1 400 > long.txt && mkdir -p deep/inner && echo hi > deep/inner/leaf.md && echo made",
+        "timeoutMs": 20000
+      },
+      "expect": { "output": { "$contains": "made" } }
+    },
+    {
+      "run": "editor.openFile",
+      "input": { "path": "${ws.root}/../ide-m691/outside.txt" },
+      "expect": { "path": { "$contains": "outside.txt" } }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "absolutePath": { "$contains": "ide-m691" } },
+      "timeoutMs": 5000
+    },
+    // ---- Several files and a folder opened together (item 18) ----
+    {
+      "run": "editor.openPaths",
+      "input": { "paths": ["src/main.ts", "src/util.ts", "deep"], "placement": "main" },
+      "expect": { "opened": 3 }
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "$contains": "\"viewType\":\"folder\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".folder-view-list" },
+      "expect": { "$contains": "inner" },
+      "timeoutMs": 5000
+    },
+    // Into a folder, then a file: it opens and the browser closes.
+    { "run": "dev.click", "input": { "selector": ".folder-view-row[data-kind=\"dir\"]" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".folder-view-list" },
+      "expect": { "$contains": "leaf.md" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".folder-view-list", "html": 4000 },
+      "expect": { "$contains": "Up a level" }
+    },
+    { "run": "dev.click", "input": { "selector": ".folder-view-row[data-kind=\"file\"]" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "leaf.md" } },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://layout",
+      "expect": { "$not": { "$contains": "\"viewType\":\"folder\"" } },
+      "timeoutMs": 5000
+    },
+    // ---- A file opened again comes back to where it was (item 15) ----
+    { "run": "editor.openFile", "input": { "path": "long.txt", "line": 300 } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "line": 300 } },
+      "timeoutMs": 8000
+    },
+    { "wait": 2000 },
+    { "run": "editor.closeTab", "input": { "path": "long.txt" } },
+    { "run": "editor.openFile", "input": { "path": "long.txt" } },
+    {
+      "state": "ide://editors/active",
+      "expect": {
+        "path": "long.txt",
+        "cursor": { "line": 300 },
+        "visibleRange": { "startLine": { "$gte": 200 } }
+      },
+      "timeoutMs": 8000
+    },
+    // Asking for a line wins over the remembered spot.
+    { "run": "editor.closeTab", "input": { "path": "long.txt" } },
+    { "run": "editor.openFile", "input": { "path": "long.txt", "line": 5 } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "line": 5 } },
+      "timeoutMs": 8000
+    },
+    // ---- Every view keeps its scroll position (item 15.1): moved, and closed and opened ----
+    { "run": "settings.open", "input": {} },
+    { "wait": 500 },
+    {
+      "run": "dev.scroll",
+      "input": { "selector": ".settings-scroll", "top": 900 },
+      "expect": { "scrollTop": 900 }
+    },
+    { "wait": 300 },
+    { "run": "layout.moveTabToGroup", "input": { "direction": "right" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-scroll", "html": 0 },
+      // Not back at the top. In the narrower group the text wraps more and the page keeps the
+      // same setting in view (scroll anchoring), so the offset itself grows (1204 on Windows).
+      "expect": [{ "scrollTop": { "$gte": 800 } }]
+    },
+    { "run": "layout.closeTab" },
+    { "run": "settings.open", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-scroll", "html": 0 },
+      "expect": [{ "scrollTop": { "$gte": 800 } }],
+      "timeoutMs": 4000
+    },
+    { "run": "layout.closeTab" },
+    // ---- An extension's icon and screenshots (item 23) ----
+    {
+      "run": "extensions.create",
+      "input": { "name": "pics", "displayName": "Pictures" },
+      "expect": { "id": "local.pics" }
+    },
+    {
+      "run": "extensions.setIcon",
+      "input": { "id": "local.pics", "file": "assets/dot.png" },
+      "expect": { "icon": "icon.png" }
+    },
+    {
+      "run": "extensions.addScreenshot",
+      "input": { "id": "local.pics", "file": "assets/dot.png", "caption": "A dot" },
+      "expect": { "added": "screenshots/1.png" }
+    },
+    {
+      "run": "extensions.addScreenshot",
+      "input": { "id": "local.pics" },
+      "expect": { "added": "screenshots/2.png" }
+    },
+    { "run": "extensions.showDetails", "input": { "id": "local.pics" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-shots" },
+      "expect": { "$contains": "A dot" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page .ext-avatar" },
+      "expect": { "$contains": "<img" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "extensions.removeScreenshot",
+      "input": { "id": "local.pics", "path": "screenshots/2.png" },
+      "expect": { "removed": "screenshots/2.png" }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat .jonna/extensions/pics/extension.json", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "\"caption\": \"A dot\"" } }
+    },
+    // An installed extension's pictures can't be changed in place.
+    {
+      "run": "extensions.setIcon",
+      "input": { "id": "bundled.canvas", "name": "rocket" },
+      "expectError": "copy it for development first"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "colors": { "editor.background": "#1b1420", "editor.foreground": "#f2e6dc" },
+  "tokenColors": [{ "scope": "comment", "settings": { "foreground": "#8a7a80", "fontStyle": "italic" } }]
+}

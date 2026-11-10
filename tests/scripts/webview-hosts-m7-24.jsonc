@@ -1,0 +1,48 @@
+// D265: extension webviews and dev-server previews keep their cookies apart. Cookies are kept by
+// host name, not port, so extension pages are served on `localhost` and previews on 127.0.0.1:
+// the extension's page (a webview view its code writes) loads and talks to it from localhost,
+// the preview of the mock dev server (11998) from 127.0.0.1. Needs Node on PATH.
+{
+  "name": "webview-hosts-m7-24",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.showPage" },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.pages" },
+      "expect": { "result": { "$contains": "\"echo\":\"ping view\"" } },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "iframe[src^='http://localhost:']", "limit": 1, "html": 200 },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/lab.html" },
+      "expect": { "connected": true, "title": "Lab" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "iframe[src^='http://127.0.0.1:']", "limit": 1, "html": 200 },
+      "expect": { "$length": 1 }
+    }
+  ]
+}

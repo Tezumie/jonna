@@ -1,0 +1,14 @@
+{
+  "id": "builtin.palette",
+  "version": "0.1.0",
+  "displayName": "Command Palette",
+  "description": "Fuzzy search over every registered command; runs the choice through the dispatcher.",
+  "activation": ["*"],
+  "contributes": {
+    "commands": [{ "id": "palette.show", "title": "Show all commands", "category": "View" }],
+    "keybindings": [
+      { "key": "f1", "command": "palette.show" },
+      { "key": "ctrl+shift+p", "mac": "shift+cmd+p", "command": "palette.show" }
+    ]
+  }
+}

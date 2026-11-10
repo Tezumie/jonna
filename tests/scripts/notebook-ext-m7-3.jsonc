@@ -1,0 +1,218 @@
+// D202: an extension's notebook format and kernel (tests/fixtures/extensions/toybook) open and run
+// in the IDE's notebook editor through ide.notebooks. D204: its cell status items, toolbar and
+// cell menu commands, an output renderer (in the sandboxed frame, no network, messages both ways),
+// a kernel picker action, notebook events; Jupyter notebooks open without the Jupyter extension.
+{
+  "name": "notebook-ext-m7-3",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/toybook" },
+      "expect": { "id": "acme.toybook" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.toybook", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"id\":\"acme.toybook\"" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p tb && printf '# Sums\\n%%%%\\n1 2 3\\n%%%%\\n10 -4' > tb/first.toynb",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "tb/first.toynb", "preview": false } },
+    {
+      "state": "ide://notebook",
+      "expect": {
+        "active": {
+          "path": { "$contains": "first.toynb" },
+          "cells": [{ "kind": "markdown" }, { "kind": "code" }, { "kind": "code" }]
+        }
+      },
+      "timeoutMs": 15000
+    },
+    // Its status items (characters in each code cell) and its toolbar button.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-status-item", "limit": 5 },
+      "expect": { "$contains": "5 chars" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-toolbar .nb-tool[aria-label='Count the cells']" }
+    },
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "\"counted\":3" },
+      "timeoutMs": 10000
+    },
+    // Its command in a code cell's "…" menu.
+    { "run": "notebook.revealCell", "input": { "index": 1 } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".nb-cell.is-selected .nb-cell-tool[aria-label='More actions']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 20000 },
+      "expect": { "$contains": "Shout this cell" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".nb-toolbar" } },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 1 },
+      "expect": { "status": "ok", "executionCount": 1, "output": { "$contains": "6" } },
+      "timeoutMs": 30000
+    },
+    // The kernel was told which cell runs; extensions hear that it ran.
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "\"index\":1" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "notebook.didRunCell" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "kernel": { "name": "Toy adder", "status": "idle" } } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "notebook.runAll",
+      "expect": { "ran": 2 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "notebook.variables",
+      "expect": { "variables": { "$contains": "\"total\"" } },
+      "timeoutMs": 10000
+    },
+    // An error output.
+    { "run": "notebook.insertCell", "input": { "index": 3, "source": "abc" } },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 3 },
+      "expect": { "status": "error", "output": { "$contains": "NotANumber" } },
+      "timeoutMs": 30000
+    },
+    // An output its renderer draws (in the output frame): it tells the extension, which answers;
+    // its frame has no network (the extension wasn't allowed any).
+    { "run": "notebook.insertCell", "input": { "index": 4, "source": "stars 3" } },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 4 },
+      "expect": { "status": "ok" },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell .nb-out-frame", "limit": 2 },
+      "expect": { "$contains": "nb-out-frame" },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "\"drew\":3" },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "\"fetched\":false" },
+      "timeoutMs": 20000
+    },
+    // Nor around it (D204): no WebRTC, no frames of its own, it can't navigate itself away.
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "\"rtc\":\"undefined\",\"frames\":0,\"made\":\"x-blocked-iframe\"" },
+      "timeoutMs": 20000
+    },
+    // Navigating itself is refused by the IDE page's frame-src: WebKit keeps the page (it reports
+    // "stayed"), Chromium (WebView2) shows its error page in the frame; it never reaches the other
+    // site either way. The Navigation API can't cancel it first: an opaque origin gets no navigate
+    // events.
+    { "run": "notebook.deleteCell", "input": { "index": 4 } },
+    // Saved through the extension's serializer.
+    { "run": "notebook.save", "expect": { "saved": { "$contains": "first.toynb" } } },
+    {
+      "state": "ide://ext/acme.toybook/log",
+      "expect": { "$contains": "notebook.didSave" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "cat tb/first.toynb", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "10 -4\n%%\nabc" } },
+      "timeoutMs": 20000
+    },
+    // A new notebook of the extension's type, written by its format.
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"acme.toybook.book\"" } }
+    },
+    {
+      "run": "notebook.new",
+      "input": { "path": "tb/second", "type": "acme.toybook.book" },
+      "expect": { "path": { "$contains": "second.toynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "type": "acme.toybook.book", "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    // A kernel picker action of the extension's kernel source.
+    { "run": "notebook.selectKernel", "input": { "path": "tb/second.toynb" }, "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list .vlist-row", "limit": 5, "html": 500 },
+      "expect": { "$contains": "Connect to a toy server" },
+      "timeoutMs": 10000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "text": "toy server" } },
+    { "wait": 800 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "kernel": { "name": "Toy server" } } },
+      "timeoutMs": 10000
+    },
+    // Jupyter notebooks open without the Jupyter extension (D204); nothing runs them yet.
+    {
+      "run": "notebook.new",
+      "input": { "path": "tb/py.ipynb" },
+      "expect": { "path": { "$contains": "py.ipynb" } }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "type": "jupyter.notebook", "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "1 + 1" } },
+    {
+      "run": "notebook.runCell",
+      "input": { "index": 0 },
+      "expectError": "Jupyter extension"
+    },
+    // Disabling the extension stops its kernel; nothing else can run that notebook.
+    { "run": "extensions.disable", "input": { "id": "acme.toybook" } },
+    { "wait": 500 },
+    {
+      "run": "notebook.runCell",
+      "input": { "path": "tb/first.toynb", "index": 1 },
+      "expectError": "no kernel is available"
+    }
+  ]
+}

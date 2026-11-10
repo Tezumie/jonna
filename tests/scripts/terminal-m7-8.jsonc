@@ -1,0 +1,131 @@
+// D229: Join terminals (VS Code's terminal.join) moves terminals from other tabs into one tab as
+// splits, their shells still running, and closes the tabs it emptied; hiding one pane of a split
+// (`onlyThis`, VS Code's detach session on one terminal) leaves the others in the tab. Ids come
+// from the steps that create the terminals (`save`): the window starts with a terminal of its own.
+{
+  "name": "terminal-m7-8",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.create",
+      "save": "a",
+      "expect": { "id": { "$gte": 1 } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.create",
+      "save": "b",
+      "expect": { "id": { "$gte": 1 } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${b.id}", "command": "echo before-join-$((6*7))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "before-join-42" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Join: b's tab goes, b is a split beside a, its shell (and output) the same ----
+    {
+      "run": "terminal.join",
+      "input": { "ids": ["${b.id}"], "into": "${a.id}" },
+      "expect": { "joined": ["${b.id}"], "terminals": ["${a.id}", "${b.id}"] },
+      "save": "joined"
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": { "$contains": "\"id\":${b.id},\"tabId\":\"${joined.tabId}\"" }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${b.id}" },
+      "expect": { "text": { "$contains": "before-join-42" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${b.id}", "command": "echo after-join-$((5+5))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "after-join-10" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Joining a terminal into its own tab moves nothing.
+    {
+      "run": "terminal.join",
+      "input": { "ids": ["${a.id}"], "into": "${b.id}" },
+      "expect": { "joined": [] }
+    },
+
+    // ---- Hide only b: a stays in the tab, b keeps running hidden ----
+    {
+      "run": "terminal.hide",
+      "input": { "id": "${b.id}", "onlyThis": true },
+      "expect": { "ids": ["${b.id}"], "alreadyHidden": false }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": {
+          "$contains": "\"id\":${b.id},\"tabId\":null,\"groupId\":null,\"hidden\":true"
+        },
+        "hidden": [{ "ids": ["${b.id}"] }]
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${a.id}", "command": "echo a-still-here", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "a-still-here" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.showHidden",
+      "input": { "id": "${b.id}" },
+      "expect": { "shown": [{ "ids": ["${b.id}"] }] }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${b.id}" },
+      "expect": { "text": { "$contains": "after-join-10" } },
+      "timeoutMs": 10000
+    },
+    { "run": "terminal.kill", "input": { "id": "${b.id}" } },
+
+    // ---- With every terminal hidden, Ctrl+` (terminal.toggle) brings the latest back, as
+    // VS Code's does, instead of starting a new one (the owner's report, D229) ----
+    { "run": "terminal.hide", "input": { "id": "${a.id}" } },
+    { "run": "terminal.hide" },
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 2 } },
+      "timeoutMs": 5000
+    },
+    { "run": "terminal.toggle" },
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 1 } },
+      "timeoutMs": 5000
+    },
+    { "run": "terminal.toggle" },
+    { "run": "terminal.focus" },
+    {
+      "state": "ide://terminals",
+      "expect": { "hidden": { "$length": 1 } },
+      "timeoutMs": 5000
+    },
+    { "run": "terminal.kill", "input": { "id": "${a.id}" } }
+  ]
+}

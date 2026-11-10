@@ -1,0 +1,280 @@
+// D209: terminals split inside one tab (VS Code's terminal groups: a sash between them, focus
+// with Alt+arrows, closing one keeps the others, unsplit, the group's title, restored as a
+// group), terminal profiles and the automation profile from a trusted folder's settings, the
+// debug console per session (its picker; a compound's sessions each have one) and the command
+// line's commands that can run here (what "Install shell command" would do, files at a line).
+// The command line itself and the windows registry are tested in Rust (instances/, cli.rs).
+{
+  "name": "parA-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+
+    // ---- Splits inside one tab ----
+    { "run": "terminal.create", "expect": { "id": { "$gte": 1 } }, "timeoutMs": 20000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo left-pane-ok", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "left-pane-ok" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.split",
+      "expect": { "pane": 1, "panes": 2, "title": { "$contains": ", " } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split > .terminal-pane" },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split > .sash" },
+      "expect": { "$length": 1 }
+    },
+    // Both panes run their own shell, in the same tab.
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"pane\":1,\"panes\":2,\"activePane\":true" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo right-pane-ok", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "right-pane-ok" } },
+      "timeoutMs": 30000
+    },
+    // Focus moves between them (the command, then Alt+Right on the left pane's keyboard).
+    {
+      "run": "terminal.focusPreviousPane",
+      "expect": { "pane": 0, "panes": 2 },
+      "timeoutMs": 5000
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".terminal-view.is-split > .terminal-pane:first-child .xterm-helper-textarea",
+        "key": "ArrowRight",
+        "code": "ArrowRight",
+        "alt": true
+      }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"pane\":1,\"panes\":2,\"activePane\":true" } },
+      "timeoutMs": 5000
+    },
+    // A third one, then closing the middle one keeps the other two (and the tab).
+    { "run": "terminal.focusPreviousPane", "expect": { "pane": 0 } },
+    { "run": "terminal.split", "expect": { "pane": 1, "panes": 3 }, "timeoutMs": 20000 },
+    { "run": "terminal.kill" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split > .terminal-pane" },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.resizePane",
+      "input": { "change": "grow" },
+      "expect": { "sizes": { "$length": 2 } }
+    },
+    // Restored as a group: the folder closes (its state saved) and opens again.
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    // The reopened folder's terminals (restored), not the ones from before it closed: the
+    // reopen runs in the background, and the old split matched this check at once.
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"restored\":true" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"pane\":1,\"panes\":2" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split > .sash" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    // Unsplit: the active one moves into a tab of its own, its shell still running.
+    { "run": "terminal.focusNextPane", "timeoutMs": 10000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "export KEPT=still-here", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "save": "kept",
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.unsplit", "expect": { "moved": true }, "timeoutMs": 10000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-view.is-split" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      // That shell by id: which terminal is the most recent after the move depends on timing.
+      "input": { "command": "echo $KEPT", "id": "${kept.terminalId}", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "still-here" } },
+      "timeoutMs": 30000
+    },
+    // The old behaviour stays as its own command: a new dock group beside the tab.
+    {
+      "run": "terminal.splitToNewGroup",
+      "expect": { "id": { "$gte": 1 } },
+      "timeoutMs": 20000
+    },
+
+    // (Profiles and the automation profile from the folder's settings: parA-profiles-m7-6, Linux.)
+
+    // ---- The debug console per session ----
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbgA .vscode && printf 'console.log(\"alpha-out\");setInterval(()=>{},1000);\\n' > dbgA/a.js && printf 'console.log(\"beta-out\");setInterval(()=>{},1000);\\n' > dbgA/b.js && printf '{\"version\":\"0.2.0\",\"configurations\":[{\"name\":\"Alpha\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/dbgA/a.js\"},{\"name\":\"Beta\",\"type\":\"node\",\"request\":\"launch\",\"program\":\"${workspaceFolder}/dbgA/b.js\"}],\"compounds\":[{\"name\":\"AB\",\"configurations\":[\"Alpha\",\"Beta\"]}]}' > .vscode/launch.json && echo written",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // Started once (a step with a timeout runs again until its expectation holds).
+    { "run": "debug.start", "input": { "compound": "AB" }, "expect": { "compound": "AB" } },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": { "$length": 2 } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "consoles": {
+          "$contains": "\"name\":\"Alpha\",\"depth\":0,\"live\":true,\"compound\":\"AB\""
+        }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "consoles": {
+          "$contains": "\"name\":\"Beta\",\"depth\":0,\"live\":true,\"compound\":\"AB\""
+        }
+      }
+    },
+    { "run": "debug.showConsole" },
+    {
+      "run": "debug.selectConsole",
+      "input": { "session": "Alpha" },
+      "expect": { "name": "Alpha" }
+    },
+    // Its own lines (a Node program's console.log stays in its terminal, as in VS Code: the
+    // evaluations and the session's start show where they belong).
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "'alpha-' + 1" },
+      "expect": { "value": { "$contains": "alpha-1" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "Debugging “Alpha”" } },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://debug", "expect": { "console": { "$contains": "alpha-1" } } },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$not": { "$contains": "Debugging “Beta”" } } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".debug-console-bar:not([hidden]) .debug-console-session-name",
+        "html": 200
+      },
+      "expect": [{ "html": { "$contains": "Alpha" } }],
+      "timeoutMs": 5000
+    },
+    // The picker: each session of the compound.
+    { "run": "debug.selectConsole", "input": { "x": 300, "y": 300 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 10 },
+      "expect": { "$contains": "Beta" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu-label", "key": "Escape" } },
+    { "run": "debug.selectConsole", "input": { "session": "Beta" }, "expect": { "name": "Beta" } },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "Debugging “Beta”" }, "configuration": "Beta" },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://debug", "expect": { "console": { "$not": { "$contains": "alpha-1" } } } },
+    // Evaluating in the shown console's session, printed there.
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "6 * 7" },
+      "expect": { "value": "42" },
+      "timeoutMs": 10000
+    },
+    { "state": "ide://debug", "expect": { "console": { "$contains": "6 * 7" } } },
+    { "run": "debug.selectConsole", "input": { "session": "Alpha" } },
+    { "state": "ide://debug", "expect": { "console": { "$not": { "$contains": "6 * 7" } } } },
+    { "run": "debug.stopAll" },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "inactive" },
+      "timeoutMs": 20000
+    },
+
+    // ---- The command line's commands ----
+    {
+      "run": "workbench.installShellCommand",
+      "input": { "dryRun": true },
+      // Windows: a .cmd shim and the user PATH; macOS: /usr/local/bin; Linux: ~/.local/bin.
+      "expect": { "name": { "$exists": true }, "steps": { "$not": { "$length": 0 } } }
+    },
+    {
+      "run": "window.openFromCommandLine",
+      "input": { "files": [{ "path": "README.md", "line": 3, "column": 6 }] },
+      "expect": { "errors": { "$length": 0 }, "tabs": { "$length": 1 } }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "README.md", "cursor": { "line": 3, "column": 6 } },
+      "timeoutMs": 5000
+    },
+    // A file that doesn't exist yet: an untitled editor named after it that saves there (VS Code).
+    {
+      "run": "window.openFromCommandLine",
+      "input": { "files": [{ "path": "cli-note.md", "missing": true }] },
+      "expect": { "errors": { "$length": 0 }, "tabs": { "$length": 1 } }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "untitled:" }, "language": "markdown", "dirty": false },
+      "timeoutMs": 5000
+    },
+    { "run": "editor.insertText", "input": { "text": "# From the command line\n" } },
+    { "run": "editor.save" },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "cli-note.md", "dirty": false },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "From the command line" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://windows", "expect": { "waiting": [], "restoreWindows": "all" } }
+  ]
+}

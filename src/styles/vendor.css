@@ -1,0 +1,206 @@
+/* Third-party widgets on the design system. Monaco's and xterm's stylesheets are unlayered, so
+ * these overrides are unlayered too and win by specificity.
+ * Monaco (DESIGN.md §15.1): find, suggest, hover and parameter hints float on --bg-overlay with
+ * --radius-md and --shadow-2. */
+.editor-view .monaco-editor .find-widget,
+.editor-view .monaco-editor .suggest-widget,
+.editor-view .monaco-editor .monaco-hover,
+.editor-view .monaco-editor .parameter-hints-widget,
+.editor-view .monaco-editor .suggest-details-container {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  border: 0;
+  font-family: var(--font-ui);
+}
+/* The find box floats a little below the breadcrumbs: rounded on every corner (D189; square top
+   corners only suit a box attached to the edge). */
+.editor-view .monaco-editor .find-widget {
+  /* biome-ignore lint/complexity/noImportantStyles: Monaco sets the widget colors inline */
+  background-color: var(--bg-editor-widget) !important;
+  box-shadow: var(--shadow-1);
+}
+.editor-view .monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  border-radius: var(--radius-sm);
+}
+.editor-view .monaco-editor .find-widget .monaco-inputbox {
+  border-radius: var(--radius-sm);
+  /* biome-ignore lint/complexity/noImportantStyles: Monaco sets the input colors inline */
+  background-color: var(--bg-editor-widget-input) !important;
+  /* biome-ignore lint/complexity/noImportantStyles: Monaco sets the input colors inline */
+  border-color: var(--border-default) !important;
+}
+.editor-view .monaco-editor .find-widget .monaco-inputbox .input {
+  /* biome-ignore lint/complexity/noImportantStyles: Monaco sets the input colors inline */
+  background-color: transparent !important;
+}
+.editor-view .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
+  /* biome-ignore lint/complexity/noImportantStyles: Monaco sets the input colors inline */
+  border-color: var(--border-input-focus) !important;
+}
+/* The widget's buttons (arrows, close, toggles) match the IDE's icon buttons: a 22px square with
+   a --radius-sm hover, not Monaco's small rounded box. */
+.editor-view .monaco-editor .find-widget .find-part .button,
+.editor-view .monaco-editor .find-widget .replace-part .button,
+.editor-view .monaco-editor .find-widget > .button,
+.editor-view .monaco-editor .find-widget .find-part .monaco-custom-toggle {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+.editor-view .monaco-editor .find-widget .find-part .button:not(.disabled):hover,
+.editor-view .monaco-editor .find-widget .replace-part .button:not(.disabled):hover,
+.editor-view .monaco-editor .find-widget > .button:hover,
+.editor-view .monaco-editor .find-widget .find-part .monaco-custom-toggle:hover {
+  background-color: var(--bg-hover);
+}
+.editor-view .monaco-editor .find-widget .button.codicon-widget-close {
+  margin-left: var(--space-2);
+}
+.editor-view .monaco-editor .sticky-widget {
+  box-shadow: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.editor-view .monaco-editor .view-lines,
+.editor-view .monaco-editor .inputarea {
+  cursor: text;
+}
+
+/* xterm (DESIGN.md §15.4): the terminal sits on the shell color; leftover pixels below the last
+ * row must not show xterm's default black; no scroll shadows. */
+.terminal-instance .xterm {
+  height: 100%;
+}
+.terminal-instance .xterm,
+.terminal-instance .xterm .xterm-viewport,
+.terminal-instance .xterm .xterm-scrollable-element {
+  background-color: var(--bg-surface);
+}
+.terminal-instance .xterm .xterm-scrollable-element > .shadow {
+  display: none;
+}
+.terminal-instance .xterm .xterm-screen,
+.terminal-instance .xterm .xterm-rows {
+  cursor: text;
+}
+/* Hovering a link: xterm marks the element; our text cursor must not win over it. */
+.terminal-instance .xterm.xterm-cursor-pointer .xterm-screen,
+.terminal-instance .xterm.xterm-cursor-pointer .xterm-rows {
+  cursor: pointer;
+}
+/* Decorations that only exist for their overview-ruler mark draw nothing in the text. */
+.terminal-instance .terminal-ruler-only {
+  display: none;
+}
+
+/* Shell-integration command marks (D62): a gutter dot left of each finished command's prompt.
+   The left padding makes room for it inside the terminal surface. */
+.terminal-instance .xterm {
+  padding-left: 14px;
+}
+.terminal-command-mark {
+  pointer-events: auto;
+  cursor: pointer;
+}
+/* A wider hit area than the 6px dot (click: the command's actions). */
+.terminal-command-mark::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 0;
+  width: 14px;
+  height: 100%;
+}
+/* xterm sizes the decoration to one cell; the dot is drawn left of it, in the padding. */
+.terminal-command-mark::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%);
+  border-radius: var(--radius-full);
+  background: var(--fg-subtle);
+}
+.terminal-command-mark.is-success::before {
+  background: var(--status-success-fg);
+}
+.terminal-command-mark.is-error::before {
+  background: var(--status-danger-fg);
+}
+/* Monaco's hover copy button (16px icon, absolutely placed) is taller than a one-line hover, which
+   then scrolls; a smaller button and a row at least as tall keep tiny hovers ("any") tidy. */
+.editor-view .monaco-editor .monaco-hover .hover-row.hover-row-with-copy {
+  min-height: 26px;
+  padding-right: 24px;
+}
+.editor-view .monaco-editor .monaco-hover .hover-copy-button {
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+.editor-view .monaco-editor .monaco-hover .hover-copy-button .codicon {
+  font-size: 14px;
+}
+/* Peek views (definition, references; D116): the IDE's fonts and sizes in the title and the
+   result list, a hairline border instead of Monaco's thick accent lines. */
+.editor-view .monaco-editor .peekview-widget .head {
+  font-family: var(--font-ui);
+}
+.editor-view .monaco-editor .peekview-widget .head .peekview-title .filename {
+  font-weight: 600;
+}
+.editor-view .monaco-editor .peekview-widget .head .peekview-title .dirname,
+.editor-view .monaco-editor .peekview-widget .head .peekview-title .meta {
+  font-size: var(--text-sm);
+}
+.editor-view .monaco-editor .reference-zone-widget .ref-tree {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+.editor-view .monaco-editor .reference-zone-widget .ref-tree .reference-file {
+  font-weight: 500;
+}
+
+/* Merge conflicts (D120): current side green, incoming blue, headers stronger. */
+.monaco-editor .conflict-current-header {
+  background: color-mix(in srgb, var(--status-success-fg) 30%, transparent);
+}
+.monaco-editor .conflict-current {
+  background: color-mix(in srgb, var(--status-success-fg) 13%, transparent);
+}
+.monaco-editor .conflict-base {
+  background: color-mix(in srgb, var(--fg-muted) 10%, transparent);
+}
+.monaco-editor .conflict-incoming {
+  background: color-mix(in srgb, var(--status-info-fg) 13%, transparent);
+}
+.monaco-editor .conflict-incoming-header {
+  background: color-mix(in srgb, var(--status-info-fg) 30%, transparent);
+}
+
+/* The find widget's Replace / Replace all show the IDE's icons (D190), the same as the search
+   view and the menus. Masks: the icon takes the button's text color. */
+.editor-view .monaco-editor .find-widget .codicon-find-replace::before,
+.editor-view .monaco-editor .find-widget .codicon-find-replace-all::before {
+  /* biome-ignore lint/complexity/noImportantStyles: replaces the codicon font glyph */
+  content: "" !important;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: var(--find-icon) center / 16px no-repeat;
+  mask: var(--find-icon) center / 16px no-repeat;
+}
+.editor-view .monaco-editor .find-widget .codicon-find-replace::before {
+  --find-icon: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M14 4a1 1 0 0 1 1-1" /> <path d="M15 10a1 1 0 0 1-1-1" /> <path d="M21 4a1 1 0 0 0-1-1" /> <path d="M21 9a1 1 0 0 1-1 1" /> <path d="m3 7 3 3 3-3" /> <path d="M6 10V5a2 2 0 0 1 2-2h2" /> <rect x="3" y="14" width="7" height="7" rx="1" /> </svg>');
+}
+.editor-view .monaco-editor .find-widget .codicon-find-replace-all::before {
+  --find-icon: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" > <path d="M14 14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1" /> <path d="M14 4a1 1 0 0 1 1-1" /> <path d="M15 10a1 1 0 0 1-1-1" /> <path d="M19 14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1" /> <path d="M21 4a1 1 0 0 0-1-1" /> <path d="M21 9a1 1 0 0 1-1 1" /> <path d="m3 7 3 3 3-3" /> <path d="M6 10V5a2 2 0 0 1 2-2h2" /> <rect x="3" y="14" width="7" height="7" rx="1" /> </svg>');
+}

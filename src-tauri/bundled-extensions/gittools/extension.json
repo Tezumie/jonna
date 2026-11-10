@@ -1,0 +1,268 @@
+{
+  "id": "bundled.gittools",
+  "version": "1.0.0",
+  "displayName": "Git tools",
+  "description": "GitLens-style extras for Source control: file blame beside the lines (colored by age), the history of the selected lines, comparing two branches or tags, a Stashes section (apply, pop, drop, see each stash's files) and your GitHub notifications. Source control itself (changes, commits, branches, the graph, blame of the cursor line, file history) is the IDE's own.",
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "icon": "icon.svg",
+  "authors": [
+    { "name": "Claude", "url": "https://claude.ai", "avatar": "brand:anthropic" },
+    { "name": "Tezumie", "github": "Tezumie" }
+  ],
+  "license": "MIT",
+  "categories": ["SCM Providers", "Other"],
+  "keywords": ["git", "blame", "line history", "compare", "stash", "github", "notifications"],
+  "permissions": ["git", "github", "fs.read", "fs.write"],
+  "namespaces": ["git", "github"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "git.toggleFileBlame",
+        "title": "Toggle file blame",
+        "category": "Git",
+        "description": "Shows (or hides) who last changed each line of a file and how long ago, beside the lines, colored by age, with the commit in a hover (GitLens's file blame). Default: the active editor's file; `value` forces on or off. Returns the lines annotated.",
+        "when": "gitRepo",
+        "input": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "File (default: the active editor)" },
+            "value": { "type": "boolean" }
+          }
+        }
+      },
+      {
+        "id": "git.lineHistory",
+        "title": "Show line history",
+        "category": "Git",
+        "description": "The commits that changed lines `startLine`..`endLine` of a file (git log -L; default: the active editor's selection or cursor line), newest first, with what each changed there. Shown in Source control's Line history section; `open` (a hash) opens that commit's change of the lines' file.",
+        "effects": ["read"],
+        "when": "gitRepo",
+        "input": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "description": "File (default: the active editor)" },
+            "startLine": { "type": "integer" },
+            "endLine": { "type": "integer" },
+            "open": {
+              "type": "string",
+              "description": "A commit hash from the list: open its change"
+            },
+            "repository": {
+              "type": "string",
+              "description": "Repository: its root or folder name (default: the file's)"
+            }
+          }
+        }
+      },
+      {
+        "id": "git.compareBranches",
+        "title": "Compare branches…",
+        "category": "Git",
+        "description": "Compares two refs (branches, tags, commits): the files that differ from `left` to `right` (with `mergeBase`, only what `right` changed since it forked from `left`, as a pull request shows), listed in Source control's Compare section; `path` opens one file's diff. From the palette, asks for both refs.",
+        "effects": ["read"],
+        "when": "gitRepo",
+        "input": {
+          "type": "object",
+          "properties": {
+            "left": { "type": "string", "description": "The ref to compare from (e.g. main)" },
+            "right": { "type": "string", "description": "The ref to compare to (default: HEAD)" },
+            "mergeBase": { "type": "boolean", "description": "Compare with where they forked" },
+            "path": {
+              "type": "string",
+              "description": "A file of the comparison to open (repository-relative)"
+            },
+            "repository": {
+              "type": "string",
+              "description": "Repository: its root or folder name (default: the selected one)"
+            }
+          }
+        }
+      },
+      {
+        "id": "git.compareSwap",
+        "title": "Swap compared refs",
+        "category": "Git",
+        "description": "Compares the other way round: right becomes left.",
+        "effects": ["read"],
+        "when": "gitRepo",
+        "agent": "hidden",
+        "input": { "type": "object", "properties": {} }
+      },
+      {
+        "id": "git.stashChanges",
+        "title": "Stash changes…",
+        "category": "Git",
+        "description": "Stashes the working tree's changes (git.stash, which asks for a message) and shows the Stashes section.",
+        "when": "gitRepo",
+        "agent": "hidden",
+        "input": { "type": "object", "properties": {} }
+      },
+      {
+        "id": "git.showStashes",
+        "title": "Show stashes",
+        "category": "Git",
+        "description": "Shows the Stashes section of Source control (and reloads it). The stash commands themselves are git.stash, git.stashApply, git.stashPop, git.stashDrop and git.stashShow.",
+        "when": "gitRepo",
+        "agent": "hidden",
+        "input": { "type": "object", "properties": {} }
+      },
+      {
+        "id": "github.notifications",
+        "title": "GitHub notifications",
+        "category": "GitHub",
+        "description": "Your GitHub notifications (gh api notifications, your gh sign-in): id, repository, type, title, reason, unread, updated, web URL. Shown in Source control's GitHub notifications section; `all` includes read ones.",
+        "effects": ["read", "network"],
+        "input": { "type": "object", "properties": { "all": { "type": "boolean" } } }
+      },
+      {
+        "id": "github.markNotificationRead",
+        "title": "Mark notification as read",
+        "category": "GitHub",
+        "description": "Marks one GitHub notification (`id`) as read, or every one with `all`.",
+        "effects": ["write", "network"],
+        "input": {
+          "type": "object",
+          "properties": { "id": { "type": "string" }, "all": { "type": "boolean" } }
+        }
+      },
+      {
+        "id": "github.markAllNotificationsRead",
+        "title": "Mark all GitHub notifications as read",
+        "category": "GitHub",
+        "description": "Marks every GitHub notification as read.",
+        "effects": ["write", "network"],
+        "agent": "hidden",
+        "input": { "type": "object", "properties": {} }
+      },
+      {
+        "id": "github.openNotification",
+        "title": "Open GitHub notification",
+        "category": "GitHub",
+        "description": "Opens a notification (`id`, from github.notifications) on GitHub in the browser and marks it read.",
+        "effects": ["network"],
+        "agent": "hidden",
+        "input": {
+          "type": "object",
+          "properties": { "id": { "type": "string" } },
+          "required": ["id"]
+        }
+      }
+    ],
+    "settings": {
+      "git.blame.heatmap": {
+        "type": "boolean",
+        "default": true,
+        "description": "Color the file blame's annotations by age: recent changes stand out."
+      },
+      "github.notifications.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show the GitHub notifications view (through the gh CLI, your own sign-in)."
+      }
+    },
+    "views": [
+      {
+        "id": "git.stashesView",
+        "title": "Stashes",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "archive",
+        "sectionOf": "scm.view",
+        "sectionOrder": 10
+      },
+      {
+        "id": "git.lineHistoryView",
+        "title": "Line history",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "history",
+        "sectionOf": "scm.view",
+        "sectionOrder": 11
+      },
+      {
+        "id": "git.compareView",
+        "title": "Compare",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "git-compare",
+        "sectionOf": "scm.view",
+        "sectionOrder": 12
+      },
+      {
+        "id": "github.notificationsView",
+        "title": "GitHub notifications",
+        "location": "sidebar",
+        "type": "tree",
+        "icon": "bell",
+        "sectionOf": "scm.view",
+        "sectionOrder": 13
+      }
+    ],
+    "menus": [
+      {
+        "location": "view/title",
+        "command": "git.stashChanges",
+        "icon": "archive",
+        "title": "Stash changes…",
+        "when": "view == git.stashesView"
+      },
+      {
+        "location": "view/title",
+        "command": "git.showStashes",
+        "icon": "refresh-cw",
+        "title": "Refresh",
+        "when": "view == git.stashesView"
+      },
+      {
+        "location": "view/title",
+        "command": "git.lineHistory",
+        "icon": "refresh-cw",
+        "title": "Line history of the selection",
+        "when": "view == git.lineHistoryView"
+      },
+      {
+        "location": "view/title",
+        "command": "git.compareBranches",
+        "icon": "git-compare",
+        "title": "Compare branches…",
+        "when": "view == git.compareView"
+      },
+      {
+        "location": "view/title",
+        "command": "git.compareSwap",
+        "icon": "arrow-left-right",
+        "title": "Swap sides",
+        "when": "view == git.compareView"
+      },
+      {
+        "location": "view/title",
+        "command": "github.notifications",
+        "icon": "refresh-cw",
+        "title": "Refresh",
+        "when": "view == github.notificationsView"
+      },
+      {
+        "location": "view/title",
+        "command": "github.markAllNotificationsRead",
+        "icon": "check-check",
+        "title": "Mark all as read",
+        "when": "view == github.notificationsView"
+      }
+    ],
+    "state": [
+      {
+        "path": "ide://git/lens",
+        "description": "Source control's GitLens-style sections (Git tools): the line history shown (file, lines, commits) and the comparison (refs, files)."
+      },
+      {
+        "path": "ide://git/fileBlame",
+        "description": "Files whose blame is shown beside their lines (git.toggleFileBlame, Git tools)."
+      },
+      {
+        "path": "ide://github/notifications",
+        "description": "The GitHub notifications loaded (Git tools): id, title, unread."
+      }
+    ]
+  }
+}

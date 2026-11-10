@@ -1,0 +1,144 @@
+// D229: a debug adapter's child session (DAP startDebugging) under its parent and stopped with
+// it; the disassembly view (scrolling model, current instruction), an instruction breakpoint and
+// a step by instruction (the scripted adapter, tests/fixtures/setup/mock-dap.mjs); a Node program
+// run without debugging with "console": "internalConsole" — a session of its own, its stdout and
+// stderr apart in the debug console.
+{
+  "name": "debug-m7-8",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbg8 .vscode && cp ../setup/debug-m7-8/out.js dbg8/ && cp ../setup/debug-m7-8/launch.json .vscode/launch.json && echo copied",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+
+    // The adapter asks for a child session: it starts under its parent, with the adapter's
+    // configuration as it is (no IDE defaults added).
+    {
+      "run": "debug.start",
+      "input": { "name": "Mock parent" },
+      "expect": { "name": "Mock parent" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "sessions": { "$contains": "\"kind\":\"adapterChild\"" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "child", "session": "Mock parent" },
+      "expect": { "value": "ok" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "launchArgs", "session": "Mock child" },
+      "expect": { "value": { "$contains": "childOf" } }
+    },
+    { "run": "debug.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-stack", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Mock child" } }],
+      "timeoutMs": 5000
+    },
+
+    // The disassembly view on the parent's paused frame.
+    { "run": "debug.focusSession", "input": { "session": "Mock parent" } },
+    {
+      "run": "debug.openDisassembly",
+      "expect": { "at": "0x1000", "instructions": { "$gte": 50 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".disasm-row.is-current", "html": 600 },
+      "expect": [{ "html": { "$contains": "call work" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // An instruction breakpoint goes to the adapter and shows in the margin and Breakpoints.
+    {
+      "run": "debug.toggleInstructionBreakpoint",
+      "input": { "address": "0x1004" },
+      "expect": { "added": true }
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "instructionBreakpoints", "session": "Mock parent" },
+      "expect": { "value": { "$contains": "0x1004" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".disasm-row[data-address='0x1004'] .disasm-bp.is-on", "html": 200 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "instructionBreakpoints": [{ "address": "0x1004", "enabled": true }] }
+    },
+
+    // A step by instruction.
+    {
+      "run": "debug.stepOver",
+      "input": { "session": "Mock parent", "threadId": 2, "granularity": "instruction" }
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "granularity", "session": "Mock parent" },
+      "expect": { "value": "instruction" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "debug.toggleInstructionBreakpoint",
+      "input": { "address": "0x1004" },
+      "expect": { "added": false }
+    },
+
+    // Stopping the parent stops its child.
+    { "run": "debug.stop", "input": { "session": "Mock parent" } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "inactive", "sessions": [] },
+      "timeoutMs": 15000
+    },
+
+    // Run without debugging, internalConsole: a session; stdout and stderr apart.
+    {
+      "run": "debug.runWithoutDebugging",
+      "input": { "name": "Output" },
+      "expect": { "name": "Output" },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.showConsole" },
+    {
+      "state": "ide://debug",
+      "expect": { "console": { "$contains": "after a blank line" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-console-line.is-stderr", "html": 400 },
+      "expect": [{ "html": { "$contains": "to stderr" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-console-line.is-output:not(.is-stderr)", "html": 400 },
+      "expect": { "$contains": "to stdout" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 }
+  ]
+}

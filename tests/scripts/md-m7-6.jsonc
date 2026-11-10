@@ -1,0 +1,508 @@
+// D210: raw HTML in Markdown previews (the README heading's <img> tags) renders through the
+// sanitizer (the local logo is counted: whether the remote one loads depends on the network);
+// handlers / scripts / frames / javascript: links don't; headings don't stick; find in
+// the preview (markdown.find…, Ctrl+F, Enter / Shift+Enter, Escape) counts and steps.
+{
+  "name": "md-m7-6",
+  "steps": [
+    {
+      "run": "workspace.setTrust",
+      "input": {
+        "trusted": true
+      },
+      "expect": {
+        "state": "trusted"
+      }
+    },
+    {
+      "run": "dev.setWindowSize",
+      "input": {
+        "width": 1300,
+        "height": 800
+      }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '# <img src=\"https://q5js.org/q5js_logo.avif\" height=\"64\"> <img src=\"logo.png\" height=\"64\" onerror=\"alert(1)\">\\n\\n<p align=\"center\"><img src=\"logo.png\" width=\"32\" alt=\"Logo\"> <a href=\"javascript:alert(1)\">bad</a> <a href=\"https://e.com\" onclick=\"x()\">good</a> <img src=\"data:image/svg+xml,x\" style=\"position:fixed\"></p>\\n\\n<script>document.title = 1</script>\\n\\n<iframe src=\"https://e.com\"></iframe><SCRIPT>bad()</SCRIPT>\\n\\n<details><summary>More</summary>Hidden apple</details>\\n\\n## Apples\\n\\napple one, Apple two, pineapple.\\n\\n## Bananas\\n\\nText <kbd>Ctrl</kbd> and Vec<T> and an apple again.\\n\\n' > html.md && for i in $(seq 1 80); do printf 'Filler paragraph %s.\\n\\n' $i >> html.md; done && echo iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg== | base64 -d > logo.png",
+        "timeoutMs": 20000
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "viewer.openPreview",
+      "input": {
+        "path": "html.md"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview h1 img[height='64'][data-key='logo.png']"
+      },
+      "expect": {
+        "$length": 1
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview h1",
+        "html": 2000
+      },
+      "expect": [
+        {
+          "html": {
+            "$not": {
+              "$contains": "&lt;img"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview h1 img[data-key='logo.png'][src^='blob:']"
+      },
+      "expect": {
+        "$length": 1
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview p[align='center'] img[width='32']"
+      },
+      "expect": {
+        "$length": 1
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview p[align='center'] a.md-link",
+        "html": 300
+      },
+      "expect": [
+        {
+          "html": {
+            "$contains": "good"
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview p[align='center'] a.md-link"
+      },
+      "expect": {
+        "$length": 1
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview [onerror], .markdown-preview [onclick], .markdown-preview [style], .markdown-preview script, .markdown-preview iframe, .markdown-preview [href^='javascript']"
+      },
+      "expect": {
+        "$length": 0
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview .md-document",
+        "html": 20000
+      },
+      "expect": [
+        {
+          "html": {
+            "$not": {
+              "$contains": "bad()"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview kbd"
+      },
+      "expect": {
+        "$length": 1
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview .md-document > p:last-of-type",
+        "html": 20000
+      },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Filler"
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview .md-document",
+        "html": 20000
+      },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Vec&lt;T&gt;"
+          }
+        }
+      ]
+    },
+    {
+      "run": "workbench.screenshot",
+      "input": {
+        "inline": true
+      },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview .md-document > h2"
+      },
+      "expect": [
+        {
+          "position": {
+            "$not": {
+              "$contains": "sticky"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "dev.scroll",
+      "input": {
+        "selector": ".markdown-preview",
+        "top": 1500
+      }
+    },
+    {
+      "wait": 300
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview .md-document > h2",
+        "limit": 1
+      },
+      "expect": [
+        {
+          "box": [
+            {
+              "$gte": -100000
+            },
+            {
+              "$lte": -1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": "dev.scroll",
+      "input": {
+        "selector": ".markdown-preview",
+        "top": 0
+      }
+    },
+    {
+      "wait": 300
+    },
+    {
+      "run": "markdown.find",
+      "input": {
+        "query": "apple"
+      },
+      "expect": {
+        "open": true,
+        "matches": 6,
+        "current": 0,
+        "text": "apple"
+      }
+    },
+    {
+      "run": "markdown.findNext",
+      "expect": {
+        "current": 1,
+        "matches": 6,
+        "text": "Apple"
+      }
+    },
+    {
+      "run": "markdown.findPrevious",
+      "expect": {
+        "current": 0
+      }
+    },
+    {
+      "run": "markdown.findPrevious",
+      "expect": {
+        "current": 5,
+        "text": "apple"
+      }
+    },
+    {
+      "run": "markdown.find",
+      "input": {
+        "caseSensitive": true
+      },
+      "expect": {
+        "matches": 4
+      }
+    },
+    {
+      "run": "markdown.find",
+      "input": {
+        "caseSensitive": false,
+        "wholeWord": true
+      },
+      "expect": {
+        "matches": 4
+      }
+    },
+    {
+      "run": "markdown.find",
+      "input": {
+        "wholeWord": false,
+        "regex": true,
+        "query": "Ba?nanas|Apples"
+      },
+      "expect": {
+        "matches": 2
+      }
+    },
+    {
+      "run": "markdown.find",
+      "input": {
+        "regex": false,
+        "query": "Filler paragraph 79."
+      },
+      "expect": {
+        "matches": 1
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".markdown-preview",
+        "limit": 1
+      },
+      "expect": [
+        {
+          "scrollTop": {
+            "$gte": 1000
+          }
+        }
+      ]
+    },
+    {
+      "state": "ide://markdownPreview",
+      "expect": {
+        "active": {
+          "find": {
+            "open": true,
+            "query": "Filler paragraph 79.",
+            "matches": 1
+          }
+        }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".md-find-count",
+        "html": 200
+      },
+      "expect": [
+        {
+          "html": {
+            "$contains": "1 of 1"
+          }
+        }
+      ]
+    },
+    {
+      "run": "workbench.screenshot",
+      "input": {
+        "inline": true
+      },
+      "print": true
+    },
+    {
+      "run": "markdown.closeFind",
+      "expect": {
+        "open": false
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".md-find:not([hidden])"
+      },
+      "expect": {
+        "$length": 0
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".markdown-preview",
+        "key": "f",
+        "code": "KeyF",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".md-find:not([hidden])"
+      },
+      "expect": {
+        "$length": 1
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": {
+        "activeElement": {
+          "$contains": "md-find-input"
+        }
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".md-find-input",
+        "text": "apple"
+      }
+    },
+    {
+      "wait": 300
+    },
+    {
+      "state": "ide://markdownPreview",
+      "expect": {
+        "active": {
+          "find": {
+            "query": "apple",
+            "matches": 6
+          }
+        }
+      }
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".md-find-input",
+        "key": "Enter",
+        "code": "Enter"
+      }
+    },
+    {
+      "state": "ide://markdownPreview",
+      "expect": {
+        "active": {
+          "find": {
+            "current": 1
+          }
+        }
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".md-find-input",
+        "key": "Enter",
+        "code": "Enter",
+        "shift": true
+      }
+    },
+    {
+      "state": "ide://markdownPreview",
+      "expect": {
+        "active": {
+          "find": {
+            "current": 0
+          }
+        }
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".md-find-input",
+        "key": "Escape",
+        "code": "Escape"
+      }
+    },
+    {
+      "state": "ide://markdownPreview",
+      "expect": {
+        "active": {
+          "find": {
+            "open": false
+          }
+        }
+      },
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://dev/keyboard",
+      "expect": {
+        "activeElement": {
+          "$contains": "markdown-preview"
+        }
+      }
+    },
+    {
+      "run": "editor.openFile",
+      "input": {
+        "path": "html.md"
+      }
+    },
+    {
+      "wait": 500
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".editor-view:not([hidden]) .monaco-editor :is(.native-edit-context, textarea.inputarea)",
+        "key": "f",
+        "code": "KeyF",
+        "ctrl": true
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".monaco-editor .find-widget.visible"
+      },
+      "expect": {
+        "$length": 1
+      },
+      "timeoutMs": 3000
+    }
+  ]
+}

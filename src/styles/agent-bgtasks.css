@@ -1,0 +1,360 @@
+/* Background tasks (D326, view/backgroundTasks.ts, view/taskTranscript.ts, view/backgroundChip.ts):
+   the chip under the conversation and the tab beside the chat. Quiet like the details panel:
+   muted text, hairlines, status color only on a failure. Holds up at a narrow width (titles
+   ellipsize, times and buttons keep their room). Tokens only. */
+@layer extensions {
+  /* ---- The chip under the conversation ---- */
+  .agent-bgchip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    box-sizing: border-box;
+    max-width: 100%;
+    margin: var(--space-3) 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    text-align: left;
+    transition: color var(--motion-fast) var(--ease-standard);
+  }
+  .agent-bgchip:hover {
+    color: var(--fg-default);
+    border-color: var(--border-default);
+  }
+  .agent-bgchip-icon {
+    flex: none;
+    display: inline-flex;
+  }
+  .agent-bgchip-icon .icon,
+  .agent-bgchip-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgchip-text {
+    /* Takes the room, so the chevron sits at the right edge as on the other cards. */
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .agent-bgchip-title {
+    color: var(--fg-default);
+  }
+  .agent-bgchip-title,
+  .agent-bgchip-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-bgchip-chevron {
+    flex: none;
+    display: inline-flex;
+  }
+
+  /* ---- The view ---- */
+  .agent-bgtasks {
+    /* The transcript reads like the chat's column. */
+    --agent-column: 680px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    outline: none;
+  }
+  .agent-bgtasks-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .agent-bgtasks-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .agent-bgtasks-spacer {
+    flex: 1;
+  }
+  .agent-bgtasks-head .icon-button {
+    flex: none;
+  }
+  .agent-bgtasks-head .agent-bgtask-time {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: var(--space-2);
+  }
+  .agent-bgtasks-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-3) var(--space-3) var(--space-6);
+  }
+  .agent-bgtasks-empty {
+    margin: var(--space-4) var(--space-2);
+    color: var(--fg-muted);
+  }
+  .agent-bgtasks-section + .agent-bgtasks-section {
+    margin-top: var(--space-4);
+  }
+  .agent-bgtasks-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0 0 var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .agent-bgtasks-section-title.is-fold:hover {
+    color: var(--fg-default);
+  }
+  .agent-bgtasks-section-title .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgtasks-list,
+  .agent-bgtask-steps-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .agent-bgtask {
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
+  }
+  .agent-bgtask:hover {
+    background: var(--bg-hover);
+  }
+  .agent-bgtask-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .agent-bgtask-status {
+    flex: none;
+    display: inline-flex;
+    width: var(--size-icon-sm);
+    justify-content: center;
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-status .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgtask.is-failed .agent-bgtask-status {
+    color: var(--status-danger-fg);
+  }
+  .agent-bgtask-title {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    text-align: left;
+    color: var(--fg-default);
+  }
+  .agent-bgtask-title-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-bgtask.is-subagent .agent-bgtask-title:hover .agent-bgtask-title-text,
+  .agent-bgtask.is-helper .agent-bgtask-title:hover .agent-bgtask-title-text {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .agent-bgtask:not(.is-running) .agent-bgtask-title {
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-time {
+    flex: none;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-bgtask-stop,
+  .agent-bgtask-chevron {
+    flex: none;
+    width: 22px;
+    height: 22px;
+  }
+  .agent-bgtask-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    min-width: 0;
+    margin: var(--space-1) 0 0 calc(var(--size-icon-sm) + var(--space-2));
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-detail {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-bgtask-steps {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 0;
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-steps:hover {
+    color: var(--fg-default);
+  }
+  .agent-bgtask-steps .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgtask-failed {
+    color: var(--status-danger-fg);
+  }
+  .agent-bgtask-steps-list {
+    margin: var(--space-2) 0 0 calc(var(--size-icon-sm) + var(--space-2));
+    border-left: 1px solid var(--border-subtle);
+  }
+  .agent-bgtask-step {
+    padding-left: var(--space-2);
+  }
+  .agent-bgtask-step-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-width: 0;
+    padding: 2px 0;
+    text-align: left;
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-step-row:hover {
+    color: var(--fg-default);
+  }
+  .agent-bgtask-step-row .icon,
+  .agent-bgtask-step-row .agent-spinner {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgtask-step.is-error .agent-bgtask-step-row > .icon:first-child {
+    color: var(--status-danger-fg);
+  }
+  .agent-bgtask-step-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-bgtask-step-meta {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-bgtask-none {
+    padding: 2px var(--space-2);
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-cmd {
+    margin: var(--space-2) 0 0 calc(var(--size-icon-sm) + var(--space-2));
+  }
+  .agent-bgtask-output {
+    box-sizing: border-box;
+    max-height: 240px;
+    margin: var(--space-1) 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    overflow: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .agent-bgtask-open-output {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .agent-bgtask-open-output .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-bgtasks-more {
+    margin: var(--space-2) var(--space-2) 0;
+  }
+
+  /* ---- A subagent's transcript ---- */
+  .agent-bgtask-transcript {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    max-width: var(--agent-column);
+    margin: 0 auto;
+  }
+  .agent-bgtask-brief {
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .agent-bgtask-brief-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .agent-bgtask-brief.is-folded .agent-bgtask-brief-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+  }
+  .agent-bgtask-brief-more {
+    margin-top: var(--space-2);
+  }
+  .agent-bgtask-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    color: var(--fg-muted);
+  }
+  .agent-bgtask-facts strong {
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+
+  /* The details panel's way in (its Background card). */
+  .agent-details-all {
+    width: 100%;
+    text-align: left;
+  }
+  .agent-details-all:hover {
+    color: var(--fg-default);
+  }
+}

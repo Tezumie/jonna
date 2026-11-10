@@ -1,0 +1,205 @@
+// D203: a collapsed nest parent's nested files go along with copy, move and delete (explorer
+// file nesting; an expanded one acts on itself only, as in VS Code); a subfolder's .cursor/rules
+// and a .github/instructions subfolder's rule (ide://agent/rules, attached on a read under that
+// folder only); a slash command in a subfolder (/frontend:tools) whose allowed-tools narrows the
+// turn's tools; task detection two levels down and task.autoDetectDepth. Against
+// tests/fixtures/mock-ollama.mjs.
+{
+  "name": "gaps-m7-4",
+  "fakeMake": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p nestdest web/src web/.cursor/rules .github/instructions/deep other/.cursor/rules .claude/commands/frontend apps/svc apps/deep/svc && printf 'export const b = 1;\\n' > nest-b.ts && printf 'exports.b = 1;\\n' > nest-b.js && printf '{}\\n' > nest-b.js.map && printf 'export const App = 1;\\n' > web/src/App.tsx && printf -- '---\\nalwaysApply: true\\n---\\nnested-cursor-marker\\n' > web/.cursor/rules/style.mdc && printf -- '---\\nalwaysApply: true\\n---\\noutside-marker\\n' > other/.cursor/rules/o.mdc && printf -- '---\\napplyTo: \"web/**\"\\n---\\ndeep-instructions-marker\\n' > .github/instructions/deep/web.instructions.md && printf -- '---\\ndescription: Tools test\\nallowed-tools: Bash(git status:*)\\n---\\nwhich tools do you have\\n' > .claude/commands/frontend/tools.md && printf 'hello:\\n\\techo two-levels\\n' > apps/svc/Makefile && printf 'deep:\\n\\techo three-levels\\n' > apps/deep/svc/Makefile",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+
+    // ---- Explorer: a collapsed nest parent takes its nested files along ----
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "settings.set", "input": { "key": "explorer.fileNesting.expand", "value": false } },
+    { "run": "settings.set", "input": { "key": "explorer.fileNesting.enabled", "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-nest-parent[data-path$='nest-b.ts']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 6000
+    },
+    // Collapsed (expand off): copying the selected parent copies its two nested files too.
+    { "run": "explorer.reveal", "input": { "path": "nest-b.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected[data-path$='nest-b.ts']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    { "run": "explorer.copy", "expect": { "count": 3 } },
+    // A given path takes them only when asked (the context menu and a drag ask).
+    { "run": "explorer.copy", "input": { "paths": ["nest-b.ts"] }, "expect": { "count": 1 } },
+    {
+      "run": "explorer.copy",
+      "input": { "paths": ["nest-b.ts"], "withNested": true },
+      "expect": { "count": 3 }
+    },
+    // A drag (explorer.move with withNested) moves the three.
+    {
+      "run": "explorer.move",
+      "input": { "paths": ["nest-b.ts"], "dest": "nestdest", "withNested": true },
+      "expect": {
+        "moved": ["nestdest/nest-b.ts", "nestdest/nest-b.js", "nestdest/nest-b.js.map"]
+      }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test -f nestdest/nest-b.js.map && test ! -e nest-b.js && test ! -e nest-b.js.map"
+      },
+      "expect": { "exitCode": 0 }
+    },
+    // Expanded: the nested files are rows of their own, so the parent alone is copied.
+    { "run": "explorer.reveal", "input": { "path": "nestdest/nest-b.js" } },
+    { "run": "explorer.reveal", "input": { "path": "nestdest/nest-b.ts" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".explorer-tree .vlist-row.is-selected[data-path*='nestdest'][data-path$='nest-b.ts']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    { "run": "explorer.copy", "expect": { "count": 1 } },
+    // Folded again: Delete on the selection deletes the three.
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".explorer-tree .vlist-row[data-path*='nestdest'][data-path$='nest-b.ts'] [data-tree-twistie]"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".explorer-tree .vlist-row[data-path*='nestdest'][data-path$='nest-b.js']"
+      },
+      "expect": [],
+      "timeoutMs": 4000
+    },
+    { "run": "explorer.reveal", "input": { "path": "nestdest/nest-b.ts" } },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    {
+      "run": "explorer.delete",
+      "expect": { "deleted": { "$length": 3 } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test -z \"$(ls nestdest)\"" },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "workspace.undo", "expect": { "done": { "$contains": "Delete 3 items" } } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test -f nestdest/nest-b.js.map" },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "settings.reset", "input": { "key": "explorer.fileNesting.enabled" } },
+    { "run": "settings.reset", "input": { "key": "explorer.fileNesting.expand" } },
+
+    // ---- Agent rules: a subfolder's .cursor/rules, a .github/instructions subfolder ----
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    // agent.listRules reads the files again (the index may take a moment for new files).
+    {
+      "run": "agent.listRules",
+      "input": { "pick": false },
+      "expect": {
+        "rules": {
+          "$contains": "\"path\":\"web/.cursor/rules/style.mdc\",\"source\":\"cursor\",\"activation\":\"folder\""
+        }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "agent.listRules",
+      "input": { "pick": false },
+      "expect": {
+        "rules": { "$contains": "\"path\":\".github/instructions/deep/web.instructions.md\"" }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/rules",
+      "expect": { "rules": { "$contains": "\"path\":\"other/.cursor/rules/o.mdc\"" } }
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "read the nested rule file" },
+      "expect": { "answer": "Nested rules: cursor/instructions/-" }
+    },
+
+    // ---- Slash commands: a subfolder's command, allowed-tools narrowing its turn ----
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": {
+        "commands": {
+          "$contains": "\"name\":\"frontend:tools\",\"description\":\"Tools test\",\"source\":\".claude/commands\""
+        }
+      }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/frontend:tools" },
+      "expect": { "answer": { "$contains": "run_command" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/frontend:tools" },
+      "expect": { "answer": { "$not": { "$contains": "edit_file" } } }
+    },
+    // The next turn has every tool again.
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have" },
+      "expect": { "answer": { "$contains": "edit_file" } }
+    },
+
+    // ---- Task detection two levels down; task.autoDetectDepth ----
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"make: hello - apps/svc\"" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$not": { "$contains": "make: deep - apps/deep/svc" } } }
+    },
+    { "run": "settings.set", "input": { "key": "task.autoDetectDepth", "value": 3 } },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$contains": "\"label\":\"make: deep - apps/deep/svc\"" } }
+    },
+    { "run": "settings.set", "input": { "key": "task.autoDetectDepth", "value": 1 } },
+    {
+      "run": "tasks.list",
+      "expect": { "tasks": { "$not": { "$contains": "apps/svc" } } }
+    },
+    { "run": "settings.reset", "input": { "key": "task.autoDetectDepth" } },
+    {
+      "run": "tasks.run",
+      "input": { "label": "make: hello - apps/svc" },
+      "expect": { "exitCode": 0, "output": { "$contains": "two-levels" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

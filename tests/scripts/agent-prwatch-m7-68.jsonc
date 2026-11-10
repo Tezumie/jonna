@@ -1,0 +1,112 @@
+// D323: a chat watches a pull request (watch_pr) through the GitHub CLI (the fake one: #7, its
+// state set by tests/fixtures/setup/prwatch-m7-68.mjs). The first look is the baseline; a failed
+// check and a new review comment then come to the chat as one automatic message (a turn of its
+// own), with the comment's text; merged, the watch ends with one more. The details panel shows it
+// with Check now and Stop watching; ide://agent/prWatches lists it. Against
+// tests/fixtures/mock-ollama.mjs (pkgFScripted).
+{
+  "name": "agent-prwatch-m7-68",
+  "fakeGh": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/prwatch-m7-68.mjs pending", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 25000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgF watch pr" },
+      "expect": { "answer": "PkgF watching: yes" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/prWatches",
+      "expect": {
+        "watches": [
+          {
+            "number": 7,
+            "title": "Add the feature",
+            "status": { "$contains": "1 pending, 1 passing" },
+            "lastError": null
+          }
+        ]
+      },
+      "print": true
+    },
+    // The details panel: the pull request with Check now and Stop watching.
+    { "run": "agent.toggleDetails", "input": { "show": true }, "expect": { "shown": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-details-row[data-key='pr:7']", "limit": 1, "html": 1500 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "agent.unwatchPullRequest"
+          }
+        }
+      ],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // A check fails and a reviewer comments: one message, a turn of its own.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/prwatch-m7-68.mjs failing", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 25000
+    },
+    { "run": "agent.checkPullRequestNow", "expect": { "status": { "$contains": "1 failing" } } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgF PR news: failed=yes comment=yes" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-auto.is-news", "limit": 3, "html": 300 },
+      "expect": [{ "html": { "$contains": "1 check failed, 1 new comment" } }],
+      "print": true
+    },
+    // Looked at again with nothing new: no message.
+    { "run": "agent.checkPullRequestNow", "expect": { "number": 7 } },
+    { "wait": 1500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-auto.is-news", "limit": 5 },
+      "expect": { "$length": 1 }
+    },
+    // Merged: told once, and the watch ends.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/prwatch-m7-68.mjs merged", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 25000
+    },
+    { "run": "agent.checkPullRequestNow" },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "PkgF PR merged" } },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://agent/prWatches", "expect": { "watches": { "$length": 0 } } },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

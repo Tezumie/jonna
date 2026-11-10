@@ -1,0 +1,183 @@
+// D358: Claude Code plugins. A local marketplace (tests/fixtures/setup/plugin-marketplace-m7-100)
+// is added (copied into the profile's plugins folder), its plugin installed (a test run answers
+// the install question: hooks and MCP servers left off); its slash command (/pkgs-hello:greet),
+// skill (pkgs-hello:greeting) and subagent then show where the IDE's own do. Disabled through
+// /plugin, they go; the Plugins page lists it; uninstalled, it's gone.
+{
+  "name": "agent-plugins-m7-100",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "agent.addPluginMarketplace",
+      "input": { "source": "${ws.root}/../setup/plugin-marketplace-m7-100" },
+      "expect": { "added": true, "name": "pkgs-test-market", "plugins": 2 },
+      "print": true
+    },
+    // Added twice: refused.
+    {
+      "run": "agent.addPluginMarketplace",
+      "input": { "source": "${ws.root}/../setup/plugin-marketplace-m7-100" },
+      "expectError": "added already"
+    },
+    {
+      "state": "ide://agent/plugins",
+      "expect": {
+        "marketplaces": [
+          {
+            "name": "pkgs-test-market",
+            "plugins": [
+              { "id": "pkgs-hello@pkgs-test-market", "installed": false },
+              { "id": "pkgs-elsewhere@pkgs-test-market", "installed": false }
+            ]
+          }
+        ],
+        "installed": { "$length": 0 }
+      }
+    },
+    {
+      "run": "agent.installPlugin",
+      "input": { "plugin": "pkgs-hello@pkgs-test-market" },
+      "expect": {
+        "installed": true,
+        "id": "pkgs-hello@pkgs-test-market",
+        "contents": {
+          "commands": ["/pkgs-hello:greet"],
+          "skills": ["pkgs-hello:greeting"],
+          "agents": ["greeter"],
+          "hooks": [{ "$contains": "/hooks/stop.js" }],
+          "mcpServers": [{ "$contains": "pkgs-greeter: node" }]
+        }
+      },
+      "print": true
+    },
+    // ${CLAUDE_PLUGIN_ROOT} is the installed copy's folder (in the profile's data folder).
+    {
+      "state": "ide://agent/plugins",
+      "expect": {
+        "installed": [
+          {
+            "id": "pkgs-hello@pkgs-test-market",
+            "enabled": true,
+            "hooks": false,
+            "mcp": false,
+            "contents": { "hooks": [{ "$not": { "$contains": "CLAUDE_PLUGIN_ROOT" } }] }
+          }
+        ]
+      },
+      "print": true
+    },
+    {
+      "run": "agent.installPlugin",
+      "input": { "plugin": "pkgs-hello" },
+      "expectError": "installed already"
+    },
+
+    // ---- Its command, skill and subagent appear ----
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$contains": "\"name\":\"pkgs-hello:greet\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "$contains": "pkgs-hello:greeting" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "$contains": "greeter" },
+      "timeoutMs": 5000
+    },
+    // Its MCP server wasn't allowed: not configured.
+    { "state": "ide://agent/mcp", "expect": { "$not": { "$contains": "pkgs-greeter" } } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "/pkgs-hello:greet world" },
+      "expect": { "answer": { "$contains": "PKGS greeted world." } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgs which skills do you have" },
+      "expect": { "answer": { "$contains": "PKGS plugin skill listed: yes" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- The Plugins page ----
+    { "run": "agent.showPlugins" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".plugins-page [data-plugin]", "limit": 5, "html": 300 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".plugins-page [data-install]", "limit": 5 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // ---- /plugin disable: its parts go; enable brings them back ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "/plugin disable pkgs-hello" },
+      "expect": { "plugin": { "enabled": false } }
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$not": { "$contains": "pkgs-hello:greet" } },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/skills",
+      "expect": { "$not": { "$contains": "pkgs-hello:greeting" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "/plugin enable pkgs-hello@pkgs-test-market" },
+      "expect": { "plugin": { "enabled": true } }
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$contains": "pkgs-hello:greet" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Uninstalled; the marketplace removed ----
+    {
+      "run": "agent.send",
+      "input": { "message": "/plugin uninstall pkgs-hello" },
+      "expect": { "plugin": { "uninstalled": "pkgs-hello@pkgs-test-market" } }
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "$not": { "$contains": "pkgs-hello:greet" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.removePluginMarketplace",
+      "input": { "name": "pkgs-test-market" },
+      "expect": { "removed": true, "marketplace": "pkgs-test-market" }
+    },
+    { "state": "ide://agent/plugins", "expect": { "marketplaces": { "$length": 0 } } }
+  ]
+}

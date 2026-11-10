@@ -1,0 +1,75 @@
+// D254: a large repository (`big/` from tests/fixtures/setup/big-repo.cjs: 30 000 files here; 100 000
+// were measured by hand, see D254, since writing them takes 25 minutes on Windows). Each
+// step logs its time (`time`): finding a file by name once the index has it, a text search,
+// git status with changes, revealing a deep file in the explorer, the agent's repository map.
+// The limits are generous: this is a measurement first, and a guard against falling off a cliff.
+{
+  "name": "big-repo-m7-20",
+  "testTimeout": 1500,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/big-repo.cjs 30000", "timeoutMs": 600000 },
+      "expect": { "exitCode": 0 },
+      "print": true,
+      "timeoutMs": 610000
+    },
+    {
+      "name": "index has the new files",
+      "run": "quickOpen.search",
+      "input": { "query": "file27777", "limit": 5 },
+      "expect": { "files": { "$contains": "file27777.ts" }, "indexing": false },
+      "time": true,
+      "print": true,
+      "timeoutMs": 120000
+    },
+    {
+      "name": "find a file by name",
+      "run": "quickOpen.search",
+      "input": { "query": "pkg7 part20 file4", "limit": 20 },
+      "expect": { "files": { "$not": { "$length": 0 } } },
+      "time": true,
+      "timeoutMs": 10000
+    },
+    {
+      "name": "search text",
+      "run": "search.run",
+      "input": { "query": "needleInTheRepo" },
+      "expect": { "$contains": "file27777.ts" },
+      "time": true,
+      "timeoutMs": 120000
+    },
+    {
+      "name": "search text, many matches",
+      "run": "search.run",
+      "input": { "query": "export function handler1" },
+      "time": true,
+      "timeoutMs": 120000
+    },
+    {
+      "name": "git status",
+      // The nested repository found, with its 20 changed files.
+      "state": "ide://git/repositories",
+      "expect": { "$contains": "\"path\":\"big\"" },
+      "print": true,
+      "time": true,
+      "timeoutMs": 120000
+    },
+    {
+      "name": "explorer reveal",
+      "run": "explorer.reveal",
+      "input": { "path": "big/pkg27/mod39/part14/file29977.ts" },
+      "time": true,
+      "timeoutMs": 30000
+    },
+    {
+      "name": "repo map",
+      "run": "agent.showRepoMap",
+      "input": { "refresh": true, "maxChars": 2000 },
+      "expect": { "text": { "$contains": "handler" } },
+      "time": true,
+      "timeoutMs": 120000
+    }
+  ]
+}

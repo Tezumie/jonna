@@ -1,0 +1,75 @@
+// D278: workbench.tabStyle (rounded, the default; classic; connected): classic and connected give
+// the strip a color a step off the editor and the active tab the editor's own. Floating panels'
+// gaps between panels: 4px in compact and default density, 6px in comfortable.
+{
+  "name": "tabs-m7-31",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 800 } },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "wait": 800 },
+    // Rounded: the active tab a step up from the editor (#191919).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab.is-active" },
+      "expect": [{ "borderRadius": "5px", "background": { "$not": "rgb(25, 25, 25)" } }]
+    },
+    { "run": "ui.setTabStyle", "input": { "style": "classic" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab.is-active" },
+      "expect": [{ "borderRadius": "0px", "background": "rgb(25, 25, 25)" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-strip" },
+      "expect": [{ "background": { "$not": "rgba(0, 0, 0, 0)" } }]
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "ui.setTabStyle", "input": { "style": "connected" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab.is-active" },
+      "expect": [{ "borderRadius": "5px 5px 0px 0px", "background": "rgb(25, 25, 25)" }]
+    },
+    // The active tab's label is level with the others' (its extra height is below it).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-group.is-focused .dock-tab .dock-tab-label" },
+      "expect": [{ "box": [{ "$gte": 0 }, 46] }, { "box": [{ "$gte": 0 }, 46] }]
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // The same in the light theme: the strip a step darker than the editor.
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Light+" } },
+    { "wait": 800 },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "run": "ui.setTabStyle", "input": { "style": "rounded" } },
+
+    // ---- Floating gaps ----
+    { "run": "ui.setPanelStyle", "input": { "panels": "floating" } },
+    { "wait": 500 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sash" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$gte": 0 }, 4] }]
+    },
+    { "wait": 1000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "ui.setDensity", "input": { "density": "comfortable" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".workbench-main > .sash" },
+      "expect": [{ "box": [{ "$gte": 0 }, { "$gte": 0 }, 6] }]
+    },
+    { "run": "ui.setDensity", "input": { "density": "default" } },
+    { "run": "ui.setPanelStyle", "input": { "panels": "flush" } }
+  ]
+}

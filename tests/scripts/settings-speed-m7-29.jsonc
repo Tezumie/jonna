@@ -1,0 +1,84 @@
+// D275: the settings page builds the rows on screen first (the rest as they scroll near), so it
+// opens, searches and follows a change quickly; Reset all keeps the agent's settings unless asked.
+{
+  "name": "settings-speed-m7-29",
+  "steps": [
+    { "wait": 1500 },
+    { "run": "settings.open", "time": true },
+    { "wait": 300 },
+    // All settings: about the first screens' rows, not all of them.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-list .setting-row:nth-child(n+1)", "limit": 20 },
+      "expect": { "$length": 20 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-list .setting-row[data-key='workbench.colorTheme']" },
+      "expect": { "$length": 1 }
+    },
+    // A late section is built once it scrolls near.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row[data-key='terminal.integrated.fontSize']" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.scroll",
+      "input": { "selector": ".settings-scroll", "top": 1000000 }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-list .settings-card:last-child .setting-row", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".settings-search.is-nav input", "text": "font size" },
+      "time": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row[data-key='editor.fontSize']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.type", "input": { "selector": ".settings-search.is-nav input", "text": "" } },
+    { "run": "settings.set", "input": { "key": "editor.fontSize", "value": 15 }, "time": true },
+
+    // ---- Reset all: the agent's settings stay unless checked ----
+    { "run": "settings.set", "input": { "key": "agent.effort", "value": "high" } },
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".settings-page-tools > .icon-button" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .dialog-check", "limit": 5, "html": 300 },
+      "expect": { "$length": 1, "$[0].html": { "$contains": "Also reset the agent's settings" } },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-danger" } },
+    { "wait": 800 },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"agent.effort\",\"value\":\"high\"" }
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.fontSize\",\"value\":14" }
+    },
+    // Checked, they go too.
+    { "run": "dev.click", "input": { "selector": ".settings-page-tools > .icon-button" } },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dialog .dialog-check-input" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".dialog .button-danger" } },
+    { "wait": 800 },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"agent.effort\",\"value\":\"default\"" }
+    }
+  ]
+}

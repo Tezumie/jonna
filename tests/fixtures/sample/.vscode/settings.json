@@ -1,0 +1,5 @@
+{
+  "editor.tabSize": 2,
+  "terminal.integrated.fontSize": 12,
+  "python.analysis.typeCheckingMode": "basic"
+}

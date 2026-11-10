@@ -1,0 +1,79 @@
+// D392: after an agent's sandboxed command ran in the folder, the IDE's own git pauses for the
+// repository when its git settings change (here a setting added from the terminal, as a command
+// could), says so in Source control with a Trust git settings button, and runs again once trusted.
+// Against tests/fixtures/mock-ollama.mjs (pkgJScripted). Windows: where the IDE's sandbox is
+// verified (macOS and Linux refuse the write itself).
+{
+  "name": "git-guard-m7-117",
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "auto" } },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+
+    // A sandboxed command runs in the folder: the repository's settings are recorded.
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgj sandbox write inside" },
+      "expect": { "answer": "PkgJ inside: ok" },
+      "timeoutMs": 90000
+    },
+    { "run": "git.refresh", "expect": { "$exists": true } },
+    { "state": "ide://git/problem", "expect": null },
+
+    // Its settings change: the IDE's git pauses, and says why.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "git config --local ide.guardtest 1", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "git.refresh" },
+    {
+      "state": "ide://git/problem",
+      "expect": { "paused": true, "problem": { "$contains": ".git/config" } },
+      "print": true,
+      "timeoutMs": 15000
+    },
+    { "run": "git.status", "expectError": "paused" },
+    // D407: the refresh's refused listings (`git remote`) don't take the change as the IDE's
+    // own: still paused after the watcher's refresh and another.
+    { "wait": 2500 },
+    { "run": "git.refresh" },
+    { "run": "git.status", "expectError": "paused" },
+    { "run": "view.show", "input": { "id": "scm.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-empty-button:not([hidden])", "limit": 3 },
+      "expect": { "$contains": "Trust git settings" },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+
+    // Trusted: git runs again.
+    { "run": "git.trustSettings", "expect": { "changes": { "$exists": true } } },
+    { "state": "ide://git/problem", "expect": null },
+    { "run": "git.status", "expect": { "branch": { "$exists": true } } },
+
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "rm -f pkgj-inside.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "off" } }
+  ]
+}

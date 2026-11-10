@@ -1,0 +1,114 @@
+// D224: ghost text toward Cursor Tab — the suggestion cache, import-graph context and the
+// token estimate. In src/counted.ts the mock Ollama numbers each FIM answer ("// #1" is its
+// first request), so the ghost text shows whether the IDE asked the model again: typing through
+// the suggestion keeps "#1" (no request, the cache answers), typing something else asks ("#2"),
+// and going back to the typed prefix shows "#1" again without a request. The file imports
+// ./util (not open): its declaration of `add` goes along ("imports" in the mock's answer).
+{
+  "name": "ghost-text-m7-7",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels" },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": true }
+    },
+    // No suggestion list while typing: Monaco hides ghost text while it's open, and whether it
+    // opened before a check depended on how fast the TypeScript worker answered.
+    { "run": "settings.set", "input": { "key": "editor.quickSuggestions", "value": false } },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": {
+        "enabled": true,
+        "fim": "ollama",
+        "requests": 0,
+        "tokenizer": { "$exists": true }
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "explorer.newFile", "input": { "parent": "src", "name": "counted.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "src/counted.ts" },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "import { add } from \"./util\";\n\nexport function twice(n: number): number {\n  return "
+      }
+    },
+    { "run": "editor.inlineSuggest.trigger" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "#1" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "imports" }
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": {
+        "requests": 1,
+        "last": {
+          "mode": "fim",
+          "path": "src/counted.ts",
+          "snippets": { "$contains": "{\"path\":\"src/util.ts\",\"kind\":\"import\"}" },
+          "promptTokens": { "$exists": true }
+        }
+      }
+    },
+    // Typing the suggestion's start: the rest shows at once, no request (still "#1").
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "fim" } } },
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "Done" } } },
+    { "wait": 1200 },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".monaco-editor .ghost-text-decoration, .monaco-editor .ghost-text",
+        "limit": 20
+      },
+      "print": true,
+      "expect": { "$contains": "#1" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "requests": 1, "cache": { "hits": { "$gte": 1 } } }
+    },
+    // Something else: the model is asked again ("#2").
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "X" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
+      "expect": { "$contains": "#2" },
+      "timeoutMs": 15000
+    },
+    { "state": "ide://editor/inlineCompletions", "expect": { "requests": 2 } },
+    // Back to the typed prefix (delete "eX", type "e"): the cache answers without a request
+    // (requests stay at 2); whether Monaco then shows it after a delete isn't reliable here
+    // (D226: a manual check).
+    { "run": "editor.runAction", "input": { "action": "deleteLeft" } },
+    { "run": "editor.runAction", "input": { "action": "deleteLeft" } },
+    { "run": "editor.runAction", "input": { "action": "type", "args": { "text": "e" } } },
+    { "wait": 1200 },
+    {
+      "state": "ide://editor/inlineCompletions",
+      "expect": { "requests": 2, "cache": { "hits": { "$gte": 2 } } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Off: the cache is emptied, nothing is asked.
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.inlineCompletions.enabled", "value": false }
+    },
+    { "run": "editor.inlineSuggest.trigger", "expectError": true }
+  ]
+}

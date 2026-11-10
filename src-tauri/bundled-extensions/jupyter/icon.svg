@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Notebook</title>
+  <rect width="64" height="64" rx="14" fill="#2b2f3a"/>
+  <rect x="15" y="10" width="34" height="44" rx="5" fill="none" stroke="#e8823a" stroke-width="3.5"/>
+  <rect x="21" y="18" width="22" height="9" rx="2.5" fill="#e8823a"/>
+  <rect x="21" y="32" width="22" height="13" rx="2.5" fill="none" stroke="#e8823a" stroke-width="3"/>
+  <path d="M28 35.5v6l5-3z" fill="#e8823a"/>
+</svg>

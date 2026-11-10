@@ -1,0 +1,110 @@
+// D180: the agent's modes (Agent, Plan, Ask: Ask and Plan offer read-only tools; a plan turn ends
+// with Build), the microphone in the empty composer, and menus opened from a button closing when
+// it's clicked again.
+{
+  "name": "agent-modes-m6-79",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    // Agent mode: the editing tools are offered.
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have", "wait": true },
+      "expect": { "answer": { "$contains": "write_file" } },
+      "timeoutMs": 60000
+    },
+    // Ask: read-only tools only, and the message carries the mode's chip.
+    { "run": "agent.setChatMode", "input": { "mode": "ask" }, "expect": { "mode": "ask" } },
+    { "state": "ide://agent/session", "expect": { "chatMode": "ask" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have", "wait": true },
+      "expect": { "answer": { "$not": { "$contains": "write_file" } } },
+      "timeoutMs": 60000
+    },
+    // No mode chip on the message (the owner's call).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-mode-chip" },
+      "expect": { "$length": 0 }
+    },
+    // Plan: read-only plus the plan tool; the turn ends with a Build button.
+    { "run": "agent.setChatMode", "input": { "mode": "plan" }, "expect": { "mode": "plan" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "which tools do you have", "wait": true },
+      "expect": { "answer": { "$contains": "update_plan" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Plan ready" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.build",
+      "expect": {},
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "agent", "status": "idle" },
+      "timeoutMs": 60000
+    },
+    // D384: the microphone is always last; Send shows to its left once something's typed.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-box > .agent-mic, .agent-box > .agent-send" },
+      "expect": [
+        { "className": { "$contains": "agent-send" }, "display": "none" },
+        { "className": { "$contains": "agent-mic" }, "display": "grid" }
+      ],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".agent-input", "text": "x" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-box > .agent-mic, .agent-box > .agent-send" },
+      "expect": [
+        { "className": { "$contains": "agent-send" }, "display": "grid" },
+        { "className": { "$contains": "agent-mic" }, "display": "grid" }
+      ],
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Dictation off: no microphone, and Send stays (quiet while there's nothing to send).
+    { "run": "settings.set", "input": { "key": "agent.voice.enabled", "value": false } },
+    { "run": "dev.type", "input": { "selector": ".agent-input", "text": "" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-box > .agent-mic, .agent-box > .agent-send" },
+      "expect": [
+        { "className": { "$contains": "agent-send" }, "display": "grid" },
+        { "className": { "$contains": "agent-mic" }, "display": "none" }
+      ],
+      "timeoutMs": 3000
+    },
+    { "run": "settings.reset", "input": { "keys": ["agent.voice.enabled"] } },
+    // A menu opened from a button closes when the button is clicked again.
+    { "run": "dev.click", "input": { "selector": ".agent-chat-mode" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // (The menu arms its outside-press handler on the next task, as a real click would allow.)
+    { "wait": 200 },
+    { "run": "dev.click", "input": { "selector": ".agent-chat-mode" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    }
+  ]
+}

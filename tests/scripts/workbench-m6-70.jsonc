@@ -1,0 +1,39 @@
+// D169: header buttons always visible (a setting; on by default since D196), the AI models page's
+// "Edit in settings.json", and the model menu opening at once.
+{
+  "name": "workbench-m6-70",
+  "steps": [
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "run": "dev.click", "input": { "selector": ".welcome-view, .dock-body", "x": 5 } },
+    // On by default (D196).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar .view-actions", "limit": 1 },
+      "expect": [{ "opacity": "1" }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.view.alwaysShowHeaderActions", "value": false }
+    },
+    // Focus out of the sidebar (header buttons also show while it has focus).
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar .view-actions", "limit": 1 },
+      "expect": [{ "opacity": "0" }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "workbench.view.alwaysShowHeaderActions", "value": true }
+    },
+    { "run": "agent.showSetup" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ai-header-actions", "html": 1500 },
+      "expect": [{ "html": { "$contains": "Edit in settings.json" } }],
+      "timeoutMs": 5000
+    }
+  ]
+}

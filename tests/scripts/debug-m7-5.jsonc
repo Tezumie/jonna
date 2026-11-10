@@ -1,0 +1,325 @@
+// D204: several debug sessions at once — a launch.json compound (stopAll), a Node program's
+// forked child process and worker thread attached as child sessions — a function breakpoint, the
+// exception widget on a thrown error, and (with a scripted DAP adapter) the threads list, pausing
+// one thread, the adapter's exception filters, a data breakpoint, loaded scripts and disassembly;
+// "Add configuration…", the process list and the JavaScript debug terminal.
+{
+  "name": "debug-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p dbg7 .vscode && cp ../setup/debug-m7-5/*.js dbg7/ && cp ../setup/debug-m7-5/launch.json .vscode/launch.json && echo copied",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "debug.listConfigurations",
+      "expect": {
+        "configurations": [{ "name": "Server" }, { "name": "Client" }, { "name": "Mock threads" }],
+        "compounds": [{ "name": "Both", "configurations": ["Server", "Client"], "stopAll": true }]
+      }
+    },
+
+    // Breakpoints in the child process and the worker, a function breakpoint in the server,
+    // and stopping on uncaught exceptions (the client throws).
+    { "run": "debug.setBreakpoint", "input": { "path": "dbg7/child.js", "line": 3 } },
+    { "run": "debug.setBreakpoint", "input": { "path": "dbg7/worker.js", "line": 2 } },
+    {
+      "run": "debug.addFunctionBreakpoint",
+      "input": { "name": "handle" },
+      "expect": { "added": true, "name": "handle" }
+    },
+    {
+      "run": "debug.toggleUncaughtExceptions",
+      "input": { "on": true },
+      "expect": { "uncaught": true }
+    },
+    { "run": "debug.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-breakpoints [data-function='handle']", "html": 400 },
+      "expect": [{ "html": { "$contains": "handle" } }],
+      "timeoutMs": 5000
+    },
+
+    // The compound: two sessions; the server's child process and worker attach as its children.
+    // Started once, with no retry: a step with a timeout runs again until its expectation holds,
+    // and a child process attaching quickly (three sessions, not two) started the compound a
+    // second time, the two copies' stopAll ending each other.
+    {
+      "run": "debug.start",
+      "input": { "compound": "Both" },
+      "expect": { "compound": "Both" }
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": { "$contains": "\"name\":\"Server\"" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "sessions": { "$contains": "\"kind\":\"child\"" }
+      },
+      "timeoutMs": 40000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "sessions": { "$contains": "\"kind\":\"worker\"" }
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "sessions": { "$contains": "\"reason\":\"exception\"" }
+      },
+      "timeoutMs": 30000
+    },
+    // The call stack lists the sessions.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-stack", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Client" } }],
+      "timeoutMs": 5000
+    },
+
+    // The exception widget, under the line that threw.
+    {
+      "run": "debug.focusSession",
+      "input": { "session": "Client" },
+      "expect": { "name": "Client" }
+    },
+    {
+      "run": "debug.exceptionInfo",
+      "expect": {
+        "exception": {
+          "exceptionId": "Error",
+          "widget": {
+            "title": { "$contains": "Exception has occurred: Error" },
+            "message": "client boom"
+          }
+        }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-exception-widget", "html": 2000 },
+      "expect": [{ "html": { "$contains": "client boom" } }],
+      "timeoutMs": 10000
+    },
+
+    // The forked child stopped at its breakpoint; its variables are its own.
+    { "run": "debug.focusSession", "input": { "session": "child.js" } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "path": "dbg7/child.js", "line": 3 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "total" }, "expect": { "value": "3" } },
+    // The worker too.
+    { "run": "debug.focusSession", "input": { "session": "Worker:" } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "stopped", "frames": [{ "path": "dbg7/worker.js", "line": 2 }] },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "x" }, "expect": { "value": "1" } },
+    { "run": "debug.continue", "input": { "session": "Worker:" } },
+    // The child goes on and exits; the server's exit handler calls handle(): the function
+    // breakpoint stops it.
+    { "run": "debug.continue", "input": { "session": "child.js" } },
+    {
+      "state": "ide://debug",
+      "expect": { "sessions": { "$contains": "\"reason\":\"function breakpoint\"" } },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.focusSession", "input": { "session": "Server" } },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "frames": [{ "name": "handle", "path": "dbg7/server.js", "line": 5 }],
+        "functionBreakpoints": [{ "name": "handle", "verified": true }]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.evaluate", "input": { "expression": "n" }, "expect": { "value": "21" } },
+
+    // stopAll: stopping one session of the compound stops every one.
+    { "run": "debug.stop", "input": { "session": "Client" } },
+    {
+      "state": "ide://debug",
+      "expect": { "state": "inactive", "sessions": { "$length": 0 } },
+      "timeoutMs": 20000
+    },
+    { "run": "debug.removeAllBreakpoints" },
+    { "run": "debug.removeFunctionBreakpoint", "input": { "name": "handle" } },
+    { "run": "debug.toggleUncaughtExceptions", "input": { "on": false } },
+
+    // A scripted DAP adapter with two threads: the worker thread stops, main runs.
+    {
+      "run": "debug.start",
+      "input": { "name": "Mock threads" },
+      "expect": { "name": "Mock threads" },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "sessions": [
+          {
+            "name": "Mock threads",
+            "threads": [
+              { "id": 1, "name": "main", "stopped": false },
+              { "id": 2, "name": "worker", "stopped": true, "reason": "breakpoint" }
+            ]
+          }
+        ],
+        "exceptionFilters": [
+          { "filter": "raised", "enabled": false },
+          { "filter": "uncaught", "enabled": true }
+        ]
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-stack .debug-thread-row" },
+      "expect": { "$length": 2 },
+      "timeoutMs": 5000
+    },
+    // Pause the running thread on its own.
+    { "run": "debug.pause", "input": { "threadId": 1 } },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "sessions": [
+          {
+            "threads": [
+              { "id": 1, "stopped": true, "reason": "pause" },
+              { "id": 2, "stopped": true }
+            ]
+          }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.selectThread", "input": { "threadId": 2 }, "expect": { "threadId": 2 } },
+    // The adapter's own exception filter, and a data breakpoint on a variable.
+    {
+      "run": "debug.setExceptionFilter",
+      "input": { "filter": "raised", "enabled": true },
+      "expect": { "enabled": true }
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "exceptionFilters": [{ "filter": "raised", "enabled": true }] }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-breakpoints [data-filter='raised']", "html": 600 },
+      "expect": [{ "html": { "$contains": "Raised exceptions" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "debug.evaluate",
+      "input": { "expression": "filters" },
+      "expect": { "value": { "$contains": "raised" } }
+    },
+    {
+      "run": "debug.addDataBreakpoint",
+      "input": { "name": "counter" },
+      "expect": { "description": "counter", "accessType": "write" }
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "dataBreakpoints": [{ "description": "counter", "verified": true }] },
+      "timeoutMs": 5000
+    },
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "stopped": { "reason": "data breakpoint" },
+        "frames": [{ "line": 3 }]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "debug.continue" },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "stopped": { "reason": "exception" },
+        "exception": { "id": "ValueError" }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".debug-exception-widget", "html": 2000 },
+      "expect": [{ "html": { "$contains": "bad value" } }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "debug.loadedScripts",
+      "expect": { "scripts": [{ "name": "client.js", "path": "dbg7/client.js" }] }
+    },
+    {
+      "run": "debug.openDisassembly",
+      "expect": { "instructions": { "$gte": 5 }, "at": "0x1000" }
+    },
+    {
+      "state": "ide://debug",
+      "expect": { "disassembly": { "at": "0x1000", "rows": { "$gte": 5 } } },
+      "timeoutMs": 5000
+    },
+    { "run": "debug.stopAll" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 15000 },
+    { "run": "debug.removeAllBreakpoints" },
+
+    // A JavaScript debug terminal: a Node program started in it is debugged by itself.
+    { "run": "debug.setBreakpoint", "input": { "path": "dbg7/child.js", "line": 3 } },
+    { "run": "debug.createJavaScriptDebugTerminal", "expect": { "tabId": { "$exists": true } } },
+    { "wait": 1500 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node dbg7/child.js", "timeoutMs": 2000 }
+    },
+    {
+      "state": "ide://debug",
+      "expect": {
+        "state": "stopped",
+        "sessions": [{ "name": { "$contains": "child.js" }, "kind": "child" }],
+        "frames": [{ "path": "dbg7/child.js", "line": 3 }]
+      },
+      "timeoutMs": 30000
+    },
+    { "run": "debug.continue" },
+    { "state": "ide://debug", "expect": { "state": "inactive" }, "timeoutMs": 20000 },
+    { "run": "debug.removeAllBreakpoints" },
+
+    // Add configuration…, and the process list (for attaching to a process).
+    {
+      "run": "debug.addConfiguration",
+      "input": { "snippet": "Node.js: Attach to process" },
+      "expect": { "added": true, "path": ".vscode/launch.json" }
+    },
+    {
+      "run": "debug.listConfigurations",
+      "expect": { "configurations": [{}, {}, {}, { "name": "Attach to process" }] }
+    },
+    {
+      "run": "debug.listProcesses",
+      "input": { "filter": "node" },
+      // Among them a Node program (others with "node" in their path may come first).
+      "expect": { "processes": { "$contains": "\"node\":true" } }
+    }
+  ]
+}

@@ -1,0 +1,1494 @@
+{
+  "id": "builtin.editor",
+  "version": "0.2.0",
+  "displayName": "Editor",
+  "description": "Text editor tabs (Monaco) in the dock: shared documents, dirty tracking, save.",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "workbench.navigateBack",
+        "title": "Go back",
+        "category": "Go"
+      },
+      {
+        "id": "workbench.navigateForward",
+        "title": "Go forward",
+        "category": "Go"
+      },
+      {
+        "id": "workbench.clearNavigationHistory",
+        "title": "Clear editor history",
+        "category": "Go"
+      },
+      {
+        "id": "editor.changeEol",
+        "title": "Change end of line sequence",
+        "category": "File"
+      },
+      {
+        "id": "editor.selectEncoding",
+        "title": "Change file encoding…",
+        "category": "File"
+      },
+      {
+        "id": "editor.selectIndentation",
+        "title": "Change indentation…",
+        "category": "File"
+      },
+      {
+        "id": "editor.reopenWithEncoding",
+        "title": "Reopen with encoding…",
+        "category": "File"
+      },
+      {
+        "id": "editor.saveWithEncoding",
+        "title": "Save with encoding…",
+        "category": "File"
+      },
+      {
+        "id": "editor.toggleVimMode",
+        "title": "Toggle Vim mode",
+        "category": "Preferences"
+      },
+      {
+        "id": "editor.renderFile",
+        "title": "Render a file for a page",
+        "category": "Editor"
+      },
+      {
+        "id": "notebook.runCell",
+        "title": "Run cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.runAll",
+        "title": "Run all cells",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.runAbove",
+        "title": "Run the cells above",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.runBelow",
+        "title": "Run this cell and the ones below",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.interrupt",
+        "title": "Interrupt the kernel",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.restart",
+        "title": "Restart the kernel",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.restartAndRunAll",
+        "title": "Restart the kernel and run all",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.selectKernel",
+        "title": "Select kernel…",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.insertCell",
+        "title": "Insert code cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.insertMarkdown",
+        "title": "Insert Markdown cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.editCell",
+        "title": "Edit cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.deleteCell",
+        "title": "Delete cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.moveCell",
+        "title": "Move cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.changeCellType",
+        "title": "Change cell type",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.splitCell",
+        "title": "Split cell at the cursor",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.clearOutputs",
+        "title": "Clear cell output",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.clearAllOutputs",
+        "title": "Clear all outputs",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.toggleOutput",
+        "title": "Collapse or expand output",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.undo",
+        "title": "Undo cell operation",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.redo",
+        "title": "Redo cell operation",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.copyCell",
+        "title": "Copy cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.cutCell",
+        "title": "Cut cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.pasteCell",
+        "title": "Paste cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.save",
+        "title": "Save notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.toggleVariables",
+        "title": "Show variables",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.variables",
+        "title": "List kernel variables",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.read",
+        "title": "Read notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.exportScript",
+        "title": "Export as script",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.new",
+        "title": "New Jupyter notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.enableJupyter",
+        "title": "Enable the Jupyter extension",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.browseKernelExtensions",
+        "title": "Browse extensions for kernels",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.joinCells",
+        "title": "Join cells",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.duplicateCell",
+        "title": "Copy cell down",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.toggleLineNumbers",
+        "title": "Show cell line numbers",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.previewCell",
+        "title": "Stop editing cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.changeCellLanguage",
+        "title": "Change cell language",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.setMetadata",
+        "title": "Set notebook or cell metadata",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.toggleSource",
+        "title": "Show notebook source",
+        "category": "Notebook"
+      },
+      {
+        "id": "editor.renderMarkdown",
+        "title": "Render Markdown for a page",
+        "category": "Editor"
+      },
+      {
+        "id": "editor.openFile",
+        "title": "Open file",
+        "category": "File"
+      },
+      {
+        "id": "editor.save",
+        "title": "Save",
+        "category": "File"
+      },
+      {
+        "id": "editor.saveAll",
+        "title": "Save all",
+        "category": "File"
+      },
+      {
+        "id": "editor.closeTab",
+        "title": "Close editor",
+        "category": "View"
+      },
+      {
+        "id": "editor.closeAll",
+        "title": "Close all editors",
+        "category": "View"
+      },
+      {
+        "id": "editor.focusTab",
+        "title": "Focus editor tab",
+        "category": "View"
+      },
+      {
+        "id": "editor.runAction",
+        "title": "Run editor action",
+        "category": "Editor"
+      },
+      {
+        "id": "editor.openReadOnly",
+        "title": "Open read-only text",
+        "category": "View"
+      },
+      {
+        "id": "editor.resolveConflict",
+        "title": "Resolve merge conflict",
+        "category": "Git"
+      },
+      {
+        "id": "git.openMergeEditor",
+        "title": "Resolve in merge editor",
+        "category": "Git"
+      },
+      {
+        "id": "git.completeMerge",
+        "title": "Complete merge",
+        "category": "Git"
+      },
+      {
+        "id": "editor.configureSnippets",
+        "title": "Configure snippets",
+        "category": "Preferences"
+      },
+      {
+        "id": "editor.gotoLine",
+        "title": "Go to line…",
+        "category": "Go"
+      },
+      {
+        "id": "problems.show",
+        "title": "Show problems",
+        "category": "View"
+      },
+      {
+        "id": "problems.list",
+        "title": "List problems",
+        "category": "View"
+      },
+      {
+        "id": "problems.copy",
+        "title": "Copy problems",
+        "category": "View"
+      },
+      {
+        "id": "problems.fixWithAgent",
+        "title": "Fix problems with agent",
+        "category": "View"
+      },
+      {
+        "id": "editor.reloadFromDisk",
+        "title": "Reload from disk",
+        "category": "File"
+      },
+      {
+        "id": "editor.keepLocalChanges",
+        "title": "Keep my changes",
+        "category": "File"
+      },
+      {
+        "id": "workspace.newUntitledFile",
+        "title": "New text file",
+        "category": "File"
+      },
+      {
+        "id": "editor.saveUntitled",
+        "title": "Save untitled file as…",
+        "category": "File"
+      },
+      {
+        "id": "editor.saveAs",
+        "title": "Save as…",
+        "category": "File"
+      },
+      {
+        "id": "workspace.openFile",
+        "title": "Open file…",
+        "category": "File"
+      },
+      {
+        "id": "editor.toggleWordWrap",
+        "title": "Toggle word wrap",
+        "category": "View"
+      },
+      {
+        "id": "editor.setReadOnlyInSession",
+        "title": "Set active editor read-only in session",
+        "category": "File"
+      },
+      {
+        "id": "editor.setWritableInSession",
+        "title": "Set active editor writeable in session",
+        "category": "File"
+      },
+      {
+        "id": "editor.toggleReadOnlyInSession",
+        "title": "Toggle active editor read-only in session",
+        "category": "File"
+      },
+      {
+        "id": "editor.resetReadOnlyInSession",
+        "title": "Reset active editor read-only in session",
+        "category": "File"
+      },
+      {
+        "id": "editor.pasteFromHistory",
+        "title": "Paste from history…",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.clearClipboardHistory",
+        "title": "Clear clipboard history",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.toggleMinimap",
+        "title": "Toggle minimap",
+        "category": "View"
+      },
+      {
+        "id": "editor.toggleColumnSelection",
+        "title": "Toggle column selection mode",
+        "category": "View"
+      },
+      {
+        "id": "editor.toggleStickyScroll",
+        "title": "Toggle sticky scroll",
+        "category": "View"
+      },
+      {
+        "id": "editor.toggleRenderWhitespace",
+        "title": "Toggle render whitespace",
+        "category": "View"
+      },
+      {
+        "id": "terminal.runSelectedText",
+        "title": "Run selected text in terminal",
+        "category": "Terminal"
+      },
+      {
+        "id": "editor.inlineSuggest.trigger",
+        "title": "Suggest code here",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineSuggest.accept",
+        "title": "Accept suggestion",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineSuggest.acceptWord",
+        "title": "Accept next word of suggestion",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineSuggest.acceptLine",
+        "title": "Accept next line of suggestion",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineSuggest.hide",
+        "title": "Hide suggestion",
+        "category": "Edit"
+      },
+      {
+        "id": "notebook.find",
+        "title": "Find in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.findNext",
+        "title": "Find next in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.findPrevious",
+        "title": "Find previous in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.replace",
+        "title": "Replace in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.replaceAll",
+        "title": "Replace all in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.closeFind",
+        "title": "Close find in notebook",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.revealCell",
+        "title": "Go to cell",
+        "category": "Notebook"
+      },
+      {
+        "id": "notebook.outline",
+        "title": "Notebook outline",
+        "category": "Notebook"
+      },
+      {
+        "id": "editor.nextEdit.suggest",
+        "title": "Suggest the next edit",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.nextEdit.accept",
+        "title": "Apply the suggested next edit",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.nextEdit.dismiss",
+        "title": "Dismiss the suggested next edit",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineEdit",
+        "title": "Edit with AI…",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineEdit.accept",
+        "title": "Accept AI edit",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.inlineEdit.reject",
+        "title": "Reject AI edit",
+        "category": "Edit"
+      },
+      {
+        "id": "editor.formatDocument",
+        "title": "Format document",
+        "category": "Editor"
+      },
+      {
+        "id": "editor.formatDocumentWith",
+        "title": "Format document with…",
+        "category": "Editor"
+      },
+      {
+        "id": "editor.formatSelectionWith",
+        "title": "Format selection with…",
+        "category": "Editor"
+      },
+      {
+        "id": "diffEditor.toggleInline",
+        "title": "Toggle inline diff view",
+        "category": "Diff"
+      },
+      {
+        "id": "diffEditor.toggleWhitespace",
+        "title": "Toggle showing whitespace changes in diffs",
+        "category": "Diff"
+      },
+      {
+        "id": "diffEditor.toggleCollapseUnchanged",
+        "title": "Toggle collapsing unchanged regions in diffs",
+        "category": "Diff"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+k ctrl+v",
+        "mac": "cmd+k cmd+v",
+        "command": "editor.pasteFromHistory",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "key": "ctrl+k ctrl+w",
+        "mac": "cmd+k cmd+w",
+        "command": "editor.closeAll",
+        "when": "activeEditor"
+      },
+      {
+        "key": "ctrl+k m",
+        "mac": "cmd+k m",
+        "command": "editor.setLanguage",
+        "when": "activeEditor"
+      },
+      {
+        "key": "ctrl+k s",
+        "mac": "alt+cmd+s",
+        "command": "editor.saveAll",
+        "when": "activeEditor"
+      },
+      {
+        "key": "alt+left",
+        "mac": "ctrl+-",
+        "command": "workbench.navigateBack",
+        "when": "canNavigateBack && !terminalFocus"
+      },
+      {
+        "key": "alt+right",
+        "mac": "ctrl+shift+-",
+        "command": "workbench.navigateForward",
+        "when": "canNavigateForward && !terminalFocus"
+      },
+      {
+        "key": "ctrl+alt+pagedown",
+        "mac": "ctrl+alt+pagedown",
+        "command": "editor.multiDiff.nextFile",
+        "when": "activeMultiDiff"
+      },
+      {
+        "key": "ctrl+alt+pageup",
+        "mac": "ctrl+alt+pageup",
+        "command": "editor.multiDiff.previousFile",
+        "when": "activeMultiDiff"
+      },
+      {
+        "key": "alt+\\",
+        "command": "editor.inlineSuggest.trigger",
+        "when": "editorFocus && aiInlineCompletions"
+      },
+      {
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "command": "notebook.find",
+        "when": "activeNotebook"
+      },
+      {
+        "key": "ctrl+h",
+        "mac": "alt+cmd+f",
+        "command": "notebook.find",
+        "args": { "replace": true },
+        "when": "activeNotebook && !sideBarFocus"
+      },
+      {
+        "key": "ctrl+s",
+        "mac": "cmd+s",
+        "command": "notebook.save",
+        "when": "activeNotebook"
+      },
+      {
+        "key": "ctrl+n",
+        "mac": "cmd+n",
+        "command": "workspace.newUntitledFile",
+        "when": "!terminalFocus || isMac"
+      },
+      {
+        "key": "ctrl+s",
+        "mac": "cmd+s",
+        "command": "editor.save",
+        "when": "activeEditor"
+      },
+      {
+        "key": "ctrl+alt+s",
+        "mac": "alt+cmd+s",
+        "command": "editor.saveAll",
+        "when": "activeEditor"
+      },
+      {
+        "key": "ctrl+g",
+        "mac": "ctrl+g",
+        "command": "editor.gotoLine",
+        "when": "editorFocus"
+      },
+      {
+        "key": "ctrl+shift+m",
+        "mac": "shift+cmd+m",
+        "command": "problems.show"
+      },
+      {
+        "key": "ctrl+k",
+        "mac": "cmd+k",
+        "command": "editor.inlineEdit",
+        "when": "editorFocus && aiInlineEdit && !inlineEditVisible"
+      },
+      {
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "command": "editor.inlineEdit.accept",
+        "when": "inlineEditReview && editorFocus"
+      },
+      {
+        "key": "escape",
+        "command": "editor.inlineEdit.reject",
+        "when": "inlineEditVisible && editorFocus"
+      }
+    ],
+    "settings": {
+      "notebook.languageServer.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Language servers in notebook cells (as VS Code does for Python): the code cells go to the language's server (Pyright, pylsp…) as one document, so errors show in the cells and in Problems, and hover, completion, go to definition, references and rename work across cells."
+      },
+      "notebook.lineNumbers": {
+        "type": "string",
+        "enum": ["off", "on"],
+        "default": "off",
+        "description": "Line numbers in notebook cells' editors (L toggles one cell's, Shift+L every cell's, as in VS Code)."
+      },
+      "notebook.output.scrolling": {
+        "type": "boolean",
+        "default": true,
+        "description": "Long outputs scroll inside their cell instead of making it as tall as they are."
+      },
+      "notebook.output.cdn": {
+        "type": "string",
+        "default": "https://cdn.jsdelivr.net/npm/",
+        "description": "Where interactive outputs load their libraries from (Jupyter widgets, Plotly), as an npm CDN URL ending in /. Point it at a mirror if jsDelivr is blocked where you work."
+      },
+      "editor.fontSize": {
+        "type": "integer",
+        "default": 14,
+        "minimum": 6,
+        "maximum": 72,
+        "description": "Font size in pixels.",
+        "order": 1
+      },
+      "editor.tabSize": {
+        "type": "integer",
+        "default": 4,
+        "minimum": 1,
+        "maximum": 16,
+        "description": "Spaces per tab (files may override it).",
+        "order": 2
+      },
+      "editor.wordWrap": {
+        "type": "string",
+        "enum": ["off", "on"],
+        "default": "on",
+        "description": "Wrap long lines at the editor's width.",
+        "order": 3
+      },
+      "editor.stickyScroll.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Keep the enclosing function and class names pinned at the top while scrolling.",
+        "order": 4
+      },
+      "editor.minimap.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show the minimap.",
+        "order": 5
+      },
+      "editor.renderWhitespace": {
+        "type": "string",
+        "enum": ["none", "boundary", "selection", "all"],
+        "default": "selection",
+        "description": "When to draw whitespace characters.",
+        "order": 6
+      },
+      "editor.hideSecrets": {
+        "type": "boolean",
+        "default": false,
+        "description": "Cover the values in secret files (editor.secretFiles: .env files, keys, certificates) except on the line the cursor is on. For screen sharing and streaming; copying still copies the real text.",
+        "order": 6.1
+      },
+      "editor.secretFiles": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": ["**/.env*", "**/*.pem", "**/*.key", "**/*.cert", "**/*.crt", "**/secrets.yml"],
+        "description": "Glob patterns of the files whose values editor.hideSecrets covers.",
+        "order": 6.2
+      },
+      "diffEditor.renderSideBySide": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show diffs side by side (else inline). A narrow diff view goes inline anyway.",
+        "order": 60
+      },
+      "diffEditor.ignoreTrimWhitespace": {
+        "type": "boolean",
+        "default": true,
+        "description": "Diffs ignore changes of leading and trailing whitespace.",
+        "order": 61
+      },
+      "diffEditor.hideUnchangedRegions.enabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Diffs fold long stretches of unchanged lines.",
+        "order": 62
+      },
+      "editor.codeActionsOnSave": {
+        "type": "object",
+        "default": {},
+        "description": "Code actions run before saving, from the language services: { \"source.organizeImports\": \"explicit\", \"source.fixAll\": \"explicit\" }. \"explicit\" on Ctrl+S, \"always\" with auto-save too, \"never\" off.",
+        "order": 4
+      },
+      "files.encoding": {
+        "type": "string",
+        "enum": [
+          "utf8",
+          "windows-1252",
+          "iso-8859-1",
+          "iso-8859-3",
+          "iso-8859-15",
+          "macintosh",
+          "windows-1250",
+          "iso-8859-2",
+          "windows-1251",
+          "iso-8859-5",
+          "koi8-r",
+          "koi8-u",
+          "ibm866",
+          "x-mac-cyrillic",
+          "windows-1253",
+          "iso-8859-7",
+          "windows-1254",
+          "windows-1255",
+          "iso-8859-8",
+          "iso-8859-8-i",
+          "windows-1256",
+          "iso-8859-6",
+          "windows-1257",
+          "iso-8859-4",
+          "iso-8859-13",
+          "iso-8859-10",
+          "iso-8859-14",
+          "iso-8859-16",
+          "windows-1258",
+          "windows-874",
+          "shift_jis",
+          "euc-jp",
+          "iso-2022-jp",
+          "gbk",
+          "gb18030",
+          "big5",
+          "euc-kr"
+        ],
+        "default": "utf8",
+        "description": "How files that aren't valid UTF-8 are read and saved (UTF-8 and UTF-16 files with a BOM are always read as such). With UTF-8 they open read-only until you pick an encoding (status bar).",
+        "order": 2
+      },
+      "files.autoGuessEncoding": {
+        "type": "boolean",
+        "default": false,
+        "description": "Guess the encoding of files that aren't UTF-8 from their content (UTF-16 without a BOM, Japanese, Chinese, Korean, Cyrillic, Western and the other legacy encodings). The guess wins over files.encoding.",
+        "order": 3
+      },
+      "files.eol": {
+        "type": "string",
+        "enum": ["auto", "\n", "\r\n"],
+        "enumDescriptions": ["Keep each file's line endings; new files use LF", "LF", "CRLF"],
+        "default": "auto",
+        "description": "Line endings for new files.",
+        "order": 1
+      },
+      "files.insertFinalNewline": {
+        "type": "boolean",
+        "default": false,
+        "description": "Make sure files end with a newline when saved.",
+        "order": 2
+      },
+      "files.trimTrailingWhitespace": {
+        "type": "boolean",
+        "default": false,
+        "description": "Remove trailing whitespace when saving.",
+        "order": 3
+      },
+      "files.readonlyInclude": {
+        "type": "object",
+        "default": {},
+        "description": "Glob patterns of files that open read-only (true makes them so), matched against the path in the folder or the absolute path: { \"**/generated/**\": true }. \"Set active editor writeable in session\" overrides it for a file.",
+        "order": 3.1
+      },
+      "files.readonlyExclude": {
+        "type": "object",
+        "default": {},
+        "description": "Glob patterns of files that stay editable although files.readonlyInclude matches them.",
+        "order": 3.2
+      },
+      "files.readonlyFromPermissions": {
+        "type": "boolean",
+        "default": false,
+        "description": "Open files without write permission on disk read-only.",
+        "order": 3.3
+      },
+      "outline.sortOrder": {
+        "type": "string",
+        "enum": ["position", "name", "kind"],
+        "default": "position",
+        "description": "Order of symbols in the Outline: as in the file, by name, or by kind (then name)."
+      },
+      "problems.decorations.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Problems: decorations",
+        "description": "Color files with errors or warnings (and the folders holding them) in the explorer and on tabs, with the number of problems."
+      },
+      "outline.followCursor": {
+        "type": "boolean",
+        "default": true,
+        "description": "The Outline highlights and reveals the symbol the cursor is in."
+      },
+      "breadcrumbs.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show breadcrumbs above the editor: the file's folders and the symbols around the cursor.",
+        "order": 7
+      },
+      "editor.fileStatusBar.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show a status bar under each editor: the file's problems, Diff, line and column, language.",
+        "order": 8
+      },
+      "workbench.statusBar.editorInfo": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show the active editor's line and column, indentation, encoding, line endings and language in the main status bar.",
+        "order": 8.5
+      },
+      "editor.insertSpaces": {
+        "type": "boolean",
+        "default": true,
+        "description": "Insert spaces when pressing Tab (files may override it).",
+        "order": 2.5
+      },
+      "editor.fontFamily": {
+        "type": "string",
+        "default": "",
+        "description": "Editor font (CSS font-family). Empty: the IDE's monospace font.",
+        "order": 1.5
+      },
+      "editor.lineNumbers": {
+        "type": "string",
+        "enum": ["on", "off", "relative"],
+        "default": "on",
+        "description": "Line numbers in the gutter.",
+        "order": 6.5
+      },
+      "editor.rulers": {
+        "type": "array",
+        "default": [],
+        "description": "Vertical rulers at these columns, e.g. [80, 120].",
+        "order": 6.6
+      },
+      "editor.bracketPairColorization.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Color matching brackets by nesting level.",
+        "order": 6.7
+      },
+      "editor.autoClosingTags": {
+        "type": "boolean",
+        "default": true,
+        "description": "Typing the > of an opening tag inserts its closing tag (HTML, XML, JSX/TSX, Vue, Svelte).",
+        "order": 6.8
+      },
+      "emmet.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Emmet",
+        "description": "Emmet abbreviations in HTML, CSS (SCSS, Less, Sass), JSX/TSX, Vue, Svelte, PHP and Astro: type div.card>ul>li*3 and pick the suggestion (Tab or Enter) to expand it.",
+        "order": 6.85
+      },
+      "emmet.excludeLanguages": {
+        "type": "array",
+        "default": [],
+        "description": "Languages where Emmet is off, by id (e.g. [\"jsx\"]).",
+        "order": 6.86
+      },
+      "editor.vimMode": {
+        "type": "boolean",
+        "default": false,
+        "title": "Vim mode",
+        "description": "Vim key bindings in the editor: normal, insert and visual modes, motions, registers, macros and : commands (:w saves). The mode shows at the bottom of the editor.",
+        "order": 6.9
+      },
+      "editor.formatOnSave": {
+        "type": "boolean",
+        "default": false,
+        "description": "Format the file when saving (the project's formatter when it has one, else the language's).",
+        "order": 6.8
+      },
+      "editor.formatOnSaveMode": {
+        "type": "string",
+        "enum": ["file", "modifications", "modificationsIfAvailable"],
+        "enumDescriptions": [
+          "Format the whole file",
+          "Format only the lines changed since the last commit (needs git and a language that can format a selection)",
+          "Format the changed lines, or the whole file when it isn't in git"
+        ],
+        "default": "file",
+        "title": "Format on save: mode",
+        "description": "What format on save formats.",
+        "order": 6.81
+      },
+      "editor.defaultFormatter": {
+        "type": "string",
+        "default": "",
+        "title": "Default formatter",
+        "description": "Which formatter formats a file when several can: an extension's id (\"ms-python.black-formatter\"), \"builtin.language-servers\" for the language servers, or \"builtin.editor\" for the editor's own. Set it per language (\"[python]\": { \"editor.defaultFormatter\": … }). Empty: the only one, or you're asked to choose.",
+        "order": 6.82
+      },
+      "files.hotExit": {
+        "type": "string",
+        "enum": ["onExit", "off"],
+        "enumDescriptions": [
+          "Closing the window keeps unsaved changes; they're back next time the folder opens",
+          "Ask about unsaved changes when the window closes"
+        ],
+        "default": "onExit",
+        "description": "Hot exit: remember unsaved changes when the window closes (and after a crash), like VS Code.",
+        "order": 19
+      },
+      "files.autoSave": {
+        "type": "string",
+        "enum": ["off", "afterDelay", "onFocusChange", "onWindowChange"],
+        "enumDescriptions": [
+          "Save manually",
+          "Save after a pause in typing (files.autoSaveDelay)",
+          "Save when the editor loses focus",
+          "Save when the window loses focus"
+        ],
+        "default": "off",
+        "description": "Save files automatically.",
+        "order": 0.5
+      },
+      "files.autoSaveDelay": {
+        "type": "integer",
+        "default": 1000,
+        "minimum": 100,
+        "maximum": 60000,
+        "description": "Milliseconds after the last edit before saving (files.autoSave: afterDelay).",
+        "order": 0.6
+      },
+      "files.exclude": {
+        "type": "object",
+        "default": {
+          "**/.git": true,
+          "**/.svn": true,
+          "**/.hg": true,
+          "**/.DS_Store": true,
+          "**/Thumbs.db": true
+        },
+        "description": "Glob patterns of files and folders the explorer hides (true hides).",
+        "order": 4
+      },
+      "files.associations": {
+        "type": "object",
+        "default": {},
+        "description": "Languages for file names: { \"*.mdx\": \"markdown\", \"Dockerfile.*\": \"dockerfile\" }. A pattern with a / is matched against the path. Decides syntax colors, settings per language and which language server opens the file.",
+        "order": 4.5
+      },
+      "editor.inlineEdit.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Model for Edit with AI (Ctrl+K), as provider/model (e.g. ollama/qwen2.5-coder:7b). Empty: the agent's model.",
+        "order": 1,
+        "category": "AI features",
+        "section": "Edit with AI (Ctrl+K)",
+        "title": "Model"
+      },
+      "editor.inlineCompletions.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Suggest code as you type (ghost text): Tab accepts, Ctrl+Right accepts a word, Alt+\\ asks now, Esc hides it. Every pause in typing asks the model, so a fast local code model works best.",
+        "order": 2,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Suggestions as you type"
+      },
+      "editor.nextEdit.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "After you change some lines and pause, suggest the edit that should follow (the same rename further down, a matching change). It shows under its lines: Tab goes there, Tab again applies it, Esc dismisses it. Uses the suggestions model; every pause after a change asks it.",
+        "order": 2.5,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Next-edit suggestions"
+      },
+      "editor.nextEdit.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The model for next-edit suggestions (provider/model); empty: the chat's default model. A fast one suits it.",
+        "order": 2.6,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Next-edit suggestions model"
+      },
+      "editor.inlineCompletions.model": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "Model for suggestions as you type, as provider/model (e.g. ollama/qwen2.5-coder:1.5b-base). Empty: a small code model installed in Ollama (qwen2.5-coder, deepseek-coder, starcoder2, codegemma…) when there is one, else the agent's model. A small local code model is fastest: ollama pull qwen2.5-coder:1.5b-base.",
+        "order": 3,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Model"
+      },
+      "editor.inlineCompletions.fim": {
+        "type": "string",
+        "enum": ["auto", "always", "never"],
+        "default": "auto",
+        "scope": "user",
+        "description": "Fill-in-the-middle: send the code before and after the cursor to the model's FIM endpoint (better suggestions from code models). auto: Ollama, Mistral (Codestral) and DeepSeek; always: also other OpenAI-compatible servers (/v1/completions with suffix); never: always the chat prompt. A model without FIM falls back to the chat prompt by itself.",
+        "order": 3.1,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Fill-in-the-middle"
+      },
+      "editor.inlineCompletions.maxTokens": {
+        "type": "integer",
+        "default": 128,
+        "minimum": 8,
+        "maximum": 2048,
+        "scope": "user",
+        "description": "Most tokens a suggestion may have (longer replies are cut). Lower is faster.",
+        "order": 3.2,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Longest suggestion (tokens)"
+      },
+      "editor.inlineCompletions.maxLines": {
+        "type": "integer",
+        "default": 8,
+        "minimum": 1,
+        "maximum": 100,
+        "scope": "user",
+        "description": "Most lines a suggestion at the end of a line may have (in the middle of a line it's always one).",
+        "order": 3.3,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Longest suggestion (lines)"
+      },
+      "editor.inlineCompletions.contextTokens": {
+        "type": "integer",
+        "default": 1536,
+        "minimum": 256,
+        "maximum": 32000,
+        "scope": "user",
+        "description": "About how many tokens of context each request sends (estimated for the model's tokenizer family): the code around the cursor first, then snippets of imported files, other open files and recent edits. More context, slower answers.",
+        "order": 3.4,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Context size (tokens)"
+      },
+      "editor.inlineCompletions.context": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Include the most similar parts of other open files, your recent edits and the declarations the file imports from the folder's files in each request (they stay on your computer unless the model is a hosted one).",
+        "order": 3.5,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Context from other files"
+      },
+      "editor.inlineCompletions.debounceMs": {
+        "type": "integer",
+        "default": 350,
+        "minimum": 0,
+        "maximum": 5000,
+        "scope": "user",
+        "description": "How long typing must pause (milliseconds) before a suggestion is asked for. Each key cancels the request in flight.",
+        "order": 3.6,
+        "category": "AI features",
+        "section": "Suggestions as you type",
+        "title": "Delay (ms)"
+      },
+      "editor.inlineEdit.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Edit with AI: Ctrl+K (like Cursor; Ctrl+K chords still work) and the editor's right-click menu rewrite the selected lines with a model, reviewed change by change. Off: no AI in the editor unless you turn it on.",
+        "order": 0,
+        "category": "AI features",
+        "section": "Edit with AI (Ctrl+K)",
+        "title": "Edit with AI"
+      },
+      "editor.lineHeight": {
+        "type": "number",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Line height in pixels (or a multiple of the font size below 8). 0: as in VS Code, 1.35 × the font size (1.5 on macOS)."
+      },
+      "editor.fontWeight": {
+        "type": "string",
+        "enum": ["normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900"],
+        "default": "normal",
+        "description": "Font weight."
+      },
+      "editor.fontLigatures": {
+        "type": "boolean",
+        "default": false,
+        "description": "Use the font's ligatures (=> → ⇒ in fonts that have them)."
+      },
+      "editor.letterSpacing": {
+        "type": "number",
+        "default": 0,
+        "minimum": -5,
+        "maximum": 20,
+        "description": "Letter spacing in pixels."
+      },
+      "editor.cursorStyle": {
+        "type": "string",
+        "enum": ["line", "block", "underline", "line-thin", "block-outline", "underline-thin"],
+        "default": "line",
+        "description": "Cursor shape."
+      },
+      "editor.cursorBlinking": {
+        "type": "string",
+        "enum": ["blink", "smooth", "phase", "expand", "solid"],
+        "default": "blink",
+        "description": "Cursor animation."
+      },
+      "editor.cursorSmoothCaretAnimation": {
+        "type": "string",
+        "enum": ["off", "explicit", "on"],
+        "default": "off",
+        "description": "Animate the cursor moving."
+      },
+      "editor.cursorWidth": {
+        "type": "integer",
+        "default": 2,
+        "minimum": 1,
+        "maximum": 8,
+        "description": "Width of the line cursor in pixels."
+      },
+      "editor.smoothScrolling": {
+        "type": "boolean",
+        "default": false,
+        "description": "Animate scrolling."
+      },
+      "editor.mouseWheelZoom": {
+        "type": "boolean",
+        "default": false,
+        "description": "Ctrl/Cmd + mouse wheel changes the font size."
+      },
+      "editor.scrollBeyondLastLine": {
+        "type": "boolean",
+        "default": true,
+        "description": "Scroll past the last line, so it can sit at the top of the editor (empty space after the end of the file, as in VS Code)."
+      },
+      "editor.scrollbar.verticalScrollbarSize": {
+        "type": "integer",
+        "default": 12,
+        "minimum": 4,
+        "maximum": 30,
+        "description": "Width of the editor's vertical scrollbar in pixels."
+      },
+      "editor.scrollbar.horizontalScrollbarSize": {
+        "type": "integer",
+        "default": 12,
+        "minimum": 4,
+        "maximum": 30,
+        "description": "Height of the editor's horizontal scrollbar in pixels."
+      },
+      "editor.wrappingIndent": {
+        "type": "string",
+        "enum": ["none", "same", "indent", "deepIndent"],
+        "enumDescriptions": [
+          "Wrapped lines start at the first column",
+          "Wrapped lines line up with the line's indentation",
+          "Wrapped lines are indented one step more",
+          "Wrapped lines are indented two steps more"
+        ],
+        "default": "same",
+        "description": "Indentation of the continuation of wrapped lines."
+      },
+      "editor.renderLineHighlight": {
+        "type": "string",
+        "enum": ["none", "gutter", "line", "all"],
+        "default": "line",
+        "description": "Highlight the cursor's line."
+      },
+      "editor.renderControlCharacters": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show control characters."
+      },
+      "editor.renderFinalNewline": {
+        "type": "string",
+        "enum": ["off", "on", "dimmed"],
+        "default": "on",
+        "description": "Show the line number of the last empty line."
+      },
+      "editor.guides.indentation": {
+        "type": "boolean",
+        "default": true,
+        "description": "Indentation guides."
+      },
+      "editor.guides.bracketPairs": {
+        "type": "boolean",
+        "default": false,
+        "description": "Vertical guides for bracket pairs."
+      },
+      "editor.matchBrackets": {
+        "type": "string",
+        "enum": ["always", "near", "never"],
+        "default": "always",
+        "description": "Highlight the matching bracket."
+      },
+      "editor.folding": {
+        "type": "boolean",
+        "default": true,
+        "description": "Fold regions of code."
+      },
+      "editor.showFoldingControls": {
+        "type": "string",
+        "enum": ["always", "never", "mouseover"],
+        "default": "mouseover",
+        "description": "When the fold arrows show in the gutter."
+      },
+      "editor.minimap.side": {
+        "type": "string",
+        "enum": ["right", "left"],
+        "default": "right",
+        "description": "Which side the minimap is on."
+      },
+      "editor.minimap.size": {
+        "type": "string",
+        "enum": ["proportional", "fill", "fit"],
+        "default": "proportional",
+        "description": "How the minimap is scaled."
+      },
+      "editor.minimap.renderCharacters": {
+        "type": "boolean",
+        "default": true,
+        "description": "Draw characters in the minimap (else blocks)."
+      },
+      "editor.minimap.maxColumn": {
+        "type": "integer",
+        "default": 120,
+        "minimum": 10,
+        "maximum": 500,
+        "description": "The minimap's width in columns."
+      },
+      "editor.stickyScroll.maxLineCount": {
+        "type": "integer",
+        "default": 5,
+        "minimum": 1,
+        "maximum": 20,
+        "description": "Most lines sticky scroll shows."
+      },
+      "editor.wordWrapColumn": {
+        "type": "integer",
+        "default": 80,
+        "minimum": 10,
+        "maximum": 500,
+        "description": "Column for word wrap modes that use it."
+      },
+      "editor.autoClosingBrackets": {
+        "type": "string",
+        "enum": ["always", "languageDefined", "beforeWhitespace", "never"],
+        "default": "languageDefined",
+        "description": "Close brackets as you type the opening one."
+      },
+      "editor.autoClosingQuotes": {
+        "type": "string",
+        "enum": ["always", "languageDefined", "beforeWhitespace", "never"],
+        "default": "languageDefined",
+        "description": "Close quotes as you type the opening one."
+      },
+      "editor.autoSurround": {
+        "type": "string",
+        "enum": ["languageDefined", "quotes", "brackets", "never"],
+        "default": "languageDefined",
+        "description": "Typing a quote or bracket with text selected surrounds it."
+      },
+      "editor.formatOnPaste": {
+        "type": "boolean",
+        "default": false,
+        "description": "Format pasted text (when the language has a formatter)."
+      },
+      "editor.formatOnType": {
+        "type": "boolean",
+        "default": false,
+        "description": "Format the line after typing (when the language supports it)."
+      },
+      "editor.semanticHighlighting.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Color code with the language server's semantic tokens (types, parameters, read-only variables…) over the syntax colors, when the server sends them."
+      },
+      "editor.linkedEditing": {
+        "type": "boolean",
+        "default": false,
+        "description": "Rename the matching HTML/XML tag as you edit one."
+      },
+      "editor.columnSelection": {
+        "type": "boolean",
+        "default": false,
+        "description": "Column selection mode: dragging or Shift+arrows select a rectangle (one cursor per line). Selection → Column selection mode."
+      },
+      "editor.occurrencesHighlight": {
+        "type": "string",
+        "enum": ["off", "singleFile", "multiFile"],
+        "default": "singleFile",
+        "description": "Highlight other occurrences of the symbol at the cursor."
+      },
+      "editor.selectionHighlight": {
+        "type": "boolean",
+        "default": true,
+        "description": "Highlight other matches of the selected text."
+      },
+      "editor.quickSuggestions": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show suggestions as you type."
+      },
+      "editor.suggestOnTriggerCharacters": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show suggestions after trigger characters (like '.')."
+      },
+      "editor.acceptSuggestionOnEnter": {
+        "type": "string",
+        "enum": ["on", "smart", "off"],
+        "default": "on",
+        "description": "Enter accepts a suggestion."
+      },
+      "editor.tabCompletion": {
+        "type": "string",
+        "enum": ["on", "off", "onlySnippets"],
+        "default": "off",
+        "description": "Tab completes words and snippets."
+      },
+      "editor.parameterHints.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show parameter info while typing a call."
+      },
+      "editor.hover.enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show hovers."
+      },
+      "editor.hover.delay": {
+        "type": "integer",
+        "default": 300,
+        "minimum": 0,
+        "maximum": 5000,
+        "description": "Delay before a hover shows, in milliseconds."
+      },
+      "editor.inlayHints.enabled": {
+        "type": "string",
+        "enum": ["on", "off", "onUnlessPressed", "offUnlessPressed"],
+        "default": "on",
+        "description": "Inline type and parameter hints (from the language service)."
+      },
+      "editor.codeLens": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show code lenses (e.g. the merge conflict actions)."
+      },
+      "editor.colorDecorators": {
+        "type": "boolean",
+        "default": true,
+        "description": "Color swatches next to CSS colors."
+      },
+      "editor.dragAndDrop": {
+        "type": "boolean",
+        "default": true,
+        "description": "Move selected text by dragging it."
+      },
+      "editor.emptySelectionClipboard": {
+        "type": "boolean",
+        "default": true,
+        "description": "Copy and cut with nothing selected act on the whole line."
+      },
+      "editor.multiCursorModifier": {
+        "type": "string",
+        "enum": ["ctrlCmd", "alt"],
+        "default": "alt",
+        "description": "The key that adds a cursor with a click (the other one opens links)."
+      },
+      "editor.unicodeHighlight.ambiguousCharacters": {
+        "type": "boolean",
+        "default": true,
+        "description": "Highlight characters that look like others (e.g. Cyrillic а)."
+      },
+      "editor.padding.top": {
+        "type": "integer",
+        "default": 8,
+        "minimum": 0,
+        "maximum": 100,
+        "description": "Space above the first line in pixels."
+      },
+      "editor.projectFormatters": {
+        "type": "boolean",
+        "default": true,
+        "description": "Format with the project's own tool when it has one (Prettier or Biome in node_modules, Ruff or Black configured in pyproject.toml, rustfmt, gofmt, clang-format with .clang-format) — for Format document and format on save. Trusted folders only.",
+        "order": 6.81
+      },
+      "editor.inlineDiagnostics": {
+        "type": "string",
+        "enum": ["off", "errors", "errorsAndWarnings", "all"],
+        "enumDescriptions": [
+          "Only squiggles",
+          "Errors after their line",
+          "Errors and warnings after their line",
+          "Every problem, info included"
+        ],
+        "default": "errorsAndWarnings",
+        "description": "Show problems at the end of their line (like the Error Lens extension).",
+        "order": 6.9
+      }
+    }
+  }
+}

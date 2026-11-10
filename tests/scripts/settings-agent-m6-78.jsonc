@@ -1,0 +1,110 @@
+// D179: settings pages (groups, a page's sections in the navigation, links with an arrow), the
+// new agent settings, and the agent asking before it changes the IDE (even with full access),
+// with "Close what the agent opened" undoing it; deletion protection.
+{
+  "name": "settings-agent-m6-78",
+  "steps": [
+    { "run": "settings.open", "input": { "category": "Agent" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-items", "html": 20000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Execution and approvals"
+          }
+        }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-item.is-link", "limit": 10 },
+      "expect": { "$contains": "settings-nav-arrow" }
+    },
+    // Another page by one of its categories; AI-in-the-editor settings have their own page.
+    { "run": "settings.open", "input": { "category": "AI features" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-list", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Suggestions as you type" } }],
+      "timeoutMs": 3000
+    },
+    // Changed settings show a dot, not a bar.
+    { "run": "settings.set", "input": { "key": "editor.inlineEdit.enabled", "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".setting-row.is-modified .setting-modified-dot" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "settings.reset",
+      "input": { "keys": ["editor.inlineEdit.enabled"] },
+      "expect": { "reset": ["editor.inlineEdit.enabled"] }
+    },
+    // Chat look settings.
+    { "run": "settings.set", "input": { "key": "agent.textSize", "value": "large" } },
+    { "run": "settings.set", "input": { "key": "agent.codeBlockWordWrap", "value": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-view.is-wrap-code[data-text-size='large']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // The status bar can be hidden and shown again.
+    { "run": "workbench.toggleStatusBar", "expect": { "visible": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar[hidden]" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.toggleStatusBar", "expect": { "visible": true } },
+    // The agent changing the IDE asks, even with full access.
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    { "run": "agent.send", "input": { "message": "make the editor font bigger", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "Let the agent change the IDE" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Font:" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://settings",
+      "expect": { "$contains": "\"key\":\"editor.fontSize\",\"value\":15" }
+    },
+    // What it opens is tracked, and closes again.
+    { "run": "agent.send", "input": { "message": "open the notes for me" }, "timeoutMs": 30000 },
+    { "state": "ide://agent", "expect": { "opened": 1 } },
+    { "state": "ide://layout", "expect": { "$contains": "notes.txt" } },
+    { "run": "agent.closeOpened", "input": {}, "expect": { "closed": 1 } },
+    { "state": "ide://layout", "expect": { "$not": { "$contains": "notes.txt" } } },
+    { "state": "ide://agent", "expect": { "opened": 0 } },
+    // Deletion protection: a delete asks even with full access.
+    { "run": "settings.set", "input": { "key": "agent.deleteProtection", "value": true } },
+    { "run": "agent.send", "input": { "message": "clear the scratch folder", "wait": false } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "rm -rf scratch-d179" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle" },
+      "timeoutMs": 30000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    { "run": "layout.returnAllWindows", "expect": { "returned": 0 } }
+  ]
+}

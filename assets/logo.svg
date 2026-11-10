@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="App icon">
+<defs><linearGradient id="fbt" gradientUnits="userSpaceOnUse" x1="60" y1="20" x2="200" y2="110"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4E4DF"/></linearGradient><linearGradient id="fbr" gradientUnits="userSpaceOnUse" x1="200" y1="60" x2="150" y2="240"><stop offset="0" stop-color="#A2A29D"/><stop offset="1" stop-color="#6E6E6A"/></linearGradient><linearGradient id="fbl" gradientUnits="userSpaceOnUse" x1="30" y1="120" x2="128" y2="250"><stop offset="0" stop-color="#DEDED9"/><stop offset="1" stop-color="#B4B4AF"/></linearGradient><clipPath id="fbc"><path d="M115.01,23.50 Q128,16 140.99,23.50 L212.01,64.50 Q225,72 225.00,87.00 L225.00,169.00 Q225,184 212.01,191.50 L140.99,232.50 Q128,240 115.01,232.50 L43.99,191.50 Q31,184 31.00,169.00 L31.00,87.00 Q31,72 43.99,64.50 Z"/></clipPath><clipPath id="fbj"><path d="M128.00,16.04 Q128.00,7.04 135.79,11.54 L224.97,63.02 Q232.76,67.52 232.76,76.52 L232.76,179.48 Q232.76,188.48 224.97,192.98 L135.79,244.46 Q128.00,248.96 120.21,244.46 L31.03,192.98 Q23.24,188.48 23.24,179.48 L23.24,130.27 Q23.24,121.27 31.03,125.77 L73.65,150.38 Q81.44,154.88 89.24,159.38 L120.21,177.25 Q128.00,181.75 135.79,177.25 L166.76,159.38 Q174.56,154.88 174.56,145.88 L174.56,110.12 Q174.56,101.12 166.76,96.62 L135.79,78.75 Q128.00,74.25 128.00,65.25 Z"/></clipPath></defs>
+<g clip-path="url(#fbc)">
+<g clip-path="url(#fbj)">
+<polygon points="128.00,7.04 232.76,67.52 174.56,101.12 128.00,74.25" fill="url(#fbt)"/>
+<polygon points="232.76,67.52 232.76,188.48 128.00,248.96 128.00,181.75 174.56,154.88 174.56,101.12" fill="url(#fbr)"/>
+<polygon points="128.00,248.96 23.24,188.48 23.24,121.27 81.44,154.88 128.00,181.75" fill="url(#fbl)"/>
+</g>
+</g></svg>

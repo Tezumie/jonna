@@ -1,0 +1,48 @@
+// D255: an extension whose code runs in Node (`"host": "node"`, the "node" permission): it loads
+// its own modules with require and Node's built-ins, reads a file with fs and through ide, and
+// what it prints goes to its log (the host's stdout stays the protocol's). Needs Node on PATH.
+{
+  "name": "node-host-m7-20",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/nodehost" },
+      "expect": { "id": "acme.nodehost" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"id\":\"acme.nodehost\"" } }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.nodehost", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.nodehost", "command": "nodehost.info" },
+      "expect": {
+        "result": { "helper": "HI!", "inNode": true, "folders": 1, "node": { "$contains": "v" } }
+      },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.nodehost", "command": "nodehost.readme" },
+      "expect": {
+        "result": { "viaFs": "# Sample workspace", "viaIde": "# Sample workspace" }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "$contains": "node host started"
+      },
+      "timeoutMs": 10000
+    },
+    { "state": "ide://extensions", "expect": { "$contains": "written to stdout" } }
+  ]
+}

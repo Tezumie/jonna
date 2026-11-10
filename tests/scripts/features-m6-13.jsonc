@@ -1,0 +1,81 @@
+// D114: symbols without a language service — Markdown headings and Python declarations — in the
+// outline state (breadcrumbs and the Outline view use the same symbols).
+{
+  "name": "features-m6-13",
+  "steps": [
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": { "symbols": [{ "name": "Sample workspace", "kind": "string", "depth": 0 }] },
+      "timeoutMs": 15000
+    },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "app.py" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "app.py" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "class Greeter:\n    def hello(self):\n        pass\n\ndef main():\n    pass\n"
+      }
+    },
+    {
+      "state": "ide://editors/active/outline",
+      "expect": {
+        "symbols": [
+          { "name": "Greeter", "kind": "class", "depth": 0 },
+          { "name": "hello", "kind": "function", "depth": 1 },
+          { "name": "main", "kind": "function", "depth": 0 }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    // The editor menu's new actions exist in the engine (VS Code's Peek, type definition…).
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "main.ts" }, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    // Once TypeScript's worker is up (its diagnostics arrive).
+    {
+      "state": "ide://diagnostics",
+      "expect": { "$contains": "not assignable" },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.focusTab", "input": { "path": "src/main.ts" } },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.revealDefinition" },
+      "expect": { "ran": true }
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.peekDefinition" },
+      "expect": { "ran": true }
+    },
+    // Monaco's TypeScript has no type-definition provider: not offered (language servers have it).
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.goToTypeDefinition" },
+      "expect": { "ran": false }
+    },
+    {
+      "run": "editor.runAction",
+      "input": { "action": "editor.action.quickOutline" },
+      "expect": { "ran": true }
+    },
+    // D115: the sidebar on the right and back.
+    { "run": "layout.toggleSidebarPosition", "expect": { "side": "right" } },
+    { "state": "ide://layout", "expect": { "sidebar": { "side": "right", "visible": true } } },
+    { "run": "layout.toggleSidebar" },
+    { "run": "layout.toggleSidebar" },
+    {
+      "run": "layout.toggleSidebarPosition",
+      "input": { "side": "left" },
+      "expect": { "side": "left" }
+    }
+  ]
+}

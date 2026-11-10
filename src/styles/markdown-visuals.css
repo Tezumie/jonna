@@ -1,0 +1,95 @@
+/* Diagrams and math in Markdown (D172): ```mermaid drawn by pele, TeX as MathML. Everywhere
+   Markdown shows (the chat, file previews, the guide). A diagram sits in a card like a code
+   block; its colors come from our tokens through pele's CSS variables, so a theme switch
+   recolors it without drawing again. Series colors are the chart palette (--chart-1…6). */
+@layer extensions {
+  .md-diagram {
+    margin: 0 0 12px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    --pele-bg: var(--bg-surface-raised);
+    --pele-fg: var(--fg-default);
+    --pele-muted: var(--fg-muted);
+    --pele-line: var(--fg-muted);
+    --pele-surface: var(--bg-active);
+    --pele-surface-alt: var(--bg-hover);
+    --pele-border: var(--border-strong);
+    --pele-accent: var(--chart-1);
+    --pele-critical: var(--status-danger-fg);
+    --pele-error: var(--status-danger-fg);
+    --pele-radius: var(--radius-sm);
+    --pele-series-1: var(--chart-1);
+    --pele-series-2: var(--chart-2);
+    --pele-series-3: var(--chart-3);
+    --pele-series-4: var(--chart-4);
+    --pele-series-5: var(--chart-5);
+    --pele-series-6: var(--chart-6);
+    --pele-series-7: var(--chart-1);
+    --pele-series-8: var(--chart-2);
+  }
+  .md-diagram .icon-button {
+    width: 22px;
+    height: 22px;
+  }
+  .md-diagram-body {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-4) var(--space-5) var(--space-5);
+    overflow-x: auto;
+  }
+  /* Zoomed or moved (D190): clipped to the card, dragged with the pointer. */
+  .md-diagram-body.is-zoomed {
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .md-diagram-body.is-zoomed:active {
+    cursor: grabbing;
+  }
+  /* The renderer sizes it; it never grows past the card (small windows). */
+  .md-diagram-body svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .md-diagram-pending {
+    padding: var(--space-4) 0;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .md-diagram-error {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    align-self: flex-start;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .md-diagram-error .icon {
+    flex: none;
+    color: var(--status-danger-fg);
+  }
+  .md-diagram-source {
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    border-top: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--fg-default);
+  }
+  .md-math-block {
+    margin: 0 0 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+  }
+  .md-math-block math {
+    font-size: 1.1em;
+  }
+  .md-math math {
+    font-size: 1.05em;
+  }
+}

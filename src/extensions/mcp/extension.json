@@ -1,0 +1,49 @@
+{
+  "id": "builtin.mcp",
+  "version": "0.1.0",
+  "displayName": "MCP server",
+  "description": "Lets external agents (e.g. Claude Code) use the IDE's commands and state over the Model Context Protocol.",
+  "activation": ["*"],
+  "contributes": {
+    "commands": [
+      { "id": "mcp.start", "title": "Start MCP server", "category": "MCP" },
+      { "id": "mcp.stop", "title": "Stop MCP server", "category": "MCP" },
+      { "id": "mcp.showConnectionInfo", "title": "Show MCP connection info", "category": "MCP" },
+      {
+        "id": "mcp.claudeCodeIntegration",
+        "title": "Claude Code integration (/ide)",
+        "category": "MCP"
+      },
+      {
+        "id": "mcp.sendSelectionToClaudeCode",
+        "title": "Send selection to Claude Code",
+        "category": "MCP"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+k alt+k",
+        "mac": "cmd+k alt+k",
+        "command": "mcp.sendSelectionToClaudeCode",
+        "when": "editorTextFocus && claudeCodeIdeRunning"
+      }
+    ],
+    "settings": {
+      "mcp.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Run an MCP server on 127.0.0.1 so agents like Claude Code can use the IDE's commands (tools) and state (resources). Every start uses a new port and token; anything that changes files or runs commands asks you first.",
+        "order": 1
+      },
+      "mcp.claudeCode.enabled": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "title": "Claude Code integration (/ide)",
+        "description": "Let Claude Code find the IDE with /ide: a lock file in ~/.claude/ide and a local connection (127.0.0.1, a new token every start) through which it reads the selection, open editors and diagnostics and shows its edits as diffs you accept or reject. Terminals opened afterwards connect a Claude Code started in them by themselves.",
+        "order": 2
+      }
+    }
+  }
+}

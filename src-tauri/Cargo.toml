@@ -1,0 +1,150 @@
+[package]
+name = "ide"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Shield-1.0.0"
+
+[lib]
+name = "ide_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+# The remote protocol's file contents and stream bytes (D252). MIT/Apache-2.0; already built for
+# rmcp and reqwest, so nothing new is compiled.
+base64 = "0.22"
+bytes = "1"
+# ACP agents' .tar.bz2 downloads (D215: goose ships them). MIT/Apache-2.0; with its default
+# libbz2-rs-sys backend (a pure-Rust port of libbzip2, bzip2-1.0.6 license, BSD-style
+# permissive, ~50 KB crate), so no C library is built.
+bzip2 = "0.6.1"
+# Dictation without a key (D384): Whisper on the CPU. candle (Hugging Face's ML library, pure
+# Rust, MIT/Apache-2.0; its dependencies are MIT/Apache-2.0/BSD/Zlib/Unicode, or dual with one)
+# needs no C++ toolchain or cmake, unlike whisper.cpp's bindings (whisper-rs builds whisper.cpp
+# with cmake, which the owner's machine doesn't have). About
+# 3 MB of the binary. candle-core requires Hugging Face's tokenizers crate (Apache-2.0), built
+# with its pure-Rust options only (no C++); the speech code doesn't use it. The models
+# themselves are downloaded on first use (speech/mod.rs).
+candle-core = "0.11.1"
+candle-nn = "0.11.1"
+candle-transformers = "0.11.1"
+# Legacy encodings (D204): chardetng (Firefox's detector, MIT/Apache-2.0, about 200 KB of
+# tables) guesses a file's encoding for files.autoGuessEncoding; encoding_rs (MIT/Apache-2.0,
+# already built for grep-searcher) writes Shift JIS, GBK, Big5, EUC-KR and the other WHATWG
+# encodings, which the webview can decode but not encode.
+chardetng = "1.0.0"
+# Dragging files out of the window into other apps (D200): MIT/Apache-2.0, CrabNebula (the
+# Tauri team); the OS drag APIs (OLE DoDragDrop, NSDraggingSession, GTK drag) behind one call.
+drag = "2.1.1"
+encoding_rs = "0.8"
+# Already built for png and the updater; unpacks .vsix files (extensions/vsix.rs).
+flate2 = "1"
+futures-util = "0.3"
+getrandom = "0.3"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+ignore = "0.4.33"
+# The OS keychain for secrets (D207): Windows Credential Manager, macOS Keychain, the Secret
+# Service on Linux (over D-Bus, which tao already links). MIT/Apache-2.0; with these features it
+# adds dbus-secret-service and a few RustCrypto crates (aes, cbc, hkdf, sha2: MIT/Apache-2.0).
+# The IDE falls back to its private secrets file when no keychain answers (headless Linux).
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+notify = "8.2.0"
+notify-debouncer-full = "0.7.0"
+portable-pty = "0.9.0"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream", "json"] }
+rmcp = { version = "3.5.1", default-features = false, features = ["server", "transport-streamable-http-server", "base64"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+# ACP agents' .tar.gz / .tar.bz2 downloads (D215). MIT/Apache-2.0; already built for the
+# updater (tauri-plugin-updater), so nothing new is compiled. Entries are unpacked one by one
+# by acp_agents/archive.rs (its own path and link checks), not with `unpack_in`.
+tar = { version = "0.4.46", default-features = false }
+# `unstable`: Tauri's multi-webview API (`Window::add_child`), for other sites shown inside a
+# browser tab (browser/embed.rs, `browser.embedSites`). A feature flag of the same crate: no new
+# dependency, nothing new compiled. It makes every window's webview a "child" webview (sized by
+# Tauri on resize), so code that looks "main" up uses `get_window` / `get_webview`.
+tauri = { version = "2.12.4", features = ["unstable"] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+thiserror = "2.0.21"
+tokio = { version = "1", features = ["net", "rt", "macros", "sync", "time", "io-util"] }
+tokio-util = "0.7"
+tower-service = "0.3"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2"
+
+# Webview screenshots (src/screenshot.rs). Same versions tauri/wry already use, so nothing new
+# is compiled: WebKitGTK + cairo (png) on Linux, WebView2 + windows on Windows.
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+webkit2gtk = "=2.0.2"
+cairo-rs = { version = "0.18", features = ["png"] }
+
+[target."cfg(windows)".dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Console", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_System_Pipes", "Win32_System_LibraryLoader", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse"] }
+
+# The command sandbox's tests (D348) check what the Windows Filtering Platform lets a normal user
+# do. Test builds only: the app itself doesn't use it.
+[target."cfg(windows)".dev-dependencies]
+windows = { version = "0.62", features = ["Win32_NetworkManagement_WindowsFilteringPlatform", "Win32_System_Rpc"] }
+
+# Smaller, faster release binaries (D76): no symbol tables, whole-program optimisation.
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+
+# A quicker optimized build to try changes (`npm run build:fast`, D294): no whole-program LTO and
+# many codegen units, incremental, so a rebuild after a small change recompiles and relinks only
+# what changed. The binary is a little larger and slower than a release one; ship `npm run build`.
+[profile.fast-release]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# Dev builds: line tables only for our crate (readable panics and backtraces) and no debug info
+# for dependencies. Full debug info made target/debug tens of GB (Windows PDBs especially); this
+# keeps it to a few. Set `debug = true` locally when stepping through dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# Speech to text (D384) in dev builds and the UI tests: candle's matrix code unoptimized is
+# tens of times slower (a sentence would take minutes), so it's built optimized even here.
+[profile.dev.package.candle-core]
+opt-level = 3
+[profile.dev.package.candle-nn]
+opt-level = 3
+[profile.dev.package.candle-transformers]
+opt-level = 3
+[profile.dev.package.gemm]
+opt-level = 3
+[profile.dev.package.gemm-common]
+opt-level = 3
+[profile.dev.package.gemm-f16]
+opt-level = 3
+[profile.dev.package.gemm-f32]
+opt-level = 3
+[profile.dev.package.half]
+opt-level = 3
+
+# notify's Windows watcher, patched (vendor/notify/PATCHED.md, D280): a burst of changes no longer
+# stops the watcher for good.
+[patch.crates-io]
+notify = { path = "vendor/notify" }

@@ -1,0 +1,222 @@
+// D204: m7.5 alpha support. The session log (redacted), Help → Report a problem (its parts,
+// redaction, leaving parts out, the zip), starting with extensions off (the next start's flag set
+// and cleared), What's new, and the update channel in ide://update and About.
+{
+  "name": "alpha-m7-5",
+  "steps": [
+    // ---- The session log: this run's file, with its start line ----
+    {
+      "state": "ide://logs",
+      "expect": {
+        "logFile": { "$contains": "session-" },
+        "lines": { "$contains": "[info] [app] Started" }
+      },
+      "timeoutMs": 5000
+    },
+    // A failed command whose message carries secrets: logged, redacted.
+    {
+      "run": "help.showDocs",
+      "input": { "page": "token=supersecret123 ghp_abcdefghijklmnopqrstuvwxyz0123" },
+      "expectError": "No page"
+    },
+    {
+      "state": "ide://logs",
+      "expect": { "lines": { "$contains": "command:help.showDocs" } },
+      "timeoutMs": 8000
+    },
+    {
+      "state": "ide://logs",
+      "expect": {
+        "lines": {
+          "$contains": "token=<redacted>",
+          "$not": { "$contains": "supersecret123" }
+        }
+      }
+    },
+    {
+      "state": "ide://logs",
+      "expect": { "lines": { "$not": { "$contains": "ghp_abcdefghij" } } }
+    },
+
+    // ---- Report a problem: what's included, redacted ----
+    {
+      "run": "help.reportProblem",
+      "input": { "title": "Test report", "description": "It broke." },
+      "expect": { "sections": [{ "id": "system", "included": true }] }
+    },
+    {
+      "state": "ide://report",
+      "expect": {
+        "ready": true,
+        "issueTracker": false,
+        "title": "Test report",
+        "screenshot": { "taken": true, "included": false },
+        "body": { "$contains": "### What happened\n\nIt broke." }
+      }
+    },
+    { "state": "ide://report", "expect": { "body": { "$contains": "Update channel: stable" } } },
+    { "state": "ide://report", "expect": { "included": { "$contains": "State: ide://layout" } } },
+    {
+      "state": "ide://report",
+      "expect": {
+        "body": { "$contains": "token=<redacted>", "$not": { "$contains": "supersecret123" } }
+      }
+    },
+    // The tab: a checkbox per part, and the report's text as it will be used.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".report-view .report-check[data-section=\"system\"]" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".report-preview", "html": 3000 },
+      "expect": [{ "html": { "$contains": "It broke." } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": false } },
+    // Leaving parts out: by command and by the checkbox.
+    { "run": "help.reportInclude", "input": { "section": "ide://layout", "included": false } },
+    {
+      "state": "ide://report",
+      "expect": { "included": { "$not": { "$contains": "State: ide://layout" } } }
+    },
+    { "run": "dev.click", "input": { "selector": ".report-check[data-section=\"system\"]" } },
+    {
+      "state": "ide://report",
+      "expect": { "sections": [{ "id": "system", "included": false }] },
+      "timeoutMs": 2000
+    },
+    { "state": "ide://report", "expect": { "body": { "$not": { "$contains": "### System" } } } },
+    { "run": "help.reportInclude", "input": { "section": "screenshot", "included": true } },
+    { "state": "ide://report", "expect": { "screenshot": { "included": true } } },
+    {
+      "run": "help.reportInclude",
+      "input": { "section": "nope", "included": true },
+      "expectError": "No part"
+    },
+    // The link goes to the issue tracker in product.json (issuesUrl).
+    {
+      "run": "help.reportOpenIssue",
+      "input": { "dryRun": true },
+      "expect": { "url": { "$contains": "/issues/new?" } }
+    },
+    // Save as zip: a valid archive with the included parts only, and no secret in it.
+    {
+      "run": "help.reportSaveZip",
+      "input": { "path": "problem-report.zip" },
+      "expect": { "saved": true, "files": ["report.md"] }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "PY=python3; $PY -c 1 2>/dev/null || PY=python; $PY -c \"import zipfile; z=zipfile.ZipFile('problem-report.zip'); assert z.testzip() is None; n=sorted(z.namelist()); print(n); d=b''.join(z.read(x) for x in n); print('NOSECRET' if b'supersecret123' not in d else 'LEAK'); print('NOSYSTEM' if 'system.txt' not in n else 'SYSTEM')\"",
+        "timeoutMs": 15000
+      },
+      "expect": {
+        "exitCode": 0,
+        "output": { "$contains": "'report.md', 'screenshot.png', 'session.log', 'state.json'" }
+      },
+      "timeoutMs": 25000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "PY=python3; $PY -c 1 2>/dev/null || PY=python; $PY -c \"import zipfile; z=zipfile.ZipFile('problem-report.zip'); d=b''.join(z.read(x) for x in z.namelist()); print('NOSECRET' if b'supersecret123' not in d and b'ghp_abcdefghij' not in d else 'LEAK')\"",
+        "timeoutMs": 15000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "NOSECRET" } },
+      "timeoutMs": 25000
+    },
+
+    // ---- Extensions off: the next start's flag, set and cleared (test runs never restart) ----
+    {
+      "state": "ide://safeMode",
+      "expect": { "extensionsOff": false, "reason": null, "nextStart": null }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id=\"help.extensionsOff\"]", "html": 400 },
+      "expect": [{ "html": { "$not": { "$contains": "Extensions off" } } }]
+    },
+    { "run": "help.restartWithExtensionsOff", "expect": { "restarting": false } },
+    { "state": "ide://safeMode", "expect": { "extensionsOff": false, "nextStart": "off" } },
+    { "run": "help.clearNextStart", "expect": { "nextStart": null } },
+    { "state": "ide://safeMode", "expect": { "nextStart": null } },
+    // "Restart normally" from a normal session: nothing pending afterwards either.
+    { "run": "help.restartNormally", "expect": { "restarting": false } },
+    { "state": "ide://safeMode", "expect": { "nextStart": null } },
+    // Extensions still run in this session.
+    { "state": "ide://extensions", "expect": { "$not": { "$contains": "off for this session" } } },
+
+    // ---- What's new ----
+    {
+      "run": "help.showReleaseNotes",
+      "expect": {
+        "releases": [{ "id": "0.1.0" }]
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".release-notes-view h2", "limit": 20 },
+      "expect": { "$length": 15 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "help.showReleaseNotes",
+      "input": { "release": "m7.4" },
+      "expect": { "markdown": { "$contains": "Jupyter" } }
+    },
+    { "run": "help.showReleaseNotes", "input": { "release": "m1" }, "expectError": "No release" },
+    { "run": "settings.set", "input": { "key": "update.showReleaseNotes", "value": false } },
+
+    // ---- Update channel: ide://update and About ----
+    { "state": "ide://update", "expect": { "channel": "stable" } },
+    { "run": "settings.set", "input": { "key": "update.channel", "value": "beta" } },
+    { "state": "ide://update", "expect": { "channel": "beta" }, "timeoutMs": 2000 },
+    { "run": "workbench.about", "background": true },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog", "html": 4000 },
+      "expect": [{ "html": { "$contains": "Update channel: beta" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".dialog", "key": "Escape" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "update.channel", "value": "stable" } },
+
+    // ---- The Help menu has the new entries ----
+    { "run": "ui.showMenu", "input": { "menu": "help" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 20000 },
+      "expect": [
+        {
+          "html": { "$contains": "Report a problem…" }
+        }
+      ],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Open logs folder" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Restart with extensions off" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Release notes" } }]
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } }
+  ]
+}

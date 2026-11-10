@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- The agent's widget (D334) is the model's code: no network at all. Scripts only inline or
+         this origin's own (harden.js, widget.js); pictures, fonts and media only data:/blob:. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <meta http-equiv="x-dns-prefetch-control" content="off" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget</title>
+    <style>
+      /* No color-scheme of its own: the frame's (normal) and the page's must match, or the
+         frame paints an opaque backdrop instead of the chat's color. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--fg-default);
+        font-family: var(--font-ui, system-ui, sans-serif);
+        font-size: var(--text-md, 13px);
+        line-height: 1.5;
+        overflow: hidden;
+      }
+      /* In a tab: centered top to bottom while it fits (a drawing sat at the top of an empty
+         page); taller content starts at the top and scrolls (D381). */
+      body.is-fill {
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        box-sizing: border-box;
+      }
+      body.is-fill #out {
+        margin-block: auto;
+      }
+      #out {
+        display: flow-root;
+      }
+      body.is-fill #out {
+        padding: var(--space-6, 16px);
+      }
+      #out > svg:only-child {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      .note {
+        color: var(--fg-subtle);
+        font-style: italic;
+      }
+      button {
+        font: inherit;
+        color: var(--fg-default);
+        background: var(--bg-surface-raised);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm, 4px);
+        padding: var(--space-2, 4px) var(--space-5, 12px);
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--bg-hover);
+      }
+      input,
+      select,
+      textarea {
+        font: inherit;
+        color: var(--fg-default);
+        background: var(--bg-input);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm, 4px);
+        padding: var(--space-2, 4px) var(--space-3, 6px);
+      }
+      input:focus,
+      select:focus,
+      textarea:focus,
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      a {
+        color: var(--accent-text);
+      }
+      table {
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--border-subtle);
+        padding: var(--space-2, 4px) var(--space-4, 8px);
+        text-align: left;
+      }
+      th {
+        color: var(--fg-muted);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="out"></div>
+    <script src="harden.js"></script>
+    <script src="widget.js"></script>
+  </body>
+</html>

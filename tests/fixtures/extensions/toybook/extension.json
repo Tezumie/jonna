@@ -1,0 +1,28 @@
+{
+  "id": "acme.toybook",
+  "version": "1.0.0",
+  "displayName": "Toy book",
+  "description": "Test extension (D202, D204): a notebook format (.toynb, cells split by a line of %%), a JavaScript kernel that adds numbers, a kernel picker action, cell status items, an output renderer with messages, toolbar and cell buttons, and notebook events.",
+  "main": "main.js",
+  "activation": ["onStartupFinished"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "notebooks": [{ "type": "acme.toybook.book", "displayName": "Toy book", "extensions": [".toynb"], "default": true }],
+    "notebookRenderers": [
+      {
+        "id": "acme.toybook.stars",
+        "displayName": "Stars",
+        "entrypoint": "renderer.js",
+        "mimeTypes": ["application/vnd.toybook.stars+json"]
+      }
+    ],
+    "commands": [
+      { "id": "acme.toybook.count", "title": "Count the cells" },
+      { "id": "acme.toybook.shout", "title": "Shout this cell" }
+    ],
+    "menus": {
+      "notebook/toolbar": [{ "command": "acme.toybook.count", "icon": "hash", "when": "notebookType == acme.toybook.book" }],
+      "notebook/cell/title": [{ "command": "acme.toybook.shout", "when": "notebookCellType == code" }]
+    }
+  }
+}

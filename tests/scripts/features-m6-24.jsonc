@@ -1,0 +1,55 @@
+// D126: untitled files (Ctrl+N), one extension page per extension (a preview the next replaces),
+// opening a chat from another folder.
+{
+  "name": "features-m6-24",
+  "steps": [
+    {
+      "run": "workspace.newUntitledFile",
+      "expect": { "path": "untitled:Untitled-1", "name": "Untitled-1" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "untitled:Untitled-1", "dirty": false, "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.insertText", "input": { "text": "# Shopping list\neggs\n" } },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    { "run": "workspace.newUntitledFile", "expect": { "path": "untitled:Untitled-2" } },
+    {
+      "run": "editor.saveUntitled",
+      "input": { "untitled": "untitled:Untitled-1", "as": "shopping.md" },
+      "expect": { "saved": { "$contains": "shopping.md" } }
+    },
+    { "run": "search.run", "input": { "query": "Shopping list" }, "expect": { "matches": 1 } },
+    { "run": "editor.openFile", "input": { "path": "shopping.md" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "shopping.md" }, "dirty": false, "language": "markdown" }
+    },
+    // Extension pages: the same extension twice is one tab.
+    { "run": "extensions.showDetails", "input": { "id": "bundled.todo-tree" } },
+    { "run": "extensions.showDetails", "input": { "id": "bundled.todo-tree" } },
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"extension\"" } },
+    {
+      "state": "ide://layout",
+      "expect": {
+        "$not": {
+          "$contains": "\"viewType\":\"extension\",\"title\":\"TODO tree\",\"dirty\":false},{\"id\""
+        }
+      }
+    },
+    // A chat belongs to the folder it started in.
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "agent.newSession" },
+    { "run": "agent.send", "input": { "message": "hello" }, "expect": { "error": null } },
+    {
+      "run": "agent.openChatFolder",
+      "expect": { "opened": true, "folder": { "$exists": true } }
+    },
+    { "run": "agent.moveChatHere", "expect": { "folder": { "$exists": true } } }
+  ]
+}

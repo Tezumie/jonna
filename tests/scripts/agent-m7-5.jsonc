@@ -1,0 +1,306 @@
+// D204: rules editing and rules for subagents, MCP sampling / templates / subscriptions / gallery /
+// tool schemas on demand, per-category auto-approve, @docs (a mock site served by the mock
+// Ollama), worktree agents (setup step, PORT, overview, compare, apply). Against
+// tests/fixtures/mock-ollama.mjs and tests/fixtures/sample/tools/mock-mcp-extra.mjs. Needs git.
+{
+  "name": "agent-m7-5",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+
+    // ---- Rules: create from a template, subagent targeting, turn off, edit, delete ----
+    {
+      "run": "agent.createRule",
+      "input": {
+        "template": "cursor",
+        "name": "Testing",
+        "scope": "description",
+        "description": "When writing tests",
+        "subagents": ["reviewer"],
+        "body": "Use node:test."
+      },
+      "expect": { "path": ".cursor/rules/testing.mdc" }
+    },
+    {
+      "state": "ide://agent/rules",
+      "expect": { "$contains": "\"subagents\":[\"reviewer\"]" },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/subagents",
+      "expect": { "$contains": ".cursor/rules/testing.mdc" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.setRuleEnabled",
+      "input": { "path": ".cursor/rules/testing.mdc", "enabled": false }
+    },
+    { "state": "ide://agent/rules", "expect": { "$contains": "\"enabled\":false" } },
+    {
+      "run": "agent.setRuleEnabled",
+      "input": { "path": ".cursor/rules/testing.mdc", "enabled": true }
+    },
+    {
+      "run": "agent.updateRule",
+      "input": { "path": ".cursor/rules/testing.mdc", "scope": "globs", "globs": ["**/*.test.ts"] },
+      "expect": { "changed": true }
+    },
+    { "state": "ide://agent/rules", "expect": { "$contains": "\"scope\":\"globs\"" } },
+    {
+      "run": "agent.createRule",
+      "input": { "template": "agents", "name": "Style", "body": "Two spaces." }
+    },
+    { "run": "agent.showRules" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rules-page [data-rule='.cursor/rules/testing.mdc']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rules-page [data-rule='AGENTS.md']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.deleteRule",
+      "input": { "path": ".cursor/rules/testing.mdc" },
+      "expect": { "deleted": ".cursor/rules/testing.mdc" }
+    },
+
+    // ---- Auto-approve: one shape for every category ----
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "reads", "pattern": "**/.env*", "allow": false }
+    },
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "commands", "pattern": "git status", "allow": true }
+    },
+    {
+      "state": "ide://agent/autoApprove",
+      "expect": { "rules": { "reads": { "**/.env*": false }, "commands": { "git status": true } } }
+    },
+    { "run": "agent.showAutoApprove" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".auto-approve-page [data-pattern='**/.env*']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "reads", "pattern": "**/.env*", "allow": "remove" }
+    },
+
+    // ---- MCP: sampling, deferred tools (D319), templates and subscriptions, gallery ----
+    {
+      "run": "agent.addMcpServer",
+      "input": {
+        "name": "extra",
+        "command": "node",
+        "args": ["${workspaceFolder}/tools/mock-mcp-extra.mjs"]
+      },
+      "expect": { "added": true }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.sampling", "value": { "extra": "allow" } }
+    },
+    { "run": "settings.set", "input": { "key": "agent.deferTools", "value": "always" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please summarize via MCP" },
+      "expect": { "answer": { "$contains": "Extra said: sampled: Sampled answer" } },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/mcp/sampling",
+      "expect": { "recent": [{ "server": "extra", "outcome": "answered" }] }
+    },
+    {
+      "run": "agent.mcpResources",
+      "input": {},
+      "expect": { "templates": [{ "server": "extra", "uriTemplate": "extra://notes/{name}" }] }
+    },
+    {
+      "run": "agent.mcpResources",
+      "input": { "uri": "extra://notes/{name}", "values": { "name": "a" }, "subscribe": true },
+      "expect": {
+        "uri": "extra://notes/a",
+        "text": { "$contains": "note a v1" },
+        "subscribed": true
+      }
+    },
+    {
+      "state": "ide://agent/mcp/subscriptions",
+      "expect": { "subscriptions": [{ "server": "extra", "uri": "extra://notes/a", "chats": 1 }] }
+    },
+    // Denied sampling: the server hears "user rejected".
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.mcp.sampling", "value": { "extra": "deny" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please summarize via MCP" },
+      "expect": { "answer": { "$contains": "sampling refused (-1)" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "agent.mcpGallery",
+      "input": { "query": "browser" },
+      "expect": { "servers": { "$contains": "playwright" } }
+    },
+    { "run": "agent.showMcpPage" },
+    // D205: in Customize, the built-in tools first, then the servers as rows.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".customize .customize-chip.is-active[data-section='mcp']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-page .mcp-row[data-builtin] .mcp-row-detail", "html": 500 },
+      "expect": [{ "html": { "$contains": " IDE commands" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "agent.builtinTools", "expect": { "tools": { "$contains": "read_file" } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".mcp-page [data-server='extra']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    { "run": "settings.set", "input": { "key": "agent.deferTools", "value": "auto" } },
+
+    // ---- @docs: crawl the mock site (robots.txt keeps out /private), search, mention ----
+    { "run": "settings.set", "input": { "key": "agent.docs.delayMs", "value": 0 } },
+    // The mock model has 8 k tokens: no summary in the middle of these checks.
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.addDocs",
+      "input": { "url": "http://127.0.0.1:11999/docs-site/", "name": "mock" },
+      "expect": { "added": "mock", "state": "ready", "pages": 3, "skipped": 1 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.searchDocs",
+      "input": { "name": "mock", "query": "how do widgets spin" },
+      "expect": { "text": { "$contains": "Widgets spin when clicked" } }
+    },
+    // A chat of its own: the pages opened above took the focus.
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    { "wait": 1000 },
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@docs:mock" },
+      "expect": { "attachments": { "$contains": "@docs:mock" } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments" },
+      "expect": { "$contains": "Docs: mock" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "How do widgets spin?" },
+      "expect": { "answer": { "$contains": "Docs said: widgets spin when clicked" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.showDocs" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-page [data-docs='mock']" },
+      "expect": { "$contains": "@docs:mock" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Worktree agents: setup step, PORT, overview, compare, apply ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'secret\\n' > .env && printf '.env\\n' > .gitignore && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.worktree.setupScript",
+        "value": "echo setup-ran >> notes.txt",
+        "scope": "workspace"
+      }
+    },
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Add a line to the notes", "model": "ollama/mock-coder:1b" },
+      "expect": {
+        "branch": "agent/add-a-line-to-the",
+        "port": 3010,
+        "setup": { "state": "done", "copied": [".env"], "exitCode": 0 }
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://agent/worktrees",
+      "expect": {
+        "agents": [{ "branch": "agent/add-a-line-to-the", "progress": { "files": 1, "added": 1 } }]
+      },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.worktreeAgents" },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".worktree-agents-page [data-branch='agent/add-a-line-to-the'] .ai-row-detail"
+      },
+      "expect": { "$contains": "PORT 3010" },
+      "timeoutMs": 8000
+    },
+    { "run": "agent.compareWorktrees", "input": { "agents": ["agent/add-a-line-to-the"] } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".compare-diff .diff-line.is-added" },
+      "expect": { "$contains": "+setup-ran" },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.applyWorktree",
+      "input": { "agent": "agent/add-a-line-to-the" },
+      "expect": { "applied": ["notes.txt"] },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "tail -n 1 notes.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "setup-ran" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/add-a-line-to-the", "action": "delete" },
+      "expect": { "deleted": "agent/add-a-line-to-the" },
+      "timeoutMs": 20000
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+// D137: the everyday git workflow — commit details and diffs, branches (create from, rename,
+// merge, delete), conflicts (merge stops, abort), tags, undo last commit, .gitignore, the
+// Commits section of Source control.
+{
+  "name": "git workflow",
+  "steps": [
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && git config core.autocrlf false",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.stage" },
+    { "run": "git.commit", "input": { "message": "Initial commit" } },
+    {
+      "run": "git.showCommit",
+      "input": { "commit": "HEAD" },
+      "expect": { "parent": null, "files": { "$contains": "README.md" } }
+    },
+
+    // A branch from main with one commit, merged back.
+    { "run": "git.renameBranch", "input": { "newName": "main" }, "expect": { "branch": "main" } },
+    {
+      "run": "git.createBranchFrom",
+      "input": { "name": "feature", "from": "main" },
+      "expect": { "branch": "feature" }
+    },
+    {
+      "run": "search.replace",
+      "input": { "query": "Sample workspace", "replacement": "Feature workspace" }
+    },
+    { "run": "git.commit", "input": { "message": "Feature change", "all": true } },
+    {
+      "run": "git.showCommit",
+      "input": { "commit": "HEAD", "path": "README.md" },
+      "expect": { "message": "Feature change", "files": [{ "status": "M", "path": "README.md" }] }
+    },
+    // The diff tab shows the commit's change: parent ↔ commit.
+    { "state": "ide://layout", "expect": { "$contains": "Feature change" } },
+    { "run": "git.checkout", "input": { "branch": "main" }, "expect": { "branch": "main" } },
+    { "run": "git.merge", "input": { "branch": "feature" } },
+    { "run": "git.log", "input": { "limit": 1 }, "expect": [{ "subject": "Feature change" }] },
+    {
+      "run": "git.deleteBranch",
+      "input": { "branch": "feature" },
+      "expect": { "deleted": "feature" }
+    },
+
+    // Tags and undo.
+    { "run": "git.createTag", "input": { "name": "v1", "message": "" }, "expect": { "tag": "v1" } },
+    {
+      "run": "git.log",
+      "input": { "limit": 1 },
+      "expect": [{ "refs": { "$contains": "tag: v1" } }]
+    },
+    { "run": "git.undoLastCommit", "expect": { "message": "Feature change" } },
+    { "run": "git.status", "expect": { "staged": [{ "path": "README.md" }] } },
+    { "run": "git.commit", "input": { "message": "Feature change again" } },
+
+    // A conflict: the merge stops; Abort goes back.
+    { "run": "git.createBranchFrom", "input": { "name": "other", "from": "main" } },
+    {
+      "run": "search.replace",
+      "input": { "query": "Feature workspace", "replacement": "Other workspace" }
+    },
+    { "run": "git.commit", "input": { "message": "Other change", "all": true } },
+    { "run": "git.checkout", "input": { "branch": "main" } },
+    {
+      "run": "search.replace",
+      "input": { "query": "# Feature workspace", "replacement": "# Main workspace" }
+    },
+    { "run": "git.commit", "input": { "message": "Main change", "all": true } },
+    { "run": "git.showView" },
+    {
+      "run": "git.merge",
+      "input": { "branch": "other" },
+      "expect": { "operation": "merge", "conflicts": { "$length": 1 } }
+    },
+    { "run": "git.continueOperation", "expectError": "Resolve the conflicts" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-banner" },
+      "expect": [{ "html": { "$contains": "Merging" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "git.abortOperation", "expect": { "aborted": "merge" } },
+    { "run": "git.status", "expect": { "conflicts": { "$length": 0 } } },
+
+    // .gitignore for an untracked file.
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "scratch.log" } },
+    {
+      "run": "git.ignore",
+      "input": { "paths": ["scratch.log"] },
+      "expect": { "added": ["/scratch.log"] }
+    },
+    { "run": "git.status", "expect": { "changes": [{ "path": ".gitignore" }] } },
+
+    // Source control lists the commits; a commit expands to its files.
+    { "run": "git.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-commit-subject", "limit": 3 },
+      "expect": [
+        { "html": { "$contains": "Main change" } },
+        { "html": { "$contains": "Feature change again" } }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.addRemote",
+      "input": { "name": "origin", "url": "https://example.com/x.git" },
+      "expect": { "remote": "origin" }
+    },
+    { "state": "ide://git/status", "expect": { "root": { "$exists": true } } }
+  ]
+}

@@ -1,0 +1,1191 @@
+/* Third-party extensions (D102): the Extensions view, extension tree views and webview panels. Tokens only. */
+@layer extensions {
+  /* The search box stays put; the list under it scrolls on its own, as do the Recommended and
+     Open VSX sections below (D258, VS Code's panes). */
+  .ext-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+  .ext-view > .ext-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  /* The same field as the other side bar searches (Search, Channels; D245). */
+  .ext-filter {
+    position: relative;
+    flex: none;
+    padding: var(--space-2) var(--space-3);
+  }
+  /* The filter button sits inside the box at its right, left of the clear button's room (D284). */
+  .ext-filter-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: calc(var(--size-control-sm) + var(--space-2));
+  }
+  .ext-filter-button {
+    position: absolute;
+    top: 50%;
+    right: calc(var(--space-3) + var(--space-1));
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    transform: translateY(-50%);
+  }
+  .ext-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-8) var(--space-6);
+    text-align: center;
+  }
+  .ext-empty[hidden],
+  .ext-tree-view > .empty-state[hidden] {
+    display: none;
+  }
+  .ext-empty-icon .icon {
+    width: 28px;
+    height: 28px;
+    color: var(--fg-subtle);
+  }
+  .ext-empty-title {
+    margin: 0;
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .ext-empty-hint {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .ext-empty-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    width: 100%;
+    max-width: 220px;
+  }
+  .ext-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .ext-section {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--size-row);
+    padding: 0 var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    text-align: left;
+  }
+  .ext-section:hover {
+    color: var(--fg-default);
+  }
+  .ext-section .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .ext-section-title {
+    flex: 1;
+  }
+  .ext-section-count {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--bg-surface-raised);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    letter-spacing: 0;
+    text-align: center;
+  }
+  .ext-none {
+    padding: var(--space-3) var(--space-4);
+    color: var(--fg-muted);
+  }
+  .ext-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    margin: 0 var(--space-2);
+    padding: var(--space-3) var(--space-3);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    outline: none;
+  }
+  .ext-row:hover {
+    background: var(--bg-hover);
+  }
+  .ext-row:focus-visible {
+    background: var(--bg-selected);
+    box-shadow: inset 0 0 0 1px var(--accent-border);
+  }
+  .ext-row.is-disabled .ext-avatar,
+  .ext-row.is-disabled .ext-row-main {
+    opacity: 0.6;
+  }
+  .ext-avatar {
+    flex: none;
+    /* Centered on the row's lines (VS Code's list). */
+    align-self: center;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--ext-tint) 18%, transparent);
+    color: var(--ext-tint);
+    font-weight: 700;
+    font-size: var(--text-md);
+    overflow: hidden;
+    user-select: none;
+  }
+  .ext-found-avatar {
+    background: var(--bg-surface-sunken);
+    color: var(--fg-muted);
+  }
+  .ext-found.is-invalid .ext-found-avatar {
+    background: var(--status-danger-bg);
+    color: var(--status-danger-fg);
+  }
+  .ext-found {
+    cursor: default;
+  }
+  /* Open VSX results (D254): downloads and rating beside the namespace, Install on the right;
+     a click opens the extension's store page. */
+  /* The store page's publisher (with a verified mark), rating stars. */
+  .ext-store-publisher {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--fg-default);
+  }
+  /* Filled, in the rating's filled-star color (D290, the owner's ask). */
+  .ext-store-verified {
+    display: inline-flex;
+    flex: none;
+    color: var(--fg-default);
+  }
+  .ext-store-verified .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .ext-store-stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .ext-store-stars .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .ext-store-stars .icon.is-filled {
+    color: var(--fg-default);
+    fill: currentColor;
+  }
+  .ext-store-stars > span {
+    margin-left: var(--space-1);
+  }
+  .ext-store-missing {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .ext-store-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  /* In a narrow row the stats give way before the buttons do: Install ▾, Update and the gear
+     always fit (D284). */
+  .ext-row-meta > .ext-store-stat {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .ext-row-meta > .ext-split,
+  .ext-row-meta > .button,
+  .ext-row-meta > .ext-store-verified {
+    flex: none;
+  }
+  .ext-store-stat .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .ext-store-installed {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .ext-desc.is-error {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    color: var(--status-danger-fg);
+  }
+  .ext-avatar.is-lg {
+    width: 88px;
+    height: 88px;
+    border-radius: var(--radius-md);
+    font-size: 30px;
+  }
+  /* An image keeps a slight rounding (VS Code's), a glyph icon none. */
+  .ext-avatar.has-image {
+    background: transparent;
+    border-radius: var(--radius-xs);
+  }
+  .ext-avatar.is-lg.has-image {
+    border-radius: var(--radius-sm);
+  }
+  .ext-avatar.is-icon {
+    background: transparent;
+    border-radius: 0;
+  }
+  .ext-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .ext-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ext-row-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .ext-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .ext-version {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .ext-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .ext-row-meta {
+    min-height: 20px;
+    overflow: hidden;
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .ext-publisher {
+    flex: 0 1 auto;
+    min-width: 24px;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-row-spacer {
+    flex: 1;
+  }
+  .ext-badge {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 9px;
+    background: var(--bg-surface-raised);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: 16px;
+  }
+  .ext-badge.is-danger {
+    background: var(--status-danger-bg);
+    color: var(--status-danger-fg);
+  }
+  .ext-badge.is-action {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .ext-badge.is-action:hover {
+    filter: brightness(1.15);
+  }
+  .ext-badge.is-warning {
+    background: var(--status-warning-bg);
+    color: var(--status-warning-fg);
+  }
+  .ext-gear {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    opacity: 0;
+  }
+  .ext-row:hover .ext-gear,
+  .ext-row:focus-within .ext-gear,
+  .ext-gear:focus-visible {
+    opacity: 1;
+  }
+  /* A recommendation's × (Don't recommend it again). */
+  .ext-row.ext-store-row .ext-gear {
+    width: 20px;
+    height: 20px;
+  }
+  .ext-allow {
+    height: 20px;
+    padding: 0 var(--space-3);
+  }
+  .ext-error {
+    color: var(--status-danger-fg);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- An extension's page (dock tab) ---- */
+  .ext-page {
+    height: 100%;
+    overflow: auto;
+    /* The scrollbar's room is kept: a long tab and a short one line up (D185). */
+    scrollbar-gutter: stable;
+    background: var(--bg-app);
+  }
+  /* One width for every tab (the Details tab's side panel used to widen only that one). */
+  .ext-page-inner {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-8) var(--space-10);
+  }
+  .ext-page-header {
+    display: flex;
+    gap: var(--space-6);
+    align-items: flex-start;
+  }
+  .ext-page-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .ext-page-name-line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+  .ext-page-name {
+    margin: 0;
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .ext-page-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .ext-page-id {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .ext-page-desc {
+    margin: 0;
+    color: var(--fg-default);
+  }
+  .ext-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  /* A button and its ▾ (D258: Disable ▾, Uninstall ▾), joined. */
+  .ext-split {
+    display: inline-flex;
+  }
+  .ext-split > .button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .ext-split-more {
+    padding-inline: var(--space-1);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid var(--border-subtle);
+  }
+  .ext-page-check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .ext-page-tabs {
+    display: flex;
+    gap: var(--space-6);
+    margin-top: var(--space-6);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .ext-page-tab {
+    padding: var(--space-3) 0;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    color: var(--fg-muted);
+  }
+  .ext-page-tab:hover {
+    color: var(--fg-default);
+  }
+  .ext-page-tab.is-active {
+    color: var(--fg-default);
+    border-bottom-color: var(--accent);
+  }
+  .ext-page-body {
+    padding-top: var(--space-6);
+  }
+  .ext-page-muted {
+    color: var(--fg-muted);
+  }
+  /* Rounded and lightly bordered, as tables in Markdown (D283). */
+  .ext-page-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+  .ext-page-table th {
+    text-align: left;
+    color: var(--fg-muted);
+    font-weight: 500;
+    background: var(--bg-surface-raised);
+  }
+  .ext-page-table th,
+  .ext-page-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .ext-page-table tbody tr:last-child > td {
+    border-bottom: 0;
+  }
+  .ext-page-log {
+    margin: 0;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-sunken);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .ext-page-perms {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .ext-page-perms li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .ext-page-perms .icon-circle-check {
+    color: var(--status-success-fg);
+  }
+  .ext-page-perms code {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+
+  /* The README and the side panel (D176); the panel goes under the README in narrow tabs. */
+  .ext-page-details {
+    display: flex;
+    gap: var(--space-8);
+    align-items: flex-start;
+  }
+  .ext-page-main {
+    flex: 1 1 420px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .ext-page-readme {
+    min-width: 0;
+  }
+  /* An extension pack's members (VS Code's "Extension Pack (N)"): cards above the README. */
+  .ext-pack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-bottom: var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .ext-pack-title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .ext-pack-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+    gap: var(--space-3);
+  }
+  .ext-pack-card {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    cursor: pointer;
+    transition: background var(--motion-fast);
+  }
+  .ext-pack-card:hover {
+    background: var(--bg-hover);
+  }
+  .ext-pack-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+  }
+  .ext-pack-card > .ext-avatar {
+    align-self: flex-start;
+  }
+  .ext-pack-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .ext-pack-name {
+    font-weight: 600;
+    color: var(--fg-default);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-pack-desc {
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-pack-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: var(--size-control-sm);
+  }
+  .ext-pack-publisher {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .ext-pack-state {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  /* Screenshots (D190): a strip of thumbnails above the README. */
+  .ext-shots {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+  }
+  .ext-shot {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .ext-shot img {
+    display: block;
+    height: 160px;
+    max-width: 320px;
+    object-fit: cover;
+    background: var(--bg-surface);
+  }
+  .ext-shot-caption {
+    padding: 0 var(--space-2) var(--space-1);
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+  }
+  .ext-shot:hover {
+    border-color: var(--border-strong);
+  }
+  .ext-shot.is-add {
+    width: 160px;
+    height: 160px;
+    align-items: center;
+    justify-content: center;
+    border-style: dashed;
+  }
+  .ext-shot-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-8);
+    background: var(--bg-scrim);
+    cursor: zoom-out;
+  }
+  .ext-shot-overlay img {
+    max-width: 100%;
+    max-height: calc(100% - 3em);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-drag);
+  }
+  .ext-shot-overlay-caption {
+    color: var(--fg-default);
+  }
+  /* The preview's document styles, without its page padding (the page has its own). */
+  .ext-page .md-document {
+    padding: 0;
+    max-width: none;
+    margin: 0;
+  }
+  .ext-side {
+    flex: 0 1 260px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    font-size: var(--text-sm);
+    /* Stays in view while the README scrolls (D180); a tall panel scrolls on its own. */
+    position: sticky;
+    top: var(--space-6);
+    max-height: calc(100cqh - var(--space-12));
+    overflow-y: auto;
+  }
+  /* Too narrow for both side by side: the panel goes under the README and scrolls with it. */
+  @container (max-width: 760px) {
+    .ext-page-details {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .ext-page-main {
+      flex-basis: auto;
+    }
+    .ext-side {
+      flex-basis: auto;
+      min-width: 0;
+      position: static;
+      max-height: none;
+      overflow: visible;
+    }
+  }
+  .ext-side-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .ext-side-section + .ext-side-section {
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .ext-side h3 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .ext-side-fact {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: space-between;
+  }
+  .ext-side-label {
+    color: var(--fg-muted);
+    flex: none;
+  }
+  .ext-side-value {
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+  }
+  .ext-side-value code {
+    font-size: var(--text-xs);
+  }
+  .ext-side-path,
+  .ext-side-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--accent-text, var(--accent));
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .ext-side-path span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+  }
+  .ext-side-path:hover span,
+  .ext-side-link:hover {
+    text-decoration: underline;
+  }
+  .ext-side-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .ext-chip {
+    padding: 1px var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+    font-size: var(--text-xs);
+  }
+  .ext-avatar.is-icon > svg {
+    width: 55%;
+    height: 55%;
+  }
+  .ext-settings-card {
+    margin-bottom: var(--space-4);
+  }
+
+  /* Files: the list and a preview (D176). */
+  .ext-files {
+    display: flex;
+    gap: var(--space-5);
+    min-height: 360px;
+    align-items: stretch;
+  }
+  .ext-files-list {
+    flex: 0 0 240px;
+    max-height: 70vh;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-subtle);
+    padding-right: var(--space-3);
+  }
+  .ext-file {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    text-align: left;
+  }
+  .ext-file:hover {
+    background: var(--bg-hover);
+  }
+  .ext-file.is-selected {
+    background: var(--bg-selected);
+  }
+  .ext-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-files-preview {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .ext-files-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .ext-files-path {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-files-image img {
+    max-width: 100%;
+    max-height: 60vh;
+    background: var(--bg-surface-sunken);
+    border-radius: var(--radius-md);
+  }
+  @container (max-width: 640px) {
+    .ext-files {
+      flex-direction: column;
+    }
+    .ext-files-list {
+      flex: none;
+      max-height: 200px;
+      border-right: 0;
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 0 0 var(--space-3);
+    }
+  }
+  .ext-page {
+    /* Size, not inline-size: the sticky side panel's height follows the tab's (cqh, D180). */
+    container-type: size;
+  }
+  /* Narrow tabs: a smaller avatar, less padding, the title under it. */
+  @container (max-width: 520px) {
+    .ext-page-inner {
+      padding: var(--space-5) var(--space-5) var(--space-8);
+    }
+    .ext-page-header {
+      flex-direction: column;
+      gap: var(--space-4);
+    }
+    .ext-page-header .ext-avatar.is-lg {
+      width: 56px;
+      height: 56px;
+      font-size: var(--text-xl);
+    }
+    .ext-page-tabs {
+      gap: var(--space-4);
+      overflow-x: auto;
+    }
+  }
+
+  /* ---- Tree views from extensions ---- */
+  .ext-tree-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+  .ext-tree {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .ext-tree-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-2));
+    padding-right: var(--space-3);
+    gap: var(--space-1);
+  }
+  .ext-tree-row > .icon {
+    flex: none;
+  }
+  .ext-tree-row .icon-chevron-right,
+  .ext-tree-row .icon-chevron-down {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .ext-tree-spacer {
+    flex: none;
+    width: var(--size-icon-sm);
+  }
+  /* An extension's own image for a row (D258, VS Code's iconPath). */
+  .ext-tree-img {
+    flex: none;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    object-fit: contain;
+  }
+  .ext-tree-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ext-tree-desc {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  /* Host-built rows (D233): an extension's source control and file system sections. */
+  .ext-tree-badge {
+    flex: none;
+    margin-left: auto;
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+  .ext-tree-row.is-struck .ext-tree-label {
+    text-decoration: line-through;
+  }
+  .ext-tree-row.is-faded .ext-tree-label {
+    color: var(--fg-subtle);
+  }
+  .ext-scm {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .ext-scm-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+  .ext-scm-form[hidden] {
+    display: none;
+  }
+  .ext-scm-input {
+    min-height: 28px;
+    max-height: 120px;
+    padding: var(--space-1) var(--space-2);
+    resize: vertical;
+    color: var(--fg-default);
+    font: inherit;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+  }
+  .ext-scm-input:focus-visible {
+    outline: none;
+    border-color: var(--border-input-focus);
+  }
+  .ext-scm .ext-tree-view {
+    flex: 1;
+    min-height: 0;
+  }
+  .ext-tree-row.is-strong .ext-tree-label {
+    font-weight: 600;
+  }
+  /* Row buttons (D208): on hover or focus, at the row's end. */
+  .ext-tree-actions {
+    display: none;
+    flex: none;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+  .ext-tree-row:hover .ext-tree-actions,
+  .ext-tree-row:focus-within .ext-tree-actions,
+  .ext-tree-row[aria-selected="true"] .ext-tree-actions {
+    display: flex;
+  }
+  .ext-tree-action {
+    width: 22px;
+    height: 22px;
+  }
+  .ext-tree-message {
+    flex: none;
+    padding: var(--space-2) var(--space-4) var(--space-1);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .ext-tree-message[hidden] {
+    display: none;
+  }
+
+  /* ---- Webview panels: the frame lives in the iframe layer, over this slot ---- */
+  .ext-webview {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .iframe-layer-frame.ext-webview-frame {
+    border: 0;
+    background: var(--bg-app);
+  }
+  /* In a window of its own: in the slot itself. */
+  .ext-webview-frame-inline {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    background: var(--bg-app);
+  }
+}
+
+/* Third-party extensions' editor decorations (D176): theme colors only, so an extension can't
+   make text unreadable in any theme. */
+@layer extensions {
+  .ext-deco-highlight {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .ext-deco-underline {
+    text-decoration: underline;
+    text-decoration-color: var(--fg-muted);
+    text-underline-offset: 3px;
+  }
+  .ext-deco-error,
+  .ext-deco-warning,
+  .ext-deco-info {
+    text-decoration: underline wavy;
+    text-decoration-skip-ink: none;
+    text-underline-offset: 3px;
+  }
+  .ext-deco-error {
+    text-decoration-color: var(--status-danger-fg);
+  }
+  .ext-deco-warning {
+    text-decoration-color: var(--status-warning-fg);
+  }
+  .ext-deco-info {
+    text-decoration-color: var(--accent-text);
+  }
+  .ext-deco-faded {
+    opacity: 0.55;
+  }
+  .ext-deco-strong {
+    font-weight: 600;
+  }
+  .ext-deco-after {
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
+  /* Authors (D185): pictures overlapping like a repository's contributors, and the side list. */
+  .ext-authors {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .ext-author-stack {
+    display: inline-flex;
+  }
+  .ext-author-avatar {
+    /* Its own layer: a masked brand mark inside paints in the positioned layer, which would
+       otherwise put it over the next (overlapping) picture. */
+    position: relative;
+    isolation: isolate;
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    overflow: hidden;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--bg-app);
+    background: color-mix(in srgb, var(--tint, var(--fg-muted)) 30%, var(--bg-surface));
+    color: var(--fg-default);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .ext-author-avatar.is-large {
+    width: 28px;
+    height: 28px;
+    font-size: var(--text-xs);
+    box-shadow: none;
+  }
+  .ext-author-stack .ext-author-avatar + .ext-author-avatar {
+    margin-left: -6px;
+  }
+  .ext-author-avatar.is-label-1 {
+    --tint: var(--label-1);
+  }
+  .ext-author-avatar.is-label-2 {
+    --tint: var(--label-2);
+  }
+  .ext-author-avatar.is-label-3 {
+    --tint: var(--label-3);
+  }
+  .ext-author-avatar.is-label-4 {
+    --tint: var(--label-4);
+  }
+  .ext-author-avatar.is-label-5 {
+    --tint: var(--label-5);
+  }
+  .ext-author-avatar.is-label-6 {
+    --tint: var(--label-6);
+  }
+  .ext-author-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .ext-author-avatar.is-brand.is-mono {
+    background: var(--tint);
+  }
+  .ext-author-avatar.is-brand:not(.is-mono) {
+    background: var(--bg-surface);
+  }
+  .ext-author-mask {
+    width: 62%;
+    height: 62%;
+    background: var(--brand-on);
+    -webkit-mask: var(--logo) center / contain no-repeat;
+    mask: var(--logo) center / contain no-repeat;
+  }
+  .ext-author-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .ext-author-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    color: var(--fg-default);
+    text-decoration: none;
+  }
+  a.ext-author-row:hover .ext-author-name {
+    text-decoration: underline;
+  }
+  .ext-author-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .ext-author-login {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+}

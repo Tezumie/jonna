@@ -1,0 +1,737 @@
+{
+  "id": "builtin.workbench",
+  "version": "0.2.0",
+  "displayName": "Workbench",
+  "description": "Dock and sidebar layout commands, appearance, window commands, the welcome and agent views, and the layout state path.",
+  "activation": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "layout.openView",
+        "title": "Open view",
+        "category": "View"
+      },
+      {
+        "id": "layout.moveTab",
+        "title": "Move tab",
+        "category": "View"
+      },
+      {
+        "id": "layout.splitActive",
+        "title": "Split group",
+        "category": "View"
+      },
+      {
+        "id": "layout.focusGroup",
+        "title": "Focus group",
+        "category": "View"
+      },
+      {
+        "id": "layout.moveTabToGroup",
+        "title": "Move tab to group",
+        "category": "View"
+      },
+      {
+        "id": "layout.closeTab",
+        "title": "Close tab",
+        "category": "View"
+      },
+      {
+        "id": "layout.closeGroup",
+        "title": "Close group",
+        "category": "View"
+      },
+      {
+        "id": "layout.toggleMaximize",
+        "title": "Toggle maximize group",
+        "category": "View"
+      },
+      {
+        "id": "layout.resizeGroup",
+        "title": "Resize group",
+        "category": "View"
+      },
+      {
+        "id": "layout.equalize",
+        "title": "Equalize group sizes",
+        "category": "View"
+      },
+      {
+        "id": "layout.reset",
+        "title": "Reset layout",
+        "category": "View"
+      },
+      {
+        "id": "layout.toggleSidebar",
+        "title": "Toggle sidebar",
+        "category": "View"
+      },
+      {
+        "id": "layout.togglePanel",
+        "title": "Toggle panel",
+        "category": "View"
+      },
+      {
+        "id": "layout.focusAgent",
+        "title": "Focus agent",
+        "category": "View"
+      },
+      {
+        "id": "layout.getTree",
+        "title": "Get layout tree",
+        "category": "View"
+      },
+      {
+        "id": "ui.setTheme",
+        "title": "Set color theme",
+        "category": "Preferences"
+      },
+      {
+        "id": "workspace.manageTrust",
+        "title": "Manage workspace trust",
+        "category": "Workspace"
+      },
+      {
+        "id": "workspace.resetRiskyFolderWarnings",
+        "title": "Reset risky folder warnings",
+        "category": "Workspace"
+      },
+      {
+        "id": "ui.selectColorTheme",
+        "title": "Color theme…",
+        "category": "Preferences"
+      },
+      {
+        "id": "ui.selectFileIconTheme",
+        "title": "File icon theme…",
+        "category": "Preferences"
+      },
+      {
+        "id": "ui.selectProductIconTheme",
+        "title": "Product icon theme…",
+        "category": "Preferences"
+      },
+      {
+        "id": "ui.setDensity",
+        "title": "Set density",
+        "category": "Preferences"
+      },
+      {
+        "id": "ui.setPanelStyle",
+        "title": "Set panel style",
+        "category": "Preferences"
+      },
+      {
+        "id": "update.check",
+        "title": "Check for updates…",
+        "category": "Help"
+      },
+      {
+        "id": "update.install",
+        "title": "Install update and restart",
+        "category": "Help"
+      },
+      {
+        "id": "window.minimize",
+        "title": "Minimize window",
+        "category": "Window"
+      },
+      {
+        "id": "window.toggleMaximize",
+        "title": "Toggle maximize window",
+        "category": "Window"
+      },
+      {
+        "id": "window.close",
+        "title": "Close window",
+        "category": "Window"
+      },
+      {
+        "id": "workbench.startupTimings",
+        "title": "Show startup timings",
+        "category": "Help"
+      },
+      {
+        "id": "window.toggleFullscreen",
+        "title": "Toggle full screen",
+        "category": "Window"
+      },
+      {
+        "id": "workbench.about",
+        "title": "About",
+        "category": "Window"
+      },
+      {
+        "id": "ui.copyText",
+        "title": "Copy text",
+        "category": "Edit"
+      },
+      {
+        "id": "ui.openLink",
+        "title": "Open link",
+        "category": "Help"
+      },
+      {
+        "id": "layout.moveGroup",
+        "title": "Move group",
+        "category": "View"
+      },
+      {
+        "id": "layout.newTab",
+        "title": "New tab…",
+        "category": "View"
+      },
+      {
+        "id": "notifications.show",
+        "title": "Show notifications",
+        "category": "Notifications"
+      },
+      {
+        "id": "notifications.clear",
+        "title": "Clear all notifications",
+        "category": "Notifications"
+      },
+      {
+        "id": "notifications.toggleDoNotDisturb",
+        "title": "Toggle do not disturb",
+        "category": "Notifications"
+      },
+      {
+        "id": "notifications.resetHidden",
+        "title": "Show hidden notices again",
+        "category": "Notifications"
+      },
+      {
+        "id": "workbench.screenshot",
+        "title": "Take screenshot of the IDE",
+        "category": "Window"
+      },
+      {
+        "id": "layout.moveToNewWindow",
+        "title": "Move tab into new window",
+        "category": "View"
+      },
+      {
+        "id": "layout.returnFromWindow",
+        "title": "Move tab back into the main window",
+        "category": "View"
+      },
+      {
+        "id": "layout.focusWindow",
+        "title": "Show the tab's window",
+        "category": "View"
+      },
+      {
+        "id": "workbench.showManageMenu",
+        "title": "Manage…",
+        "category": "Preferences"
+      },
+      {
+        "id": "layout.returnAllWindows",
+        "title": "Move all tabs back into the main window",
+        "category": "View"
+      },
+      {
+        "id": "workbench.toggleStatusBar",
+        "title": "Toggle status bar",
+        "category": "View"
+      },
+      {
+        "id": "workbench.hideImportLink",
+        "title": "Hide the welcome page's import link",
+        "category": "View"
+      },
+      {
+        "id": "layout.toggleCenteredLayout",
+        "title": "Toggle centered layout",
+        "category": "View"
+      },
+      {
+        "id": "layout.pinEditor",
+        "title": "Pin tab",
+        "category": "View"
+      },
+      {
+        "id": "layout.unpinEditor",
+        "title": "Unpin tab",
+        "category": "View"
+      },
+      {
+        "id": "layout.closeAllTabs",
+        "title": "Close all tabs",
+        "category": "View"
+      }
+    ],
+    "keybindings": [
+      { "key": "ctrl+k ctrl+t", "mac": "cmd+k cmd+t", "command": "ui.selectColorTheme" },
+      { "key": "ctrl+k enter", "mac": "cmd+k enter", "command": "layout.pinTab" },
+      {
+        "key": "ctrl+k shift+enter",
+        "mac": "cmd+k shift+enter",
+        "command": "layout.pinEditor",
+        "when": "!activeEditorIsPinned"
+      },
+      {
+        "key": "ctrl+k shift+enter",
+        "mac": "cmd+k shift+enter",
+        "command": "layout.unpinEditor",
+        "when": "activeEditorIsPinned"
+      },
+      {
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "command": "layout.reopenClosedTab"
+      },
+      {
+        "key": "ctrl+k z",
+        "mac": "cmd+k z",
+        "command": "layout.toggleZenMode"
+      },
+      {
+        "key": "f11",
+        "mac": "ctrl+cmd+f",
+        "command": "window.toggleFullscreen",
+        "when": "debugState != 'stopped'"
+      },
+      {
+        "key": "ctrl+=",
+        "mac": "cmd+=",
+        "command": "window.zoomIn"
+      },
+      {
+        "key": "ctrl+shift+=",
+        "mac": "cmd+shift+=",
+        "command": "window.zoomIn"
+      },
+      {
+        "key": "ctrl+-",
+        "mac": "cmd+-",
+        "command": "window.zoomOut"
+      },
+      {
+        "key": "ctrl+numpad0",
+        "mac": "cmd+numpad0",
+        "command": "window.zoomReset"
+      },
+      {
+        "key": "ctrl+b",
+        "mac": "cmd+b",
+        "command": "layout.toggleSidebar"
+      },
+      {
+        "key": "ctrl+j",
+        "mac": "cmd+j",
+        "command": "layout.togglePanel"
+      },
+      {
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "command": "layout.focusAgent",
+        "when": "(!terminalFocus || isMac) && !browserFocus"
+      },
+      {
+        "key": "ctrl+\\",
+        "mac": "cmd+\\",
+        "command": "layout.splitActive"
+      },
+      {
+        "key": "ctrl+w",
+        "mac": "cmd+w",
+        "command": "layout.closeTab",
+        "when": "!terminalFocus || isMac"
+      },
+      {
+        "key": "ctrl+k ctrl+left",
+        "mac": "cmd+k cmd+left",
+        "command": "layout.focusGroup.left"
+      },
+      {
+        "key": "ctrl+k ctrl+right",
+        "mac": "cmd+k cmd+right",
+        "command": "layout.focusGroup.right"
+      },
+      {
+        "key": "ctrl+k ctrl+up",
+        "mac": "cmd+k cmd+up",
+        "command": "layout.focusGroup.up"
+      },
+      {
+        "key": "ctrl+k ctrl+down",
+        "mac": "cmd+k cmd+down",
+        "command": "layout.focusGroup.down"
+      },
+      {
+        "key": "ctrl+alt+left",
+        "mac": "cmd+alt+left",
+        "command": "layout.moveTabToGroup.left"
+      },
+      {
+        "key": "ctrl+alt+right",
+        "mac": "cmd+alt+right",
+        "command": "layout.moveTabToGroup.right"
+      },
+      {
+        "key": "ctrl+alt+up",
+        "mac": "cmd+alt+up",
+        "command": "layout.moveTabToGroup.up"
+      },
+      {
+        "key": "ctrl+alt+down",
+        "mac": "cmd+alt+down",
+        "command": "layout.moveTabToGroup.down"
+      },
+      {
+        "key": "ctrl+pagedown",
+        "mac": "cmd+shift+]",
+        "command": "layout.nextTab"
+      },
+      {
+        "key": "ctrl+pageup",
+        "mac": "cmd+shift+[",
+        "command": "layout.previousTab"
+      }
+    ],
+    "settings": {
+      "security.workspace.trust.startupPrompt": {
+        "type": "string",
+        "enum": ["once", "never"],
+        "enumDescriptions": [
+          "Ask once when a folder you haven't decided about opens (VS Code's default)",
+          "Don't ask when a folder opens; ask before its first task, debug session or test run"
+        ],
+        "default": "once",
+        "description": "When to ask whether you trust the authors of a folder's files.",
+        "title": "Ask about trust when a folder opens",
+        "category": "Task",
+        "section": "Workspace trust",
+        "scope": "user"
+      },
+      "security.warnRiskyFolders": {
+        "type": "boolean",
+        "default": true,
+        "description": "Before your Downloads folder (or a folder in it), your home folder, the Desktop, the temp folder or the root of a drive opens as the workspace, explain the risk and offer restricted mode. Files a browser saves there can hold instructions written to trick AI agents. Agents ask before working in those folders either way.",
+        "title": "Warn before opening a risky folder",
+        "category": "Task",
+        "section": "Workspace trust",
+        "scope": "user"
+      },
+      "security.riskyFolders": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "More folders that count like Downloads (absolute paths; the folders inside them too): where another browser or a mail program saves files.",
+        "title": "Other risky folders",
+        "category": "Task",
+        "section": "Workspace trust",
+        "scope": "user"
+      },
+      "update.mode": {
+        "type": "string",
+        "enum": ["default", "manual", "none"],
+        "enumDescriptions": [
+          "Check a minute after start and once a day; offer a newer version (nothing downloads until you install it)",
+          "Only when you choose Help → Check for updates…",
+          "Never"
+        ],
+        "default": "default",
+        "description": "Updates (release builds made with an update server; development builds never check).",
+        "title": "Updates",
+        "order": 90,
+        "scope": "user"
+      },
+      "update.channel": {
+        "type": "string",
+        "enum": ["stable", "beta"],
+        "enumDescriptions": [
+          "Released versions",
+          "Previews of the next version, earlier and less tested (when this build has a beta channel; otherwise stable)"
+        ],
+        "default": "stable",
+        "description": "Which releases updates come from.",
+        "title": "Update channel",
+        "order": 91,
+        "scope": "user"
+      },
+      "workbench.theme": {
+        "type": "string",
+        "enum": ["dark", "light"],
+        "default": "dark",
+        "description": "Deprecated: replaced by workbench.colorTheme (\"Dark+\" / \"Light+\"). Still read when workbench.colorTheme is empty.",
+        "order": 1,
+        "deprecated": true
+      },
+      "workbench.density": {
+        "type": "string",
+        "enum": ["compact", "default", "comfortable"],
+        "default": "default",
+        "description": "Row, tab and control heights.",
+        "order": 2
+      },
+      "workbench.scrollbarSize": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 4,
+        "maximum": 24,
+        "description": "Width of scrollbars outside the editor and terminal (lists, panels, pages), in pixels. The editor's and the terminal's have their own settings.",
+        "order": 3.5
+      },
+      "workbench.panels": {
+        "type": "string",
+        "enum": ["flush", "floating"],
+        "default": "flush",
+        "description": "Flush: one shell color with 1px dividers. Floating: panels as cards with gaps.",
+        "order": 3
+      },
+      "workbench.sideBarColor": {
+        "type": "string",
+        "enum": ["matching", "distinct"],
+        "enumDescriptions": [
+          "The panels' color, like the editors and the bottom panel",
+          "The color theme's side bar color, set apart from the panels"
+        ],
+        "default": "matching",
+        "title": "Side bar color",
+        "description": "The side bar's color, with flush or floating panels: matching the panels, or the color theme's own side bar color.",
+        "order": 3.2
+      },
+      "workbench.tabStyle": {
+        "type": "string",
+        "enum": ["rounded", "classic", "connected"],
+        "enumDescriptions": [
+          "Rounded tabs inside the tab strip",
+          "Square tabs side by side, with the accent along the active tab's top",
+          "The active tab joins the editor under it, on a lighter tab strip"
+        ],
+        "default": "rounded",
+        "title": "Tab style",
+        "description": "The look of the tabs on editors, terminals and the other views in the dock.",
+        "order": 3.3
+      },
+      "workbench.colorTheme": {
+        "type": "string",
+        "default": "Claude Dark",
+        "description": "The color theme: Claude Dark (the default), Dark+ or Light+ (built in), a bundled Shiki theme, or one from an installed extension (VS Code themes work).",
+        "order": 1
+      },
+      "window.autoDetectColorScheme": {
+        "type": "boolean",
+        "default": false,
+        "title": "Follow the system's light or dark mode",
+        "description": "Use `workbench.preferredDarkColorTheme` while the system is in dark mode and `workbench.preferredLightColorTheme` in light mode, instead of `workbench.colorTheme`.",
+        "order": 1.1
+      },
+      "workbench.preferredDarkColorTheme": {
+        "type": "string",
+        "default": "Claude Dark",
+        "title": "Preferred dark color theme",
+        "description": "The theme for the system's dark mode, when `window.autoDetectColorScheme` is on.",
+        "order": 1.2
+      },
+      "workbench.preferredLightColorTheme": {
+        "type": "string",
+        "default": "Light+",
+        "title": "Preferred light color theme",
+        "description": "The theme for the system's light mode, when `window.autoDetectColorScheme` is on.",
+        "order": 1.3
+      },
+      "workbench.iconTheme": {
+        "type": "string",
+        "default": "material-icon-theme",
+        "description": "File icon theme: Material Icon Theme (built in), Minimal (the IDE's own small set), or one from an installed extension (VS Code icon themes work).",
+        "order": 1.6
+      },
+      "workbench.productIconTheme": {
+        "type": "string",
+        "default": "Default",
+        "description": "Product icon theme (VS Code's): Default (the IDE's own icons) or one from an installed extension, whose font redraws the workbench's icons.",
+        "order": 1.7
+      },
+      "workbench.colorCustomizations": {
+        "type": "object",
+        "default": {},
+        "description": "Colors over the theme: design tokens ({ \"--accent\": \"#5FB3A1\" }) or VS Code color ids (titleBar.activeBackground, activityBar.background, statusBar.background and their foregrounds, as Peacock writes them; editor.background, focusBorder…). A \"[Theme name]\" block applies only under that theme. The folder's value is merged over the user's.",
+        "order": 4
+      },
+      "workbench.editor.enablePreview": {
+        "type": "boolean",
+        "default": true,
+        "description": "Single-clicking a file opens it in a preview tab (italic title) that the next preview replaces. Editing or double-clicking keeps it.",
+        "order": 5
+      },
+      "workbench.editor.decorations.colors": {
+        "type": "boolean",
+        "default": true,
+        "title": "Tab decorations: colors",
+        "description": "Color tab titles by the file's git status and problems (errors, warnings), as in the explorer.",
+        "order": 5.1
+      },
+      "workbench.editor.decorations.badges": {
+        "type": "boolean",
+        "default": true,
+        "title": "Tab decorations: badges",
+        "description": "Show the file's git status letter and problem count after the tab title.",
+        "order": 5.2
+      },
+      "workbench.editor.tabActionLocation": {
+        "type": "string",
+        "enum": ["right", "left"],
+        "default": "right",
+        "title": "Tab close button location",
+        "description": "Which side of the tab title the close button is on.",
+        "order": 5.3
+      },
+      "workbench.editor.tabActionCloseVisibility": {
+        "type": "boolean",
+        "default": true,
+        "title": "Tab close button",
+        "description": "Show a close button on tabs (on the active tab and on hover). Off: close with the middle mouse button, Ctrl+W or the tab's menu.",
+        "order": 5.4
+      },
+      "workbench.editor.pinnedTabsOnSeparateRow": {
+        "type": "boolean",
+        "default": false,
+        "title": "Pinned tabs on a separate row",
+        "description": "Show pinned tabs on their own row above the other tabs.",
+        "order": 5.5
+      },
+      "workbench.editor.tabPlacement": {
+        "type": "string",
+        "enum": ["top", "left", "right"],
+        "enumDescriptions": [
+          "Above the editor, side by side",
+          "A list on the group's left, one tab per row",
+          "A list on the group's right, one tab per row"
+        ],
+        "default": "top",
+        "title": "Tab placement",
+        "description": "Where each group's tabs are.",
+        "order": 5.6
+      },
+      "workbench.editor.limit.enabled": {
+        "type": "boolean",
+        "default": false,
+        "title": "Limit open tabs",
+        "description": "Close the least recently used tabs when more than `workbench.editor.limit.value` are open. Pinned tabs, and tabs with unsaved changes, stay.",
+        "order": 5.7
+      },
+      "workbench.editor.limit.value": {
+        "type": "integer",
+        "default": 10,
+        "minimum": 1,
+        "title": "Limit: tabs",
+        "description": "The most tabs kept open when the limit is on.",
+        "order": 5.71
+      },
+      "workbench.editor.limit.perEditorGroup": {
+        "type": "boolean",
+        "default": false,
+        "title": "Limit: per group",
+        "description": "Count each group's tabs on their own instead of all groups' together.",
+        "order": 5.72
+      },
+      "workbench.editor.limit.excludeDirty": {
+        "type": "boolean",
+        "default": false,
+        "title": "Limit: don't count unsaved tabs",
+        "description": "Tabs with unsaved changes don't count toward the limit.",
+        "order": 5.73
+      },
+      "workbench.editor.focusRecentEditorAfterClose": {
+        "type": "boolean",
+        "default": true,
+        "title": "Focus the most recent tab after closing",
+        "description": "After closing a tab, show the tab used most recently. Off: the tab to its right (or left, at the end).",
+        "order": 5.8
+      },
+      "workbench.navigationControl.enabled": {
+        "type": "boolean",
+        "default": true,
+        "title": "Back and forward buttons",
+        "description": "Show the Go back and Go forward buttons (Alt+Left / Alt+Right).",
+        "order": 5.9
+      },
+      "workbench.navigationControl.location": {
+        "type": "string",
+        "enum": ["titleBar", "tabBar"],
+        "enumDescriptions": [
+          "Beside the search box in the title bar",
+          "At the start of each group's tab strip"
+        ],
+        "default": "titleBar",
+        "title": "Back and forward buttons: location",
+        "description": "Where the Go back and Go forward buttons are.",
+        "order": 5.91
+      },
+      "workbench.activityBar.hidden": {
+        "type": "array",
+        "default": [
+          "outline.view",
+          "timeline.view",
+          "git.stashesView",
+          "git.lineHistoryView",
+          "git.compareView",
+          "github.notificationsView",
+          "testing.view"
+        ],
+        "scope": "user",
+        "description": "Sidebar views hidden from the activity bar (right-click an icon to hide or show it). A hidden view that belongs under another (Timeline, Outline) stays there as a collapsed section.",
+        "order": 6
+      },
+      "workbench.activityBar.order": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Order of the sidebar views on the activity bar, as view ids (drag an icon to change it). Views not listed come after, in their default order.",
+        "order": 6
+      },
+      "workbench.view.alwaysShowHeaderActions": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Always show the buttons in view and panel headers (sidebar views and their sections, editor groups, the title bar's layout toggles). Off: they appear when you hover or focus the view.",
+        "order": 7
+      },
+      "window.zoomLevel": {
+        "type": "number",
+        "default": 0,
+        "scope": "user",
+        "description": "Zoom of the whole window: 0 is 100 %, each step up or down is 20 % (Ctrl+= / Ctrl+-).",
+        "order": 6.4
+      },
+      "workbench.sideBar.location": {
+        "type": "string",
+        "enum": ["left", "right"],
+        "default": "left",
+        "scope": "user",
+        "description": "Which side of the window the activity bar and sidebar (explorer, search…) are on.",
+        "order": 6.2
+      },
+      "workbench.openReadme": {
+        "type": "boolean",
+        "default": true,
+        "description": "When a folder is opened for the first time, show its README (as a preview).",
+        "order": 6.5
+      },
+      "workbench.statusBar.visible": {
+        "type": "boolean",
+        "default": true,
+        "title": "Status bar",
+        "description": "Show the status bar at the bottom of the window."
+      },
+      "workbench.statusBar.hidden": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "title": "Hidden status bar items",
+        "description": "Status bar items hidden by their id (right-click the status bar to hide or show one)."
+      },
+      "workbench.editor.centeredLayout": {
+        "type": "boolean",
+        "default": false,
+        "title": "Centered layout",
+        "description": "Keep text editors at a readable width in the middle of wide editor groups."
+      }
+    }
+  }
+}

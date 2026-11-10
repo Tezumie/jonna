@@ -1,0 +1,28 @@
+{
+  "id": "bundled.jupyter",
+  "version": "1.0.0",
+  "displayName": "Jupyter",
+  "description": "Runs Jupyter notebooks: finds each Python here (the folder's .venv or venv, jupyter.pythonPath, PATH) and starts its Jupyter kernels, or plain Python when Jupyter isn't installed (offering to install ipykernel). Outputs, rich displays, plots, widgets and the Variables panel. Notebooks open and edit without it (the IDE reads .ipynb itself); this is what runs their cells. Off until you turn it on.",
+  "main": "main.js",
+  "activation": ["*"],
+  "icon": "icon.svg",
+  "authors": [
+    { "name": "Claude", "url": "https://claude.ai", "avatar": "brand:anthropic" },
+    { "name": "Tezumie", "github": "Tezumie" }
+  ],
+  "license": "MIT",
+  "categories": ["Notebooks", "Data Science"],
+  "keywords": ["jupyter", "notebook", "ipynb", "python", "ipykernel", "data science"],
+  "permissions": ["shell", "fs.read"],
+  "readsSettings": ["notebook.pythonPath", "debug.pythonPath"],
+  "contributes": {
+    "settings": {
+      "jupyter.pythonPath": {
+        "type": "string",
+        "default": "",
+        "description": "The Python that runs notebooks (tried first). Empty: the open folder's virtual environment (.venv, venv), then python on PATH.",
+        "scope": "user"
+      }
+    }
+  }
+}

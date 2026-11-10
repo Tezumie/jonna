@@ -1,0 +1,42 @@
+{
+  "id": "builtin.windows",
+  "version": "0.1.0",
+  "displayName": "Windows and command line",
+  "description": "Files from the command line (file:line, --diff, --wait), the shell command in PATH, and reopening the last session's windows.",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "workbench.installShellCommand",
+        "title": "Install shell command in PATH",
+        "category": "Shell command"
+      },
+      {
+        "id": "workbench.uninstallShellCommand",
+        "title": "Uninstall shell command from PATH",
+        "category": "Shell command"
+      },
+      {
+        "id": "window.openFromCommandLine",
+        "title": "Open from the command line",
+        "category": "Window"
+      }
+    ],
+    "settings": {
+      "window.restoreWindows": {
+        "type": "string",
+        "enum": ["all", "one", "none"],
+        "enumDescriptions": [
+          "Reopen every window that was open when the IDE last quit, each with its folder (a window without a folder comes back when it had unsaved files)",
+          "Reopen the last folder in one window",
+          "Start with an empty window"
+        ],
+        "default": "all",
+        "scope": "user",
+        "title": "Restore windows",
+        "description": "Which windows come back when the IDE starts without a folder to open (VS Code's window.restoreWindows). A folder or files given on the command line open on their own."
+      }
+    }
+  }
+}

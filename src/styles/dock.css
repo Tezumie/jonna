@@ -1,0 +1,740 @@
+/* The dock (docs/dock.md): splits, groups, tab strips (DESIGN.md v2 §12.3), drag and drop.
+ * Focus is shown with surface steps and text weight — no underline, no accent (§1.2). Nothing in
+ * here may grow wider than its parent: tabs scroll inside the strip (min-width: 0 everywhere). */
+@layer components {
+  .dock {
+    flex: 1;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dock-split {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+  }
+  .dock-split.is-row {
+    flex-direction: row;
+  }
+  .dock-split.is-column {
+    flex-direction: column;
+  }
+  /* Splitter drags clamp groups at 160×80; the window itself may still shrink them (never overflow). */
+  .dock-cell {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dock-cell > * {
+    flex: 1;
+  }
+
+  .dock-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .dock-group.is-maximized {
+    animation: dock-maximize var(--motion-deliberate) var(--ease-standard);
+  }
+  @keyframes dock-maximize {
+    from {
+      opacity: 0.6;
+      transform: scale(0.985);
+    }
+  }
+
+  /* ---- Tab strip ---- */
+  .dock-strip {
+    display: flex;
+    align-items: stretch;
+    flex: none;
+    min-width: 0;
+    height: var(--size-tab);
+    padding: 0 var(--space-2);
+    gap: var(--space-2);
+  }
+  /* As wide as its tabs (the strip's empty rest is the group's grab handle), so its scrollbar
+     sits under the tabs with a normal cursor, not the grab hand. */
+  .dock-tabs {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 0 1 auto;
+    min-width: 0;
+    cursor: default;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  /* Always-visible 4px scrollbar while the strip overflows (§10.5 exception). */
+  .dock-tabs::-webkit-scrollbar {
+    height: 4px;
+  }
+  .dock-tabs::-webkit-scrollbar-thumb,
+  .dock-tabs:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
+    border: 0;
+    border-radius: var(--radius-full);
+  }
+  /* Like every other scrollbar: brighter under the pointer, brightest while dragged. */
+  .dock-tabs::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--fg-subtle) 75%, transparent);
+  }
+  .dock-tabs::-webkit-scrollbar-thumb:active {
+    background: var(--fg-subtle);
+  }
+  .dock-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: none;
+    min-width: 80px;
+    max-width: 220px;
+    height: calc(var(--size-tab) - var(--space-2) * 2);
+    /* Even insets: 8px before the icon, 8px after the close glyph (6px + its 2px slot), and
+       5px above/below the 16px icon. */
+    padding: 0 6px 0 var(--space-4);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition:
+      background-color var(--motion-fast),
+      color var(--motion-fast),
+      opacity var(--motion-fast);
+  }
+  .dock-tab > .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+  }
+  /* Getting ready (a terminal's shell starting): a small ring in the icon's place. */
+  .dock-tab-busy {
+    flex: none;
+    box-sizing: border-box;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    margin: 0 calc((var(--size-icon-md) - var(--size-icon-sm)) / 2);
+    border-radius: var(--radius-full);
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--fg-muted);
+    animation: dock-tab-spin 0.8s linear infinite;
+  }
+  @keyframes dock-tab-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dock-tab-busy {
+      animation: none;
+    }
+  }
+  /* A chat's agent faces in place of the icon. */
+  .dock-tab > .agent-face,
+  .dock-tab > .agent-face-group {
+    flex: none;
+  }
+  .dock-tab-label {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+  }
+  .dock-tab-label > span {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dock-tab-sizer {
+    font-weight: 500;
+    visibility: hidden;
+  }
+  .dock-tab.is-preview .dock-tab-label {
+    font-style: italic;
+  }
+  /* A chat answering: its title shimmers, as its row in the Chats list does (D401). */
+  .dock-tab.is-working .dock-tab-text {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dock-tab.is-working .dock-tab-text {
+      animation: none;
+      background: none;
+      color: inherit;
+    }
+  }
+  .dock-tab:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  /* Active tab = one surface step up. Focused group: full-strength text; others: muted. */
+  .dock-tab.is-active {
+    background: var(--bg-surface-raised);
+  }
+  .dock-group.is-focused .dock-tab.is-active {
+    color: var(--fg-default);
+    font-weight: 500;
+  }
+  :root[data-theme="light"] .dock-tab.is-active {
+    box-shadow: inset 0 0 0 1px var(--border-subtle);
+  }
+  /* terminal.bell = visual: the tab pulses twice. */
+  .dock-tab.is-bell {
+    animation: tab-bell var(--motion-slow) var(--ease-standard) 2;
+  }
+  @keyframes tab-bell {
+    50% {
+      background: var(--bg-active);
+      color: var(--fg-default);
+    }
+  }
+  .dock-tab-close {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-xs);
+    color: var(--fg-muted);
+    opacity: 0;
+    cursor: pointer;
+    transition:
+      opacity var(--motion-fast),
+      background-color var(--motion-fast);
+  }
+  .dock-tab-close .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .dock-tab:hover .dock-tab-close,
+  .dock-tab.is-active .dock-tab-close,
+  .dock-tab-close:focus-visible {
+    opacity: 1;
+  }
+  .dock-tab-close:hover {
+    background: var(--bg-active);
+    color: var(--fg-default);
+  }
+  /* Dirty: a 6px dot in the close slot; the close icon returns on hover. */
+  .dock-tab-dirty {
+    display: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--fg-default);
+  }
+  .dock-tab.is-dirty .dock-tab-close {
+    opacity: 1;
+  }
+  .dock-tab.is-dirty .dock-tab-dirty {
+    display: block;
+  }
+  .dock-tab.is-dirty .dock-tab-close .icon {
+    display: none;
+  }
+  .dock-tab.is-dirty .dock-tab-close:hover .dock-tab-dirty {
+    display: none;
+  }
+  .dock-tab.is-dirty .dock-tab-close:hover .icon {
+    display: block;
+  }
+  .dock-tab.is-drag-source {
+    opacity: 0.4;
+  }
+
+  /* ---- Tab styles (workbench.tabStyle, D278); rounded (above) is the default ---- */
+  /* Classic and connected: the strip takes a color of its own and the active tab the editor's. */
+  :root[data-tab-style="classic"] .dock-strip,
+  :root[data-tab-style="connected"] .dock-strip {
+    background: var(--bg-tab-strip);
+  }
+  :root[data-tab-style="classic"] .dock-tab.is-active,
+  :root[data-tab-style="connected"] .dock-tab.is-active {
+    background: var(--bg-surface);
+    box-shadow: none;
+  }
+  /* Classic: square tabs edge to edge, a hairline between them, the accent along the active
+     tab's top (dimmer in a group that isn't focused). */
+  :root[data-tab-style="classic"] .dock-strip {
+    padding-left: 0;
+  }
+  :root[data-tab-style="classic"] .dock-tabs {
+    align-items: stretch;
+    gap: 0;
+  }
+  :root[data-tab-style="classic"] .dock-tab {
+    height: auto;
+    border-radius: 0;
+    border-right: 1px solid var(--border-subtle);
+  }
+  :root[data-tab-style="classic"] .dock-tab.is-active {
+    box-shadow: inset 0 1px 0 var(--accent-border);
+  }
+  :root[data-tab-style="classic"] .dock-group.is-focused .dock-tab.is-active {
+    box-shadow: inset 0 1px 0 var(--accent);
+  }
+  /* Connected: the active tab rises from the editor with rounded top corners and curved feet;
+     the others stay rounded inside the strip. */
+  :root[data-tab-style="connected"] .dock-strip {
+    padding-left: 0;
+  }
+  /* Tabs sit on the strip's floor, far enough apart that a foot never reaches a neighbor; the
+     row's own padding keeps the first and last tabs' feet inside its scroll box. */
+  :root[data-tab-style="connected"] .dock-tabs {
+    align-self: flex-end;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+  :root[data-tab-style="connected"] .dock-tab {
+    margin-bottom: var(--space-2);
+  }
+  :root[data-tab-style="connected"] .dock-tab.is-active {
+    height: calc(var(--size-tab) - var(--space-2));
+    margin-bottom: 0;
+    /* Its label sits where the others' do: the extra height is below it. */
+    padding-bottom: var(--space-2);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+  :root[data-tab-style="connected"] .dock-tab.is-active::before,
+  :root[data-tab-style="connected"] .dock-tab.is-active::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    width: var(--radius-sm);
+    height: var(--radius-sm);
+    pointer-events: none;
+  }
+  :root[data-tab-style="connected"] .dock-tab.is-active::before {
+    left: calc(var(--radius-sm) * -1);
+    background: radial-gradient(
+      circle at 0 0,
+      transparent calc(var(--radius-sm) - 0.5px),
+      var(--bg-surface) var(--radius-sm)
+    );
+  }
+  :root[data-tab-style="connected"] .dock-tab.is-active::after {
+    right: calc(var(--radius-sm) * -1);
+    background: radial-gradient(
+      circle at 100% 0,
+      transparent calc(var(--radius-sm) - 0.5px),
+      var(--bg-surface) var(--radius-sm)
+    );
+  }
+
+  /* ---- Tab options (VS Code's workbench.editor.*, D279) ---- */
+  /* Go back / Go forward at the strip's start (workbench.navigationControl.location "tabBar"). */
+  .dock-nav {
+    display: flex;
+    align-items: center;
+    flex: none;
+    gap: var(--space-1);
+    padding-right: var(--space-2);
+  }
+  .dock-nav[hidden] {
+    display: none;
+  }
+  .dock-nav-button {
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+  }
+  .dock-nav-button:disabled {
+    color: var(--fg-disabled);
+    background: none;
+    cursor: default;
+  }
+  /* The close button on the title's left (tabActionLocation): the insets swap with it. */
+  .dock-group[data-tab-action="left"] .dock-tab {
+    padding: 0 var(--space-4) 0 6px;
+  }
+  .dock-group[data-tab-action="left"] .dock-tab-close {
+    order: -1;
+  }
+  /* No close button (tabActionCloseVisibility off): unsaved tabs keep their dot, pinned ones
+     their pin. */
+  .dock-group.is-close-hidden .dock-tab:not(.is-dirty):not(.is-pinned) .dock-tab-close {
+    display: none;
+  }
+  .dock-group.is-close-hidden .dock-tab:not(.is-dirty):not(.is-pinned) {
+    padding: 0 var(--space-4);
+  }
+  /* A pinned tab's pin shows at rest; a click unpins it. */
+  .dock-tab.is-pinned .dock-tab-close {
+    opacity: 1;
+  }
+  .dock-tab.is-pinned:not(.is-active) .dock-tab-unpin {
+    color: var(--fg-subtle);
+  }
+  /* Pinned tabs on their own row (pinnedTabsOnSeparateRow): the strip grows to two rows, each
+     scrolling by itself. */
+  .dock-group.has-pinned-row .dock-strip {
+    height: auto;
+    align-items: flex-start;
+  }
+  .dock-group.has-pinned-row .dock-tabs {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    overflow: hidden;
+  }
+  .dock-tabs-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--size-tab);
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .dock-tabs-row::-webkit-scrollbar {
+    height: 4px;
+  }
+  .dock-tabs-row::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
+    border-radius: var(--radius-full);
+  }
+  /* The line under the pinned row runs across the whole strip, under the group's actions too
+     (the row itself is only as wide as its tabs). */
+  .dock-group.has-pinned-row .dock-strip {
+    position: relative;
+  }
+  .dock-group.has-pinned-row .dock-strip::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--size-tab) - 1px);
+    border-top: 1px solid var(--border-subtle);
+    pointer-events: none;
+  }
+  .dock-group.has-pinned-row .dock-strip-actions {
+    height: var(--size-tab);
+  }
+  :root[data-tab-style="connected"] .dock-group.has-pinned-row .dock-tabs {
+    align-self: stretch;
+    padding: 0;
+  }
+  :root[data-tab-style="connected"] .dock-tabs-row {
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+  }
+  :root[data-tab-style="connected"] .dock-tabs-row.is-pinned-row {
+    align-items: center;
+  }
+  :root[data-tab-style="connected"] .dock-tabs-row.is-pinned-row .dock-tab {
+    margin-bottom: 0;
+  }
+  /* Tabs on the group's side (tabPlacement left / right): a column of full-width tabs with the
+     group's actions above it. */
+  .dock-group[data-tab-placement] {
+    flex-direction: row;
+  }
+  .dock-group[data-tab-placement="right"] {
+    flex-direction: row-reverse;
+  }
+  .dock-group[data-tab-placement] .dock-strip {
+    flex-direction: column;
+    align-items: stretch;
+    width: var(--size-tab-list);
+    height: auto;
+    padding: var(--space-2);
+    gap: var(--space-1);
+  }
+  .dock-group[data-tab-placement="left"] .dock-strip {
+    border-right: 1px solid var(--border-subtle);
+  }
+  .dock-group[data-tab-placement="right"] .dock-strip {
+    border-left: 1px solid var(--border-subtle);
+  }
+  .dock-group[data-tab-placement] .dock-strip-actions {
+    order: -1;
+    justify-content: flex-end;
+    margin-left: 0;
+    min-height: var(--size-control-sm);
+    flex-wrap: wrap;
+  }
+  .dock-group[data-tab-placement] .dock-nav {
+    order: -2;
+    padding: 0;
+  }
+  .dock-group[data-tab-placement] .dock-tabs {
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1 1 auto;
+    gap: var(--space-1);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .dock-group[data-tab-placement] .dock-tab {
+    min-width: 0;
+    max-width: none;
+  }
+  .dock-group[data-tab-placement] .dock-tabs::-webkit-scrollbar {
+    width: 4px;
+  }
+  /* The tab styles keep their colors on the side; the shapes that join the editor below don't
+     apply there. */
+  :root[data-tab-style="classic"] .dock-group[data-tab-placement] .dock-tabs {
+    gap: 0;
+  }
+  :root[data-tab-style="classic"] .dock-group[data-tab-placement] .dock-tab {
+    height: calc(var(--size-tab) - var(--space-2) * 2);
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  :root[data-tab-style="classic"] .dock-group[data-tab-placement] .dock-tab.is-active {
+    box-shadow: inset 1px 0 0 var(--accent-border);
+  }
+  :root[data-tab-style="classic"] .dock-group.is-focused[data-tab-placement] .dock-tab.is-active {
+    box-shadow: inset 1px 0 0 var(--accent);
+  }
+  :root[data-tab-style="connected"] .dock-group[data-tab-placement] .dock-tabs {
+    align-self: stretch;
+    gap: var(--space-1);
+    padding: 0;
+  }
+  :root[data-tab-style="connected"] .dock-group[data-tab-placement] .dock-tab,
+  :root[data-tab-style="connected"] .dock-group[data-tab-placement] .dock-tab.is-active {
+    height: calc(var(--size-tab) - var(--space-2) * 2);
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-radius: var(--radius-sm);
+  }
+  :root[data-tab-style="connected"] .dock-group[data-tab-placement] .dock-tab.is-active::before,
+  :root[data-tab-style="connected"] .dock-group[data-tab-placement] .dock-tab.is-active::after {
+    content: none;
+  }
+  /* A group dragged by its strip: the live group shrinks toward the pointer (lift.ts) and floats
+     above the other groups; its slot shows an outline of where it came from. */
+  .dock.is-group-dragging .dock-cell {
+    overflow: visible;
+  }
+  .dock-group.is-lifted,
+  .dock-group.is-settling {
+    position: relative;
+    z-index: var(--z-drag);
+    box-shadow: var(--shadow-drag);
+    border-radius: var(--radius-md);
+    will-change: transform;
+  }
+  .dock-group.is-lifted {
+    opacity: 0.94;
+    pointer-events: none;
+  }
+  /* The dragged preview is rounded like a card: its contents (an editor's canvas, a page) are
+     clipped to the corners (D186). Its edge is a layer of its own on top: an outline drawn
+     inside was covered by the contents' backgrounds (D191). */
+  .dock-group.is-lifted,
+  .dock-group.is-settling {
+    overflow: hidden;
+    border-radius: calc(var(--radius-lifted) / var(--lift-scale, 1));
+  }
+  .dock-group.is-lifted::after,
+  .dock-group.is-settling::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-drag);
+    border: calc(1px / var(--lift-scale, 1)) solid var(--border-strong);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  /* A page in it: its bottom corners rounded the same way (it sits at the group's bottom). */
+  .iframe-layer-frame.is-lifted {
+    clip-path: inset(
+      0 round 0 0 calc(var(--radius-lifted) / var(--lift-scale, 1))
+        calc(var(--radius-lifted) / var(--lift-scale, 1))
+    );
+  }
+  /* Where the lifted group came from: a rounded dashed outline (D185). */
+  .dock.is-group-dragging .dock-cell:has(> .dock-group.is-lifted) {
+    position: relative;
+  }
+  .dock.is-group-dragging .dock-cell:has(> .dock-group.is-lifted)::after {
+    content: "";
+    position: absolute;
+    inset: var(--space-3);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    pointer-events: none;
+  }
+  body.is-dragging-group,
+  body.is-dragging-group * {
+    cursor: grabbing;
+  }
+  /* A lifted group's pages ride with it (iframeLayer.ts), above it; every other page stays under
+     the drag and drop overlays (D185: raising the whole layer hid them behind a canvas). */
+  .iframe-layer-frame.is-lifted {
+    z-index: calc(var(--z-drag) + 1);
+  }
+  /* Group actions stay pinned on the right and never scroll away. */
+  .dock-strip-actions {
+    display: flex;
+    align-items: center;
+    flex: none;
+    margin-left: auto;
+    gap: var(--space-1);
+    opacity: 0;
+    transition: opacity var(--motion-fast);
+  }
+  .dock-group:hover .dock-strip-actions,
+  .dock-group:focus-within .dock-strip-actions,
+  .dock-strip.is-overflowing .dock-strip-actions {
+    opacity: 1;
+  }
+  /* The active tab's own actions (TabAction), then a hairline before the group's ⋯ / split / max. */
+  .dock-view-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+  .dock-view-actions:not(:empty) {
+    padding-right: var(--space-2);
+    margin-right: var(--space-1);
+    border-right: 1px solid var(--border-subtle);
+  }
+  /* A ▾ menu beside the action before it (the terminal's "+ ▾"), narrow and close to it. */
+  .dock-view-actions .dock-action-dropdown {
+    width: auto;
+    min-width: 0;
+    padding: 0 var(--space-1);
+    margin-left: calc(var(--space-1) * -1);
+  }
+  .dock-view-actions .dock-action-dropdown .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .dock-strip-actions > [hidden] {
+    display: none;
+  }
+  /* The empty strip is a grab handle for the whole group. */
+  .dock-strip {
+    cursor: grab;
+  }
+  .dock-strip .dock-tab,
+  .dock-strip button {
+    cursor: pointer;
+  }
+  .dock-body {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+  .dock-body > * {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* ---- Drag and drop ---- */
+  .dock-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: var(--z-overlay);
+  }
+  /* Where a drop lands: a rounded, outlined panel like the rest of the UI (D185). */
+  .dock-drop-preview {
+    position: fixed;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    background: var(--accent-secondary-subtle);
+    border: 1px solid var(--accent-secondary-border);
+    border-radius: var(--radius-md);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-secondary) 20%, transparent);
+    opacity: 0;
+    /* Fast: a drop target must track the pointer, not trail it (DESIGN motion "instant feedback"). */
+    transition:
+      transform var(--motion-fast) var(--ease-standard),
+      width var(--motion-fast) var(--ease-standard),
+      height var(--motion-fast) var(--ease-standard),
+      opacity var(--motion-fast);
+  }
+  .dock-drop-preview.is-visible {
+    opacity: 1;
+  }
+  .dock-drop-preview.is-instant {
+    transition: none;
+  }
+  .dock-drop-caret {
+    position: fixed;
+    left: 0;
+    top: 0;
+    border-radius: var(--radius-full);
+    background: var(--accent-secondary);
+  }
+  .dock-drag-ghost {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: var(--z-drag);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    height: calc(var(--size-tab) - var(--space-3) * 2);
+    padding: 0 var(--space-5);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    font-weight: 500;
+    box-shadow: var(--shadow-drag);
+    white-space: nowrap;
+  }
+
+  /* ---- Iframe layer (docs/dock.md §6) ---- */
+  /* No stacking context of its own (absolute, no z-index): each page is stacked by itself, so
+     overlays (drop previews, menus, the lifted group) can sit between pages (D185). */
+  .iframe-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .iframe-layer-frame {
+    position: absolute;
+    z-index: var(--z-sticky);
+    left: 0;
+    top: 0;
+    border: 0;
+    pointer-events: auto;
+    background: var(--bg-surface);
+  }
+  body.is-dragging .iframe-layer-frame,
+  body.is-resizing-vertical .iframe-layer-frame,
+  body.is-resizing-horizontal .iframe-layer-frame {
+    pointer-events: none;
+  }
+
+  /* ---- Flush panels ---- */
+  /* (Not a dragged group: this rule outranked its rounded corners, which is why the dragged
+     preview stayed square in the flush style, D191.) */
+  :root[data-panels="flush"] .dock-group:not(.is-lifted, .is-settling),
+  :root[data-panels="flush"] .panel {
+    border-radius: 0;
+  }
+}

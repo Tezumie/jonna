@@ -1,0 +1,12 @@
+/* Customize → Skills (D206): the MCP page's Cursor-like rows and groups (agent-pages.css .mcp-*),
+   and a dimmed row for a skill turned off. */
+@layer extensions {
+  .skills-row .mcp-row-title {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .skills-row.is-off .mcp-row-icon,
+  .skills-row.is-off .mcp-row-main {
+    opacity: 0.6;
+  }
+}

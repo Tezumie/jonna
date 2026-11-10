@@ -1,0 +1,231 @@
+// D201: the usage log (one record per model request, kept across restarts), the Usage page
+// (totals, a bar per day, models, features, providers with their limits, top chats, this chat's
+// budget, clearing), its state paths and entry points (the Chats view's Usage row, the chat's ⋯
+// menu, Settings → Agent). Against tests/fixtures/mock-ollama.mjs: its Ollama replies report
+// 10 + 5 tokens, its Anthropic /v1/messages sends anthropic-ratelimit-* headers.
+{
+  "name": "agent-m7-2-usage",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.prices",
+        "value": { "ollama/mock-coder:1b": { "input": 1000, "output": 1000 } }
+      }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    // A clean log (the test caller isn't asked to confirm).
+    { "run": "agent.clearUsageHistory", "expect": { "cleared": true } },
+    { "state": "ide://agent/usage/history", "expect": { "records": 0, "keepHistory": true } },
+
+    // Entry point 1: the Chats view's Usage row (D291; its ⋯ before, D249).
+    { "run": "agent.showChats" },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-actions .ch-action[data-command='agent.showUsage']" },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://layout", "expect": { "$contains": "agent.usage" }, "timeoutMs": 5000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-page .usage-footer", "html": 600 },
+      "expect": [{ "html": { "$contains": "Nothing logged yet" } }],
+      "timeoutMs": 5000
+    },
+
+    // One chat request: logged with its cost from agent.prices (15 tokens at $1000 per million).
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    { "run": "agent.send", "input": { "message": "hello" }, "expect": { "error": null } },
+    {
+      "state": "ide://agent/usage/history",
+      "expect": {
+        "records": { "$gte": 1 },
+        "today": { "requests": { "$gte": 1 }, "cost": { "$gte": 0.015 } },
+        "bySource": { "$contains": "\"source\":\"chat\"" },
+        "byModel": { "$contains": "ollama/mock-coder:1b" },
+        "topChats": { "$length": 1 }
+      },
+      "timeoutMs": 5000
+    },
+    // The page follows the log: today's tile has a cost, a top chat, one model row.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-tile[data-tile='today'] .usage-tile-value" },
+      "expect": [{ "html": { "$contains": "$0.0" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-top-chat", "limit": 5 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-chat .usage-cell-value", "limit": 5 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 5000
+    },
+    // The period: 7 bars, then 30.
+    { "run": "dev.click", "input": { "selector": ".usage-seg-item[data-period='7']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-bars .usage-bar", "limit": 20 },
+      "expect": { "$length": 7 }
+    },
+    { "run": "dev.click", "input": { "selector": ".usage-seg-item[data-metric='tokens']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-seg-item.is-on[data-metric='tokens']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.click", "input": { "selector": ".usage-seg-item[data-period='30']" } },
+    // The budget from the page's row is agent.budget.perChat; the chat shows a meter.
+    { "run": "settings.set", "input": { "key": "agent.budget.perChat", "value": 1 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-chat .usage-meter-row" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-budget-input", "html": 300 },
+      "expect": [{ "html": { "$contains": "value=\"1\"" } }]
+    },
+    { "run": "settings.set", "input": { "key": "agent.budget.perChat", "value": 0 } },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+
+    // Rate limits: a provider that sends headers (the mock's Anthropic API) shows them; Ollama
+    // says it reports none.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.providers",
+        "value": [
+          {
+            "id": "claude",
+            "name": "Claude",
+            "kind": "anthropic",
+            "baseUrl": "http://127.0.0.1:11999"
+          }
+        ]
+      }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": { "$contains": "claude/claude-mock" },
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "claude/claude-mock" } },
+    { "run": "agent.send", "input": { "message": "hello" }, "expect": { "error": null } },
+    {
+      "state": "ide://agent/usage/limits",
+      "expect": {
+        "$contains": "\"remaining\":49"
+      },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.refreshUsageLimits", "expect": { "claude": { "rate": { "status": 200 } } } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".usage-provider[data-provider='claude'] .usage-limit[data-bucket='requests']",
+        "html": 800
+      },
+      "expect": [{ "html": { "$contains": "49 of 50 left" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-provider[data-provider='ollama'] .usage-not-reported" },
+      "expect": { "$length": 1 }
+    },
+    // Anthropic's cache reads and writes are in the record (10 + 1000 + 200 prompt tokens).
+    {
+      "state": "ide://agent/usage/history",
+      "expect": {
+        "byProvider": { "$contains": "\"provider\":\"claude\"" },
+        "topChats": { "$length": 2 }
+      },
+      "timeoutMs": 5000
+    },
+    // A top chat opens its chat.
+    { "run": "dev.click", "input": { "selector": ".usage-top-chat" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$exists": true } },
+      "timeoutMs": 5000,
+      "save": "top"
+    },
+
+    // Entry point 2: the chat's ⋯ menu has Usage (that chat's: one thread tab shows it, D237).
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": "[data-session='${top.id}'] .agent-header .icon-button[aria-label='More']"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 6000 },
+      "expect": [{ "html": { "$contains": "Usage" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+
+    // Entry point 3: Settings → Agent has a row and a ↗ link that open the page.
+    { "run": "settings.open", "input": { "category": "Agent" } },
+    // Settings' sidebar link opens Usage (D205: the Agent card is Customize only).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-item.is-link[aria-label='Usage']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".settings-nav-item.is-link[aria-label='Usage']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-page" },
+      "expect": [{ "display": "flex" }],
+      "timeoutMs": 5000
+    },
+
+    // Narrow: one column of tiles, no overflow.
+    { "run": "dev.setWindowSize", "input": { "width": 640, "height": 700 } },
+    { "wait": 500 },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false }, "print": true },
+
+    // Clearing empties the log; the open chats keep their own totals.
+    { "run": "agent.clearUsageHistory", "expect": { "cleared": true } },
+    { "state": "ide://agent/usage/history", "expect": { "records": 0 } },
+    { "state": "ide://agent/usage", "expect": { "total": { "requests": { "$gte": 2 } } } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".usage-footer", "html": 600 },
+      "expect": [{ "html": { "$contains": "Nothing logged yet" } }],
+      "timeoutMs": 5000
+    },
+    // Off: nothing more is logged.
+    { "run": "settings.set", "input": { "key": "agent.usage.keepHistory", "value": false } },
+    { "run": "agent.send", "input": { "message": "hello" } },
+    { "wait": 800 },
+    { "state": "ide://agent/usage/history", "expect": { "records": 0, "keepHistory": false } },
+    { "run": "settings.set", "input": { "key": "agent.usage.keepHistory", "value": true } },
+    { "run": "settings.set", "input": { "key": "agent.providers", "value": [] } },
+    { "run": "dev.setWindowSize", "input": { "width": 1280, "height": 800 } }
+  ]
+}

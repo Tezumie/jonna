@@ -1,0 +1,114 @@
+// An extension's tree rows' menus (`menus["view/item/context"]`: `viewItem`, groups, an inline
+// button) and its own output channel (`ide.ui.createOutputChannel`), with
+// tests/fixtures/extensions/tasklist.
+{
+  "name": "extensions tree menus",
+  "steps": [
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/tasklist" },
+      "expect": { "id": "acme.tasklist" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"id\":\"acme.tasklist\"" } },
+      "timeoutMs": 10000
+    },
+    { "run": "view.show", "input": { "id": "tasklist.tree" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-tree-row[data-item='t1']", "html": 2000 },
+      "expect": [{ "html": { "$contains": "ext-tree-action" } }],
+      "timeoutMs": 10000
+    },
+    // A group row: no inline button (its contextValue isn't "task").
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-tree-row[data-item='today'] .ext-tree-action" },
+      "expect": { "$length": 0 }
+    },
+    // Right-click a task: navigation first, then the 2_edit group, then the ungrouped item.
+    { "run": "dev.click", "input": { "selector": ".ext-tree-row[data-item='t1']", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item", "limit": 10 },
+      "expect": {
+        "$length": 3,
+        "$contains": "Mark done"
+      },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".menu .menu-item" } },
+    {
+      "run": "tasklist.last",
+      "expect": {
+        "what": "done",
+        "item": {
+          "id": "t1",
+          "label": "Write tests",
+          "view": "tasklist.tree",
+          "contextValue": "task"
+        }
+      },
+      "timeoutMs": 5000
+    },
+    // The group row's menu has only the ungrouped item.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ext-tree-row[data-item='today']", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item", "limit": 10 },
+      "expect": { "$length": 1, "$contains": "Copy name" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".menu .menu-item" } },
+    { "run": "tasklist.last", "expect": { "what": "copy", "item": { "id": "today" } } },
+    // The inline button.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ext-tree-row[data-item='t1'] .ext-tree-action" }
+    },
+    {
+      "run": "tasklist.last",
+      "expect": { "what": "done", "item": { "id": "t1" } },
+      "timeoutMs": 3000
+    },
+    // An agent runs the same command with { item } (its declared schema takes it).
+    {
+      "run": "tasklist.done",
+      "input": {
+        "item": { "id": "t2", "label": "Review", "view": "tasklist.tree" },
+        "quiet": true
+      },
+      "expect": { "what": "done", "item": { "id": "t2" } }
+    },
+    // Its own output channel: lines, a warning, and the Output tab on it.
+    { "run": "tasklist.log", "expect": { "channel": "Task log" } },
+    {
+      "state": "ide://extensions?id=acme.tasklist",
+      "expect": {
+        "extensions": { "$contains": "\"outputChannels\":[\"ext.acme.tasklist~task-log\"]" }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "output.read",
+      "input": { "channel": "ext.acme.tasklist~task-log" },
+      "expect": { "text": { "$contains": "partial line" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "output.read",
+      "input": { "channel": "ext.acme.tasklist~task-log" },
+      "expect": { "text": { "$contains": "[warn] a warning" } }
+    },
+    {
+      "run": "output.read",
+      "input": { "channel": "ext.acme.tasklist~task-log" },
+      "expect": { "text": { "$contains": "done: Write tests" } }
+    },
+    { "run": "extensions.remove", "input": { "id": "acme.tasklist" } }
+  ]
+}

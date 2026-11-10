@@ -1,0 +1,275 @@
+// D204: the terminal at VS Code's level — output after a restart (the folder reopened, as a reload
+// does), terminal profiles (the shells in /etc/shells: bash, zsh, fish), the default profile, the
+// "+ ▾" menu, command suggestions while typing (Tab accepts, Escape closes, Ctrl+Space opens) and
+// the renderer setting.
+{
+  "name": "terminal-m7-5",
+  "requires": ["zsh", "fish"],
+  // The zsh and fish profiles come from /etc/shells.
+  "platforms": ["linux"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo before-reload-$((40+2))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "before-reload-42" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Output after a restart: the folder closes (its state saved) and opens again ----
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": [{ "restored": true, "exited": false }] },
+      "timeoutMs": 20000
+    },
+    // The old output is there (dim), under it the separator, then a working shell.
+    {
+      "run": "terminal.find",
+      "input": { "query": "before-reload-42" },
+      "expect": { "count": { "$gte": 1 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.find",
+      "input": { "query": "Restored session" },
+      "expect": { "count": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo after-restore", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "after-restore" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Profiles: the shells found here, started by name ----
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "defaultProfile": null,
+        "profiles": { "$contains": "\"name\":\"zsh\"" }
+      },
+      "timeoutMs": 5000
+    },
+    { "state": "ide://terminals", "expect": { "profiles": { "$contains": "\"name\":\"fish\"" } } },
+    { "state": "ide://terminals", "expect": { "profiles": { "$contains": "\"name\":\"bash\"" } } },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "zsh" },
+      "expect": { "profile": "zsh", "shell": { "$contains": "zsh" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo zsh-$ZSH_VERSION", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "zsh-5" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "fish" },
+      "expect": { "profile": "fish", "shell": { "$contains": "fish" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo fish-$FISH_VERSION", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "fish-" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "nope" },
+      "expectError": "No terminal profile"
+    },
+    // A profile from settings, VS Code's shape: bash with login flags (integration kept) and a variable.
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "terminal.profiles.linux",
+        "value": {
+          "Login bash": {
+            "path": "bash",
+            "args": ["-l"],
+            "env": { "IDE_PROFILE_TEST": "from-profile" }
+          }
+        }
+      }
+    },
+    {
+      "run": "terminal.newWithProfile",
+      "input": { "profile": "Login bash" },
+      "expect": { "profile": "Login bash" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo $IDE_PROFILE_TEST-$0", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "from-profile-" } },
+      "timeoutMs": 30000
+    },
+    // The default profile: new terminals start it.
+    {
+      "run": "terminal.selectDefaultProfile",
+      "input": { "profile": "zsh" },
+      "expect": { "defaultProfile": "zsh" }
+    },
+    { "state": "ide://terminals", "expect": { "defaultProfile": "zsh" } },
+    {
+      "run": "terminal.create",
+      "expect": { "shell": { "$contains": "zsh" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.selectDefaultProfile",
+      "input": { "profile": "" },
+      "expect": { "defaultProfile": null }
+    },
+    // The "+ ▾" beside New terminal, and its menu.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-view-actions .dock-action-dropdown" },
+      "expect": [{ "tag": "button" }]
+    },
+    { "run": "terminal.profileMenu", "input": { "x": 300, "y": 300 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 20 },
+      "expect": { "$contains": "Select default profile" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 20 },
+      "expect": { "$contains": "Login bash" }
+    },
+    { "run": "dev.type", "input": { "selector": ".menu-label", "key": "Escape" } },
+
+    // ---- Suggestions while typing ----
+    { "run": "terminal.create", "timeoutMs": 20000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "true", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".xterm-helper-textarea:focus",
+        "text": "ech",
+        "inputType": "insertText"
+      }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"label\":\"echo\"" } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".terminal-suggest:not([hidden]) .terminal-suggest-item.is-selected",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "echo" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Tab accepts: the rest of the word is typed.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".xterm-helper-textarea:focus", "key": "Tab", "code": "Tab" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-suggest:not([hidden])" },
+      "expect": [],
+      "timeoutMs": 3000
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"line\":\"echo\"" } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": " suggest-accepted", "timeoutMs": 20000 },
+      "expect": {
+        "exitCode": 0,
+        "command": "echo suggest-accepted",
+        "output": { "$contains": "suggest-accepted" }
+      },
+      "timeoutMs": 30000
+    },
+    // Git subcommands.
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".xterm-helper-textarea:focus",
+        "text": "git sta",
+        "inputType": "insertText"
+      }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"label\":\"status\"" } },
+      "timeoutMs": 5000
+    },
+    // Escape closes.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".xterm-helper-textarea:focus", "key": "Escape", "code": "Escape" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-suggest:not([hidden])" },
+      "expect": [],
+      "timeoutMs": 3000
+    },
+    { "run": "terminal.sendText", "input": { "text": "\u0015", "addNewLine": false } },
+    // Files and folders of the terminal's folder; Ctrl+Space (terminal.triggerSuggest) opens them.
+    { "run": "terminal.sendText", "input": { "text": "cat READ", "addNewLine": false } },
+    { "wait": 300 },
+    {
+      "run": "terminal.triggerSuggest",
+      "expect": { "visible": true, "items": [{ "label": "README.md", "kind": "file" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "terminal.hideSuggestWidget" },
+    { "run": "terminal.sendText", "input": { "text": "\u0015ls sr", "addNewLine": false } },
+    { "wait": 300 },
+    {
+      "run": "terminal.triggerSuggest",
+      "expect": { "visible": true, "items": [{ "label": "src/", "kind": "folder" }] },
+      "timeoutMs": 5000
+    },
+    { "run": "terminal.acceptSuggestion", "expect": { "accepted": "src/" } },
+    { "run": "terminal.sendText", "input": { "text": "\u0015", "addNewLine": false } },
+    // Turned off: nothing opens.
+    { "run": "settings.set", "input": { "key": "terminal.suggest.enabled", "value": false } },
+    { "run": "terminal.sendText", "input": { "text": "ech", "addNewLine": false } },
+    { "run": "terminal.triggerSuggest", "expect": { "visible": false } },
+    { "run": "terminal.sendText", "input": { "text": "\u0015", "addNewLine": false } },
+    { "run": "settings.set", "input": { "key": "terminal.suggest.enabled", "value": true } },
+
+    // ---- Renderer: WebGL where it works, the DOM renderer when off ----
+    { "state": "ide://terminals", "print": true },
+    { "run": "settings.set", "input": { "key": "terminal.gpuAcceleration", "value": "off" } },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$not": { "$contains": "\"renderer\":\"webgl\"" } } },
+      "timeoutMs": 3000
+    },
+    { "run": "settings.set", "input": { "key": "terminal.gpuAcceleration", "value": "auto" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo still-drawn", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "still-drawn" } },
+      "timeoutMs": 30000
+    }
+  ]
+}

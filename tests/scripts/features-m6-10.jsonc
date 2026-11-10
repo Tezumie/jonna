@@ -1,0 +1,88 @@
+// D111: reopen closed tab, UI zoom, find in terminal, custom slash commands, Cursor rules,
+// exporting a conversation (agent steps use tests/fixtures/mock-ollama.mjs on port 11999).
+{
+  "name": "features-m6-10",
+  "steps": [
+    // Reopen closed tab.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "state": "ide://editors/active", "expect": { "path": { "$contains": "notes.txt" } } },
+    { "run": "layout.closeTab", "input": {} },
+    { "run": "layout.reopenClosedTab", "expect": { "tabId": { "$exists": true } } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "notes.txt" } },
+      "timeoutMs": 5000
+    },
+    // UI zoom: a user setting, 20 % per step.
+    { "run": "window.zoomIn", "expect": { "zoomLevel": 1, "percent": 120 } },
+    { "run": "window.zoomOut", "expect": { "zoomLevel": 0 } },
+    { "run": "window.zoomReset", "expect": { "percent": 100 } },
+    // Find in the terminal: matches in output and scrollback.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo needle-42 && echo needle-42", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "terminal.find",
+      "input": { "query": "needle-42" },
+      "expect": { "count": { "$gte": 2 } },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.find",
+      "input": { "query": "no-such-text-zz" },
+      "expect": { "count": 0 }
+    },
+    // A custom slash command and a Cursor rule file, then the agent.
+    // The sample project has a .vscode folder: it's the workspace folder (D177).
+    { "run": "explorer.newFolder", "input": { "parent": ".vscode", "name": "commands" } },
+    { "run": "explorer.newFile", "input": { "parent": ".vscode/commands", "name": "greet.md" } },
+    { "run": "editor.insertText", "input": { "text": "Say hello to $ARGUMENTS" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": ".cursorrules" } },
+    { "run": "editor.insertText", "input": { "text": "Answer like a pirate." } },
+    { "run": "editor.save" },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "/greet Bob" },
+      "expect": { "answer": "Greeting: say hello to bob" }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "what are the rules" },
+      "expect": { "answer": "Rules: answer like a pirate." }
+    },
+    { "run": "agent.exportMarkdown", "expect": { "chars": { "$gte": 40 } } },
+    // D112: the slash-command list (built-in and the folder's), and Change language mode.
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": {
+        // D200: more built-ins come before the folder's commands.
+        "commands": {
+          "$contains": "\"name\":\"greet\",\"description\":\"Say hello to $ARGUMENTS\",\"source\":\".vscode/commands\""
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "editor.setLanguage",
+      "input": { "language": "markdown" },
+      "expect": { "language": "markdown" }
+    },
+    { "state": "ide://editors/active", "expect": { "language": "markdown" } },
+    {
+      "run": "editor.setLanguage",
+      "input": { "language": "nope-lang" },
+      "expectError": "Unknown language"
+    },
+    { "state": "ide://editors/active", "expect": { "path": { "$exists": true } } }
+  ]
+}

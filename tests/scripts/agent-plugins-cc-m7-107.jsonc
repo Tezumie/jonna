@@ -1,0 +1,79 @@
+// D375: Claude Code's installed plugins are used in place. A fake Claude Code folder
+// (CLAUDE_CONFIG_DIR, tests/fixtures/setup/claude-plugins-m7-107.mjs) has one plugin installed and
+// on, and one marketplace. The IDE lists the plugin under Claude Code's, its output style shows,
+// its language server waits for the user's allowance, installing it again is refused (nothing
+// twice), and turning it off here takes its parts away.
+{
+  "name": "agent-plugins-cc-m7-107",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/claude-plugins-m7-107.mjs", "timeoutMs": 20000 },
+      "expect": { "output": { "$contains": "claude home ready" } },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.showPlugins", "input": {} },
+    {
+      "state": "ide://agent/plugins",
+      "expect": {
+        "claudeCode": [
+          {
+            "id": "pkgt-styler@pkgt-market",
+            "enabled": true,
+            "enabledInClaudeCode": true,
+            "lsp": false,
+            "contents": {
+              "commands": ["/pkgt-styler:shout"],
+              "outputStyles": ["pkgt-terse"],
+              "lspServers": [{ "$contains": "pkgt-ls --stdio" }]
+            }
+          }
+        ],
+        "marketplaces": [
+          {
+            "name": "pkgt-market",
+            "fromClaude": true,
+            "plugins": [{ "id": "pkgt-styler@pkgt-market", "installed": true }]
+          }
+        ]
+      },
+      "timeoutMs": 10000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/outputStyles",
+      "expect": { "$contains": "PkgT terse" },
+      "timeoutMs": 10000
+    },
+    // Its language server isn't known until the user lets it start.
+    { "state": "ide://lsp", "expect": { "$not": { "$contains": "pkgt-styler-pkgt" } } },
+    {
+      "run": "agent.setPluginEnabled",
+      "input": { "plugin": "pkgt-styler@pkgt-market", "lsp": true },
+      "expect": { "changed": true, "fromClaude": true }
+    },
+    { "state": "ide://lsp", "expect": { "$contains": "pkgt-styler-pkgt" }, "timeoutMs": 10000 },
+    // Nothing twice.
+    {
+      "run": "agent.installPlugin",
+      "input": { "plugin": "pkgt-styler@pkgt-market" },
+      "expectError": "installed in Claude Code already"
+    },
+    // Off for the IDE: its parts go (Claude Code's own setting is untouched).
+    {
+      "run": "agent.setPluginEnabled",
+      "input": { "plugin": "pkgt-styler@pkgt-market", "enabled": false },
+      "expect": { "enabled": false }
+    },
+    {
+      "state": "ide://agent/outputStyles",
+      "expect": { "$not": { "$contains": "PkgT terse" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/plugins",
+      "expect": { "claudeCode": [{ "enabled": false, "enabledInClaudeCode": true }] }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

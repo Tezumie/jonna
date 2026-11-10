@@ -1,0 +1,91 @@
+// D171, D172: cards come from display tools (show_links, ask_user) drawn in the conversation;
+// charts and diagrams are ```mermaid in the answer, drawn by the Markdown renderer, with $math$.
+// ask_user waits: a click, or a typed message, is its answer.
+{
+  "name": "agent-m6-72",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 1000 } },
+    { "run": "agent.send", "input": { "message": "Please show the rich blocks", "wait": false } },
+    // The question card waits for an answer (the turn is paused on it).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choices-hint" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 30000
+    },
+    { "state": "ide://agent/session", "expect": { "status": "waiting" } },
+    // Two Mermaid diagrams (an xychart and a flowchart) and the math, drawn (check the markup:
+    // the inspector counts only what's on screen).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-view .md-diagram svg.pele-xychart", "html": 20000 },
+      "expect": [{ "html": { "$contains": "Visits by month" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-view .md-diagram svg.pele-flowchart" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-view .md-math math" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-view .md-math-block math" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".rb-card" }, "expect": { "$length": 3 } },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // A click answers; the reply comes, and the choice stays marked.
+    { "run": "dev.click", "input": { "selector": ".rb-choice:nth-child(2)" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Postgres it is." }, "status": "idle" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choice.is-chosen", "html": 300 },
+      "expect": [{ "html": { "$contains": "Postgres" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choices-hint" },
+      "expect": { "$length": 0 }
+    },
+    // A typed message while it asks is the answer (not queued for later).
+    { "run": "agent.send", "input": { "message": "Ask me which runner", "wait": false } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choices-hint" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "Vitest, with coverage" },
+      "expect": { "answered": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Vitest, with coverage it is." }, "status": "idle" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".rb-choice.is-chosen", "html": 300 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

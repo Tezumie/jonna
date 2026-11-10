@@ -1,0 +1,112 @@
+// D139: search settings, toggles and the results menu; (git parts follow in their own tests).
+{
+  "name": "features-m6-38",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "search.show" },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "files": 2 } },
+
+    // Smart case: an uppercase letter makes the search case-sensitive.
+    { "run": "settings.set", "input": { "key": "search.smartCase", "value": true } },
+    { "run": "search.run", "input": { "query": "Hello" }, "expect": { "matches": 0 } },
+    { "run": "settings.set", "input": { "key": "search.smartCase", "value": false } },
+
+    // search.exclude (on by default) and the "use exclude settings" toggle.
+    {
+      "run": "settings.set",
+      "input": { "key": "search.exclude", "value": { "notes.txt": true } }
+    },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "files": 1 } },
+    {
+      "run": "search.run",
+      "input": { "query": "hello", "useExcludeSettings": false },
+      "expect": { "files": 2 }
+    },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "useIgnoreFiles": false } }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "hello", "useExcludeSettings": true },
+      "expect": { "files": 1 }
+    },
+    { "run": "settings.set", "input": { "key": "search.exclude", "value": {} } },
+
+    // Only open editors.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "search.run",
+      "input": { "query": "hello", "onlyOpenEditors": true },
+      "expect": { "files": 1, "results": [{ "path": "notes.txt" }] }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "hello", "onlyOpenEditors": false },
+      "expect": { "files": 2 }
+    },
+
+    // Copy one file's results.
+    {
+      "run": "search.copyResults",
+      "input": { "path": "notes.txt" },
+      "expect": { "copied": "notes.txt\n  1: hello world" }
+    },
+
+    // Right-click a result: VS Code's menu.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".search-row-item", "html": 3000 },
+      "expect": { "$contains": "search-file-name" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".search-results .search-row-item", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 6000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Copy relative path"
+          }
+        }
+      ],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+
+    // One line's Replace with preserve case: "hello" → "bye" only on README.md line 3.
+    {
+      "run": "search.replace",
+      "input": {
+        "query": "hello",
+        "replacement": "Bye",
+        "preserveCase": true,
+        "paths": ["README.md"],
+        "lines": [3]
+      },
+      "expect": { "replacements": 1 }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "bye" },
+      "expect": { "files": 1, "results": [{ "text": { "$contains": "bye from the readme" } }] }
+    },
+    { "run": "search.run", "input": { "query": "hello" }, "expect": { "files": 1 } },
+    {
+      "run": "search.toggleOption",
+      "input": { "option": "matchCase" },
+      "expect": { "matchCase": true }
+    },
+    {
+      "run": "search.toggleOption",
+      "input": { "option": "matchCase" },
+      "expect": { "matchCase": false }
+    },
+    { "run": "search.expandAll" },
+    { "run": "search.collapseAll" }
+  ]
+}

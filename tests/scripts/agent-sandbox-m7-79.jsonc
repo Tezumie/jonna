@@ -1,0 +1,97 @@
+// D336: the command sandbox (Windows: low integrity). A sandboxed run_command writes in the folder
+// (its row says "sandboxed"), but not next to it: that fails with the hint to run it outside the
+// sandbox, which the mock then does with sandbox: false — asked even with full access, with the
+// card saying it runs outside — and, allowed once, it writes there. Against
+// tests/fixtures/mock-ollama.mjs (pkgJScripted). Only where the IDE's sandbox is verified.
+{
+  "name": "agent-sandbox-m7-79",
+  "platforms": ["win32"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "settings.set", "input": { "key": "agent.model", "value": "ollama/mock-coder:1b" } },
+    // Full access: commands run without asking, except one outside the sandbox.
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    // The sandbox is opt-in (it marks the folder for good): on for this test.
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "auto" } },
+    {
+      "state": "ide://agent/sandbox",
+      "expect": {
+        "setting": "auto",
+        "mechanism": "low-integrity",
+        "limitsWrites": true,
+        "limitsNetwork": false
+      },
+      "print": true,
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+
+    // ---- In the folder: written, in the sandbox ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgj sandbox write inside" },
+      "expect": { "answer": "PkgJ inside: ok" },
+      "timeoutMs": 90000
+    },
+    // The tool row's summary says it ran sandboxed.
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "· sandboxed" } }
+    },
+
+    // ---- Next to the folder: refused; then outside the sandbox, which asks ----
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgj sandbox write outside" },
+      "background": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "pkgj-outside.txt" } }] },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-permission-detail", "limit": 1 },
+      "expect": { "$contains": "Outside the sandbox" },
+      "print": true
+    },
+    // The sandboxed try wrote nothing there.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "test ! -e ../pkgj-outside.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "PkgJ sandbox: blocked=yes hint=yes outside=ran" }
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "test -e ../pkgj-outside.txt && test -e pkgj-inside.txt && rm -f ../pkgj-outside.txt pkgj-inside.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "ask" } },
+    { "run": "settings.set", "input": { "key": "agent.sandbox", "value": "off" } }
+  ]
+}

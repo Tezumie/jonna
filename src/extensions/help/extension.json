@@ -1,0 +1,52 @@
+{
+  "id": "builtin.help",
+  "version": "0.1.0",
+  "displayName": "Help",
+  "description": "The user guide, Report a problem, the session logs, starting with extensions off, and What's new.",
+  "activation": ["*"],
+  "contributes": {
+    "commands": [
+      { "id": "help.showDocs", "title": "Documentation", "category": "Help" },
+      { "id": "help.reportProblem", "title": "Report a problem…", "category": "Help" },
+      { "id": "help.openLogsFolder", "title": "Open logs folder", "category": "Help" },
+      { "id": "help.showLog", "title": "Show session log", "category": "Help" },
+      {
+        "id": "help.restartWithExtensionsOff",
+        "title": "Restart with extensions off",
+        "category": "Help"
+      },
+      { "id": "help.restartNormally", "title": "Restart with extensions on", "category": "Help" },
+      { "id": "help.showReleaseNotes", "title": "Release notes", "category": "Help" },
+      { "id": "output.show", "title": "Show output", "category": "View" },
+      { "id": "output.clear", "title": "Clear output", "category": "View" },
+      { "id": "output.setFilter", "title": "Filter output", "category": "View" },
+      { "id": "output.toggleWordWrap", "title": "Toggle output word wrap", "category": "View" },
+      { "id": "log.setLevel", "title": "Set log level", "category": "Developer" }
+    ],
+    "keybindings": [{ "key": "ctrl+shift+u", "mac": "shift+cmd+u", "command": "output.show" }],
+    "settings": {
+      "log.level": {
+        "type": "string",
+        "enum": ["trace", "debug", "info", "warn", "error"],
+        "default": "info",
+        "description": "What the session log and the output channels (Window, Extension host, Git, Tasks, Agent, each language server) keep, in the Output tab and their files in this session's logs folder, unless a channel has its own (log.channelLevels). Debug adds every command that ran; trace also git's queries (status, log, diff).",
+        "title": "Log level",
+        "order": 93
+      },
+      "log.channelLevels": {
+        "type": "object",
+        "default": {},
+        "description": "Output channels' own log levels, by channel id (VS Code's Set log level per channel): { \"git\": \"trace\", \"lsp.pyright\": \"debug\" }. A channel without one keeps what log.level says; \"window\" is the session log's. Set from Developer: Set log level or the Output tab.",
+        "title": "Channel log levels",
+        "order": 93.1
+      },
+      "update.showReleaseNotes": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show What's new after the IDE was updated.",
+        "title": "Show release notes after an update",
+        "order": 92
+      }
+    }
+  }
+}

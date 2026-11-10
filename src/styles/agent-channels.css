@@ -1,0 +1,601 @@
+/* Channels and threads (D237, extensions/agent/roomView.ts): Slack's layout on the
+   IDE's quiet shell. The sidebar lists the Inbox, channels and direct messages; the channel tab is
+   a timeline of threads with a message box; a thread opens on the right. Color only for status. */
+@layer extensions {
+  /* ---- Sidebar ---- */
+  .ch-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .ch-top {
+    flex: none;
+    padding: var(--space-2) var(--space-3);
+  }
+  .ch-search {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* Rows line up with the search box: the same side padding. */
+  .ch-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--space-3) var(--space-2);
+  }
+  .ch-section {
+    margin-top: var(--space-3);
+  }
+  /* A section's head is a row like the chats under it (D275): their height, corners and hover. */
+  .ch-section-head {
+    display: flex;
+    align-items: center;
+    height: var(--size-control-md);
+    border-radius: var(--radius-sm);
+  }
+  .ch-section-head:hover {
+    background: var(--bg-hover);
+  }
+  .ch-section-toggle {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    height: 100%;
+    padding: 0 var(--space-2);
+    border: 0;
+    background: none;
+    /* A step under the chats' text, as section labels are (D277); full strength on hover. */
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .ch-section-head:hover .ch-section-toggle {
+    color: var(--fg-default);
+  }
+  .ch-section-toggle .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .ch-section-head:hover .ch-section-toggle .icon {
+    color: var(--fg-muted);
+  }
+  .ch-section-add {
+    opacity: 0;
+    transition: opacity var(--motion-fast) var(--ease-standard);
+  }
+  .ch-section-head:hover .ch-section-add,
+  .ch-folder:hover > .ch-section-head .ch-section-add,
+  .ch-section-add:focus-visible {
+    opacity: 1;
+  }
+  .ch-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: var(--size-control-md);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    font-size: var(--text-md);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ch-row:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .ch-row:focus-visible {
+    outline: 1px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  .ch-row.is-current {
+    background: var(--bg-selected);
+    color: var(--fg-default);
+  }
+  /* Picked with Ctrl/Shift+click (D377), as the explorer's selection. */
+  .ch-row.is-selected {
+    background: var(--bg-selected-focus);
+    color: var(--fg-default);
+  }
+  /* Something needs you there: the name at full strength, as Slack's unread channels. */
+  .ch-row.has-news {
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .ch-row-lead {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    /* A face or icon with a little air. */
+    width: calc(var(--size-icon-md) + var(--space-1));
+  }
+  /* The text reads at full strength; an icon stays quiet until its row is hovered or open (an
+     agent's face keeps its own colors). */
+  .ch-row-lead .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    color: var(--fg-subtle);
+  }
+  .ch-row:hover .ch-row-lead .icon,
+  .ch-row.is-current .ch-row-lead .icon {
+    color: var(--fg-muted);
+  }
+  .ch-row-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ch-row-detail {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ch-row-label + .ch-row-working,
+  .ch-row-label + .ch-badge {
+    margin-left: auto;
+  }
+  .ch-row-working {
+    flex: none;
+    width: var(--space-3);
+    height: var(--space-3);
+    margin-left: auto;
+    border-radius: var(--radius-full);
+    background: var(--fg-muted);
+    animation: ch-pulse 1.4s var(--ease-standard) infinite;
+  }
+  /* One line of small text tall, at least as wide. */
+  .ch-badge {
+    flex: none;
+    min-width: var(--text-xs-lh);
+    height: var(--text-xs-lh);
+    margin-left: auto;
+    padding: 0 var(--space-2);
+    box-sizing: border-box;
+    border-radius: var(--radius-full);
+    background: var(--status-warning-bg);
+    color: var(--status-warning-fg);
+    font-size: var(--text-xs);
+    font-weight: 500;
+    line-height: var(--text-xs-lh);
+    text-align: center;
+  }
+  .ch-row-add {
+    color: var(--fg-subtle);
+  }
+  /* Recent (D245): the title takes the room, its age stays at the right. */
+  .ch-recent .ch-row-label {
+    flex: 1 1 auto;
+  }
+  /* A working chat's title shimmers, as the chat's own "Thinking…" does (D294). */
+  .ch-recent.is-busy .ch-row-label {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ch-recent.is-busy .ch-row-label {
+      animation: none;
+      background: none;
+      color: var(--fg-muted);
+    }
+  }
+  /* A chat's age shows on hover or keyboard focus (D294, the owner's ask): the titles get the
+     room; working and needs-you stay shown. */
+  .ch-recent .ch-row-detail {
+    display: none;
+    flex: none;
+  }
+  .ch-recent:hover .ch-row-detail,
+  .ch-recent:focus-visible .ch-row-detail {
+    display: inline;
+  }
+  .ch-hit {
+    height: auto;
+    min-height: var(--size-control-md);
+    flex-wrap: wrap;
+    gap: 0 var(--space-2);
+    padding-top: var(--space-1);
+    padding-bottom: var(--space-1);
+  }
+  /* The Chats view's actions (D291), rows like a chat app's side bar: New chat, Search… */
+  .ch-actions {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) var(--space-3);
+  }
+  .ch-action .ch-row-lead .icon {
+    color: var(--fg-muted);
+  }
+  /* A folder's name, then its chevron (as chat apps head a project's chats); the whole row folds. */
+  .ch-folder .ch-section-toggle > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ch-empty {
+    padding: var(--space-4) var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+
+  /* ---- The channel tab ---- */
+  .room {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .room-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    /* A large control with a little room above and below. */
+    height: calc(var(--size-control-lg) + 2 * var(--space-2));
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .room-header-icon .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    color: var(--fg-muted);
+  }
+  .room-title {
+    flex: none;
+    margin: 0;
+    color: var(--fg-default);
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+  .room-purpose {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .room-spacer {
+    flex: 1 1 auto;
+  }
+  .room-section {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-4) var(--space-5) var(--space-1);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .room-section-count {
+    color: var(--fg-subtle);
+    font-weight: 400;
+  }
+  .room-last {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+    margin-top: var(--space-1);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .room-last-by {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    align-self: center;
+    color: var(--fg-default);
+    font-weight: 500;
+  }
+  .room-last-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .room-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 320px;
+    margin: var(--space-8) auto 0;
+    color: var(--fg-muted);
+    text-align: center;
+  }
+  .room-empty .icon {
+    width: var(--size-icon-lg);
+    height: var(--size-icon-lg);
+    color: var(--fg-subtle);
+  }
+  .room-empty h3 {
+    margin: 0;
+    color: var(--fg-default);
+    font-size: var(--text-lg);
+    font-weight: 500;
+  }
+  .room-empty p {
+    margin: 0;
+  }
+  /* Small windows: the purpose and the hint give way first. */
+  @container (max-width: 420px) {
+    .room-purpose {
+      display: none;
+    }
+  }
+
+  /* ---- Threads (D238) ---- */
+  /* "Thread in #general ›" before a thread's title: one line, shortened. */
+  .agent-room-link {
+    flex: 0 1 auto;
+    max-width: 45%;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .agent-room-link:hover {
+    color: var(--fg-default);
+  }
+  /* The message a thread answers, above its replies. */
+  .agent-thread-parent {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: min(100%, var(--agent-column, 720px));
+    box-sizing: border-box;
+    margin: var(--space-3) auto 0;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .agent-thread-parent:hover {
+    background: var(--bg-hover);
+  }
+  .agent-thread-parent-author {
+    color: var(--fg-default);
+    font-weight: 600;
+  }
+  .agent-thread-parent-text {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 6;
+  }
+  /* Under a message with threads: "3 replies · 2 min ago", as Slack's reply bar. */
+  .agent-replies {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .agent-replies:hover {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+  }
+  .agent-replies-count {
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  .agent-replies.is-unread .agent-replies-count::after {
+    content: "";
+    display: inline-block;
+    width: var(--space-3);
+    height: var(--space-3);
+    margin-left: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    vertical-align: middle;
+  }
+  .agent-replies-age,
+  .agent-replies-working {
+    color: var(--fg-subtle);
+  }
+  .agent-user-wrap > .agent-replies {
+    align-self: flex-end;
+  }
+  /* A thread's "Show it in the conversation" (agent.showMessage): the message is lit at once, then
+     fades (no fade with reduced motion: the motion tokens are 0 then). Outside the column's text
+     by a ring of the same color, so nothing moves. */
+  .agent-msg.is-revealed {
+    border-radius: var(--radius-md);
+    transition:
+      background-color var(--motion-deliberate) var(--ease-standard),
+      box-shadow var(--motion-deliberate) var(--ease-standard);
+  }
+  .agent-msg.is-revealed.is-lit {
+    background-color: var(--bg-selected);
+    box-shadow: 0 0 0 var(--space-2) var(--bg-selected);
+    transition: none;
+  }
+
+  /* ---- The Inbox: a list, or a board (Linear's columns) ---- */
+  .inbox-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-2) 0 var(--space-4);
+  }
+  .inbox-body:focus {
+    outline: none;
+  }
+  .inbox-toggle {
+    display: inline-flex;
+    flex: none;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+  }
+  .inbox-toggle .icon-button.is-on {
+    background: var(--bg-selected);
+    color: var(--fg-default);
+  }
+  .inbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: 0 var(--space-4);
+  }
+  .inbox-list .room-section {
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .inbox-board {
+    display: grid;
+    /* As many columns as fit (D244: four fixed ones scrolled sideways at medium widths). */
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--space-3);
+    min-height: 100%;
+    padding: 0 var(--space-4);
+  }
+  .inbox-column {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-sunken);
+  }
+  .inbox-column-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .inbox-column-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: 0 var(--space-2) var(--space-2);
+  }
+  .inbox-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    cursor: pointer;
+  }
+  .inbox-card:hover {
+    border-color: var(--border-default);
+    background: var(--bg-hover);
+  }
+  .inbox-card:focus-visible {
+    outline: 1px solid var(--focus-ring);
+    outline-offset: -1px;
+  }
+  .inbox-card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+  .inbox-card-where {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .inbox-card-age {
+    flex: none;
+    margin-left: auto;
+  }
+  .inbox-card-title {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--fg-default);
+    font-size: var(--text-md);
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .inbox-card.is-unread .inbox-card-title {
+    font-weight: 600;
+  }
+  /* Status shows in the card's top line, not as a colored edge (DESIGN.md: no accent edges). */
+  .inbox-card[data-status="needs-you"] .inbox-card-head {
+    color: var(--status-warning-fg);
+  }
+  .inbox-card[data-status="failed"] .inbox-card-head {
+    color: var(--status-danger-fg);
+  }
+  /* A narrow tab: the board's columns stack. */
+  @container (max-width: 640px) {
+    .inbox-board {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @keyframes ch-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ch-row-working {
+      animation: none;
+    }
+  }
+}

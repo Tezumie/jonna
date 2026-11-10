@@ -1,0 +1,81 @@
+// ide-m6: Go Live, the browser in its own window, screenshots of a page and of the IDE, the group
+// menu's New tab and four-way split, notifications (list, do not disturb).
+{
+  "name": "workbench m6",
+  "steps": [
+    {
+      "run": "browser.goLive",
+      "input": { "path": "site/index.html" },
+      "expect": { "connected": true, "title": "Static page" },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.text", "input": { "selector": "h1" }, "expect": { "text": "Static site" } },
+    {
+      "name": "page screenshot (inline, for agents)",
+      "run": "browser.screenshot",
+      "input": { "inline": true },
+      "expect": {
+        "width": { "$gte": 100 },
+        "height": { "$gte": 100 },
+        "png": { "$exists": true },
+        "path": null
+      }
+    },
+    {
+      "name": "IDE screenshot saved under the IDE folder",
+      "run": "workbench.screenshot",
+      "input": { "save": true, "open": false },
+      "expect": { "width": { "$gte": 600 }, "path": { "$contains": "screenshots" } }
+    },
+    {
+      "name": "pop the page out into its own window",
+      "run": "browser.popOut",
+      "input": { "window": true },
+      "expect": { "window": true }
+    },
+    {
+      "run": "browser.text",
+      "input": { "selector": "h1" },
+      "expect": { "text": "Static site" },
+      "timeoutMs": 15000
+    },
+    {
+      "name": "screenshot of the page's window",
+      "run": "browser.screenshot",
+      "input": { "inline": true },
+      "expect": { "width": { "$gte": 100 }, "png": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "browser.popOut", "input": { "window": false }, "expect": { "window": false } },
+    {
+      "run": "browser.text",
+      "input": { "selector": "h1" },
+      "expect": { "text": "Static site" },
+      "timeoutMs": 15000
+    },
+    { "run": "browser.stopLive", "expect": { "closed": 1 } },
+    {
+      "run": "layout.newTab",
+      "input": { "kind": "terminal" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "layout.splitActive",
+      "input": { "direction": "left" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    {
+      "run": "layout.splitActive",
+      "input": { "direction": "up" },
+      "expect": { "tabId": { "$exists": true } }
+    },
+    { "run": "notifications.toggleDoNotDisturb", "expect": { "doNotDisturb": true } },
+    {
+      "state": "ide://notifications",
+      "expect": { "doNotDisturb": true, "items": { "$exists": true } }
+    },
+    { "run": "notifications.toggleDoNotDisturb", "expect": { "doNotDisturb": false } },
+    { "run": "notifications.clear" },
+    { "state": "ide://notifications", "expect": { "items": { "$length": 0 }, "unread": 0 } }
+  ]
+}

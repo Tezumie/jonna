@@ -1,0 +1,49 @@
+// D155: the screenshots a turn took show as thumbnails on its work line, and open full size.
+{
+  "name": "agent-m6-53",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "Please take two screenshots", "wait": true },
+      "expect": { "answer": { "$contains": "Took two screenshots" } },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-work-shots .agent-shots-thumb", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    // Resting on one: the large preview with what took it.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-work-shots .agent-shots-thumb", "hover": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hover-card .agent-shot-card-foot", "html": 400 },
+      "expect": [{ "html": { "$contains": "1 of 2" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-work-shots .agent-shots-thumb" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer", "html": 800 },
+      "expect": [{ "html": { "$contains": "1 of 2" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-close" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

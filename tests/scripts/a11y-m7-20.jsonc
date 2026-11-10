@@ -1,0 +1,67 @@
+// D254: keyboard and screen reader basics on the main screens. dev.checkAccessibility lists the
+// visible controls a screen reader can't name and the ones that show nothing when the keyboard
+// focuses them; every screen here must have neither.
+{
+  "name": "a11y-m7-20",
+  "testTimeout": 480,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "editor.openFile", "input": { "path": "README.md" }, "timeoutMs": 10000 },
+    { "wait": 800 },
+    {
+      "name": "workbench",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "view.show", "input": { "id": "search.view" } },
+    { "wait": 400 },
+    {
+      "name": "search",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "view.show", "input": { "id": "scm.view" } },
+    { "wait": 600 },
+    {
+      "name": "source control",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "view.show", "input": { "id": "extensions.view" } },
+    { "wait": 600 },
+    {
+      "name": "extensions",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    { "run": "agent.newSession" },
+    { "wait": 1000 },
+    {
+      "name": "agent chat",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "settings.open" },
+    { "wait": 800 },
+    {
+      "name": "settings",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    },
+    { "run": "terminal.create" },
+    { "wait": 1500 },
+    {
+      "name": "terminal in the dock",
+      "run": "dev.checkAccessibility",
+      "expect": { "unnamed": { "$length": 0 }, "noFocusRing": { "$length": 0 } },
+      "print": true
+    }
+  ]
+}

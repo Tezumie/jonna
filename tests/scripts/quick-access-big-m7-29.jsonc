@@ -1,0 +1,58 @@
+// D275: quick access opens quickly in a large folder (20 000 files from big-repo.cjs, about five
+// minutes to write on Windows): the box and its rows show, typing narrows the files, and the
+// command palette opens. Each step logs its time (measured: about 0.1 s, no long task).
+{
+  "name": "quick-access-big-m7-29",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/big-repo.cjs 20000", "timeoutMs": 600000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 610000
+    },
+    {
+      "run": "quickOpen.search",
+      "input": { "query": "file17777", "limit": 5 },
+      "expect": { "files": { "$contains": "file17777.ts" }, "indexing": false },
+      "time": true,
+      "timeoutMs": 120000
+    },
+    { "run": "editor.openFile", "input": { "path": "big/pkg27/mod39/part9/file19977.ts" } },
+    { "wait": 3000 },
+    { "run": "quickOpen.show", "input": {}, "background": true, "time": true },
+    {
+      "name": "files open",
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$length": 1 },
+      "time": true,
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".quick-input-box", "text": "file1234" },
+      "time": true
+    },
+    {
+      "name": "files typed",
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$contains": "file1234" },
+      "time": true,
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } },
+    { "wait": 300 },
+    { "run": "quickOpen.show", "input": { "query": ">" }, "background": true, "time": true },
+    {
+      "name": "commands open",
+      "run": "dev.inspectDom",
+      "input": { "selector": ".quick-input-list [role=option]", "limit": 1 },
+      "expect": { "$length": 1 },
+      "time": true,
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Escape" } }
+  ]
+}

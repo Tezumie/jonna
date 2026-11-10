@@ -1,0 +1,127 @@
+// D200: the explorer's selection clears on empty space and the root header, so New file / New
+// folder go to the root (VS Code); a collapsed section's edge resizes the open one below.
+{
+  "name": "explorer-m7-1",
+  "steps": [
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row[data-path$='src']" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 8000
+    },
+    { "run": "explorer.reveal", "input": { "path": "src" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    // A click on the list's empty space clears it.
+    { "run": "dev.click", "input": { "selector": ".explorer-tree .vlist" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected" },
+      "expect": []
+    },
+    // With nothing selected, New folder goes to the root.
+    {
+      "run": "explorer.newFolder",
+      "input": { "name": "m71-root" },
+      "expect": { "created": { "$not": { "$contains": "src" } } }
+    },
+    // A right-click on the root header clears it too (and opens the root's menu).
+    { "run": "explorer.reveal", "input": { "path": "src" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 4000
+    },
+    { "run": "dev.click", "input": { "selector": ".explorer-root", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected" },
+      "expect": []
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$contains": "New folder" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+
+    // Outline collapsed above an open Timeline: Outline's top edge is shown (it resizes Timeline).
+    {
+      "state": "ide://layout",
+      "expect": {
+        "sidebar": {
+          "sections": [
+            { "id": "outline.view", "collapsed": true },
+            { "id": "timeline.view", "collapsed": true }
+          ]
+        }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".view-section[data-section-id='outline.view'] > .sash:not([hidden])"
+      },
+      "expect": []
+    },
+    {
+      "run": "view.toggleSection",
+      "input": { "id": "timeline.view" },
+      "expect": { "collapsed": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".view-section[data-section-id='outline.view'] > .sash:not([hidden])"
+      },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 3000
+    },
+    // Find in the tree (Ctrl+Alt+F): matches highlighted, the first selected; filter hides others.
+    { "run": "explorer.find", "input": { "query": "notes" }, "expect": { "matches": 1 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-find-match.is-selected" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "explorer.find",
+      "input": { "query": "notes", "filter": true },
+      "expect": { "matches": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "explorer.closeFind" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row", "limit": 20 },
+      "expect": [{ "tag": "div" }, { "tag": "div" }, { "tag": "div" }, { "tag": "div" }]
+    },
+    // Type-ahead: a letter with the tree focused jumps to the next row starting with it.
+    { "run": "explorer.focus" },
+    { "run": "dev.type", "input": { "selector": ".explorer-tree .vlist", "key": "R" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".explorer-tree .vlist-row.is-selected", "html": 600 },
+      "expect": [{ "html": { "$contains": "README" } }]
+    },
+    // The settings page's category list has the thin scrollbar class rules (smoke: it opens).
+    { "run": "settings.open" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-nav-items" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 4000
+    }
+  ]
+}

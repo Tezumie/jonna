@@ -1,0 +1,91 @@
+// D253: a terminal's output after a restart (the folder reopened). A line wider than the terminal
+// comes back whole (plain lines, not a screen redrawn at the width it was saved at); a session
+// where nothing ran keeps the last one's lines, so "Restored session" lines don't pile up; a
+// session where something ran saves only its own lines.
+{
+  "name": "terminal-restore-m7-19",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf '=%.0s' $(seq 1 150); echo; echo restore-mark-$((40+1))",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0, "output": { "$contains": "restore-mark-41" } },
+      "timeoutMs": 30000
+    },
+
+    // A renamed terminal keeps its name across the restart (D383 checked the gap list's claim).
+    { "run": "terminal.rename", "input": { "name": "kept-name" } },
+
+    // ---- First reopen: the long line whole, one separator ----
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": [
+          { "restored": true, "exited": false, "tabTitle": { "$contains": "kept-name" } }
+        ]
+      },
+      "timeoutMs": 20000
+    },
+    { "wait": 3000 },
+    {
+      "run": "terminal.readOutput",
+      "expect": {
+        "text": {
+          "$contains": "======================================================================================================================================================"
+        }
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "terminal.find", "input": { "query": "restore-mark-41" }, "expect": { "count": 1 } },
+    { "run": "terminal.find", "input": { "query": "Restored session" }, "expect": { "count": 1 } },
+
+    // ---- Second reopen, nothing ran: still one separator, the same lines ----
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": [{ "restored": true, "exited": false }] },
+      "timeoutMs": 20000
+    },
+    { "wait": 3000 },
+    {
+      "run": "terminal.find",
+      "input": { "query": "restore-mark-41" },
+      "expect": { "count": 1 },
+      "timeoutMs": 10000
+    },
+    { "run": "terminal.find", "input": { "query": "Restored session" }, "expect": { "count": 1 } },
+
+    // ---- A command in this session: the next restart shows only this session's lines ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo second-session-$((40+2))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "workspace.openRecent", "background": true },
+    { "wait": 600 },
+    { "run": "dev.type", "input": { "selector": ".quick-input-box", "key": "Enter" } },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": [{ "restored": true, "exited": false }] },
+      "timeoutMs": 20000
+    },
+    { "wait": 3000 },
+    {
+      "run": "terminal.find",
+      "input": { "query": "second-session-42" },
+      "expect": { "count": 1 },
+      "timeoutMs": 10000
+    },
+    { "run": "terminal.find", "input": { "query": "restore-mark-41" }, "expect": { "count": 0 } },
+    { "run": "terminal.find", "input": { "query": "Restored session" }, "expect": { "count": 1 } }
+  ]
+}

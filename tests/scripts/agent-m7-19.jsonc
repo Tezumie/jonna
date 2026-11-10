@@ -1,0 +1,103 @@
+// D253: the agent's calls in one step run together (three reads, results in the order asked); a
+// schedule made by the agent shows in ide://agent/schedules and the chat's details, and run now its
+// message reaches the chat; a background command started with notify_on_exit tells the agent when
+// it ends; read_file reads a PDF as its text, page by page. Against tests/fixtures/mock-ollama.mjs
+// (d253Scripted).
+{
+  "name": "agent-m7-19",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "full" } },
+    { "run": "settings.set", "input": { "key": "agent.openServers", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+
+    // ---- The files ----
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "one.txt" } },
+    { "run": "editor.insertText", "input": { "text": "content-one\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "two.txt" } },
+    { "run": "editor.insertText", "input": { "text": "content-two\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "three.txt" } },
+    { "run": "editor.insertText", "input": { "text": "content-three\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "doc.pdf" } },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 /Resources << /Font << /F1 7 0 R >> >> >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 48 >>\nstream\nBT /F1 12 Tf 72 720 Td (Hello from a PDF) Tj ET\nendstream\nendobj\n5 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 6 0 R >>\nendobj\n6 0 obj\n<< /Length 45 >>\nstream\nBT /F1 12 Tf 72 720 Td (The second page) Tj ET\nendstream\nendobj\n7 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"
+      }
+    },
+    { "run": "editor.save" },
+    { "run": "editor.closeAll" },
+
+    // ---- Three reads asked for in one step: all run, results in the order asked ----
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "d253 read three" },
+      "expect": { "answer": { "$contains": "Read in order: one, two, three" } },
+      "print": true,
+      "timeoutMs": 30000
+    },
+
+    // ---- A PDF read as its text, page by page ----
+    {
+      "run": "agent.send",
+      "input": { "message": "d253 pdf" },
+      "expect": { "answer": { "$contains": "PDF: read" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- A schedule the agent makes: listed, in the details, run now ----
+    {
+      "run": "agent.send",
+      "input": { "message": "d253 schedule" },
+      "expect": { "answer": { "$contains": "Schedule: made" } },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/schedules",
+      "expect": { "schedules": { "$contains": "d253-scheduled-ping" } },
+      "save": "sched"
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": { "background": { "$contains": "d253-scheduled-ping" } }
+    },
+    { "run": "agent.runScheduleNow", "input": { "id": "${sched.schedules.0.id}" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Got the scheduled ping." } },
+      "timeoutMs": 30000
+    },
+    // A one-off is done once it ran.
+    { "state": "ide://agent/schedules", "expect": { "schedules": { "$length": 0 } } },
+
+    // ---- A background command that says when it ends ----
+    // The ping's turn has finished first (sent while it ends, the message would join that turn:
+    // queued, with no answer of its own).
+    { "state": "ide://agent/session", "expect": { "status": "idle" }, "timeoutMs": 20000 },
+    {
+      "run": "agent.send",
+      "input": { "message": "d253 watch" },
+      "expect": { "answer": { "$contains": "Watching: yes" } },
+      "timeoutMs": 40000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Saw it end: with its output" } },
+      "timeoutMs": 40000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

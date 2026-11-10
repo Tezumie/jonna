@@ -1,0 +1,601 @@
+/*
+ * Design tokens — hand-authored source (DESIGN.md v2 Appendix A is the reference implementation).
+ * The only file (with theme files) allowed to contain color values. Components use semantic tokens
+ * (--bg-*, --fg-*, --border-*, --accent*, --status-*, --diff-*, --file-icon-*, --space-*, --size-*,
+ * --radius-*, --shadow-*, --text-*, --motion-*, --ease-*, --z-*) and never the primitives.
+ * Themes switch with attributes on <html>: data-theme, data-density, data-panels (flush is the
+ * default), data-motion. Imported VS Code themes are applied at runtime as semantic overrides.
+ * Additions to Appendix A: the terminal ANSI palette (§15.4) and --syntax-theme (§15.2).
+ */
+@layer tokens {
+  :root {
+    /* ---------- primitives (private) — true neutrals, no tint ---------- */
+    --gray-1000: #111111;
+    --gray-975: #141414;
+    --gray-950: #181818;
+    --gray-925: #232323;
+    --gray-900: #262626;
+    --gray-700: #5c5c5c;
+    --gray-550: #8c8c8c;
+    --gray-450: #a6a6a6;
+    --gray-100: #e6e6e6;
+    --blue-600: #2b6fd1;
+    --blue-550: #3a7ee0;
+    --blue-300: #6aa9f5;
+    --green-400: #4cc38a;
+    --amber-400: #e8ae4c;
+    --red-400: #f27474;
+
+    /* ---------- type ---------- */
+    --font-ui:
+      "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter,
+      Ubuntu, "Noto Sans", sans-serif;
+    /* VS Code's per-OS default (D382): the OS's own code font, so it doesn't change with what
+       happens to be installed. Windows and macOS override this below by <html data-platform>. */
+    --font-mono: "Droid Sans Mono", "monospace", monospace;
+    --text-xs: 11px;
+    --text-xs-lh: 16px;
+    --text-sm: 12px;
+    --text-sm-lh: 18px;
+    --text-md: 13px;
+    --text-md-lh: 20px;
+    --text-lg: 14px;
+    --text-lg-lh: 22px;
+    --text-xl: 16px;
+    --text-xl-lh: 24px;
+    --text-2xl: 20px;
+    --text-2xl-lh: 28px;
+    --text-3xl: 24px;
+    --text-3xl-lh: 32px;
+    --text-md-font: 400 var(--text-md) / var(--text-md-lh) var(--font-ui);
+
+    /* ---------- space ---------- */
+    --space-0: 0;
+    --space-px: 1px;
+    --space-1: 2px;
+    --space-2: 4px;
+    --space-3: 6px;
+    --space-4: 8px;
+    --space-5: 12px;
+    --space-6: 16px;
+    --space-7: 20px;
+    --space-8: 24px;
+    --space-9: 32px;
+    --space-10: 40px;
+    --space-11: 48px;
+    --space-12: 64px;
+
+    /* ---------- size (default density) ---------- */
+    --size-control-xs: 20px;
+    --size-control-sm: 24px;
+    --size-control-md: 28px;
+    --size-control-lg: 36px;
+    --size-row: 24px;
+    --size-tab: 34px;
+    /* Tabs on a group's side (workbench.editor.tabPlacement, D279): the list's width. */
+    --size-tab-list: 200px;
+    --size-titlebar: 38px;
+    --size-statusbar: 24px;
+    --centered-layout-width: 960px;
+    --size-activitybar: 44px;
+    --size-icon-sm: 14px;
+    --size-icon-md: 16px;
+    --size-icon-lg: 20px;
+    --size-gap-panel: 0px;
+    /* Between panels, where the splitters are (D278): tighter than the outer edge. */
+    --size-gap-split: 0px;
+    /* Flush layout (D135): the workspace's rounded outer corners and its gap from the window's
+       edge on the far side from the activity bar. */
+    --radius-workspace: 8px;
+    --size-workspace-inset: 6px;
+
+    /* ---------- radius ---------- */
+    --radius-xs: 3px;
+    --radius-sm: 5px;
+    --radius-md: 8px;
+    --radius-lg: 0px; /* panels: 0 in flush (default), 10px in floating */
+    /* A dragged group's preview: rounded in both panel styles (D410). */
+    --radius-lifted: 10px;
+    --radius-xl: 14px;
+    --radius-full: 999px;
+
+    /* ---------- motion ---------- */
+    --motion-instant: 0ms;
+    --motion-fast: 90ms;
+    --motion-base: 150ms;
+    --motion-slow: 220ms;
+    --motion-deliberate: 320ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --ease-enter: cubic-bezier(0, 0, 0, 1);
+    --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+    --ease-spring: linear(0, 0.35 12%, 0.72 26%, 0.95 42%, 1.02 56%, 1.005 72%, 1);
+
+    /* ---------- z ---------- */
+    --z-base: 0;
+    --z-sticky: 10;
+    --z-dropdown: 100;
+    --z-overlay: 200;
+    --z-modal: 300;
+    --z-palette: 400;
+    --z-toast: 500;
+    --z-tooltip: 600;
+    --z-drag: 700;
+  }
+  :root[data-platform="windows"] {
+    --font-mono: Consolas, "Courier New", monospace;
+  }
+  :root[data-platform="mac"] {
+    --font-mono: Menlo, Monaco, "Courier New", monospace;
+  }
+
+  /* ---------- dark (default) ---------- */
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-app: var(--gray-950);
+    --bg-surface: var(--gray-950);
+    --bg-surface-sunken: var(--gray-975);
+    /* The side bar when set apart (workbench.sideBarColor "distinct"; a theme's sideBar.background). */
+    --bg-sidebar: var(--bg-surface-sunken);
+    --bg-surface-raised: var(--gray-925);
+    --bg-overlay: var(--gray-900);
+    --bg-scrim: rgb(0 0 0 / 0.5);
+    /* Text over photos and thumbnails (attachment cards): the same in both themes. */
+    --media-scrim: rgb(0 0 0 / 0.62);
+    /* Behind the image viewer beside the chat (D201): the editor shows through, dimmed. */
+    --media-scrim-soft: rgb(0 0 0 / 0.55);
+    /* How far past its end a settings page scrolls (its last setting reaches about the middle). */
+    --scroll-past-page: 45vh;
+    --media-chip: rgb(0 0 0 / 0.55);
+    --fg-on-media: #ffffff;
+
+    --fg-default: var(--gray-100);
+    --fg-muted: var(--gray-450);
+    --fg-subtle: var(--gray-550);
+    --fg-disabled: var(--gray-700);
+    --fg-on-accent: #ffffff;
+
+    --border-subtle: rgb(255 255 255 / 0.06);
+    --border-default: rgb(255 255 255 / 0.09);
+    --border-strong: rgb(255 255 255 / 0.16);
+    --bg-hover: rgb(255 255 255 / 0.05);
+    --bg-active: rgb(255 255 255 / 0.08);
+    --bg-selected: rgb(255 255 255 / 0.08);
+
+    --accent: var(--blue-600);
+    /* Chart series (D170): the dataviz reference palette's first six slots, dark steps
+       (validated for CVD and contrast on dark surfaces, in this order). */
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-4: #c98500;
+    --chart-5: #d55181;
+    --chart-6: #008300;
+    /* Agent faces (D230): bright, friendly body colors with dark eyes, readable on dark surfaces. */
+    --face-main: #d4d4dc;
+    --face-1: #8b6cf0;
+    --face-2: #3f8cf0;
+    --face-3: #45c08a;
+    --face-4: #f2a33a;
+    --face-5: #ec6d4f;
+    --face-6: #e57fb5;
+    --face-7: #5cc2b8;
+    --face-8: #d9bf45;
+    --face-eye: #1b1b1f;
+    /* Colors a user gives things (a canvas card, D181): red, orange, yellow, green, cyan, purple,
+       the six presets of the JSON Canvas format. */
+    --label-1: #e5534b;
+    --label-2: #e0823d;
+    --label-3: #d4b33c;
+    --label-4: #46a758;
+    --label-5: #3fb5c4;
+    --label-6: #9d7ee8;
+    /* Source control's Graph (D210), VS Code's scmGraph colors: the current branch's lane and
+       chips (charts blue), its upstream's (charts purple), tags (charts yellow), and the five
+       rotating lane colors (scmGraph.foreground1…5). */
+    --scm-graph-ref: #3794ff;
+    --scm-graph-remote: #b180d7;
+    --scm-graph-tag: #cca700;
+    /* The base branch (VS Code's scmGraph.historyItemBaseRefColor, D220). */
+    --scm-graph-base: #ea5c00;
+    --scm-graph-lane-0: #ffb000;
+    --scm-graph-lane-1: #dc267f;
+    --scm-graph-lane-2: #c26a14;
+    --scm-graph-lane-3: #40b0a6;
+    --scm-graph-lane-4: #b66dff;
+
+    --status-success-fg: var(--green-400);
+    --status-warning-fg: var(--amber-400);
+    --status-danger-fg: var(--red-400);
+    /* Filled status surfaces that carry white text (badges, the close button): deeper than the
+       -fg colors, which are tuned for text on the dark surface and wash out under white. */
+    --status-danger-solid: #c93c37;
+    --status-warning-solid: #a86a12;
+    --fg-on-status: #ffffff;
+    --window-close-bg: #e5302a;
+    --diff-modified-fg: #5b9bd5;
+    /* Modified files in the explorer and tabs: VS Code's gitDecoration.modifiedResourceForeground
+       (the gutter keeps --diff-modified-fg, blue, as VS Code does). */
+    --git-modified-fg: #e2c08d;
+
+    --file-icon-default: var(--fg-muted);
+    --file-icon-ts: #6c9edb;
+    --file-icon-js: #d9c46a;
+    --file-icon-json: #c9a35b;
+    --file-icon-markup: #d98a5f;
+    --file-icon-style: #9c8ad6;
+    --file-icon-md: #9aa3ad;
+    --file-icon-rust: #d08a5b;
+    --file-icon-python: #7fafd6;
+    --file-icon-notebook: #e39a5e;
+    --file-icon-go: #6cc2c9;
+    --file-icon-shell: #8cbf7a;
+    --file-icon-config: #a6a6a6;
+    --file-icon-image: #b98acb;
+    /* Terminal tab colors (D120): the terminal's own ANSI colors. */
+    --file-icon-term-red: var(--terminal-ansi-red);
+    --file-icon-term-green: var(--terminal-ansi-green);
+    --file-icon-term-yellow: var(--terminal-ansi-yellow);
+    --file-icon-term-blue: var(--terminal-ansi-blue);
+    --file-icon-term-magenta: var(--terminal-ansi-magenta);
+    --file-icon-term-cyan: var(--terminal-ansi-cyan);
+
+    --shadow-1: 0 2px 8px rgb(0 0 0 / 0.35), 0 0 0 1px var(--border-default);
+    --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px var(--border-default);
+    --shadow-3: 0 16px 48px rgb(0 0 0 / 0.55), 0 0 0 1px var(--border-strong);
+    --shadow-drag: 0 12px 28px rgb(0 0 0 / 0.6), 0 0 0 1px var(--accent-border);
+    /* Under a sticky header (tree rows that stay at the top while scrolling). */
+    --shadow-sticky: 0 1px 0 var(--border-subtle), 0 3px 6px -3px rgb(0 0 0 / 0.35);
+    /* Under the terminal's sticky line: a shadow only, no border (it must read as a real line). */
+    --shadow-sticky-soft: 0 3px 4px -3px rgb(0 0 0 / 0.5);
+  }
+
+  /* ---------- light ---------- */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg-app: #f7f7f7;
+    --bg-surface: #f7f7f7;
+    --bg-surface-sunken: #f0f0f0;
+    --bg-sidebar: var(--bg-surface-sunken);
+    --bg-surface-raised: #ebebeb;
+    --bg-overlay: #ffffff;
+    --bg-scrim: rgb(0 0 0 / 0.2);
+    --fg-default: #1f1f1f;
+    --fg-muted: #575757;
+    --fg-subtle: #686868;
+    --fg-disabled: #a8a8a8;
+    --fg-on-accent: #ffffff;
+    --border-subtle: rgb(0 0 0 / 0.07);
+    --border-default: rgb(0 0 0 / 0.1);
+    --border-strong: rgb(0 0 0 / 0.18);
+    --bg-hover: rgb(0 0 0 / 0.04);
+    --bg-active: rgb(0 0 0 / 0.07);
+    --bg-selected: rgb(0 0 0 / 0.06);
+    --accent: #2b6fd1;
+    /* Chart series (D170), light steps of the same six hues. */
+    --chart-1: #2a78d6;
+    --chart-2: #eb6834;
+    --chart-3: #1baf7a;
+    --chart-4: #eda100;
+    --chart-5: #e87ba4;
+    --chart-6: #008300;
+    /* Agent faces (D230), a step deeper for light surfaces. */
+    --face-main: #a3a3ae;
+    --face-1: #7656e6;
+    --face-2: #2f7ae0;
+    --face-3: #2fa874;
+    --face-4: #e8922a;
+    --face-5: #e05a3c;
+    --face-6: #d9669f;
+    --face-7: #3fab9f;
+    --face-8: #c9a92e;
+    --face-eye: #1b1b1f;
+    --label-1: #cf3c35;
+    --label-2: #c8641c;
+    --label-3: #a88300;
+    --label-4: #2b8a3e;
+    --label-5: #12839a;
+    --label-6: #7756d1;
+    --scm-graph-ref: #1a85ff;
+    --scm-graph-remote: #652d90;
+    --scm-graph-tag: #bf8803;
+    --scm-graph-base: #c94f00;
+    --scm-graph-lane-0: #c98a00;
+    --scm-graph-lane-1: #dc267f;
+    --scm-graph-lane-2: #994f00;
+    --scm-graph-lane-3: #2b8f86;
+    --scm-graph-lane-4: #9b4dff;
+    --status-success-fg: #18794a;
+    --status-warning-fg: #8a5800;
+    --status-danger-fg: #be3333;
+    --status-danger-solid: #c42b2b;
+    --status-warning-solid: #9a5e00;
+    --fg-on-status: #ffffff;
+    --window-close-bg: #e5302a;
+    --diff-modified-fg: #2f6eb5;
+    --git-modified-fg: #895503;
+    --file-icon-default: var(--fg-muted);
+    --file-icon-ts: #2f6db5;
+    --file-icon-js: #8a7a12;
+    --file-icon-json: #86631c;
+    --file-icon-markup: #a4502a;
+    --file-icon-style: #6650b0;
+    --file-icon-md: #5b6470;
+    --file-icon-rust: #9e5420;
+    --file-icon-python: #2f6e9e;
+    --file-icon-notebook: #b05a1c;
+    --file-icon-go: #1e7f87;
+    --file-icon-shell: #3f7a2c;
+    --file-icon-config: #626262;
+    --file-icon-image: #7e4a94;
+    /* Terminal tab colors (D120): the terminal's own ANSI colors. */
+    --file-icon-term-red: var(--terminal-ansi-red);
+    --file-icon-term-green: var(--terminal-ansi-green);
+    --file-icon-term-yellow: var(--terminal-ansi-yellow);
+    --file-icon-term-blue: var(--terminal-ansi-blue);
+    --file-icon-term-magenta: var(--terminal-ansi-magenta);
+    --file-icon-term-cyan: var(--terminal-ansi-cyan);
+    --shadow-1: 0 2px 8px rgb(0 0 0 / 0.08), 0 0 0 1px var(--border-default);
+    --shadow-2: 0 8px 24px rgb(0 0 0 / 0.12), 0 0 0 1px var(--border-default);
+    --shadow-3: 0 16px 48px rgb(0 0 0 / 0.16), 0 0 0 1px var(--border-default);
+    --shadow-drag: 0 12px 28px rgb(0 0 0 / 0.2), 0 0 0 1px var(--accent-border);
+    --shadow-sticky: 0 1px 0 var(--border-subtle), 0 3px 6px -3px rgb(0 0 0 / 0.1);
+    --shadow-sticky-soft: 0 3px 4px -3px rgb(0 0 0 / 0.18);
+  }
+
+  /* ---------- derived (both themes) ---------- */
+  :root {
+    /* Scrollbar thumbs (D258): a theme's scrollbarSlider colors when it has them. */
+    --scrollbar-thumb: color-mix(in srgb, var(--fg-subtle) 22%, transparent);
+    --scrollbar-thumb-near: color-mix(in srgb, var(--fg-subtle) 40%, transparent);
+    --scrollbar-thumb-hover: color-mix(in srgb, var(--fg-subtle) 50%, transparent);
+    --scrollbar-thumb-active: color-mix(in srgb, var(--fg-subtle) 60%, transparent);
+    --accent-subtle: color-mix(in srgb, var(--accent) 16%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 50%, transparent);
+    /* An accent's hover, from the accent itself (D276): a theme's own accent got the built-in
+       blue's hover. A step toward the text color here; where relative colors work (below), a
+       light accent darkens and a dark one lightens. */
+    --accent-hover: color-mix(in oklab, var(--accent) 86%, var(--fg-default));
+    /* The second accent (D276): selection and focus in lists and trees, resize handles, drop
+       targets and info notes. The accent itself unless a theme sets its own (Claude Dark: blue). */
+    --accent-secondary: var(--accent);
+    --accent-secondary-subtle: color-mix(in srgb, var(--accent-secondary) 16%, transparent);
+    --accent-secondary-border: color-mix(in srgb, var(--accent-secondary) 50%, transparent);
+    /* Text in an accent (links in notes, info): the second accent, lightened to read on dark. */
+    --accent-text: color-mix(in oklab, var(--accent-secondary) 62%, #ffffff);
+    --focus-ring: var(--accent);
+    /* A text field with focus (D385): its border a step brighter (darker on light themes), not
+       the accent: the text's own color, mixed in, so every theme gets it right. */
+    --border-input-focus: color-mix(in srgb, var(--fg-default) 35%, transparent);
+    --bg-selected-focus: color-mix(in srgb, var(--accent-secondary) 28%, transparent);
+    /* Inputs on floating / raised surfaces (find widget, menus, palette): a hair off the surface
+       instead of a dark well — lighter in dark themes, darker in light ones, same rule. */
+    --bg-input-raised: color-mix(in srgb, var(--fg-default) 5%, var(--bg-overlay));
+    /* Text fields, selects, checkboxes and key chips anywhere else: a translucent tint, so a field
+       is always a hair lighter than whatever it sits on (a card, a panel) in dark themes — never
+       a dark well on a lighter surface (D122). Light themes use white fields. */
+    --bg-input: color-mix(in srgb, var(--fg-default) 5%, transparent);
+    --bg-chip: color-mix(in srgb, var(--fg-default) 7%, transparent);
+    /* Editor widgets docked to the editor (find/replace): close to the editor surface, so the
+       widget reads as part of the editor rather than a bright floating panel. */
+    --bg-editor-widget: color-mix(in srgb, var(--fg-default) 3%, var(--bg-surface));
+    --bg-editor-widget-input: color-mix(in srgb, var(--fg-default) 5%, var(--bg-surface));
+    /* The tab strip in the classic and connected tab styles (D278): a step off the editor, so
+       the active tab, in the editor's color, reads as part of it. */
+    --bg-tab-strip: color-mix(in srgb, var(--fg-default) 6%, var(--bg-surface));
+    /* Web pages in the browser preview assume a white canvas in every theme. */
+    --bg-web-canvas: #ffffff;
+    /* Model providers' and agents' own colors (D167): monogram badges and the soft wash on their
+       tiles on the AI models page, in every theme. Not logos: a letter and a color. */
+    --brand-anthropic: #d97757;
+    --brand-openai: #10a37f;
+    --brand-gemini: #4f8cf7;
+    --brand-xai: var(--fg-default);
+    --brand-openrouter: #6467f2;
+    --brand-groq: #f55036;
+    --brand-lmstudio: #8b5cf6;
+    --brand-llamacpp: #a3a3a3;
+    --brand-ollama: var(--fg-default);
+    --brand-github: #8957e5;
+    --brand-mistral: #fa520f;
+    --brand-deepseek: #4d6bfe;
+    --brand-together: #0f6fff;
+    --brand-fireworks: #5019c5;
+    --brand-cerebras: #f15a29;
+    --brand-huggingface: #ffb000;
+    --brand-nvidia: #76b900;
+    --brand-kimi: #1783ff;
+    --brand-qwen: #615ced;
+    --brand-zai: var(--fg-default);
+    --brand-azure: #0078d4;
+    --brand-bedrock: #ff9900;
+    --brand-vllm: #30a2ff;
+    --brand-sambanova: #ee7624;
+    --brand-novita: #23d57c;
+    --brand-deepinfra: #5398ff;
+    --brand-hyperbolic: #594cfa;
+    --brand-nebius: var(--fg-default);
+    --brand-siliconflow: #7c3aed;
+    --brand-volcengine: #3c8cff;
+    --brand-stepfun: #01a9ff;
+    --brand-modelscope: #624aff;
+    --brand-friendli: var(--fg-default);
+    --brand-featherless: #00c897;
+    --brand-chutes: var(--fg-default);
+    --brand-venice: #dd3300;
+    --brand-kluster: #4f46e5;
+    --brand-inference: var(--fg-default);
+    --brand-ppio: #1f6bff;
+    --brand-vercel: var(--fg-default);
+    --brand-aihubmix: #006fff;
+    --brand-cometapi: #7b61ff;
+    --brand-xinference: #9b59ff;
+    --brand-jan: #2563eb;
+    --brand-custom: var(--fg-subtle);
+    /* One-color logos on their brand's chip (D168): ink for black brands, white on the rest. */
+    --brand-ink: #111111;
+    --brand-on: #ffffff;
+    --status-info-fg: var(--accent-text);
+    --status-success-bg: color-mix(in srgb, var(--status-success-fg) 12%, transparent);
+    --status-warning-bg: color-mix(in srgb, var(--status-warning-fg) 12%, transparent);
+    --status-danger-bg: color-mix(in srgb, var(--status-danger-fg) 12%, transparent);
+    --status-info-bg: color-mix(in srgb, var(--status-info-fg) 12%, transparent);
+    --status-success-border: color-mix(in srgb, var(--status-success-fg) 35%, transparent);
+    --status-warning-border: color-mix(in srgb, var(--status-warning-fg) 35%, transparent);
+    --status-danger-border: color-mix(in srgb, var(--status-danger-fg) 35%, transparent);
+    --status-info-border: color-mix(in srgb, var(--status-info-fg) 35%, transparent);
+    --diff-added-fg: var(--status-success-fg);
+    --diff-removed-fg: var(--status-danger-fg);
+    --diff-added-bg: color-mix(in srgb, var(--diff-added-fg) 12%, transparent);
+    --diff-added-bg-strong: color-mix(in srgb, var(--diff-added-fg) 28%, transparent);
+    --diff-removed-bg: color-mix(in srgb, var(--diff-removed-fg) 12%, transparent);
+    --diff-removed-bg-strong: color-mix(in srgb, var(--diff-removed-fg) 28%, transparent);
+    /* Commit authors' avatar colors in the Graph's hover card (D148; the lanes have their own
+       --scm-graph-ref / -remote / -lane-N since D210). */
+    --scm-graph-0: var(--accent-text);
+    --scm-graph-1: var(--terminal-ansi-magenta);
+    --scm-graph-2: var(--terminal-ansi-green);
+    --scm-graph-3: var(--terminal-ansi-yellow);
+    --scm-graph-4: var(--terminal-ansi-cyan);
+    --scm-graph-5: var(--terminal-ansi-red);
+    /* Inline values while debugging (VS Code's editor.inlineValuesForeground / Background:
+       half-strength text on a faint yellow). */
+    --debug-inline-value-fg: color-mix(in srgb, var(--fg-default) 50%, transparent);
+    --debug-inline-value-bg: color-mix(in srgb, var(--status-warning-fg) 20%, transparent);
+  }
+  :root[data-theme="light"] {
+    --bg-input: var(--bg-overlay);
+    --bg-selected-focus: color-mix(in srgb, var(--accent-secondary) 16%, transparent);
+    --accent-subtle: color-mix(in srgb, var(--accent) 10%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
+    --accent-secondary-subtle: color-mix(in srgb, var(--accent-secondary) 10%, transparent);
+    --accent-secondary-border: color-mix(in srgb, var(--accent-secondary) 40%, transparent);
+    --accent-text: color-mix(in oklab, var(--accent-secondary) 82%, #000000);
+  }
+  /* A light accent darkens on hover, a dark one lightens (D276). */
+  @supports (color: oklch(from red calc(l - 0.07 * sign(l - 0.6)) c h)) {
+    :root {
+      --accent-hover: oklch(from var(--accent) calc(l - 0.07 * sign(l - 0.6)) c h);
+    }
+  }
+
+  /* ---------- terminal ANSI palette (DESIGN §15.4), component tokens ---------- */
+  :root,
+  :root[data-theme="dark"] {
+    /* Syntax colors outside the editor (terminal commands), from the Shiki dark-plus theme. */
+    --syntax-function: #dcdcaa;
+    --syntax-keyword: #569cd6;
+    --syntax-string: #ce9178;
+    --syntax-variable: #9cdcfe;
+    --syntax-path: #4ec9b0;
+    --syntax-operator: #c586c0;
+    --syntax-number: #b5cea8;
+    --syntax-comment: #6a9955;
+    --syntax-selector: #d7ba7d;
+    --terminal-ansi-black: #1f2024;
+    --terminal-ansi-bright-black: #5c5f68;
+    --terminal-ansi-red: #f27474;
+    --terminal-ansi-bright-red: #ff9494;
+    --terminal-ansi-green: #4cc38a;
+    --terminal-ansi-bright-green: #6fdca6;
+    --terminal-ansi-yellow: #e8ae4c;
+    --terminal-ansi-bright-yellow: #f5c76e;
+    --terminal-ansi-blue: #7ba4ff;
+    --terminal-ansi-bright-blue: #9dbcff;
+    --terminal-ansi-magenta: #c792ea;
+    --terminal-ansi-bright-magenta: #ddb2f5;
+    --terminal-ansi-cyan: #5bc8d6;
+    --terminal-ansi-bright-cyan: #82dce6;
+    --terminal-ansi-white: #c9cbd1;
+    --terminal-ansi-bright-white: #f2f3f5;
+    /* Syntax theme paired with this UI theme (read by the editor; DESIGN §15.2). */
+    --syntax-theme: dark-plus;
+  }
+  :root[data-theme="light"] {
+    /* Syntax colors outside the editor (terminal commands), from the Shiki light-plus theme. */
+    --syntax-function: #795e26;
+    --syntax-keyword: #0000ff;
+    --syntax-string: #a31515;
+    --syntax-variable: #001080;
+    --syntax-path: #267f99;
+    --syntax-operator: #af00db;
+    --syntax-number: #098658;
+    --syntax-comment: #008000;
+    --syntax-selector: #800000;
+    --terminal-ansi-black: #1b1c20;
+    --terminal-ansi-bright-black: #6b6e77;
+    --terminal-ansi-red: #be3333;
+    --terminal-ansi-bright-red: #d64545;
+    --terminal-ansi-green: #18794a;
+    --terminal-ansi-bright-green: #22975e;
+    --terminal-ansi-yellow: #8a5800;
+    --terminal-ansi-bright-yellow: #a86d00;
+    --terminal-ansi-blue: #2f5fd0;
+    --terminal-ansi-bright-blue: #4677e6;
+    --terminal-ansi-magenta: #8f3fb8;
+    --terminal-ansi-bright-magenta: #a552cf;
+    --terminal-ansi-cyan: #137a87;
+    --terminal-ansi-bright-cyan: #1a93a2;
+    --terminal-ansi-white: #5a5d66;
+    --terminal-ansi-bright-white: #1b1c20;
+    --syntax-theme: light-plus;
+  }
+
+  /* ---------- density ---------- */
+  :root[data-density="compact"] {
+    --size-control-xs: 18px;
+    --size-control-sm: 22px;
+    --size-control-md: 26px;
+    --size-control-lg: 32px;
+    --size-row: 22px;
+    --size-tab: 30px;
+    --size-titlebar: 34px;
+    --size-statusbar: 22px;
+    --size-activitybar: 40px;
+  }
+  :root[data-density="comfortable"] {
+    --size-control-xs: 22px;
+    --size-control-sm: 28px;
+    --size-control-md: 32px;
+    --size-control-lg: 40px;
+    --size-row: 28px;
+    --size-tab: 38px;
+    --size-titlebar: 42px;
+    --size-statusbar: 26px;
+    --size-activitybar: 48px;
+  }
+
+  /* ---------- panel style: flush is the default; floating opts in ---------- */
+  :root[data-panels="floating"] {
+    --size-gap-panel: 6px;
+    --size-gap-split: 4px;
+    --radius-lg: 10px;
+    --bg-app: var(--gray-1000);
+  }
+  :root[data-panels="floating"][data-theme="light"] {
+    --bg-app: #ededed;
+  }
+  :root[data-panels="floating"][data-density="compact"] {
+    --size-gap-panel: 4px;
+  }
+  :root[data-panels="floating"][data-density="comfortable"] {
+    --size-gap-panel: 8px;
+    --size-gap-split: 6px;
+  }
+
+  /* ---------- reduced motion ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --motion-fast: 0ms;
+      --motion-base: 0ms;
+      --motion-slow: 0ms;
+      --motion-deliberate: 0ms;
+    }
+  }
+  :root[data-motion="reduced"] {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-deliberate: 0ms;
+  }
+}

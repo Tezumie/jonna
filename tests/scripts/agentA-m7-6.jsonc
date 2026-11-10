@@ -1,0 +1,259 @@
+// D207: slash commands' disallowed-tools and (in the user's own files) allowed-tools
+// pre-approving; folder rules on a subagent's reads; find_files and call_command search gated by
+// agent.autoApprove; "Always" on a read or a web page saved as a pattern with a note in the chat;
+// worktree agents (setup script with PORT, conflicts after Apply opened in the merge editor).
+// Against tests/fixtures/mock-ollama.mjs (agentAScripted). Needs git.
+{
+  "name": "agentA-m7-6",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "settings.set", "input": { "key": "agent.autoCompact", "value": false } },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+
+    // ---- Slash commands: the user's own allowed-tools pre-approves (no question) ----
+    {
+      "run": "agent.newSlashCommand",
+      "input": { "scope": "user", "name": "agenta-pre" },
+      "expect": { "created": true }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\nallowed-tools: Bash(echo agenta-pre-ok)\n---\n" }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "agent.send",
+      "input": { "message": "/agenta-pre" },
+      "expect": { "answer": { "$contains": "Pre: ran" } },
+      "timeoutMs": 30000
+    },
+    // A project's command with the same front matter only narrows: its line asks.
+    { "run": "explorer.newFolder", "input": { "parent": ".vscode", "name": "commands" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode/commands", "name": "agenta-proj.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\nallowed-tools: Bash(echo agenta-proj-ok)\n---\nRun it.\n" }
+    },
+    { "run": "editor.save" },
+    { "run": "agent.send", "input": { "message": "/agenta-proj" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "echo agenta-proj-ok" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Proj: denied" } },
+      "timeoutMs": 20000
+    },
+    // disallowed-tools refuses its Bash lines without asking.
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode/commands", "name": "agenta-nopush.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\ndisallowed-tools: Bash(git push:*), WebSearch\n---\nShip it.\n" }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "agent.send",
+      "input": { "message": "/agenta-nopush" },
+      "expect": { "answer": { "$contains": "Nopush: refused" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- Rules for subagents: a folder rule comes with the subagent's read ----
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": "sub2" } },
+    { "run": "explorer.newFile", "input": { "parent": "sub2", "name": "AGENTS.md" } },
+    { "run": "editor.insertText", "input": { "text": "agenta-sub-rule-marker: keep it short.\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": "sub2", "name": "x.txt" } },
+    { "run": "editor.insertText", "input": { "text": "plain text\n" } },
+    { "run": "editor.save" },
+    { "run": "agent.newSession" },
+    { "run": "agent.selectModel", "input": { "model": "ollama/mock-coder:1b" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "agenta delegate a read" },
+      "expect": { "answer": { "$contains": "Sub saw: rule" } },
+      "timeoutMs": 40000
+    },
+
+    // ---- Auto-approve: find_files and search through call_command leave protected files out ----
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "agenta-secret.txt" } },
+    { "run": "editor.insertText", "input": { "text": "agenta-content-marker secret\n" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "agenta-open.txt" } },
+    { "run": "editor.insertText", "input": { "text": "agenta-content-marker open\n" } },
+    { "run": "editor.save" },
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "reads", "pattern": "agenta-secret*", "allow": false }
+    },
+    { "wait": 1500 },
+    {
+      "run": "agent.send",
+      "input": { "message": "agenta find files" },
+      "expect": { "answer": { "$contains": "Found: -/open/noted" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "agenta search by command" },
+      "expect": { "answer": { "$contains": "Cmd search: -/open" } },
+      "timeoutMs": 30000
+    },
+    // "Always" on the protected read: saved as that one file, with a note in the chat.
+    { "run": "agent.send", "input": { "message": "agenta read the secret" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "Read agenta-secret.txt" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "always" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "status": "idle",
+        "items": { "$contains": "Read secret: yes" }
+      },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "Saved to auto-approve" } }
+    },
+    {
+      "state": "ide://agent/autoApprove",
+      "expect": { "rules": { "reads": { "agenta-secret*": false, "/agenta-secret.txt": true } } }
+    },
+    // The next read of it doesn't ask.
+    {
+      "run": "agent.send",
+      "input": { "message": "agenta read the secret" },
+      "expect": { "answer": { "$contains": "Read secret: yes" } },
+      "timeoutMs": 30000
+    },
+    // "Always" on a site's question saves its domain.
+    {
+      "run": "agent.setAutoApprove",
+      "input": { "category": "web", "pattern": "127.0.0.1", "allow": false }
+    },
+    { "run": "agent.send", "input": { "message": "agenta fetch the page" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "Web:" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "always" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Fetched: yes" } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/autoApprove",
+      "expect": { "rules": { "web": { "127.0.0.1": true } } }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- Worktree agents: setup script with PORT; a conflict after Apply → merge editor ----
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && printf 'base\\n' > notes.txt && git add -A && git commit -q -m base",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.worktree.setupScript",
+        // Through node: the script runs in the default shell (PowerShell on Windows, where $PORT
+        // isn't the variable).
+        "value": "node -e \"require('fs').appendFileSync('notes.txt', ['port', process.env.PORT, process.env.WORKTREE_INDEX].join('-') + String.fromCharCode(10))\"",
+        "scope": "workspace"
+      }
+    },
+    {
+      "run": "agent.startInWorktree",
+      "input": { "task": "Add the port line", "model": "ollama/mock-coder:1b" },
+      "expect": { "branch": "agent/add-the-port-line", "port": 3010, "setup": { "state": "done" } },
+      "timeoutMs": 60000
+    },
+    { "run": "agent.compareWorktrees", "input": { "agents": ["agent/add-the-port-line"] } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".compare-diff .diff-line.is-added" },
+      "expect": { "$contains": "+port-3010-1" },
+      "timeoutMs": 10000
+    },
+    // This folder changes the same line meanwhile.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'base\\nmain-side\\n' > notes.txt && git commit -q -am main-side",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "agent.applyWorktree",
+      "input": { "agent": "agent/add-the-port-line" },
+      "expect": { "applied": ["notes.txt"], "conflicts": ["notes.txt"] },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/worktrees",
+      "expect": { "agents": [{ "branch": "agent/add-the-port-line", "conflicts": ["notes.txt"] }] },
+      "timeoutMs": 10000
+    },
+    { "run": "agent.worktreeAgents" },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".worktree-agents-page [data-branch='agent/add-the-port-line'] .ai-row-detail"
+      },
+      "expect": { "$contains": "1 conflict" },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "agent.resolveWorktreeConflicts",
+      "input": { "agent": "agent/add-the-port-line" },
+      "expect": { "opened": "notes.txt" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".merge-inputs" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    {
+      "run": "agent.worktrees",
+      "input": { "branch": "agent/add-the-port-line", "action": "delete" },
+      "expect": { "deleted": "agent/add-the-port-line" },
+      "timeoutMs": 20000
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+// D331: search_chats. One chat talks about a zebra crossing; another chat's agent searches the
+// folder's chats and finds it by its first message (#1). agent.searchChats returns the same hit,
+// and agent.openChatMessage opens that chat at the message. Against
+// tests/fixtures/mock-ollama.mjs (pkgHScripted).
+{
+  "name": "agent-search-chats-m7-75",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "zebra"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgh zebra notes: remember the zebra-crossing decision" },
+      "expect": { "answer": { "$contains": "PkgH noted the zebra crossing." } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "asker"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgh search chats for that decision", "session": "${asker.session}" },
+      "expect": { "answer": { "$contains": "PkgH search: found the zebra chat." } },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "id": "${asker.session}", "items": { "$contains": "search_chats" } },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // The command finds it too (not the chat asking: it isn't there to search).
+    {
+      "run": "agent.searchChats",
+      "input": { "query": "zebra crossing" },
+      "expect": {
+        "hits": [{ "id": "${zebra.session}", "matches": [{ "n": 1, "role": "user" }] }]
+      },
+      "print": true
+    },
+    // Opened at the message.
+    {
+      "run": "agent.openChatMessage",
+      "input": { "session": "${zebra.session}", "message": "1" },
+      "expect": { "session": "${zebra.session}", "item": { "$exists": true } }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "id": "${zebra.session}" },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

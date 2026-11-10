@@ -1,0 +1,140 @@
+// D199: language servers on demand (install offer, status bar), quick fixes and inlay hints from a
+// language server, Emmet, line endings and encodings, Outline and Timeline under the Explorer.
+{
+  "name": "editor-m7-0",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "lsp.servers",
+        "value": {
+          "mock": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-lsp.mjs"],
+            "languages": ["markdown"]
+          }
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "README.md" } },
+    {
+      "state": "ide://lsp",
+      "expect": { "$contains": "\"name\":\"mock\"" },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "lsp.codeActions",
+      "input": { "path": "README.md", "line": 2, "column": 1 },
+      "expect": {
+        "actions": [{ "title": "Mock fix: line 2", "kind": "quickfix", "preferred": true }]
+      },
+      "timeoutMs": 15000
+    },
+    // The status bar names the active file's server.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-id='lsp.status']:not([hidden])", "html": 2000 },
+      "expect": [{ "html": { "$contains": "mock" } }],
+      "timeoutMs": 10000
+    },
+    // Inlay hints from the server show in the editor.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .view-lines", "html": 4000, "limit": 1 },
+      "expect": [{ "html": { "$contains": "mock-hint" } }],
+      "timeoutMs": 10000
+    },
+    // A built-in server that isn't installed is offered (Lua: nothing installs it here).
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'local x = 1\\n' > a.lua && printf 'caf\\xe9\\n' > latin.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "a.lua" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-id='lsp.status']:not([hidden])", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Install Lua" } }],
+      "timeoutMs": 10000
+    },
+    { "state": "ide://notifications", "expect": { "$contains": "Lua" }, "timeoutMs": 5000 },
+    // ---- Line endings ----
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    { "run": "editor.changeEol", "input": { "eol": "CRLF" }, "expect": { "eol": "CRLF" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      // Node reads the bytes as they are (Git for Windows' grep drops a line's CR first).
+      "input": {
+        "command": "node -e \"process.exit(require('fs').readFileSync('notes.txt', 'latin1').includes('\\r') ? 0 : 1)\"",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 20000
+    },
+    // ---- Encodings: a Windows-1252 file opens read-only, reopened it's editable ----
+    { "run": "editor.openFile", "input": { "path": "latin.txt" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".editor-view .banner:not([hidden])", "html": 600 },
+      "expect": [{ "html": { "$contains": "UTF-8" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "editor.reopenWithEncoding",
+      "input": { "encoding": "windows-1252" },
+      "expect": { "encoding": "windows-1252", "readOnly": false }
+    },
+    { "run": "editor.insertText", "input": { "text": "ü" } },
+    { "run": "editor.save" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "od -An -tx1 latin.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "fc 63 61 66 e9" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "editor.saveWithEncoding",
+      "input": { "encoding": "utf8" },
+      "expect": { "encoding": "utf8" }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "od -An -tx1 latin.txt", "timeoutMs": 10000 },
+      "expect": { "output": { "$contains": "c3 bc 63 61 66 c3 a9" } },
+      "timeoutMs": 20000
+    },
+    // ---- Emmet ----
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "printf '' > page.html", "timeoutMs": 10000 },
+      "timeoutMs": 20000
+    },
+    { "run": "editor.openFile", "input": { "path": "page.html" } },
+    { "run": "editor.insertText", "input": { "text": "ul>li" } },
+    { "run": "editor.runAction", "input": { "action": "editor.action.triggerSuggest" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".suggest-widget", "html": 3000, "limit": 1 },
+      "expect": [{ "html": { "$contains": "Emmet" } }],
+      "timeoutMs": 10000
+    },
+    // ---- Outline above Timeline, both under the Explorer by default ----
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-view='explorer.view'] .view-section-title",
+        "limit": 2,
+        "html": 100
+      },
+      "expect": [{ "html": { "$contains": "Outline" } }, { "html": { "$contains": "Timeline" } }],
+      "timeoutMs": 5000
+    }
+  ]
+}

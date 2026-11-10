@@ -1,0 +1,198 @@
+// D389: the composer's "/" and "@" lists open over the box, as wide as it (in place of the
+// command palette); ↑/↓, Tab, Enter, Esc work from the box; other names find their command (/new
+// is /clear). The new built-ins act on the chat: /context shows a note, /undo with nothing to undo
+// says so, /btw answers a side question from the chat so far (the mock checks it got the chat and
+// the aside prompt) as a card that isn't part of the conversation, and × closes it. Agents showing
+// their model's logo show it flat: no chip behind it.
+{
+  "name": "agent-slash-m7-108",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 900 } },
+    { "run": "agent.newSession", "save": "chat" },
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "pkgr status ping" },
+      "expect": { "answer": "PkgR status pong." }
+    },
+
+    // ---- "/" lists every command over the box ----
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "/" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-slash-list:not([hidden]) .agent-slash-row[data-command='undo']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Typing narrows it; the first match is chosen.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "/co" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-row.is-active" },
+      "expect": [{ "html": { "$contains": "data-command=\"compact\"" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "key": "ArrowDown" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-row.is-active" },
+      "expect": [{ "html": { "$contains": "data-command=\"copy\"" } }]
+    },
+    // Another name finds its command.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "/new" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-row.is-active" },
+      "expect": [{ "html": { "$contains": "data-command=\"clear\"" } }],
+      "timeoutMs": 3000
+    },
+    // Esc closes it and leaves the text.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "key": "Escape" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-list:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    // Tab fills in a command that takes an argument, with its space (the list closes).
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".dock-body > :not([hidden]) .agent-input",
+        "text": "/bt"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-row.is-active" },
+      "expect": [{ "html": { "$contains": "data-command=\"btw\"" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "key": "Tab" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-list:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    // Enter on one that takes none runs it: /context's note.
+    {
+      "run": "dev.type",
+      "input": {
+        "selector": ".dock-body > :not([hidden]) .agent-input",
+        "text": "/conte"
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-slash-row.is-active" },
+      "expect": [{ "html": { "$contains": "data-command=\"context\"" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "key": "Enter" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-notice", "limit": 5, "html": 400 },
+      "expect": { "$contains": "tool calls" },
+      "timeoutMs": 5000
+    },
+
+    // ---- /undo with nothing to undo says so ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "/undo" },
+      "expect": { "undone": false }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-notice", "limit": 10, "html": 400 },
+      "expect": { "$contains": "Nothing to undo" },
+      "timeoutMs": 3000
+    },
+
+    // ---- /btw: a side question, answered from the chat, not part of it ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${chat.session}", "message": "/btw d389 what did you answer?" },
+      "expect": { "answer": "D389 aside: saw the chat, aside prompt." }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-aside", "html": 2000 },
+      "expect": [{ "html": { "$contains": "D389 aside: saw the chat" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".agent-aside-close" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-aside" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+
+    // ---- "@" lists context and files over the box too ----
+    // (A second apart: screenshots are named by the second.)
+    { "wait": 1100 },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "@prob" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-member-list:not([hidden]) .agent-suggest-row[data-mention='@problems']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "key": "Escape" }
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".dock-body > :not([hidden]) .agent-input", "text": "" }
+    },
+
+    // ---- A model's logo as a face is flat: nothing behind it ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-face.is-model > .ai-mark", "limit": 3 },
+      "expect": { "$contains": "\"background\":\"rgba(0, 0, 0, 0)\"" },
+      "print": true
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+// D291 (D236, D238 before): a plain chat panel. Right-clicking the Chats view's New chat opens it
+// to the side, in a new tab or with an agent (each with its face; no channels); an agent's direct
+// messages open as a plain chat in the chat panel, with that agent answering; the chat's header
+// has no ▾ (the composer picks who answers) and no "#channel ›" link. D272: the team is two agents.
+{
+  "name": "agent-m7-14",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "state": "ide://agent/chatModes",
+      "expect": { "$contains": "custom:chat" },
+      "timeoutMs": 10000
+    },
+
+    // ---- Right-click New chat: to the side, a new tab, or a chat with an agent (Gabby) ----
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "nav.ch-body[aria-label='Chats']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // The title bar keeps only ⋯.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view-actions .view-action-dropdown" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".ch-action[data-command='agent.newSession']", "right": true }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 12, "html": 3000 },
+      "expect": { "$contains": "Open to the side" },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-icon > .agent-face", "limit": 10 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu button.menu-item", "limit": 12, "html": 3000 },
+      "expect": { "$not": { "$contains": "#general" } }
+    },
+    { "run": "dev.click", "input": { "selector": ".menu button.menu-item:nth-of-type(5)" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:chat" },
+      "timeoutMs": 5000
+    },
+
+    // ---- Gabby's direct messages: a plain chat in the chat panel ----
+    { "run": "agent.openChannel", "input": { "channel": "chat" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "chatMode": "custom:chat" },
+      "save": "dm",
+      "timeoutMs": 5000
+    },
+    // Not the channel tab (that view sets data-room).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-room='dm:chat']" },
+      "expect": { "$length": 0 }
+    },
+    // No ▾ and no channel link in its header.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-header-dropdown:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-room-link:not([hidden])" },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- Said something: it's in the Chats list under Today, with Gabby's face ----
+    {
+      "run": "agent.send",
+      "input": { "session": "${dm.id}", "message": "say hi", "wait": true },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${dm.id}'] .agent-face" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    // Under this folder's name.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-folder[data-folder='here'] .ch-recent[data-session='${dm.id}']" },
+      "expect": { "$length": 1 }
+    },
+    // The chat on screen is the selected row.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-current[data-session='${dm.id}']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    // The search field on top narrows the list.
+    { "run": "dev.type", "input": { "selector": ".ch-search", "text": "nothing like this" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent[data-session='${dm.id}']" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } }
+  ]
+}

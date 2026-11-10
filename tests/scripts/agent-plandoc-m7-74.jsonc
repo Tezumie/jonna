@@ -1,0 +1,107 @@
+// D330: Plan mode's plan as a document. The Plan turn's answer is saved as a Markdown file and
+// shown as a card (folded; Build, Open to edit, Keep planning); opened, the card shows the plan as
+// it is in the file. The user edits the file in an editor tab and saves: the card says edited,
+// and Build sends the edited plan. Against tests/fixtures/mock-ollama.mjs (pkgHScripted).
+{
+  "name": "agent-plandoc-m7-74",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "chat"
+    },
+    { "run": "agent.setChatMode", "input": { "mode": "plan" }, "expect": { "mode": "plan" } },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkgh plan doc: plan a readme" },
+      "expect": { "answer": { "$contains": "Pkgh plan" } },
+      "timeoutMs": 20000
+    },
+    // Saved as a file next to the user's settings.
+    {
+      "state": "ide://agent/planDoc",
+      "expect": {
+        "session": "${chat.session}",
+        "exists": true,
+        "edited": false,
+        "title": "Pkgh plan",
+        "steps": 2,
+        "path": { "$contains": "plans" }
+      },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    // The card in place of the notice: folded, with its three buttons.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plandoc", "limit": 2, "html": 1500 },
+      "expect": [{ "html": { "$contains": "Pkgh plan" } }],
+      "timeoutMs": 5000,
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-column .agent-plandoc .agent-turn-actions button",
+        "limit": 5
+      },
+      "expect": { "$length": 3 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plandoc-body", "limit": 1 },
+      "expect": { "$length": 0 }
+    },
+    // Opened: the plan as it is in the file.
+    { "run": "dev.click", "input": { "selector": ".agent-column .agent-plandoc-head" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plandoc-body", "limit": 1, "html": 1500 },
+      "expect": [{ "html": { "$contains": "Write the readme" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Open to edit: the file in an editor tab; the user's line goes in and it's saved.
+    { "run": "agent.openPlan", "input": {}, "expect": { "path": { "$contains": "plans" } } },
+    { "wait": 500 },
+    { "run": "editor.insertText", "input": { "text": "pkgh-user-edit: keep it short\n\n" } },
+    { "run": "editor.save" },
+    {
+      "state": "ide://agent/planDoc",
+      "expect": { "edited": true, "title": "Pkgh plan" },
+      "timeoutMs": 5000,
+      "print": true
+    },
+    { "run": "agent.openSession", "input": { "session": "${chat.session}" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-plandoc-meta", "limit": 1, "html": 200 },
+      "expect": [{ "html": { "$contains": "edited" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Build: the edited plan is what the agent gets.
+    { "run": "dev.click", "input": { "selector": ".agent-column .agent-plandoc .button-primary" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": "${chat.session}",
+        "status": "idle",
+        "items": { "$contains": "PkgH built the edited plan." }
+      },
+      "timeoutMs": 20000,
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

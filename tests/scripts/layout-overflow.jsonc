@@ -1,0 +1,9 @@
+// M1.6 A1 regression: 80 tabs in one group, window 640×480 and back; the document never gets
+// larger than the window and the close button stays on screen. Needs a dev build.
+{
+  "name": "layout overflow",
+  "steps": [
+    { "run": "dev.checkLayoutOverflow", "input": { "tabs": 80 }, "expect": { "ok": true } },
+    { "state": "ide://layout", "expect": { "groups": { "$exists": true } } }
+  ]
+}

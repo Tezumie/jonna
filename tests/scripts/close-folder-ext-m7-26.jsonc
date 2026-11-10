@@ -1,0 +1,39 @@
+// D270: closing the folder keeps a running VS Code extension running: its Node host was stopped
+// with the folder's language servers, and the extension failed ("Node ended"). Needs Node.
+{
+  "name": "close-folder-ext-m7-26",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "${ws.root}/../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.linked" },
+      "expect": { "result": "" },
+      "timeoutMs": 60000
+    },
+    { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    { "state": "ide://workspace", "expect": { "root": null }, "timeoutMs": 5000 },
+    { "wait": 2000 },
+    {
+      "state": "ide://extensions",
+      "expect": { "$not": { "$contains": "Node ended" } }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.linked" },
+      "expect": { "result": "" },
+      "timeoutMs": 30000
+    }
+  ]
+}

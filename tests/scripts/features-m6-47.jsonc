@@ -1,0 +1,111 @@
+// D148: Source control's Graph like VS Code's — refs as badges, a hover card per commit, the
+// branch filter, go to current, show more; Publish to GitHub from a folder without a repository
+// (offline: the GitHub CLI is tests/fixtures/fake-gh); the primary button syncs when there's
+// nothing to commit.
+{
+  "name": "features-m6-47",
+  "fakeGh": true,
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.showView" },
+    // No repository: initialize, or publish.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-empty", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Publish to GitHub" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "git.publish",
+      "expect": {
+        "published": true,
+        "name": "sample",
+        "visibility": "private",
+        "url": "https://github.com/tester/sample"
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "upstream": { "$contains": "origin/" }, "ahead": 0 } },
+      "timeoutMs": 10000
+    },
+
+    // The Graph: its name, the current branch and its remote twin as badges.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-section-id='scm.graph'] .view-section-title", "html": 200 },
+      "expect": { "$contains": "Graph" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-commit] .scm-ref.is-head .scm-ref-name" },
+      "expect": [{ "tag": "span" }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-row[data-commit] .scm-ref.is-remote.is-compact" },
+      "expect": [{ "tag": "span" }]
+    },
+    // The hover card: message, line counts, refs, hash.
+    { "run": "dev.click", "input": { "selector": ".scm-row[data-commit]", "hover": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hover-card:not([hidden])", "html": 6000 },
+      "expect": [
+        {
+          "html": {
+            "$contains": "Initial commit"
+          }
+        }
+      ],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hover-card .scm-card-stats", "html": 600 },
+      "expect": [{ "html": { "$contains": "insertions(+)" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".hover-card .scm-card-refs .scm-ref.is-remote .scm-ref-name" },
+      "expect": [{ "tag": "span" }]
+    },
+
+    // A commit not pushed yet: the primary button offers to sync it.
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo more > more.txt", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "state": "ide://git/status",
+      "expect": { "changes": [{ "path": "more.txt" }] },
+      "timeoutMs": 10000
+    },
+    { "run": "git.stage", "input": {} },
+    { "run": "git.commit", "input": { "message": "Second change" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-commit", "html": 600 },
+      "expect": [{ "html": { "$contains": "Sync changes" } }],
+      "timeoutMs": 10000
+    },
+    { "run": "git.revealHeadInGraph", "expect": { "revealed": true }, "timeoutMs": 5000 },
+    { "run": "git.graphShowMore", "expect": { "commits": 100 } },
+    { "run": "git.sync", "timeoutMs": 30000 },
+    {
+      "state": "ide://git/status",
+      "expect": { "branch": { "ahead": 0 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".scm-commit", "html": 600 },
+      "expect": [{ "html": { "$contains": "Commit" } }],
+      "timeoutMs": 10000
+    }
+  ]
+}

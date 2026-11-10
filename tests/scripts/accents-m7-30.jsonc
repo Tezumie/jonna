@@ -1,0 +1,55 @@
+// D276: a second accent. Claude Dark's is Claude's blue (#2c84db): a focused tree's selection, resize
+// handles and drop targets use it, while buttons keep the clay accent; other themes use their
+// accent for both. An accent button's hover is a shade of its own accent.
+{
+  "name": "accents-m7-30",
+  "steps": [
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Claude Dark" } },
+    { "wait": 800 },
+    { "run": "explorer.reveal", "input": { "path": "README.md" } },
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".tree-row.is-selected" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".tree-row.is-selected", "html": 10 },
+      "expect": [{ "background": { "$contains": "0.172549 0.517647 0.858824" } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Info notes (the agent page's Customize card) take the second accent too.
+    { "run": "settings.open", "input": { "category": "agent" } },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-link-row", "limit": 1, "html": 10 },
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // A primary button keeps the clay accent; its hover is a clay shade, not the built-in blue.
+    { "run": "settings.open", "input": { "query": "@modified" } },
+    { "wait": 500 },
+    { "run": "dev.click", "input": { "selector": ".settings-page-tools > .icon-button" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dialog .button-danger, .dialog .button-primary", "html": 10 },
+      "print": true,
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".dialog", "key": "Escape" } },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+
+    // Dark+: the second accent is the accent.
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Dark+" } },
+    { "wait": 800 },
+    { "run": "explorer.reveal", "input": { "path": "README.md" } },
+    { "run": "dev.click", "input": { "selector": ".tree-row.is-selected" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".tree-row.is-selected", "html": 10 },
+      "expect": [{ "background": { "$not": { "$contains": "0.172549 0.517647" } } }],
+      "print": true
+    }
+  ]
+}

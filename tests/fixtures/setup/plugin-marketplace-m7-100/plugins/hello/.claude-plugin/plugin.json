@@ -1,0 +1,6 @@
+{
+  "name": "pkgs-hello",
+  "description": "Greets: a command, a skill, a subagent, a hook and an MCP server",
+  "version": "1.0.0",
+  "author": { "name": "Test" }
+}

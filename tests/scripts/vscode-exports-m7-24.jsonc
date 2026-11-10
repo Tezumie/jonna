@@ -1,0 +1,55 @@
+// D265: one VS Code extension uses another's API (`extensions.getExtension(id).exports`) across
+// their Node processes: the provider (tests/fixtures/extensions/vscodeapi, no activation event of
+// its own) is started by `activate()`; data is copied, functions return promises, a listener is
+// called back until its Disposable is disposed, an object a call returns keeps its methods.
+{
+  "name": "vscode-exports-m7-24",
+  "requires": ["node"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodeapi" },
+      "expect": { "id": "acme.vscode-api" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-api", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/vscodehello" },
+      "expect": { "id": "acme.vscode-hello" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.vscode-hello", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "run": "extensions.try",
+      "input": { "id": "acme.vscode-hello", "command": "vscodeHello.otherApi" },
+      "expect": {
+        "result": {
+          "found": true,
+          "id": "acme.vscode-api",
+          "displayName": "VS Code API provider",
+          "listed": true,
+          "wasActive": false,
+          "isActive": true,
+          "same": true,
+          "version": "2.0",
+          "home": { "$contains": "vscodeapi" },
+          "sum": 5,
+          "greeting": "Hello, from the API",
+          "counter": [11, 12],
+          "events": [1, 2],
+          "missing": true
+        }
+      },
+      "print": true,
+      "timeoutMs": 60000
+    }
+  ]
+}

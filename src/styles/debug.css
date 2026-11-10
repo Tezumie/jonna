@@ -1,0 +1,736 @@
+/* Run and debug (D143): the sidebar view, the debug console, and the editor's breakpoint margin
+ * and stopped line; bookmarks' margin mark. Tokens only. */
+@layer extensions {
+  /* ---- Editor: breakpoints and the stopped line ---- */
+  .monaco-editor .debug-bp,
+  .monaco-editor .debug-bp-hint {
+    cursor: pointer;
+  }
+  .monaco-editor .debug-bp::before,
+  .monaco-editor .debug-bp-hint::before {
+    content: "";
+    display: block;
+    width: 9px;
+    height: 9px;
+    margin: 5px auto 0;
+    border-radius: var(--radius-full);
+    background: var(--status-danger-fg);
+  }
+  .monaco-editor .debug-bp-hint::before {
+    opacity: 0.4;
+  }
+  .monaco-editor .debug-bp.is-unverified::before,
+  .monaco-editor .debug-bp.is-disabled::before {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--fg-subtle);
+  }
+  .monaco-editor .debug-bp.is-unverified::before {
+    box-shadow: inset 0 0 0 1.5px var(--status-danger-fg);
+  }
+  /* A triggered breakpoint waiting for its trigger: a dashed ring (D279), as in the Breakpoints
+     view. */
+  .monaco-editor .debug-bp.is-pending::before {
+    background: transparent;
+    border: 1.5px dashed var(--status-danger-fg);
+  }
+  .monaco-editor .debug-bp.is-pending::after {
+    content: none;
+  }
+  /* A condition: a bar across the dot, as in VS Code. */
+  .monaco-editor .debug-bp.is-conditional::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 9px;
+    width: 5px;
+    height: 1.5px;
+    transform: translateX(-50%);
+    background: var(--bg-surface);
+  }
+  /* A logpoint: a diamond. */
+  .monaco-editor .debug-bp.is-log::before {
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 1px;
+    transform: rotate(45deg);
+  }
+  .monaco-editor .debug-current-line {
+    background: color-mix(in srgb, var(--status-warning-fg) 16%, transparent);
+  }
+  .monaco-editor .margin-view-overlays .debug-current-line {
+    background: none;
+  }
+  .monaco-editor .debug-current-arrow::before {
+    content: "";
+    display: block;
+    width: 0;
+    height: 0;
+    margin: 4px 0 0 4px;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid var(--status-warning-fg);
+  }
+
+  /* The exception widget (D204): a zone under the line stopped at on an exception. */
+  .debug-exception-widget {
+    box-sizing: border-box;
+    margin: var(--space-1) 0;
+    padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--status-danger-border);
+    border-bottom: 1px solid var(--status-danger-border);
+    background: var(--status-danger-bg);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .debug-exception-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+    color: var(--status-danger-fg);
+  }
+  .debug-exception-close {
+    margin-left: auto;
+  }
+  .debug-exception-message {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .debug-exception-stack {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Bookmarks (extensions/bookmarks): a ribbon in the margin's right lane. */
+  .monaco-editor .bookmark-glyph::before {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 11px;
+    margin: 4px auto 0;
+    background: var(--accent-text);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+  }
+  .monaco-editor .bookmark-glyph.is-labeled::before {
+    background: var(--accent);
+  }
+
+  /* ---- Floating debug toolbar (debug.toolBarLocation) ---- */
+  .debug-float {
+    position: fixed;
+    top: calc(var(--size-titlebar) + var(--space-2));
+    z-index: var(--z-overlay);
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-1);
+  }
+  .debug-float[hidden] {
+    display: none;
+  }
+  .debug-float-grip {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 24px;
+    color: var(--fg-subtle);
+    cursor: grab;
+    touch-action: none;
+  }
+  .debug-float-grip:active {
+    cursor: grabbing;
+  }
+
+  /* ---- Sidebar view ---- */
+  /* The sections shrink to fit the view, each list scrolling inside; when even that doesn't fit
+     (a short window), the view scrolls, so Breakpoints is never cut off (D280). */
+  .debug-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .debug-top {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-4);
+  }
+  .debug-start-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .debug-start {
+    justify-content: center;
+    gap: var(--space-2);
+  }
+  .debug-config-row {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+  }
+  .debug-config {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-input);
+  }
+  .debug-toolbar {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+  }
+  .debug-session-select {
+    max-width: 160px;
+    height: 24px;
+    margin-right: var(--space-1);
+    background: var(--bg-input);
+    font-size: var(--text-xs);
+  }
+  .debug-session-select[hidden] {
+    display: none;
+  }
+  .debug-tool.is-continue {
+    color: var(--status-success-fg);
+  }
+  .debug-tool.is-stop {
+    color: var(--status-danger-fg);
+  }
+  /* A long exception's text ("Paused on exception: …" and its stack) scrolls past four lines. */
+  .debug-status {
+    max-height: calc(var(--text-sm-lh) * 4);
+    overflow-y: auto;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    overflow-wrap: anywhere;
+  }
+  .debug-section {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    /* Its title and a row stay when the sections share a short view. */
+    min-height: 48px;
+    overflow: hidden;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .debug-section[hidden] {
+    display: none;
+  }
+  .debug-section > .debug-section-title {
+    flex: none;
+  }
+  /* Variables takes the room; the call stack and breakpoints scroll past a third each. */
+  .debug-section:has(.debug-vars:not(.debug-watch)) {
+    flex: 1 1 auto;
+    min-height: 96px;
+  }
+  .debug-vars.debug-watch {
+    flex: none;
+    max-height: 25vh;
+  }
+  .debug-empty {
+    padding: 2px var(--space-4) var(--space-2);
+    color: var(--fg-subtle);
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+  }
+  .debug-empty[hidden] {
+    display: none;
+  }
+  .debug-stack,
+  .debug-breakpoints {
+    max-height: 33vh;
+    min-height: 0;
+    overflow: auto;
+  }
+  .debug-vars {
+    min-height: 0;
+    overflow: auto;
+  }
+  /* No session: the breakpoints have the whole view. */
+  .debug-view:has(.debug-section[hidden]) .debug-section:last-child {
+    flex: 1 1 auto;
+  }
+  .debug-view:has(.debug-section[hidden]) .debug-breakpoints {
+    max-height: none;
+  }
+  .debug-section-title {
+    display: flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 var(--space-2) 0 var(--space-4);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .debug-section-title > span:first-child {
+    flex: 1;
+  }
+  .debug-section-actions {
+    display: inline-flex;
+    gap: 1px;
+  }
+  .debug-section-actions .icon-button {
+    width: 22px;
+    height: 22px;
+  }
+  .debug-vars {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .debug-vars .tree-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-3));
+  }
+  .debug-scope {
+    font-family: var(--font-ui);
+    color: var(--fg-muted);
+  }
+  .debug-var-name {
+    color: var(--accent-text);
+    flex: none;
+  }
+  .debug-var-sep {
+    color: var(--fg-subtle);
+    flex: none;
+    white-space: pre;
+  }
+  .debug-var-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .debug-var-value.is-string {
+    color: var(--status-warning-fg);
+  }
+  .debug-var-value.is-number,
+  .debug-var-value.is-boolean {
+    color: var(--status-success-fg);
+  }
+  .debug-list {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: var(--space-2);
+  }
+  .debug-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 22px;
+    padding: 0 var(--space-2) 0 var(--space-4);
+    border: 0;
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .debug-row:hover {
+    background: var(--bg-hover);
+  }
+  .debug-row.is-selected {
+    background: var(--bg-selected);
+  }
+  .debug-row.is-internal,
+  .debug-row.is-unverified {
+    color: var(--fg-muted);
+  }
+  .debug-row-main {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .debug-row-detail {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .debug-row-action {
+    width: 20px;
+    height: 20px;
+    visibility: hidden;
+  }
+  .debug-row:hover .debug-row-action {
+    visibility: visible;
+  }
+  .debug-check {
+    margin: 0;
+    flex: none;
+    accent-color: var(--accent);
+  }
+  .debug-bp-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--status-danger-fg);
+  }
+  .debug-bp-dot.is-log {
+    border-radius: 1px;
+    transform: rotate(45deg) scale(0.85);
+  }
+  .debug-row.is-unverified .debug-bp-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--status-danger-fg);
+  }
+  /* A triggered breakpoint waiting for its trigger: a dashed ring (VS Code's pending icon). */
+  .debug-row.is-pending .debug-bp-dot {
+    background: transparent;
+    border: 1.5px dashed var(--status-danger-fg);
+  }
+  /* Function breakpoints: a triangle; data breakpoints: a hexagon-ish square (VS Code's shapes). */
+  .debug-bp-dot.is-function {
+    border-radius: 0;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+  .debug-bp-dot.is-data {
+    border-radius: 2px;
+  }
+
+  /* ---- Call stack: sessions and threads (D204) ---- */
+  .debug-stack .debug-row {
+    padding-left: calc(var(--depth, 0) * 12px + var(--space-4));
+  }
+  .debug-session-row,
+  .debug-thread-row {
+    color: var(--fg-default);
+  }
+  .debug-session-row > .icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+  }
+  .debug-session-row.is-focused,
+  .debug-thread-row.is-focused {
+    font-weight: 600;
+  }
+  .debug-session-row:focus-visible,
+  .debug-thread-row:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  /* ---- Loaded scripts (D204) ---- */
+  .debug-section-toggle {
+    width: 100%;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .debug-section-toggle:hover {
+    color: var(--fg-default);
+  }
+  .debug-section-chevron {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-left: calc(-1 * var(--space-3));
+    margin-right: var(--space-1);
+    transition: transform var(--motion-fast) var(--ease-standard);
+  }
+  /* In a collapsible section's title the label grows, not the chevron before it (the title's
+     first span is the chevron here; it took the width and pushed the label to the right). */
+  .debug-section-title.debug-section-toggle > .debug-section-chevron {
+    flex: 0 0 auto;
+  }
+  .debug-section-title.debug-section-toggle > .debug-section-chevron + span {
+    flex: 1;
+  }
+  .debug-section-chevron.is-open {
+    transform: rotate(90deg);
+  }
+  .debug-loaded-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-height: 0;
+  }
+  .debug-loaded-body[hidden] {
+    display: none;
+  }
+  .debug-loaded-filter {
+    margin: 0 var(--space-4);
+    background: var(--bg-input);
+  }
+  .debug-loaded {
+    flex: 1 1 auto;
+    max-height: 25vh;
+    min-height: 0;
+    overflow: auto;
+  }
+  .debug-loaded .debug-row:disabled {
+    cursor: default;
+  }
+
+  /* ---- Debug console ---- */
+  /* The same rows, prompt and type as the browser DevTools console (browser.css "Console"). */
+  .debug-console {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    font: var(--text-sm) / 1.45 var(--font-mono);
+  }
+  .debug-console-log {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    user-select: text;
+  }
+  /* The session picker above the lines (D209), shown with two consoles or more. */
+  .debug-console-bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    padding: var(--space-1) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    font-family: var(--font-ui);
+  }
+  .debug-console-bar[hidden] {
+    display: none;
+  }
+  .debug-console-session {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    height: 22px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    font: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .debug-console-session:hover {
+    border-color: var(--border-default);
+  }
+  .debug-console-session > .icon {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    color: var(--fg-muted);
+  }
+  .debug-console-session-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .debug-console-prompt {
+    display: flex;
+    align-items: flex-start;
+    flex: none;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .debug-console-prompt > .icon {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    margin-top: 5px;
+    color: var(--accent-text);
+  }
+  .debug-console-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 22px;
+    padding: 2px 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    color: var(--fg-default);
+    font: inherit;
+  }
+  .debug-console-line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: 3px var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--fg-default);
+  }
+  .debug-console-line > .icon,
+  .debug-console-dot {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    margin-top: 2px;
+    color: var(--fg-subtle);
+  }
+  .debug-console-text {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .debug-console-line.is-info {
+    color: var(--fg-muted);
+  }
+  .debug-console-line.is-info > .icon {
+    color: var(--status-info-fg);
+  }
+  .debug-console-line.is-input {
+    color: var(--fg-muted);
+  }
+  .debug-console-line.is-error,
+  .debug-console-line.is-stderr {
+    background: var(--status-danger-bg);
+  }
+  .debug-console-line.is-error > .icon,
+  .debug-console-line.is-stderr > .icon {
+    color: var(--status-danger-fg);
+  }
+  .debug-console-toggle {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .debug-console-caret {
+    display: inline-block;
+    width: 14px;
+    color: var(--fg-subtle);
+    transition: transform var(--motion-fast);
+  }
+  .debug-console-toggle[aria-expanded="true"] .debug-console-caret {
+    transform: rotate(90deg);
+  }
+  .debug-console-children {
+    padding-left: 14px;
+  }
+  .debug-console-leaf {
+    padding-left: 14px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .debug-console-leaf.is-info {
+    color: var(--fg-subtle);
+  }
+  .debug-var-value.is-error {
+    color: var(--status-danger-fg);
+  }
+  .debug-var-value.is-unavailable {
+    color: var(--fg-subtle);
+    font-style: italic;
+  }
+  /* ---- The disassembly view (D229) ---- */
+  .disasm {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-width: 0;
+    background: var(--bg-surface);
+    outline: none;
+  }
+  .disasm-note {
+    padding: var(--space-3) var(--space-4);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .disasm-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    font: var(--text-sm) / var(--text-sm-lh) var(--font-mono);
+  }
+  .disasm-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding-right: var(--space-3);
+    white-space: pre;
+  }
+  .disasm-row:hover {
+    background: var(--bg-hover);
+  }
+  .disasm-row.is-current {
+    background: color-mix(in srgb, var(--status-warning-fg) 16%, transparent);
+  }
+  .disasm-bp {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: var(--text-sm-lh);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .disasm-bp-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+  }
+  .disasm-bp:hover .disasm-bp-dot {
+    background: color-mix(in srgb, var(--status-danger-fg) 45%, transparent);
+  }
+  .disasm-bp.is-on .disasm-bp-dot {
+    background: var(--status-danger-fg);
+  }
+  .disasm-bp.is-disabled .disasm-bp-dot,
+  .disasm-bp.is-unverified .disasm-bp-dot {
+    background: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--status-danger-fg);
+  }
+  .disasm-address {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .disasm-bytes {
+    flex: none;
+    min-width: 16ch;
+    color: var(--fg-subtle);
+  }
+  .disasm-instruction {
+    flex: none;
+    color: var(--fg-default);
+  }
+  .disasm-where {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg-subtle);
+  }
+}

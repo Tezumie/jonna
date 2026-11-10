@@ -1,0 +1,161 @@
+// D284: an installed extension with a newer version on Open VSX shows VS Code's Update button on
+// its row, "Update to x.y.z" first on its page and in its gear menu; Update installs it. Against
+// the live Open VSX (needs the network): Dracula 2.24.1, then the update to the latest.
+{
+  "name": "ext-update-m7-34",
+  "testTimeout": 240000,
+  "steps": [
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 800 } },
+    { "run": "settings.set", "input": { "key": "extensions.updateDelayHours", "value": 0 } },
+    {
+      "run": "extensions.installFromStore",
+      "input": { "id": "dracula-theme.theme-dracula", "version": "2.24.1" },
+      "expect": { "version": "2.24.1" }
+    },
+    {
+      "run": "extensions.setAutoUpdate",
+      "input": { "id": "dracula-theme.theme-dracula", "on": false }
+    },
+    {
+      "run": "extensions.checkStoreUpdates",
+      "expect": {
+        "updates": {
+          "$contains": "\"id\":\"dracula-theme.theme-dracula\",\"installed\":\"2.24.1\""
+        }
+      },
+      "save": "check"
+    },
+    { "run": "extensions.show", "input": {} },
+    { "wait": 800 },
+    // The row in Updates has the Update button.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ext-section[data-section='updates'] ~ [data-ext='dracula-theme.theme-dracula'] [data-update], [data-ext='dracula-theme.theme-dracula'] [data-update]",
+        "limit": 2,
+        "html": 200
+      },
+      "expect": { "$not": { "$length": 0 } },
+      "print": true,
+      "timeoutMs": 5000
+    },
+    // The gear menu starts with Update to … (once the list stops redrawing: the update check's
+    // verified marks arrive meanwhile).
+    { "wait": 1500 },
+    {
+      "run": "dev.click",
+      "input": { "selector": "[data-ext='dracula-theme.theme-dracula'] .ext-gear" }
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item", "limit": 1, "html": 800 },
+      "expect": [{ "html": { "$contains": "Update to " } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ext-page-header, .titlebar" } },
+    // Its page: Update to … first among the buttons.
+    {
+      "run": "extensions.showDetails",
+      "input": { "id": "dracula-theme.theme-dracula" }
+    },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-actions > .button", "limit": 1, "html": 200 },
+      "expect": [{ "html": { "$contains": "Update to " } }],
+      "print": true
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    // Update from the row: the newer version is installed and the button goes.
+    { "run": "extensions.show", "input": {} },
+    { "wait": 500 },
+    {
+      "run": "dev.click",
+      "input": { "selector": "[data-ext='dracula-theme.theme-dracula'] [data-update]" }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "$contains": "\"id\":\"dracula-theme.theme-dracula\"" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-ext='dracula-theme.theme-dracula'] [data-update]" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-ext='dracula-theme.theme-dracula'] .ext-version", "limit": 1 },
+      "expect": { "$not": { "$contains": "2.24.1" } },
+      "print": true,
+      "timeoutMs": 10000
+    },
+    // Its page: Open VSX's verified mark, downloads and stars; the publisher searches for its
+    // extensions (VS Code's publisher:"…").
+    { "run": "extensions.showDetails", "input": { "id": "dracula-theme.theme-dracula" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ext-page-meta .ext-publisher-link .ext-store-verified, .ext-page-meta .ext-store-stars, .ext-page-meta .ext-store-stat"
+      },
+      "expect": { "$length": 3 },
+      "timeoutMs": 20000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".ext-page-meta .ext-publisher-link" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-store-row[data-store-ext='dracula-theme.theme-dracula']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 30000
+    },
+    // Search syntax: Microsoft's namespaces, and installed-only filters ask Open VSX nothing.
+    { "run": "extensions.show", "input": { "query": "publisher:\"Microsoft\" python" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ext-store-row[data-store-ext='ms-python.python'] .ext-store-verified"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 30000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "extensions.show", "input": { "query": "@builtin" } },
+    { "wait": 800 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-row[data-ext='dracula-theme.theme-dracula']" },
+      "expect": { "$length": 0 }
+    },
+    // The filter button and Install ▾.
+    { "run": "extensions.show", "input": { "query": "prettier" } },
+    { "run": "dev.click", "input": { "selector": ".ext-filter-button" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Most popular" } }]
+    },
+    { "run": "dev.click", "input": { "selector": ".titlebar" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-store-row .ext-split .ext-split-more", "limit": 1 },
+      "expect": { "$length": 1 },
+      "timeoutMs": 30000
+    },
+    { "run": "dev.click", "input": { "selector": ".ext-store-row .ext-split .ext-split-more" } },
+    { "wait": 300 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 2000 },
+      "expect": [{ "html": { "$contains": "Install specific version" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "dev.click", "input": { "selector": ".titlebar" } },
+    { "run": "extensions.show", "input": { "query": "" } },
+    { "run": "extensions.uninstall", "input": { "id": "dracula-theme.theme-dracula" } }
+  ]
+}

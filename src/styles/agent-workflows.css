@@ -1,0 +1,169 @@
+/* A chat's workflow runs (D338): a card under the latest message, the plan card's shape. Quiet:
+   hairline border, muted meta; the only status color is a failed run's error line. */
+@layer extensions {
+  .agent-workflows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+  }
+  .agent-workflow {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-md);
+    min-width: 0;
+  }
+  .agent-workflow-top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .agent-workflow-head {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-1) 0;
+    color: var(--fg-default);
+    text-align: left;
+  }
+  .agent-workflow-head > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-muted);
+  }
+  .agent-workflow-title {
+    flex: none;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .agent-workflow-meta {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-workflow-stop {
+    flex: none;
+  }
+  .agent-workflow-desc {
+    margin: var(--space-1) 0 var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .agent-workflow-phases {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .agent-workflow-phase-title {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-1);
+  }
+  .agent-workflow-agents {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .agent-workflow-agent {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 22px;
+    min-width: 0;
+  }
+  .agent-workflow-agent > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-muted);
+  }
+  .agent-workflow-mark {
+    flex: none;
+    box-sizing: border-box;
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-full);
+  }
+  .agent-workflow-mark.is-running {
+    border: 1.5px solid var(--border-strong);
+    border-top-color: var(--fg-default);
+    animation: agent-spin 0.8s linear infinite;
+  }
+  .agent-workflow-mark.is-waiting {
+    border: 1.5px dashed var(--fg-subtle);
+  }
+  .agent-workflow-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-workflow-agent:is(.is-done, .is-cached, .is-stopped) .agent-workflow-label {
+    color: var(--fg-muted);
+  }
+  .agent-workflow-state {
+    flex: none;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  /* D351: an editing agent's worktree, under its row. */
+  .agent-workflow-worktree {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+    padding-left: var(--space-5);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .agent-workflow-worktree > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-workflow-branch {
+    flex: 1 1 8em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+  .agent-workflow-log {
+    margin-top: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .agent-workflow-log.is-error {
+    color: var(--status-danger-fg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-workflow-mark.is-running {
+      animation: none;
+      border-right-color: var(--border-subtle);
+    }
+  }
+}

@@ -1,0 +1,219 @@
+// D200: the agent chat. Rules (a subfolder's AGENTS.md and an applyTo rule attached on the first
+// read of a file they cover, listed in the prompt, ide://agent/rules), custom slash commands
+// ($1, an approved shell line, a refused one, @file, argument-hint), /init, Restore checkpoint
+// (chat and files), retry that undoes the turn's files, the @git mention and the Restore button.
+// Against tests/fixtures/mock-ollama.mjs.
+{
+  "name": "agent-m7-1",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    // Rules files: a subfolder's AGENTS.md and a Copilot instructions file for Markdown files.
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": "sub" } },
+    { "run": "explorer.newFile", "input": { "parent": "sub", "name": "AGENTS.md" } },
+    { "run": "editor.insertText", "input": { "text": "Folder rule: sub-rule-marker" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFile", "input": { "parent": "sub", "name": "notes.md" } },
+    { "run": "editor.insertText", "input": { "text": "Some notes" } },
+    { "run": "editor.save" },
+    { "run": "explorer.newFolder", "input": { "parent": ".", "name": ".github" } },
+    { "run": "explorer.newFolder", "input": { "parent": ".github", "name": "instructions" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".github/instructions", "name": "notes.instructions.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "---\napplyTo: \"sub/**/*.md\"\n---\nglob-rule-marker" }
+    },
+    { "run": "editor.save" },
+    // The index finds the nested AGENTS.md (it may take a moment after the file was made).
+    {
+      "state": "ide://agent/rules",
+      "expect": {
+        "rules": {
+          "$contains": "\"path\":\"sub/AGENTS.md\",\"source\":\"agents\",\"activation\":\"folder\""
+        }
+      },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "agent.listRules",
+      "input": { "pick": false },
+      "expect": {
+        "rules": { "$contains": "\"path\":\".github/instructions/notes.instructions.md\"" }
+      }
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    // The first read of sub/notes.md carries both rules; the prompt lists the folder rule.
+    {
+      "run": "agent.send",
+      "input": { "message": "read the sub file" },
+      "expect": { "answer": "Sub rules: folder/glob/listed" }
+    },
+    // Each rule comes once per chat.
+    {
+      "run": "agent.send",
+      "input": { "message": "read the sub file" },
+      "expect": { "answer": "Sub rules: -/-/listed" }
+    },
+    { "state": "ide://agent/rules", "expect": { "rules": { "$contains": "attachedInTurn" } } },
+    // A custom command: front matter, $1, a shell line and an @file.
+    { "run": "explorer.newFolder", "input": { "parent": ".vscode", "name": "commands" } },
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode/commands", "name": "shellcmd.md" }
+    },
+    {
+      "run": "editor.insertText",
+      "input": {
+        "text": "---\ndescription: Shell test\nargument-hint: [topic]\nallowed-tools: Bash(echo shellout)\n---\nThe topic is $1.\n!`echo shellout`\nSee @sub/notes.md"
+      }
+    },
+    { "run": "editor.save" },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": {
+        "commands": {
+          // The file's path comes between source and argumentHint since D205.
+          "$contains": "\"name\":\"shellcmd\",\"description\":\"Shell test\",\"source\":\".vscode/commands\""
+        }
+      }
+    },
+    {
+      "run": "agent.slash",
+      "input": { "pick": false },
+      "expect": { "commands": { "$contains": "\"name\":\"init\"" } }
+    },
+    // A project's command can't approve its own shell lines (allowed-tools counts only in the
+    // user's own commands, D200 review): it asks; allowed once, its output goes in.
+    { "run": "agent.send", "input": { "message": "/shellcmd testing" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "for /shellcmd" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "once" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "Shellcmd: testing/shell/file" } },
+      "timeoutMs": 20000
+    },
+    // A shell line that isn't pre-approved asks in the chat; "deny" sends without its output.
+    {
+      "run": "explorer.newFile",
+      "input": { "parent": ".vscode/commands", "name": "askcmd.md" }
+    },
+    { "run": "editor.insertText", "input": { "text": "Output: !`echo asked-output`" } },
+    { "run": "editor.save" },
+    { "run": "agent.send", "input": { "message": "/askcmd" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "permissions": [{ "title": { "$contains": "for /askcmd" } }] },
+      "timeoutMs": 15000
+    },
+    { "run": "agent.respondPermission", "input": { "answer": "deny" } },
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "idle", "items": { "$contains": "not run: the user said no" } },
+      "timeoutMs": 15000
+    },
+    // Restore checkpoint: the file the turn wrote goes, and so does the message (back in the box).
+    {
+      "run": "agent.send",
+      "input": { "message": "make the hunk file" },
+      "expect": { "pending": { "$length": 1 } }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "epsilon" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    // The Restore button is on the user's messages.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-user-wrap .agent-msg-actions [aria-label='Restore checkpoint']"
+      },
+      "expect": [{}],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "agent.restoreToMessage",
+      "expect": { "restored": { "$length": 1 }, "draft": "make the hunk file" }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "epsilon" },
+      "expect": { "matches": 0 },
+      "timeoutMs": 5000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "pending": { "$length": 0 },
+        "items": { "$not": { "$contains": "make the hunk file" } }
+      }
+    },
+    // Retry with "undo": the turn's file is put back first, then written again.
+    {
+      "run": "agent.send",
+      "input": { "message": "make the hunk file" },
+      "expect": { "pending": { "$length": 1 } }
+    },
+    { "run": "agent.retry", "input": { "files": "undo" }, "expect": { "error": null } },
+    { "state": "ide://agent/session", "expect": { "pending": { "$length": 1 } } },
+    {
+      "run": "search.run",
+      "input": { "query": "epsilon" },
+      "expect": { "matches": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.acceptAll" },
+    // /init writes AGENTS.md as a change under review.
+    {
+      "run": "agent.send",
+      "input": { "message": "/init" },
+      "expect": { "pending": [{ "$contains": "AGENTS.md" }] }
+    },
+    { "run": "agent.rejectAll", "expect": { "rejected": { "$length": 1 } } },
+    // @git: the uncommitted diff goes with the message.
+    { "run": "git.init", "expect": { "root": { "$exists": true } } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email t@example.com && git config user.name T && git config commit.gpgsign false",
+        "timeoutMs": 20000
+      }
+    },
+    { "run": "git.stage" },
+    { "run": "git.commit", "input": { "message": "first" } },
+    { "run": "agent.send", "input": { "message": "change the hunk file" } },
+    { "run": "agent.acceptAll" },
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@git" },
+      "expect": { "attachments": { "$contains": "@git" } }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "what changed" },
+      "expect": { "answer": "Git mention: has hunks" }
+    },
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@commit" },
+      "expectError": "needs its argument"
+    },
+    { "run": "agent.mention", "input": { "mention": "@nope" }, "expectError": "Unknown mention" }
+  ]
+}

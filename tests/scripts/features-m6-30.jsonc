@@ -1,0 +1,125 @@
+// D131: attachments in the agent chat, Outline actions, editor.select.
+{
+  "name": "features-m6-30",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "layout.focusAgent" },
+    // Upload from computer (debug: paths): text from outside the folder is read now, an image
+    // (even inside the folder) as an image, a project text file stays a path.
+    {
+      "run": "agent.attachFiles",
+      "input": { "paths": ["../extensions/hello/main.js", "assets/dot.png", "README.md"] },
+      "expect": { "files": 3 }
+    },
+    {
+      "run": "agent.mention",
+      "input": { "mention": "@problems" },
+      "expect": { "attachments": { "$length": 2 } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments .agent-card", "limit": 5, "html": 1500 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 4000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments .agent-card", "html": 1500 },
+      "expect": [{ "html": { "$contains": "main.js" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments .agent-chip", "limit": 5 },
+      "expect": { "$length": 1 }
+    },
+    { "run": "agent.attachFiles", "input": { "paths": ["assets"] }, "expect": { "files": 0 } },
+    // Sending: the cards go with the message (and the context to the model).
+    {
+      "run": "agent.send",
+      "input": { "message": "what are these?", "wait": true }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "$contains": "\"attachments\":[" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-sent-cards .agent-card", "limit": 5 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 4000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-attachments .agent-card" },
+      "expect": []
+    },
+
+    // Outline: sorting, expand / collapse, and selecting a range in the editor.
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "shapes.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "editor.insertText",
+      "input": { "text": "class Zed {\n  b() {}\n  a() {}\n}\nfunction alpha() {}\n" }
+    },
+    // Outline on the activity bar for these checks (it's an Explorer section by default, D199).
+    { "run": "view.setHidden", "input": { "id": "outline.view", "hidden": false } },
+    { "run": "outline.show" },
+    { "run": "outline.sort", "input": { "order": "name" }, "expect": { "order": "name" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-view='outline.view'] .outline-name", "limit": 4 },
+      "expect": [
+        { "html": { "$contains": ">alpha<" } },
+        { "html": { "$contains": ">Zed<" } },
+        { "html": { "$contains": ">a<" } }
+      ],
+      "timeoutMs": 8000
+    },
+    { "run": "outline.collapseAll" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-view='outline.view'] .outline-name", "limit": 5 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "outline.expandAll" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-view='outline.view'] .outline-name", "limit": 5 },
+      "expect": { "$length": 4 },
+      "timeoutMs": 3000
+    },
+    { "run": "outline.sort", "input": { "order": "position" } },
+    // D379: following the cursor highlights the symbol it's in.
+    { "run": "editor.select", "input": { "startLine": 5, "endLine": 5 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "[data-view='outline.view'] .outline-row.is-current .outline-name" },
+      "expect": [{ "html": { "$contains": ">alpha<" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "editor.select", "input": { "startLine": 1, "endLine": 4 } },
+    { "state": "ide://editors/active", "expect": { "selectedText": { "$contains": "class Zed" } } },
+
+    // The agent's "…" menu has the agent settings; settings.open can land on a category.
+    { "run": "settings.open", "input": { "category": "Agent" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".settings-view h1, .settings-page-title", "limit": 2 },
+      "expect": [{ "html": { "$contains": "Agent" } }],
+      "timeoutMs": 3000
+    }
+  ]
+}

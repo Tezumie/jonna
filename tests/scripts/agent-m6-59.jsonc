@@ -1,0 +1,35 @@
+// D161: the world changing under a running turn. Closing the folder stops the chat and says why,
+// with Continue; nothing is left "running".
+{
+  "name": "agent-m6-59",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
+    { "run": "agent.send", "input": { "message": "Please start the slow job", "wait": false } },
+    { "wait": 1200 },
+    { "run": "workspace.closeFolder" },
+    { "wait": 1500 },
+    {
+      "state": "ide://agent",
+      "expect": { "sessions": { "$not": { "$contains": "running" } } },
+      "timeoutMs": 5000
+    },
+    { "run": "agent.openSession" },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "the folder was closed" }, "status": "idle" },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-notice", "html": 600 },
+      "expect": [{ "html": { "$contains": "Continue" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true }
+  ]
+}

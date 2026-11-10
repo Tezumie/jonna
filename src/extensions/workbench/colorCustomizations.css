@@ -1,0 +1,33 @@
+/* workbench.colorCustomizations for the window's bars (Peacock's keys, core/themes/
+ * customizations.ts): the title bar, activity bar and status bar read tokens of their own, set
+ * only when the user (or the folder) colors them; unset, the side bar's color (--bg-chrome,
+ * workbench.css). Loaded
+ * after the workbench's styles, in the same layer, so these win. */
+@layer components {
+  .titlebar {
+    background: var(--bg-titlebar, var(--bg-chrome));
+    color: var(--fg-titlebar, var(--fg-muted));
+  }
+  .activitybar {
+    background: var(--bg-activitybar, var(--bg-chrome));
+  }
+  .activitybar-item {
+    color: var(--fg-activitybar-inactive, var(--fg-muted));
+  }
+  .activitybar-item:hover,
+  .activitybar-item.is-active {
+    color: var(--fg-activitybar, var(--fg-default));
+  }
+  .activitybar-badge {
+    background: var(--bg-activitybar-badge, var(--accent));
+    color: var(--fg-activitybar-badge, var(--fg-on-accent));
+  }
+  .statusbar {
+    background: var(--bg-statusbar, var(--bg-chrome));
+    color: var(--fg-statusbar, var(--fg-muted));
+  }
+  button.statusbar-item:hover {
+    background: var(--bg-statusbar-hover, var(--bg-hover));
+    color: var(--fg-statusbar, var(--fg-default));
+  }
+}

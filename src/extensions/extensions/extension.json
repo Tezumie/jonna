@@ -1,0 +1,201 @@
+{
+  "id": "builtin.extensions",
+  "version": "0.1.0",
+  "displayName": "Extensions",
+  "description": "Third-party extensions: install or load unpacked, permissions, a sandboxed worker per extension, webview panels and tree views, VS Code color themes, grammars and snippets.",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      { "id": "extensions.startBisect", "title": "Start extension bisect", "category": "Help" },
+      { "id": "extensions.bisectAnswer", "title": "Extension bisect: answer", "category": "Help" },
+      { "id": "extensions.stopBisect", "title": "Stop extension bisect", "category": "Help" },
+      {
+        "id": "extensions.authSignIn",
+        "title": "Sign in with an extension's account provider",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.authSignOut",
+        "title": "Sign out of an extension's account",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.show",
+        "title": "Show extensions",
+        "category": "View"
+      },
+      {
+        "id": "extensions.list",
+        "title": "List extensions",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.installFromFolder",
+        "title": "Install extension from folder…",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.installFromVsix",
+        "title": "Install from VSIX…",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.installFromRepo",
+        "title": "Install extension from GitHub…",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.updateFromRepo",
+        "title": "Update extension from its repository",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.browseOfficial",
+        "title": "Browse official extensions…",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.loadUnpacked",
+        "title": "Load unpacked extension…",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.uninstall",
+        "title": "Uninstall extension",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.restoreBundled",
+        "title": "Restore bundled extensions",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.setLogLevel",
+        "title": "Set log level…",
+        "category": "Developer"
+      },
+      {
+        "id": "extensions.enable",
+        "title": "Enable extension",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.disable",
+        "title": "Disable extension",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.reload",
+        "title": "Reload extensions",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.grantPermissions",
+        "title": "Review extension permissions",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.showLog",
+        "title": "Show extension log",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.remove",
+        "title": "Remove extension from the list",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.showDetails",
+        "title": "Show extension details",
+        "category": "Extensions"
+      },
+      {
+        "id": "extensions.revealFolder",
+        "title": "Reveal extension folder",
+        "category": "Extensions"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+shift+x",
+        "mac": "cmd+shift+x",
+        "command": "extensions.show"
+      }
+    ],
+    "settings": {
+      "extensions.languageModelAccess": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Let extensions use your language model (VS Code's lm API: an extension's own AI features, its chat participants). Each extension still asks once. Off: they find no model."
+      },
+      "extensions.languageModelAllowed": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Extensions you allowed to use your language model (while extensions.languageModelAccess is on)."
+      },
+      "extensions.typeOverride.acknowledged": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Extensions you kept handling what you type in the editor (a Vim keymap): the notice isn't shown for them again."
+      },
+      "extensions.typeOverride.blocked": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Extensions that may not handle what you type in the editor (the notice's Turn off adds them)."
+      },
+      "extensions.store.enabled": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Search, install and update VS Code extensions from Open VSX (open-vsx.org) in the Extensions view: their themes, icon themes, grammars, snippets and settings work. Only fetched when you search, install, check for updates (extensions.autoCheckUpdates: a minute after start, with extensions from Open VSX installed) or open an extension's page, and for the Recommended section while the view is shown; downloads are checked against Open VSX's SHA-256. Off: the view filters installed extensions only."
+      },
+      "extensions.autoUpdate": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Update VS Code extensions from Open VSX by themselves: a minute after the IDE starts it asks Open VSX for newer versions and installs them. An extension's own Auto update choice (its page or its menu) wins over this."
+      },
+      "extensions.updateDelayHours": {
+        "type": "number",
+        "default": 24,
+        "minimum": 0,
+        "maximum": 720,
+        "scope": "user",
+        "description": "How long a new version of a VS Code extension has to be out on Open VSX before it's offered as an update (by itself or in the notice): a version published by mistake or by someone who took over the account is usually pulled by then. Meanwhile the newest version that's old enough is offered. 0 offers each version at once. Installing a specific version isn't held back."
+      },
+      "extensions.autoCheckUpdates": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "When VS Code extensions from Open VSX are installed, check for newer versions a minute after the IDE starts: a notice offers to update them, and the Extensions icon shows how many. Nothing is installed unless you choose to (or turn on extensions.autoUpdate)."
+      },
+      "extensions.recommendations.enabled": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Show a Recommended section in the Extensions view: extensions the workspace's .vscode/extensions.json names, and well-known ones for its kinds of files (Python, Go, Rust, Docker…). Their details come from Open VSX while the view is shown (with extensions.store.enabled on)."
+      },
+      "extensions.recommendations.ignored": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "scope": "user",
+        "description": "Extensions no longer recommended (the Recommended section's Ignore adds them)."
+      },
+      "extensions.officialRepo": {
+        "type": "string",
+        "default": "",
+        "scope": "user",
+        "description": "The repository of official extensions (owner/name on GitHub, or a git URL) that Browse official extensions lists. Empty: the IDE's own, once there is one."
+      }
+    }
+  }
+}

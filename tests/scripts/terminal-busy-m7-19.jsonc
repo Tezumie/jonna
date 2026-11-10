@@ -1,0 +1,23 @@
+// D253: a terminal tab shows a spinner in its icon's place until its shell draws its first prompt,
+// then its icon again.
+{
+  "name": "terminal-busy-m7-19",
+  "steps": [
+    { "run": "terminal.create", "timeoutMs": 20000, "save": "t" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab .dock-tab-busy" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='terminal'] > .icon" },
+      "expect": { "$not": { "$length": 0 } }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": { "terminals": { "$contains": "\"shellIntegration\":true" } }
+    }
+  ]
+}

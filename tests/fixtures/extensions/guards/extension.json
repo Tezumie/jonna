@@ -1,0 +1,12 @@
+{
+  "id": "acme.guards",
+  "version": "1.0.0",
+  "displayName": "Guards",
+  "description": "Test extension for the caller checks (m7.12): runs an IDE command as an extension and reports what happened.",
+  "main": "main.js",
+  "activation": ["*"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [{ "id": "guards.try", "title": "Guards: run a command as the extension" }]
+  }
+}

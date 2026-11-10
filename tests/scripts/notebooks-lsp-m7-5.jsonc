@@ -1,0 +1,109 @@
+// D204 (split out in D264): the Python language server (Pyright) in a notebook's cells
+// through one joined document: a name from an earlier cell is known, an undefined one is an
+// error in its cell and in Problems with the cell; the setting turns it off. Needs
+// pyright-langserver on PATH (skipped otherwise).
+{
+  "name": "notebooks-lsp-m7-5",
+  "requires": ["pyright-langserver"],
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "extensions.enable", "input": { "id": "bundled.jupyter" } },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "bundled.jupyter", "grant": true },
+      "expect": { "granted": true }
+    },
+    {
+      "state": "ide://notebook",
+      "expect": { "types": { "$contains": "\"id\":\"jupyter.notebook\"" } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.new", "input": { "path": "nb/lsp.ipynb" } },
+    {
+      "state": "ide://notebook",
+      "expect": { "active": { "cells": { "$length": 1 } } },
+      "timeoutMs": 10000
+    },
+    { "run": "notebook.editCell", "input": { "index": 0, "source": "import os\nvalue = 41" } },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 1, "kind": "markdown", "source": "# Intro\n\nThe data value." }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 2, "source": "print(value + undefined_name)\nvalue" }
+    },
+    {
+      "run": "notebook.insertCell",
+      "input": { "index": 3, "kind": "markdown", "source": "## Results" }
+    },
+    { "run": "notebook.insertCell", "input": { "index": 4, "source": "result = value * 2" } },
+
+    // ---- The language server in the cells ----
+    {
+      "run": "problems.list",
+      "expect": { "$contains": "undefined_name" },
+      "timeoutMs": 90000
+    },
+    // The problem names its cell; `value` from the first cell is known in the third.
+    {
+      "run": "problems.list",
+      "expect": {
+        "$contains": "\"cell\":{\"id\""
+      }
+    },
+    {
+      "run": "problems.list",
+      "expect": { "$not": { "$contains": "\"value\" is not defined" } }
+    },
+    // The cell's last line (its result) isn't "unused".
+    {
+      "run": "problems.list",
+      "expect": { "$not": { "$contains": "reportUnusedExpression" } }
+    },
+    // A squiggle in the cell.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".nb-cell .squiggly-error" },
+      "expect": [{}],
+      "timeoutMs": 10000
+    },
+    { "run": "problems.show" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".problems-source", "limit": 10 },
+      "expect": { "$contains": "Cell 3, Ln 1" },
+      "timeoutMs": 5000
+    },
+    // A new cell's text reaches the server: its error shows too.
+    {
+      "run": "notebook.insertCell",
+      "input": { "path": "nb/lsp.ipynb", "index": 5, "source": "print(missing_too)" }
+    },
+    {
+      "run": "problems.list",
+      "expect": { "$contains": "missing_too" },
+      "timeoutMs": 30000
+    },
+    // Off: the notebook leaves the server, its problems go.
+    {
+      "run": "settings.set",
+      "input": { "key": "notebook.languageServer.enabled", "value": false }
+    },
+    {
+      "run": "problems.list",
+      "expect": { "$not": { "$contains": "undefined_name" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "notebook.languageServer.enabled", "value": true }
+    },
+    {
+      "run": "problems.list",
+      "expect": { "$contains": "undefined_name" },
+      "timeoutMs": 30000
+    },
+    { "run": "notebook.save", "input": { "path": "nb/lsp.ipynb" } }
+  ]
+}

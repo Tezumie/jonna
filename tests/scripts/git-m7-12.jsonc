@@ -1,0 +1,158 @@
+// m7.12 (D233), git and the dock: Source control's Graph moves into a dock tab and back
+// (view.moveView, a movable sidebar view); a commit with many files expands in the Graph with its
+// rows virtualized; the multi-file diff's `background` update doesn't activate the tab, and next /
+// previous file are the editor's commands. Needs `git` on PATH.
+{
+  "name": "git-m7-12",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "git.init", "expect": { "root": { "$exists": true } }, "save": "repo" },
+    // 300 files in one commit, then a small one on top.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "git config user.email test@example.com && git config user.name Test && git config commit.gpgsign false && mkdir -p many && for i in $(seq 1 300); do printf 'x\\n' > many/f$i.txt; done && git add -A && git commit -qm Many && printf 'a\\n' > g1.txt && git add -A && git commit -qm Small && git commit -q --allow-empty -m Top",
+        "timeoutMs": 60000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 70000
+    },
+    { "run": "git.refresh" },
+
+    // ---- The Graph moves into the dock and back ----
+    {
+      "state": "ide://views/moved",
+      "expect": { "movable": { "$contains": "scm.graph" }, "inDock": [] }
+    },
+    {
+      "run": "view.moveView",
+      "input": { "id": "scm.graph", "to": "dock" },
+      "expect": { "id": "scm.graph", "location": "dock", "tabId": { "$exists": true } },
+      "save": "moved"
+    },
+    {
+      "state": "ide://views/moved",
+      "expect": { "inDock": [{ "id": "scm.graph", "tabId": "${moved.tabId}" }] }
+    },
+    // The tab hosts the Graph; the Source control sidebar has no Graph section any more.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab[data-view='scm.graph'] .scm-graph-tree" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    { "run": "view.show", "input": { "id": "scm.view" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view-section[data-section-id='scm.graph']" },
+      "expect": { "$length": 0 }
+    },
+    // Commands that showed the section now reveal the tab.
+    { "run": "git.revealHeadInGraph" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab .scm-row[data-commit]", "limit": 3 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // ---- A commit with 300 files expands; its rows stay virtualized ----
+    // The third row is "Many" (newest first: Top, Small, Many; no upstream, so no sync rows).
+    {
+      "run": "dev.click",
+      "input": { "selector": ".sidebar-view-tab .scm-graph-tree .vlist-row[data-index='2']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab .scm-file-name", "limit": 3 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 10000
+    },
+    // 300 files listed (the spacer is that tall), only the rows in view are in the page.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab .scm-graph-tree .vlist-spacer" },
+      "expect": [
+        { "box": [{ "$gte": -100000 }, { "$gte": -100000 }, { "$gte": 0 }, { "$gte": 6600 }] }
+      ]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab .scm-graph-tree .vlist-row:nth-of-type(150)" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+
+    // Back to the sidebar: the section again, the tab gone.
+    {
+      "run": "view.moveView",
+      "input": { "id": "scm.graph", "to": "sidebar" },
+      "expect": { "location": "sidebar" }
+    },
+    { "state": "ide://views/moved", "expect": { "inDock": [] } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view-section[data-section-id='scm.graph']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sidebar-view-tab" },
+      "expect": { "$length": 0 }
+    },
+
+    // ---- Multi-file diff: background updates, the editor's next / previous file ----
+    {
+      "run": "editor.openMultiDiff",
+      "input": { "title": "Nothing", "files": [], "source": "test:none", "background": true },
+      "expect": { "tabId": null, "updated": false }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'b\\n' > g1.txt && printf 'n\\n' > many/f1.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    { "run": "git.refresh" },
+    { "run": "git.viewChanges", "expect": { "files": 2 }, "save": "changes" },
+    // Another tab in front; a background update of the changes tab leaves it there.
+    { "run": "editor.openFile", "input": { "path": "g1.txt", "preview": false } },
+    {
+      "run": "editor.openMultiDiff",
+      "input": {
+        "title": "Changes",
+        "source": "git:changes:${repo.root}",
+        "files": [{ "path": "g1.txt", "status": "M" }],
+        "background": true
+      },
+      "expect": { "tabId": "${changes.tabId}", "updated": true, "files": 1 }
+    },
+    { "state": "ide://editors/active", "expect": { "path": { "$contains": "g1.txt" } } },
+    // The same list again: left alone.
+    {
+      "run": "editor.openMultiDiff",
+      "input": {
+        "title": "Changes",
+        "source": "git:changes:${repo.root}",
+        "files": [{ "path": "g1.txt", "status": "M" }],
+        "background": true
+      },
+      "expect": { "updated": false }
+    },
+    // The status it follows lists both files again (300 ms after it settles).
+    {
+      "state": "ide://editor/multiDiffs",
+      "expect": [{ "files": { "$length": 2 } }],
+      "timeoutMs": 15000
+    },
+    {
+      "run": "editor.multiDiff.nextFile",
+      "input": { "tabId": "${changes.tabId}" },
+      "expect": { "file": { "$exists": true }, "files": 2 }
+    }
+  ]
+}

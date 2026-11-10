@@ -1,0 +1,172 @@
+// D176: what an extension can do beyond commands and views (tests/fixtures/extensions/studio):
+// decorations, problems, a status bar item, the editor's text, hover/completion providers, menus,
+// an editor-area page in its own window, a file viewer, MCP server / agent / provider
+// contributions; then installing it permanently, reading installed files, and its page.
+{
+  "name": "extensions api",
+  "steps": [
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "extensions": [
+          { "id": "bundled.canvas" },
+          { "id": "bundled.gittools", "status": "active" },
+          { "id": "bundled.jupyter" },
+          { "id": "bundled.todo-tree" }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.loadUnpacked",
+      "input": { "folder": "../extensions/studio" },
+      "expect": { "id": "acme.studio" }
+    },
+    {
+      "run": "extensions.grantPermissions",
+      "input": { "id": "acme.studio", "grant": true },
+      "expect": { "granted": true }
+    },
+    // Declarative parts are live right away, before its code starts.
+    {
+      "state": "ide://extensions",
+      "expect": {
+        "extensions": {
+          "$contains": "\"agents\":[\"Studio agent\"],\"mcpServers\":[\"studio-db\"],\"providers\":[\"Studio models\"]"
+        }
+      },
+      "timeoutMs": 10000
+    },
+    // Decorations, a problem and the status bar item, on the open file.
+    { "run": "editor.openFile", "input": { "path": "notes.txt" } },
+    {
+      "run": "studio.mark",
+      "expect": { "path": { "$contains": "notes.txt" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"decorations\":1" } }
+    },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"problems\":1" } }
+    },
+    {
+      "state": "ide://diagnostics",
+      "expect": { "items": { "$contains": "Studio says hi" } },
+      "timeoutMs": 5000
+    },
+    // The editor's text: changed in the open document (unsaved, undoable).
+    {
+      "run": "studio.edit",
+      "expect": { "text": { "$contains": "changed by studio" } },
+      "timeoutMs": 10000
+    },
+    { "state": "ide://editors/active", "expect": { "dirty": true } },
+    {
+      "run": "editor.getText",
+      "input": { "path": "notes.txt" },
+      "expect": { "open": true, "text": { "$contains": "changed by studio" } }
+    },
+    { "run": "studio.providers", "expect": { "ok": true } },
+    {
+      "state": "ide://extensions",
+      "expect": { "extensions": { "$contains": "\"languageProviders\":2" } }
+    },
+    // A page in the editor area, moved into its own window and back.
+    { "run": "studio.page.show" },
+    { "state": "ide://layout", "expect": { "$contains": "ext:studio.page" } },
+    { "run": "studio.pageToWindow", "expect": { "ok": true }, "timeoutMs": 15000 },
+    { "state": "ide://layout", "expect": { "detached": { "$length": 1 } } },
+    { "run": "layout.returnFromWindow", "input": {} },
+    { "state": "ide://layout", "expect": { "detached": { "$length": 0 } } },
+    // A file viewer: the page gets the file's text.
+    { "run": "explorer.newFile", "input": { "name": "board.studio" } },
+    { "run": "editor.insertText", "input": { "text": "hello studio" } },
+    { "run": "editor.save" },
+    {
+      "run": "viewer.open",
+      "input": { "path": "board.studio", "viewer": "studio.viewer" },
+      "expect": { "viewer": "studio.viewer" }
+    },
+    { "state": "ide://layout", "expect": { "$contains": "extviewer:studio.viewer" } },
+    {
+      "run": "studio.lastFile",
+      "expect": { "file": { "text": "hello studio", "canSave": true } },
+      "timeoutMs": 15000
+    },
+    // The explorer's folder check, the guide, icons.
+    {
+      "run": "extensions.folderStatus",
+      "input": { "folder": "../extensions/studio" },
+      "expect": { "extension": true, "id": "acme.studio", "loaded": true, "dev": true }
+    },
+    {
+      "run": "extensions.guide",
+      "input": { "part": "api" },
+      "expect": { "api": { "$contains": "registerHoverProvider" } }
+    },
+    { "run": "extensions.listIcons", "expect": { "icons": { "$contains": "box" } } },
+    // Its page: README beside the side panel, then the Files tab.
+    { "run": "extensions.showDetails", "input": { "id": "acme.studio" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-side", "html": 6000 },
+      "expect": { "$length": 1, "$contains": "github.com/acme/studio" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".ext-page-tab[data-tab='files']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-files-list", "html": 6000 },
+      "expect": { "$contains": "viewer.js" },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.click", "input": { "selector": ".ext-page-tab[data-tab='changelog']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ext-page-readme", "html": 2000 },
+      "expect": [{ "html": { "$contains": "First version" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true, "open": false } },
+    // Installed permanently: it keeps its permissions, and its files stay readable.
+    {
+      "run": "extensions.installPermanently",
+      "input": { "id": "acme.studio" },
+      "expect": { "id": "acme.studio" }
+    },
+    // Served from the extensions folder now, not the dev folder (its path's separator is the
+    // OS's, so dev: false says it).
+    {
+      "run": "extensions.listFiles",
+      "input": { "id": "acme.studio" },
+      "expect": { "dev": false, "files": { "$contains": "viewer.js" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "extensions.readFile",
+      "input": { "id": "acme.studio", "path": "main.js" },
+      "expect": { "text": { "$contains": "studio.mark" } }
+    },
+    {
+      "run": "extensions.readFile",
+      "input": { "id": "acme.studio", "path": "../registry.json" },
+      "expectError": ""
+    },
+    {
+      "run": "extensions.installPermanently",
+      "input": { "id": "acme.studio" },
+      "expectError": "already installed"
+    },
+    // Uninstalled: everything it added goes.
+    { "run": "extensions.uninstall", "input": { "id": "acme.studio" } },
+    {
+      "state": "ide://diagnostics",
+      "expect": { "items": { "$not": { "$contains": "Studio says hi" } } },
+      "timeoutMs": 5000
+    },
+    { "run": "studio.mark", "expectError": "Unknown command" }
+  ]
+}

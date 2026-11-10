@@ -1,0 +1,79 @@
+// D303: propose_task. The agent offers a separate task as a card (New task, its title and brief,
+// Start in a new chat / Dismiss); Start opens a new chat whose first message is the brief, and the
+// card then says it was started.
+{
+  "name": "agent-propose-m7-48",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    {
+      "run": "agent.newSession",
+      "expect": { "session": { "$exists": true } },
+      "save": "first"
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "pkga propose something" },
+      "expect": { "answer": "PkgA proposed." }
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "proposals": [{ "title": "Add a readme", "state": "open" }] },
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-task", "limit": 2, "html": 1200 },
+      "expect": [
+        {
+          "html": { "$contains": "Add a readme" }
+        }
+      ],
+      "print": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-column .agent-task button:not([disabled])", "limit": 3 },
+      "expect": { "$length": 2 }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Start: a new chat, the brief its first message.
+    { "run": "dev.click", "input": { "selector": ".agent-column .agent-task .button-secondary" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "id": { "$not": "${first.session}" },
+        "status": "idle",
+        "items": { "$contains": "PkgA task started." }
+      },
+      "timeoutMs": 15000,
+      "print": true
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "pkga task brief: write a README for this folder." } }
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true },
+    // Back in the first chat: the card says it was started, and opens that chat.
+    { "run": "agent.openSession", "input": { "session": "${first.session}" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-task .agent-task-state", "limit": 2, "html": 300 },
+      "expect": [{ "html": { "$contains": "Started in a new chat" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-task button", "limit": 3, "html": 200 },
+      "expect": [{ "html": { "$contains": "Open chat" } }]
+    },
+    { "run": "workbench.screenshot", "input": {}, "print": true }
+  ]
+}

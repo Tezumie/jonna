@@ -1,0 +1,88 @@
+// D214: the agent can look at attachments from earlier in the chat (chat_attachments), sent
+// attachments can be downloaded or added to the project (hover buttons and the viewer's bar),
+// the viewer's arrows sit over the image, and up to 20 attachments fit in one message.
+{
+  "name": "attachments-m7-6",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "run": "layout.focusAgent" },
+    {
+      "run": "agent.attachFiles",
+      "input": { "paths": ["../extensions/hello/main.js", "assets/dot.png"] },
+      "expect": { "files": 2 }
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "what are these?", "wait": true },
+      "timeoutMs": 30000
+    },
+    // Hover buttons on the sent cards: download and add to project.
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".agent-sent-cards .agent-card [aria-label^='Download'], .agent-sent-cards .agent-card [aria-label^='Add ']",
+        "limit": 10
+      },
+      "expect": { "$length": 4 },
+      "timeoutMs": 4000
+    },
+    // The viewer: its bar has both actions; the arrows are over the image, not beside it.
+    { "run": "dev.click", "input": { "selector": ".agent-sent-cards .agent-card.is-image" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer-tools .agent-viewer-action", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-viewer-stage > .agent-viewer-nav" },
+      "expect": [{ "position": "absolute" }]
+    },
+    { "run": "dev.click", "input": { "selector": ".agent-viewer-close" } },
+    // The commands behind them (download with a debug path instead of the dialog), next to the
+    // folder so the path works on every OS.
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "agent.saveAttachmentAs",
+      "input": {
+        "attachment": { "name": "note.txt", "kind": "text", "data": "hello from the chat" },
+        "path": "${ws.root}/../attachment-save-test.txt"
+      },
+      "expect": { "path": { "$contains": "attachment-save-test.txt" } }
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "cat ../attachment-save-test.txt && rm ../attachment-save-test.txt",
+        "timeoutMs": 10000
+      },
+      "expect": { "output": { "$contains": "hello from the chat" } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.addAttachmentToProject",
+      "input": {
+        "attachment": { "name": "from-chat.txt", "kind": "text", "data": "kept" },
+        "path": "from-chat.txt"
+      },
+      "expect": { "path": { "$contains": "from-chat.txt" } }
+    },
+    // The agent looks at an earlier image through chat_attachments.
+    {
+      "run": "agent.send",
+      "input": { "message": "Please look at my earlier attachment", "wait": true },
+      "expect": { "answer": { "$contains": "Attachment check:" } },
+      "print": true,
+      "timeoutMs": 30000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "chat_attachments" } }
+    }
+  ]
+}

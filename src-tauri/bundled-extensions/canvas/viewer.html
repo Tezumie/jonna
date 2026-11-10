@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <div id="stage" role="application" aria-label="Canvas">
+      <div id="world">
+        <svg id="edges" aria-hidden="true"></svg>
+      </div>
+      <div id="marquee" hidden></div>
+    </div>
+    <div id="empty" hidden>
+      <div class="empty-title">An empty canvas</div>
+      <div>Double-click to add a card. Drag from a card's edge to draw an arrow.</div>
+      <div>Or ask the agent: "lay out how the app's modules fit together on the canvas".</div>
+    </div>
+    <div id="selectionbar" class="bar" hidden></div>
+    <div id="toolbar" class="bar"></div>
+    <div id="error" hidden></div>
+    <script src="markdown.js"></script>
+    <script src="geometry.js"></script>
+    <script src="menus.js"></script>
+    <script src="export.js"></script>
+    <script src="cards.js"></script>
+    <script src="viewer.js"></script>
+  </body>
+</html>

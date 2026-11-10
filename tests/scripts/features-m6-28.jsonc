@@ -1,0 +1,107 @@
+// D129: the code action list as the IDE's menu, copying problems, Outline docked under the Explorer.
+{
+  "name": "features-m6-28",
+  "steps": [
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "fix.ts" } },
+    {
+      "state": "ide://editors/active",
+      "expect": { "language": "typescript", "cursor": { "$exists": true } },
+      "timeoutMs": 10000
+    },
+    { "run": "editor.insertText", "input": { "text": "const total = 1;\nfoo(total);\n" } },
+    { "run": "editor.openFile", "input": { "path": "fix.ts", "line": 2, "column": 2 } },
+    // The TypeScript worker reports the problem and the lightbulb shows on its line.
+    { "state": "ide://diagnostics", "expect": { "counts": { "errors": 1 } }, "timeoutMs": 15000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".lightBulbWidget" },
+      "expect": [{ "display": "block" }],
+      "timeoutMs": 10000
+    },
+    // Clicking it lists the fixes in the IDE's menu (no Monaco context view and its
+    // click-blocking layer).
+    { "run": "dev.click", "input": { "selector": ".lightBulbWidget" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu .menu-item" },
+      "expect": [{ "html": { "$contains": "Add missing function declaration" } }],
+      "timeoutMs": 6000
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".context-view-block" }, "expect": [] },
+    // Picking the fix applies it and leaves nothing on screen.
+    { "run": "dev.click", "input": { "selector": ".menu .menu-item" } },
+    { "state": "ide://editors/active", "expect": { "lineCount": 7 }, "timeoutMs": 5000 },
+    { "run": "dev.inspectDom", "input": { "selector": ".menu" }, "expect": [] },
+
+    // Problems: copy as compiler-style text, by file or exactly one.
+    { "state": "ide://diagnostics", "expect": { "counts": { "errors": 0 } }, "timeoutMs": 15000 },
+    { "run": "explorer.newFile", "input": { "parent": ".", "name": "probs.ts" } },
+    { "state": "ide://editors/active", "expect": { "path": "probs.ts" }, "timeoutMs": 10000 },
+    { "run": "editor.insertText", "input": { "text": "bar();\nbaz();\n" } },
+    { "state": "ide://diagnostics", "expect": { "counts": { "errors": 2 } }, "timeoutMs": 15000 },
+    { "run": "problems.copy", "input": { "path": "probs.ts" }, "expect": { "copied": 2 } },
+    {
+      "run": "problems.copy",
+      "input": { "path": "probs.ts", "line": 2 },
+      "expect": { "copied": 1 }
+    },
+    {
+      "run": "problems.copy",
+      "input": { "path": "nope.ts" },
+      "expectError": "No matching problems"
+    },
+    { "run": "problems.show" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".problems-copy" },
+      "expect": [{ "tag": "button" }],
+      "timeoutMs": 4000
+    },
+
+    // Outline hidden from the activity bar → a collapsed section at the bottom of the Explorer.
+    // Timeline back on the activity bar so Outline is the only section here (both are sections by default, D199).
+    { "run": "view.setHidden", "input": { "id": "timeline.view", "hidden": false } },
+    { "run": "view.setHidden", "input": { "id": "outline.view", "hidden": true } },
+    {
+      "state": "ide://layout",
+      "expect": {
+        "sidebar": {
+          "activeView": "explorer.view",
+          "sections": [{ "id": "outline.view", "in": "explorer.view", "collapsed": true }]
+        }
+      }
+    },
+    { "run": "editor.openFile", "input": { "path": "fix.ts" } },
+    { "run": "outline.show" },
+    {
+      "state": "ide://layout",
+      "expect": {
+        "sidebar": { "activeView": "explorer.view", "sections": [{ "collapsed": false }] }
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".view-section .outline-row" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 8000
+    },
+    {
+      "run": "view.toggleSection",
+      "input": { "id": "outline.view" },
+      "expect": { "collapsed": true }
+    },
+    {
+      "run": "view.toggleSection",
+      "input": { "id": "explorer.view" },
+      "expectError": "isn't shown as a section"
+    },
+    // Back on the activity bar: the section goes away.
+    { "run": "view.setHidden", "input": { "id": "outline.view", "hidden": false } },
+    // (Source control's own sections, D204, stay listed.)
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "sections": { "$not": { "$contains": "explorer.view" } } } }
+    },
+    { "run": "dev.inspectDom", "input": { "selector": ".view-section" }, "expect": [] }
+  ]
+}

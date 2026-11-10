@@ -1,0 +1,72 @@
+// D172: search results grouped by folder (View as tree, like VS Code), and Up / Down in the
+// search box walking what was searched before.
+{
+  "name": "search-m6-73",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1300, "height": 900 } },
+    { "run": "search.show" },
+    {
+      "run": "search.run",
+      "input": { "query": "const " },
+      "expect": { "matches": { "$gte": 20 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "search.toggleViewMode",
+      "input": { "mode": "tree" },
+      "expect": { "viewMode": "tree" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".search-row-item.is-folder", "html": 400 },
+      "expect": [{ "html": { "$contains": "src" } }, { "html": { "$contains": "tools" } }],
+      "timeoutMs": 3000
+    },
+    { "state": "ide://search/last", "expect": { "viewMode": "tree" } },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    // Enter remembers the query; Up brings it back from something else typed, Down the draft.
+    {
+      "run": "dev.type",
+      "input": { "selector": ".search-query input", "text": "hello", "key": "Enter" }
+    },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "query": "hello" }, "running": false },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".search-query input", "text": "howdy", "key": "ArrowUp" }
+    },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "query": "hello" }, "running": false },
+      "timeoutMs": 5000
+    },
+    { "wait": 500 },
+    {
+      "run": "dev.type",
+      "input": { "selector": ".search-query input", "key": "ArrowUp" }
+    },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "query": "const " }, "running": false },
+      "timeoutMs": 5000
+    },
+    { "run": "dev.type", "input": { "selector": ".search-query input", "key": "ArrowDown" } },
+    { "run": "dev.type", "input": { "selector": ".search-query input", "key": "ArrowDown" } },
+    {
+      "state": "ide://search/last",
+      "expect": { "options": { "query": "howdy" } },
+      "timeoutMs": 5000
+    },
+    // Back to the list.
+    { "run": "search.toggleViewMode", "expect": { "viewMode": "list" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".search-row-item.is-folder" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

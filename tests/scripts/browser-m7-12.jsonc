@@ -1,0 +1,109 @@
+// m7.12: forms posted into a new tab keep their body (to the same server and to another one), a
+// named target reuses its tab (a link and a window.open), a popup moves its opener
+// (opener.location), a popup's document is off limits (SecurityError, as across origins), and the
+// preview proxy streams HTML (the page's first part runs before the second arrives). The mock dev
+// server (11998, /lab.html) and its accounts server (11997).
+{
+  "name": "browser-m7-12",
+  "steps": [
+    {
+      "run": "browser.open",
+      "input": { "url": "http://localhost:11998/lab.html" },
+      "expect": { "connected": true, "title": "Lab" },
+      "save": "lab",
+      "timeoutMs": 20000
+    },
+
+    // A POST to another server with target=_blank: a new tab, and the body arrives there.
+    {
+      "run": "browser.type",
+      "input": { "tab": "${lab.tab}", "name": "Name for a new tab", "text": "Ada", "submit": true }
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 2 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Signed in as Ada", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "layout.closeTab" },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 5000 },
+
+    // The same with the page's own server.
+    {
+      "run": "browser.type",
+      "input": { "tab": "${lab.tab}", "name": "Message", "text": "hello", "submit": true }
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 2 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "Posted: hello", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "layout.closeTab" },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 5000 },
+
+    // A named target: the link names a new tab, window.open with the same name reuses it.
+    { "run": "browser.click", "input": { "tab": "${lab.tab}", "name": "About in the helper tab" } },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 2 } }, "timeoutMs": 10000 },
+    {
+      "run": "browser.wait",
+      "input": { "text": "About this app", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.click", "input": { "tab": "${lab.tab}", "name": "Open the helper tab" } },
+    { "wait": 1500 },
+    {
+      "run": "browser.list",
+      "expect": {
+        "tabs": [
+          { "url": "http://localhost:11998/lab.html" },
+          { "url": { "$contains": "/about?again" } }
+        ]
+      },
+      "timeoutMs": 10000
+    },
+    { "run": "layout.closeTab" },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 5000 },
+
+    // A popup's document: a SecurityError, as for a window of another origin.
+    { "run": "browser.click", "input": { "tab": "${lab.tab}", "name": "Read popup document" } },
+    {
+      "run": "browser.wait",
+      "input": { "tab": "${lab.tab}", "text": "Peek: SecurityError", "timeoutMs": 10000 },
+      "expect": { "found": true },
+      "timeoutMs": 20000
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 10000 },
+
+    // A popup sets window.opener.location: the opener's tab goes there; the popup closes.
+    { "run": "browser.click", "input": { "tab": "${lab.tab}", "name": "Popup that moves me" } },
+    {
+      "run": "browser.wait",
+      "input": { "tab": "${lab.tab}", "text": "About this app", "timeoutMs": 15000 },
+      "expect": { "found": true },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "browser.list",
+      "expect": { "tabs": [{ "url": { "$contains": "/about?moved" } }] },
+      "timeoutMs": 10000
+    },
+    { "run": "browser.list", "expect": { "tabs": { "$length": 1 } }, "timeoutMs": 10000 },
+
+    // The proxy streams HTML: the second part arrives 2.5 s after the first, which already ran.
+    {
+      "run": "browser.navigate",
+      "input": { "tab": "${lab.tab}", "url": "http://localhost:11998/stream.html" }
+    },
+    {
+      "run": "browser.wait",
+      "input": { "tab": "${lab.tab}", "text": "Streamed: yes", "timeoutMs": 15000 },
+      "expect": { "found": true },
+      "timeoutMs": 30000
+    },
+    { "run": "layout.closeTab" }
+  ]
+}

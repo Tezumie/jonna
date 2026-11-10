@@ -1,0 +1,89 @@
+// Core flows on tests/fixtures/sample (copied to a temp folder by scripts/ui-test.mjs).
+{
+  "name": "core flows",
+  "steps": [
+    { "state": "ide://workspace", "expect": { "open": true, "name": { "$exists": true } } },
+
+    // Files and editors
+    {
+      "run": "editor.openFile",
+      "input": { "path": "README.md" },
+      "expect": { "language": "markdown" }
+    },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": { "$contains": "README.md" } },
+      "timeoutMs": 10000
+    },
+    { "run": "explorer.newFile", "input": { "name": "created.txt" } },
+    {
+      "run": "explorer.rename",
+      "input": { "path": "created.txt", "newName": "renamed.txt" },
+      "expect": { "renamed": { "$contains": "renamed.txt" } }
+    },
+    { "run": "explorer.delete", "input": { "path": "renamed.txt" } },
+
+    // Quick open (Rust index) and search
+    {
+      "run": "quickOpen.search",
+      "input": { "query": "util" },
+      "expect": { "files": ["src/util.ts"] },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "hello" },
+      "expect": { "matches": { "$gte": 2 }, "files": 2 }
+    },
+    {
+      "run": "search.run",
+      "input": { "query": "HELLO", "matchCase": true },
+      "expect": { "matches": 0 }
+    },
+
+    // Language services and problems
+    { "run": "editor.openFile", "input": { "path": "src/main.ts" } },
+    {
+      "state": "ide://diagnostics",
+      "expect": { "counts": { "errors": { "$gte": 1 } } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "problems.list",
+      "input": { "severity": "error" },
+      "expect": { "items": [{ "path": "src/main.ts", "line": 3 }] }
+    },
+
+    // Settings
+    { "run": "settings.set", "input": { "key": "editor.fontSize", "value": 15 } },
+    {
+      "state": "ide://settings",
+      "expect": { "settings": { "$contains": "\"editor.fontSize\",\"value\":15" } }
+    },
+    {
+      "run": "settings.set",
+      "input": { "key": "editor.fontSize", "value": "big" },
+      "expectError": true
+    },
+    { "run": "settings.reset", "input": { "key": "editor.fontSize" } },
+
+    // Dock
+    { "run": "layout.splitActive" },
+    { "state": "ide://layout", "expect": { "groups": { "$exists": true } } },
+
+    // Terminal with shell integration (bash/zsh/fish/PowerShell)
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo integration-ok", "timeoutMs": 20000 },
+      "expect": { "finished": true, "exitCode": 0, "output": { "$contains": "integration-ok" } }
+    },
+    { "state": "ide://terminals", "expect": { "terminals": [{ "shellIntegration": true }] } },
+
+    // Keybindings
+    {
+      "run": "keybindings.list",
+      "input": { "query": "quickOpen.show" },
+      "expect": [{ "command": "quickOpen.show" }]
+    }
+  ]
+}

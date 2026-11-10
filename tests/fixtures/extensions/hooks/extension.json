@@ -1,0 +1,22 @@
+{
+  "id": "acme.hooks",
+  "version": "1.0.0",
+  "displayName": "Hooks",
+  "description": "Test extension for the type override, URI handlers, applyEdit across files, will-save edits, comments, chat participants and tree checkboxes.",
+  "icon": "box",
+  "author": "Acme tests",
+  "license": "MIT",
+  "categories": ["Testing"],
+  "main": "main.js",
+  "activation": ["onStartupFinished", "onUri"],
+  "permissions": ["fs.read", "fs.write"],
+  "contributes": {
+    "commands": [
+      { "id": "hooks.setup", "title": "Hooks: register everything" },
+      { "id": "hooks.stats", "title": "Hooks: what happened" },
+      { "id": "hooks.applyEdit", "title": "Hooks: edit two files" },
+      { "id": "hooks.stopTyping", "title": "Hooks: stop handling typing" }
+    ],
+    "views": [{ "id": "hooks.list", "title": "Hooks list", "location": "panel", "type": "tree" }]
+  }
+}

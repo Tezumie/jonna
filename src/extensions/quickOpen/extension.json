@@ -1,0 +1,85 @@
+{
+  "id": "builtin.quick-open",
+  "version": "0.1.0",
+  "displayName": "Quick open",
+  "description": "Quick access: files (fuzzy, over the Rust workspace index, recent first, :line suffix); > commands, @ symbols, # workspace symbols, : line, % text, view, task, debug, term, edt, ? help.",
+  "activation": ["*"],
+  "permissions": ["fs.read"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "quickOpen.show",
+        "title": "Go to file\u2026",
+        "category": "Go"
+      },
+      {
+        "id": "quickOpen.pickFile",
+        "title": "Pick a file",
+        "category": "Go"
+      },
+      {
+        "id": "quickOpen.search",
+        "title": "Find files",
+        "category": "Go"
+      },
+      {
+        "id": "quickOpen.goToSymbol",
+        "title": "Go to symbol in editor\u2026",
+        "category": "Go"
+      },
+      {
+        "id": "quickOpen.goToWorkspaceSymbol",
+        "title": "Go to symbol in workspace\u2026",
+        "category": "Go"
+      },
+      { "id": "quickOpen.openView", "title": "Open view…", "category": "Go" },
+      { "id": "quickOpen.quickTextSearch", "title": "Quick search…", "category": "Go" },
+      { "id": "quickOpen.showEditors", "title": "Show all editors…", "category": "Go" },
+      {
+        "id": "quickOpen.findSymbols",
+        "title": "Find symbols in workspace",
+        "category": "Go"
+      },
+      {
+        "id": "quickOpen.switchEditor",
+        "title": "Switch editor\u2026",
+        "category": "Go"
+      }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+e",
+        "mac": "cmd+e",
+        "command": "quickOpen.show",
+        "when": "!terminalFocus"
+      },
+      {
+        "key": "ctrl+p",
+        "mac": "cmd+p",
+        "command": "quickOpen.show"
+      },
+      {
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o",
+        "command": "quickOpen.goToSymbol"
+      },
+      {
+        "key": "ctrl+t",
+        "mac": "cmd+t",
+        "command": "quickOpen.goToWorkspaceSymbol",
+        "when": "!terminalFocus"
+      },
+      {
+        "key": "ctrl+tab",
+        "command": "quickOpen.switchEditor"
+      },
+      {
+        "key": "ctrl+shift+tab",
+        "command": "quickOpen.switchEditor",
+        "args": {
+          "back": true
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,233 @@
+// D217: hidden terminals (VS Code's panel × / detach and "attach to session"), the terminal's
+// own split icon, and the running command's sticky line. Hiding a terminal's tab keeps its shell
+// running: agents' tools still read and type into it by id, ide://terminals lists it under
+// `hidden`, the ▾ menu offers it, and showing it brings the same shell (and its output) back into
+// a tab. A split group hides and comes back whole; a hidden terminal can be killed where it is.
+// Ids come from the steps that create the terminals (`save`): the window starts with a terminal
+// of its own.
+{
+  "name": "terminal-m7-7",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.create",
+      "save": "t",
+      "expect": { "id": { "$gte": 1 } },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${t.id}", "command": "echo before-hide-$((6*7))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "before-hide-42" } },
+      "timeoutMs": 30000
+    },
+
+    // ---- The toolbar: the terminal's own split icon, and the × that hides ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-view-actions .icon-terminal-split" },
+      "expect": { "$length": 1 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-view-actions .icon-columns-2" },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-view-actions button[aria-label='Hide terminal (keeps running)']"
+      },
+      "expect": [{ "tag": "button" }]
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+
+    // ---- Hide (the × on the active terminal, the one just made): the tab goes, the shell stays ----
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": ".dock-view-actions button[aria-label='Hide terminal (keeps running)']"
+      }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": {
+          "$contains": "\"id\":${t.id},\"tabId\":null,\"groupId\":null,\"hidden\":true"
+        },
+        "hidden": [{ "ids": ["${t.id}"] }]
+      },
+      "timeoutMs": 5000
+    },
+    // Agents' tools still work on it by id: run, type, read.
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${t.id}", "command": "echo while-hidden-$((5+5))", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "while-hidden-10" } },
+      "timeoutMs": 30000
+    },
+    {
+      "run": "terminal.sendText",
+      "input": { "id": "${t.id}", "text": "echo typed-hidden-$((1+2))" }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${t.id}" },
+      "expect": { "text": { "$contains": "typed-hidden-3" } },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://terminals/${t.id}/output",
+      "expect": { "text": { "$contains": "before-hide-42" } }
+    },
+    // Hiding again is a no-op; splitting a hidden one says to show it first.
+    { "run": "terminal.hide", "input": { "id": "${t.id}" }, "expect": { "alreadyHidden": true } },
+    { "run": "terminal.split", "input": { "id": "${t.id}" }, "expectError": "hidden" },
+
+    // ---- The ▾ menu lists it ----
+    { "run": "terminal.profileMenu", "input": { "x": 300, "y": 300 } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu-label", "limit": 20 },
+      "expect": { "$contains": "Hidden terminals (1)" },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu-label", "key": "Escape" } },
+
+    // ---- Show: the same shell back in a tab, its output there ----
+    {
+      "run": "terminal.showHidden",
+      "expect": { "shown": [{ "ids": ["${t.id}"] }], "hiddenCount": 0 }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": { "$not": { "$contains": "\"hidden\":true" } },
+        "hidden": { "$length": 0 }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.find",
+      "input": { "query": "while-hidden-10" },
+      "expect": { "count": { "$gte": 1 } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "echo shown-again", "timeoutMs": 20000 },
+      "expect": {
+        "terminalId": "${t.id}",
+        "exitCode": 0,
+        "output": { "$contains": "shown-again" }
+      },
+      "timeoutMs": 30000
+    },
+
+    // ---- A split group hides and comes back whole ----
+    {
+      "run": "terminal.split",
+      "input": { "id": "${t.id}" },
+      "save": "u",
+      "expect": { "panes": 2 },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "terminal.hide",
+      "input": { "id": "${u.id}" },
+      "expect": { "ids": ["${t.id}", "${u.id}"] }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": {
+          "$contains": "\"id\":${u.id},\"tabId\":null,\"groupId\":null,\"hidden\":true,\"pane\":1,\"panes\":2"
+        }
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "run": "terminal.showHidden",
+      "input": { "id": "${t.id}" },
+      "expect": { "shown": [{ "ids": ["${t.id}", "${u.id}"] }] }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": { "$contains": "\"hidden\":false,\"pane\":1,\"panes\":2" },
+        "hidden": { "$length": 0 }
+      },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+
+    // ---- Kill a hidden terminal where it is (the trash stays the way to end one) ----
+    {
+      "run": "terminal.hide",
+      "input": { "id": "${t.id}" },
+      "expect": { "ids": ["${t.id}", "${u.id}"] }
+    },
+    {
+      "run": "terminal.kill",
+      "input": { "id": "${u.id}" },
+      "expect": { "killed": "${u.id}", "hidden": true }
+    },
+    {
+      "state": "ide://terminals",
+      "expect": {
+        "terminals": {
+          "$contains": "\"id\":${t.id},\"tabId\":null,\"groupId\":null,\"hidden\":true,\"pane\":0,\"panes\":1"
+        },
+        "hidden": [{ "ids": ["${t.id}"] }]
+      },
+      "timeoutMs": 5000
+    },
+    // terminal.focus on a hidden terminal shows it.
+    { "run": "terminal.focus", "input": { "id": "${t.id}" } },
+    { "state": "ide://terminals", "expect": { "hidden": { "$length": 0 } }, "timeoutMs": 5000 },
+    {
+      "run": "terminal.runCommand",
+      "input": { "id": "${t.id}", "command": "echo still-the-same-shell", "timeoutMs": 20000 },
+      "expect": { "exitCode": 0, "output": { "$contains": "still-the-same-shell" } },
+      "timeoutMs": 30000
+    },
+    { "run": "terminal.showHidden", "expectError": "No hidden terminals" },
+
+    // ---- The running command's line stays at the top, scrolled to the bottom (VS Code) ----
+    {
+      "run": "terminal.sendText",
+      "input": {
+        "id": "${t.id}",
+        "text": "for i in $(seq 1 80); do echo sticky-$i; done; sleep 20"
+      }
+    },
+    {
+      "run": "terminal.readOutput",
+      "input": { "id": "${t.id}" },
+      "expect": { "text": { "$contains": "sticky-80" } },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-sticky:not([hidden])", "html": 3000 },
+      "expect": [{ "html": { "$contains": "seq" } }],
+      "timeoutMs": 3000
+    },
+    // The whole line (prompt and colors, cell by cell), not the command text alone.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-sticky:not([hidden])", "html": 3000 },
+      "expect": [{ "html": { "$contains": "inline-block" } }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".terminal-sticky:not([hidden]) .terminal-sticky-dot.is-running" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "inline": true }, "print": true },
+    {
+      "run": "terminal.sendText",
+      "input": { "id": "${t.id}", "text": "\u0003", "addNewLine": false }
+    }
+  ]
+}

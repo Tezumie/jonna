@@ -1,0 +1,91 @@
+// D149: the Testing view — tests found from their files (node:test here, and go test in a
+// sub-project), run all / a file / one test / the failed ones, results in the view, the margin,
+// ide://tests and for agents.
+{
+  "name": "testing-m6-48",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"const fs=require('fs');fs.mkdirSync('tests',{recursive:true});fs.writeFileSync('tests/math.test.mjs',\\\"import { test, describe } from 'node:test';\\\\nimport assert from 'node:assert/strict';\\\\n\\\\ndescribe('math', () => {\\\\n  test('adds', () => {\\\\n    assert.equal(1 + 1, 2);\\\\n  });\\\\n  test('subtracts', () => {\\\\n    assert.equal(3 - 1, 1);\\\\n  });\\\\n});\\\\n\\\\ntest('alone', () => {});\\\\n\\\");fs.mkdirSync('goapp',{recursive:true});fs.writeFileSync('goapp/go.mod','module example.com/goapp\\\\n\\\\ngo 1.21\\\\n');fs.writeFileSync('goapp/calc_test.go','package goapp\\\\n\\\\nimport \\\\\\\"testing\\\\\\\"\\\\n\\\\nfunc TestDouble(t *testing.T) {\\\\n\\\\tif 2*2 != 4 {\\\\n\\\\t\\\\tt.Fatal(\\\\\\\"bad\\\\\\\")\\\\n\\\\t}\\\\n}\\\\n');\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "tests.refresh",
+      "expect": { "tests": 4, "frameworks": { "$contains": "node" } },
+      "timeoutMs": 20000
+    },
+    { "run": "tests.showView" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-tree", "html": 20000 },
+      "expect": [{ "html": { "$contains": "math.test.mjs" } }],
+      "timeoutMs": 5000
+    },
+
+    // One file: one passes, one fails with its message.
+    {
+      "run": "tests.run",
+      "input": { "file": "tests/math.test.mjs" },
+      "expect": {
+        "passed": 2,
+        "failed": 1,
+        "failures": [{ "name": "math › subtracts", "line": 8, "message": { "$contains": "1" } }]
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "state": "ide://tests",
+      "expect": { "failed": 1, "failures": [{ "file": "tests/math.test.mjs" }] }
+    },
+    // The margin shows the results in the open file.
+    { "run": "editor.openFile", "input": { "path": "tests/math.test.mjs" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".monaco-editor .test-glyph.is-failed" },
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 5000
+    },
+    // The view: a failed test with its message under it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".test-status.is-failed", "limit": 3 },
+      "expect": [{ "tag": "svg" }],
+      "timeoutMs": 5000
+    },
+
+    // One test by name; the go test in its own module (run from its folder).
+    {
+      "run": "tests.run",
+      "input": { "test": "alone" },
+      "expect": { "passed": 1, "failed": 0 },
+      "timeoutMs": 60000
+    },
+    {
+      "run": "tests.run",
+      "input": { "framework": "go" },
+      "expect": { "passed": 1, "failed": 0, "commands": [{ "$contains": "go test -json" }] },
+      "timeoutMs": 120000
+    },
+
+    // Fix the failing test, rerun the failed ones.
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "node -e \"const fs=require('fs');const p='tests/math.test.mjs';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('3 - 1, 1','3 - 1, 2'));\"",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 }
+    },
+    {
+      "run": "tests.runFailed",
+      "expect": { "passed": 1, "failed": 0 },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://tests", "expect": { "failed": 0 } },
+    { "run": "tests.list", "input": { "status": "failed" }, "expect": { "total": 0 } }
+  ]
+}
