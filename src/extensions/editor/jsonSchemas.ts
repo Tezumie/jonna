@@ -40,6 +40,18 @@ export function keybindingsSchema(commands: readonly { id: string; title: string
   };
 }
 
+/**
+ * VS Code's `fileMatch` as a pattern over file URIs: a name alone ("*.scene.json",
+ * "package.json") is that file in any folder, a pattern from the root ("/.toolrc") the same in
+ * the folder; one with a folder in it, or a "!" exclusion, is taken as written.
+ */
+export function fileMatchPattern(match: string): string {
+  if (match.startsWith("!")) return `!${fileMatchPattern(match.slice(1))}`;
+  if (match.startsWith("**/")) return match;
+  if (match.startsWith("/")) return `**${match}`;
+  return `**/${match}`;
+}
+
 export function registerJsonSchemas(
   sub: DisposableStore,
   services: WorkbenchServices,
@@ -91,6 +103,14 @@ export function registerJsonSchemas(
       ],
       schema: manifestSchema(),
     });
+    // Extensions' own schemas (VS Code's jsonValidation, D419), by their file patterns.
+    for (const entry of services.contributions.jsonSchemas.value)
+      out.push({
+        uri: entry.uri,
+        files: [],
+        patterns: entry.fileMatch.map(fileMatchPattern),
+        schema: entry.schema,
+      });
     const keys = settings.keybindingsPath;
     if (keys)
       out.push({

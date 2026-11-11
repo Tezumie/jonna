@@ -5,6 +5,12 @@ singleton `docs` dock tab (`docsView.ts`: page list, Markdown, links to pages / 
 `command:` ids) — `help.showDocs {page?}` (Help → Documentation) — and for agents,
 `help.readDocs {page?}` (D133).
 
+`help.agentGuide {topic?}` (D419, `agentGuide.ts`, tested): what an agent that isn't the IDE's own
+(an external agent in a chat, an MCP client) is told by no prompt: this isn't VS Code, how to
+reach commands and state, which commands drive the IDE's tools, where the documentation is; topic
+`extensions`: which format to choose, loading, checking, installing and updating one, its log.
+`agent: "core"`, so MCP clients see it among their tools.
+
 Alpha support (D204):
 - `errorCapture.ts` — `ErrorCapture`: `window` errors, unhandled rejections, `console.error`,
   failed IPC calls (`onFailedCall` in `core/ipc/invoke.ts`; NotFound / Cancelled / NoWorkspace

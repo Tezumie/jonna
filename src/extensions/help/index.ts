@@ -5,6 +5,8 @@ import type { BuiltinExtension } from "../../core/extensions/index";
 import { product } from "../../core/product";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { workspaceFolderName } from "../../workbench/workspaceFolder";
+import { AGENT_GUIDE_TOPICS, agentGuide } from "./agentGuide";
 import { DocsView, docsViewDescriptor } from "./docsView";
 import { ErrorCapture } from "./errorCapture";
 import manifest from "./extension.json";
@@ -69,6 +71,27 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
           if (!found) throw new Error(`No page "${page}".`);
           return { id: found.id, title: found.title, markdown: found.text };
         },
+      }),
+    );
+    // What an external agent or MCP client isn't told by any prompt (D419): listed among its
+    // tools ("core"), so it is seen even by clients that ignore the server's instructions.
+    sub.add(
+      dispatcher.register({
+        id: "help.agentGuide",
+        title: "Guide for agents",
+        category: "Help",
+        description:
+          'Read this first when you work in this IDE as an agent: it is not VS Code. Without input: how to reach the IDE (commands, ide:// state), which commands drive the debugger, tests, terminals, browser and git, and where its documentation is. { "topic": "extensions" }: how to add a feature to the IDE itself — which extension format to choose, how to load, check, install and update one, and where its log is.',
+        input: s.object({
+          topic: s.enum(AGENT_GUIDE_TOPICS).describe("A part of the guide").optional(),
+        }),
+        effects: ["read"],
+        agent: "core",
+        palette: false,
+        run: ({ topic }) => ({
+          topics: AGENT_GUIDE_TOPICS,
+          markdown: agentGuide(topic, { workspaceFolder: workspaceFolderName() }),
+        }),
       }),
     );
   },

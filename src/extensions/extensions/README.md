@@ -234,7 +234,10 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
     yet).
   - `hookCommands.ts`: those commands and `ide://extensions/hooks`.
 - `viewers.ts` — file viewers (`contributes.viewers`): dock view `extviewer:<id>` + an entry in
-  `services.viewers`; the page gets the file's text and saves with `fs.write`.
+  `services.viewers`; the page gets the file's text and saves with `fs.write`. Its tabs show
+  extensions' `editor/title` buttons (`workbench/titleActions.ts`, with `activeCustomEditorId` the
+  viewer's id), and a code-page viewer's code hears `{ ide: "viewerState", instance, active,
+  visible }` as its tab becomes the active one, shows or hides (D419).
 - `workerHost.ts` — `ExtensionWorker` over a transport (D255): the sandboxed worker
   (`webWorkerTransport`, `src/workers/extension.worker.ts`) or a Node process
   (`nodeTransport`: `"host": "node"` with the "node" permission in a trusted folder;
@@ -350,7 +353,9 @@ may have removed this one's copy; the backend keeps other versions' copies a wee
 handed to a resume, and an old worker's exit leaves the current one alone.
 `extensions.installFromRepo` / `extensions.updateFromRepo` / `extensions.browseOfficial` (`fromRepo.ts`, D185;
 the list comes from `extensions.officialRepo`, empty until the IDE has one),
-`extensions.loadUnpacked`, `extensions.loadFromWorkspace`, `extensions.uninstall`, `extensions.enable`, `extensions.disable`,
+`extensions.loadUnpacked`, `extensions.loadFromWorkspace` (`loadUnpacked` and `installFromFolder` are for the user and
+an agent in a chat, which must name the folder and is asked there; never an extension or an MCP
+client outside a chat, D419), `extensions.uninstall`, `extensions.enable`, `extensions.disable`,
 `extensions.reload`, `extensions.grantPermissions`, `extensions.showLog`, and the D176 ones
 above; per panel or editor view `<view id>.show`. The editor's `editor.getText` /
 `editor.replaceRange` (`editor/textCommands.ts`) serve extensions and agents alike.

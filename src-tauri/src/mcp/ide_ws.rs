@@ -582,6 +582,7 @@ pub async fn handle_tracked(
                 let request = BridgeRequest::Call {
                     id,
                     client: "claude-code".into(),
+                    chat: None,
                     command: name.to_string(),
                     input: params.get("arguments").cloned().unwrap_or(json!({})),
                 };

@@ -16,11 +16,14 @@ const TIMEOUT: Duration = Duration::from_secs(600);
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum BridgeRequest {
-    /// Run a command as caller `{ kind: "mcp", client }`.
+    /// Run a command as caller `{ kind: "mcp", client }`, or as the chat's agent when `chat`
+    /// (the key the server was lent to that chat with, D419) is one the webview knows.
     #[serde(rename_all = "camelCase")]
     Call {
         id: u64,
         client: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        chat: Option<String>,
         command: String,
         input: Value,
     },
@@ -29,6 +32,8 @@ pub enum BridgeRequest {
     Read {
         id: u64,
         client: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        chat: Option<String>,
         uri: String,
     },
     /// The caller of request `id` went away (Claude Code disconnected, D223): whatever it waits

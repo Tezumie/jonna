@@ -83,3 +83,22 @@ fn serves_tools_only_with_the_token() {
         result.expect("client");
     });
 }
+
+#[test]
+fn a_chat_key_rides_on_the_token() {
+    let expected = b"Bearer abc123";
+    assert!(http::authorized(b"Bearer abc123", expected));
+    assert!(http::authorized(b"Bearer abc123.k9Z", expected));
+    // A wrong token, a key with other characters, an empty or oversized key: refused.
+    assert!(!http::authorized(b"Bearer abc124.k9Z", expected));
+    assert!(!http::authorized(b"Bearer abc123.", expected));
+    assert!(!http::authorized(b"Bearer abc123.k-9", expected));
+    assert!(!http::authorized(b"Bearer abc123k9Z", expected));
+    assert!(!http::authorized(
+        format!("Bearer abc123.{}", "a".repeat(65)).as_bytes(),
+        expected
+    ));
+    assert!(!http::authorized(b"Bearer abc12", expected));
+    assert_eq!(http::chat_key(b"Bearer abc123.k9Z"), Some("k9Z".into()));
+    assert_eq!(http::chat_key(b"Bearer abc123"), None);
+}

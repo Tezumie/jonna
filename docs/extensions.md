@@ -42,6 +42,31 @@ runs it). Types for the `ide` object: `src/api/index.d.ts`.
   with it), `extensions.try { id, command, input }` (runs a command and returns its result and
   the log lines it wrote) and `extensions.examples` (six small complete extensions to copy).
 
+## Choosing a format
+
+There are three ways to write an extension. Start with the first and move down only for a reason
+(D419).
+
+| | The IDE's own format | The same, in Node | A VS Code extension |
+|---|---|---|---|
+| Files | `extension.json`, `main.js` | `extension.json` with `"host": "node"`, `main.js` | `package.json`, `require("vscode")` |
+| Code runs | In a sandboxed worker: no files, network or programs except through `ide` | In a Node.js process: `require`, npm packages, `fs`, `child_process`, sockets | In the shared Node.js process, behind the IDE's `vscode` module |
+| What it may do | Only what its `permissions` list and the user grants | What any program may (the `node` permission; a trusted folder) | The same as Node |
+| For agents | Commands with descriptions and input schemas, `ide://ext/<id>/…` state | The same | Its commands by title; no input schemas |
+| Also runs in VS Code | No | No | Yes |
+
+- **The IDE's own format** is the default: for commands, views, pages, file viewers, editor
+  features, themes, languages. The user sees exactly what it may do, and the agent can drive it.
+- **In Node** when the sandbox is the obstacle: an npm package or a native module, a server on a
+  port, files outside the open folder, a tool to start. Everything else is the same `ide` API
+  ("Node, and the rest of VS Code's API").
+- **A VS Code extension** when it must also run in VS Code, or when you are changing one that
+  exists. Most of VS Code's API works ("VS Code extensions (D256, D257)" and "Coverage versus VS
+  Code"); what doesn't is logged once in its log and listed at `ide://ext/<id>/vscode`.
+
+Looking like VS Code isn't a reason to write a VS Code extension: the IDE's own format is
+smaller, sandboxed and visible to agents.
+
 ## extension.json
 
 ```jsonc
@@ -1062,6 +1087,20 @@ messaging (Jupyter's widgets), one TextDocument per cell, the extension's diagno
 `rendererScripts`, VS Code's notebook context keys and a basic Interactive Window (no input box
 yet). Its keybindings see VS Code's editor context keys (`editorTextFocus`, `editorLangId`…).
 
+D419 (custom editors, from a game editor built as a VS Code extension): the context key
+`activeCustomEditorId` is the view type of the custom editor in the active tab ("" elsewhere), so
+keybindings and `editor/title` buttons that test it work, and a custom editor's tabs show
+`editor/title` buttons at all (they were the text editor's only). `vscode.openWith(uri, viewType,
+column)` opens the text editor for `"default"` and the named custom editor otherwise, and it and
+`vscode.open` honor `ViewColumn.Beside`. A custom editor's `WebviewPanel.active` / `visible`
+follow its tab and `onDidChangeViewState` fires. A custom *text* editor keeps its document's
+earlier texts (100): the `undo` / `redo` commands, which its page's buttons and keys run, put
+them back while its tab is the active one (its file has no text editor tab for the IDE's undo;
+each edit is written to the file). `contributes.jsonValidation` gives the JSON files its
+`fileMatch` names validation, completion and hovers from a schema file of the extension (a
+schema behind a web address is skipped: nothing is loaded from the network); the IDE's own
+format takes the same contribution.
+
 D386: once an extension starts stopping (before its `deactivate()` runs: disabled, updated, a
 host restart, a folder switch), `window.showInformationMessage` / `Warning` / `Error` show
 nothing and resolve to `undefined`; the text goes to its log ("(while stopping, not shown)").
@@ -1393,6 +1432,33 @@ gives the copy its own id so both run. Change the copy, check it, then
 first; a bundled extension becomes customized and the IDE's updates skip it until
 `extensions.revertToBundled`), `new` installs it beside the original under its own id. Without
 `mode` the user is asked.
+
+**Reading what it did (D419).** After every change, before saying it works:
+
+- `ide://extensions?id=<id>`: `status` (`active`, `failed`, `needsPermission`…), `log` (its last
+  lines: `console.log` output, errors, refused requests) and `live` (what it registered). A
+  folder that didn't load is under `notLoaded` with the reason.
+- `extensions.try {id, command, input}` runs one command and returns its result and the log lines
+  it wrote.
+- A VS Code extension: `ide://ext/<id>/vscode` lists the VS Code calls the IDE doesn't support
+  (each logged once) and its webview pages' errors.
+- For the user: `extensions.showLog {id}` opens the whole log; the Output tab's Extension host
+  channel has every extension's.
+
+**A VS Code extension, from an agent (D419).** Write its folder under
+`<workspace folder>/extensions/<name>` (a `package.json` with `publisher`, `name` and `main`) and
+load it with `extensions.loadFromWorkspace {folder}`; a folder anywhere else loads with
+`extensions.loadUnpacked {folder}`. Either runs it in place and reloads it on every save.
+`extensions.installFromFolder {folder}` copies a folder into the installed extensions; run on the
+same folder again after a change (raise `version`), it replaces the installed copy. That is how
+an extension installed from a folder is updated: nothing watches the folder. These commands ask
+the user (changing the IDE, then the extension's permissions), and an agent has to name the
+folder. Extensions and MCP clients outside a chat can't run them.
+
+**External agents (D419).** An agent that isn't the IDE's own (Claude Code, Codex… in a chat) has
+none of the IDE's prompt. It finds this through `help.agentGuide` (listed among its tools; the
+`extensions` topic is a short form of this section) and the MCP server's instructions, and it
+runs the same commands as the IDE's agent, with the questions in its chat.
 
 ## VS Code extensions
 

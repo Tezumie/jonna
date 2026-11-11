@@ -4,6 +4,11 @@ Turns the Rust MCP server (`src-tauri/src/mcp`) on and off with `mcp.enabled`, k
 current (commands → tools, `ide://` paths → resources), and runs forwarded calls as caller
 `{ kind: "mcp", client }` (the permission policy asks the user for writes). Status bar: **MCP**.
 
+**A chat's external agent (D419):** a chat that borrows the server (`mcpAgentAccess.acquire(owner,
+{ agent, session })`) gets a token of its own, the server's plus `.<key>`; calls that carry a key
+this window gave out run as `{ kind: "acp", agent, session }`, so their questions show in that
+chat under its access mode. The keys live here (`chats`), until the chat releases the server.
+
 **Commands:** `mcp.start`, `mcp.stop`, `mcp.showConnectionInfo`. **State:** `ide://mcp`.
 How to connect Claude Code: `docs/mcp.md`.
 

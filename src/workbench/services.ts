@@ -430,6 +430,11 @@ export class ViewerRegistry {
   get(id: string): ViewerContribution | undefined {
     return this.list.find((v) => v.id === id);
   }
+
+  /** The viewer whose tabs are of dock view type `viewType`. */
+  byViewType(viewType: string): ViewerContribution | undefined {
+    return this.list.find((v) => v.viewType === viewType);
+  }
 }
 
 /** Open documents' current text, published by the editor (unsaved edits included). DOM-free. */

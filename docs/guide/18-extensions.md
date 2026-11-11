@@ -234,6 +234,10 @@ put it in restricted mode.
 - **Ask the agent:** "add a word counter to the status bar". It builds an extension for you with
   its built-in build-extension skill. Changing the IDE asks you first, even with full access;
   allow it for the chat to stop the questions.
+- **Ask another agent:** an agent you brought (Claude Code, Codex…) can do the same from its
+  chat. Say which kind you want: "in the IDE's own format" (sandboxed, the default) or "as a VS
+  Code extension" (when it should also run in VS Code). It can load the folder and install it
+  for you; you're asked in the chat first.
 - **Create extension…** (the view's header) writes a starter extension into the open folder.
 - **Install permanently** (on its page, or right-click its folder in the explorer) turns a
   development extension into an installed one.
@@ -288,6 +292,20 @@ See [Troubleshooting](21-troubleshooting.md).
 
 If it has code, check that you allowed it (**Review permissions…**), that the folder is trusted,
 and that Node.js is available. Its log (**Show log**) shows API calls the IDE doesn't support yet.
+
+### I changed an extension I installed from a folder. How do I update it?
+
+Run **Install from folder…** on the same folder again (or ask the agent to): it replaces the
+installed copy. Raise the version in its manifest first so you can tell them apart. Nothing
+watches the folder, so there's no "update available" for these. While you're still changing it,
+**Load unpacked…** is easier: it runs the folder in place and reloads on every save.
+
+### Can the agent change an extension I didn't write?
+
+Yes. **Edit with agent…** in the extension's menu starts it: the agent makes a development copy
+in the open folder, changes that, and installs it over the original when it works. A copy you
+changed is yours from then on: one that came from a repository no longer updates from there, and
+a bundled one skips the IDE's own updates until you go back to its version.
 
 ### Can I use the Visual Studio Marketplace?
 

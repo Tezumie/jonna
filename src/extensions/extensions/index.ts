@@ -4,6 +4,7 @@
 
 import apiTypes from "../../api/index.d.ts?raw";
 import { output } from "../../core/diagnostics/output";
+import type { Caller } from "../../core/dispatcher/types";
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { channelsOf } from "../../core/extensions/rpcOutput";
 import { commandPrefix } from "../../core/extensions/thirdParty";
@@ -193,6 +194,18 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
       effects: ["read"],
       run: () => ({ extensions: snapshot() }),
     });
+    /**
+     * Loading or installing a folder from anywhere on disk (D419): the user (the folder picker),
+     * or an agent in a chat, which names the folder and is asked about there (changing the IDE,
+     * then the extension's permissions). Never an extension (it would install another) nor an
+     * MCP client outside a chat, as `extensions.installPermanently`.
+     */
+    const folderCaller = (caller: Caller, folder: string | undefined, what: string) => {
+      if (caller.kind === "ext" || caller.kind === "mcp")
+        throw new Error(`Only the user or the agent can ${what}.`);
+      if (caller.kind !== "user" && caller.kind !== "test" && folder === undefined)
+        throw new Error("Give the extension's folder.");
+    };
     /** The folder from input (relative to the workspace's folders, or absolute), else picked. */
     const pick = async (folder: string | undefined, title: string) => {
       if (folder === undefined) return dialogIpc.pickFolder(title);
@@ -203,13 +216,13 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
       id: "extensions.installFromFolder",
       title: "Install extension from folder…",
       description:
-        "Copies an extension folder (with extension.json, or a VS Code extension's package.json) into the installed extensions and asks the user to grant the permissions it asks for.",
+        "Copies an extension folder (with extension.json, or a VS Code extension's package.json) into the installed extensions, for every project, and asks the user to grant the permissions it asks for. Run again on the same folder after changing it (raise its version), it replaces the installed copy: that is how an extension installed from a folder is updated. Without `folder` the user picks one (agents must give it).",
       input: s.object({
         folder: s.string().describe("Absolute path of the extension folder").optional(),
       }),
       effects: ["write"],
-      agent: "hidden",
       run: async ({ folder }, ctx) => {
+        folderCaller(ctx.caller, folder, "install extensions");
         const path = await pick(folder, "Install extension from folder");
         if (!path) return { id: null };
         const id = await manager.installFrom(path, ctx.caller.kind !== "test");
@@ -301,13 +314,13 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
       id: "extensions.loadUnpacked",
       title: "Load unpacked extension…",
       description:
-        "Runs an extension from its folder in place, for development: it reloads whenever its files change.",
+        "Runs an extension from its folder in place, for development (extension.json, or a VS Code extension's package.json): it reloads whenever its files change, and the user is asked to grant its permissions. For a folder outside <workspace folder>/extensions (those: extensions.loadFromWorkspace). Without `folder` the user picks one (agents must give it).",
       input: s.object({
         folder: s.string().describe("Absolute path of the extension folder").optional(),
       }),
       effects: ["write"],
-      agent: "hidden",
       run: async ({ folder }, ctx) => {
+        folderCaller(ctx.caller, folder, "load extensions");
         const path = await pick(folder, "Load unpacked extension");
         if (!path) return { id: null };
         return { id: await manager.loadUnpacked(path, ctx.caller.kind !== "test") };

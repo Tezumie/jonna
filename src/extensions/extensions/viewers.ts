@@ -12,10 +12,12 @@ import { hasPermission, type ThirdPartyManifest } from "../../core/extensions/th
 import { fsIpc } from "../../core/ipc/fs";
 import { type Disposable, DisposableStore, toDisposable } from "../../core/lifecycle/index";
 import { basename, pathKey } from "../../core/paths/index";
+import { effect } from "../../core/reactive/index";
 import { showDialog } from "../../ui/Dialog";
 import type { DockView } from "../../workbench/dock/views";
 import { stateField } from "../../workbench/dock/views";
 import type { WorkbenchServices } from "../../workbench/services";
+import { contributedTitleActions } from "../../workbench/titleActions";
 import { safeIcon } from "./treeView";
 import { WebviewFrame } from "./webview";
 import { isGitFolderName } from "./workbenchChecks";
@@ -65,6 +67,10 @@ export function registerViewers(
         icon: () => icon,
         tooltip: (state) => `${pathOf(state)} (${viewer.title}, ${manifest.displayName})`,
         resource: (state) => pathOf(state) || undefined,
+        // Extensions' "editor/title" buttons whose `when` holds for this custom editor (D419:
+        // VS Code's `activeCustomEditorId == <view type>`).
+        actions: (state) =>
+          contributedTitleActions(services, pathOf(state), { activeCustomEditorId: viewer.id }),
         editorLike: true,
         defaultPlacement: "main",
         detachable: true,
@@ -85,6 +91,9 @@ export function registerViewers(
           let saving = 0;
           /** This tab, for a code-page viewer's messages (D257). */
           let instance = 0;
+          /** Whether the tab shows, and how a code-page viewer's code is told (D419). */
+          let shows = true;
+          let setShows: ((value: boolean) => void) | undefined;
           const frame = new WebviewFrame(
             services,
             {
@@ -144,6 +153,35 @@ export function registerViewers(
               host.receive(viewer.id, { ide: "viewerClosed", path: full || path, ...tab }),
             ),
           );
+          // A code-page viewer's code hears whether this is the tab the user is in and whether
+          // it shows (D419: VS Code's WebviewPanel.active / visible and onDidChangeViewState).
+          if (viewer.codePage) {
+            let active: boolean | undefined;
+            const send = () =>
+              host.receive(viewer.id, {
+                ide: "viewerState",
+                instance,
+                active: active === true,
+                visible: shows,
+              });
+            views.add(
+              effect(() => {
+                services.dock.root.value;
+                services.dock.focusedGroupId.value;
+                const now = services.dock.activeTab()?.id === ctx.tabId;
+                if (now !== active) {
+                  active = now;
+                  send();
+                }
+                return undefined;
+              }),
+            );
+            setShows = (value) => {
+              if (shows === value) return;
+              shows = value;
+              send();
+            };
+          }
           views.add(frame);
           // Changed on disk (by another tool, git, the text editor's save): send it again.
           for (const event of ["files.didChange", "files.didSave"] as const)
@@ -191,6 +229,8 @@ export function registerViewers(
           return {
             element: frame.element,
             onWindowChanged: (win) => frame.onWindowChanged(win),
+            onShow: () => setShows?.(true),
+            onHide: () => setShows?.(false),
             isDirty: () => dirty,
             onDidChange: changed.event,
             confirmClose: async () =>

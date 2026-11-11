@@ -443,6 +443,75 @@ test("D257: webview views and custom editors write their pages through setHtml",
   assert.equal(docText, "# Title\nhello world");
 });
 
+test("D419: a custom text editor's panel follows its tab, and undo / redo are its document's", async () => {
+  let text = "one";
+  const h = harness({
+    "editor.text": () => text,
+    // The IDE applies the edit: the file's text is the replacement.
+    "workspace.applyEdit": (p) => {
+      const last = (p.entries as { text?: string }[]).at(-1);
+      if (typeof last?.text === "string") text = last.text;
+      return true;
+    },
+  });
+  await h.shim.ready();
+  const v = h.vscode;
+  type Panel = {
+    active: boolean;
+    visible: boolean;
+    onDidChangeViewState(listener: (e: { webviewPanel: Panel }) => void): unknown;
+  };
+  let panel: Panel | undefined;
+  let doc: { uri: unknown; getText(): string; lineCount: number } | undefined;
+  const seen: boolean[] = [];
+  v.window.registerCustomEditorProvider("mdTools.editor", {
+    resolveCustomTextEditor(document: typeof doc, p: Panel) {
+      doc = document;
+      panel = p;
+      p.onDidChangeViewState((e) => seen.push(e.webviewPanel.active));
+    },
+  });
+  await h.call("webview", "mdTools.editor", { ide: "viewerOpened", path: "/ws/a.md", instance: 3 });
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(panel?.active, true);
+  await h.call("webview", "mdTools.editor", {
+    ide: "viewerState",
+    instance: 3,
+    active: false,
+    visible: true,
+  });
+  assert.equal(panel?.active, false);
+  assert.deepEqual(seen, [false]);
+  // The extension changes its document twice; undo puts each earlier text back, redo the later.
+  const write = async (next: string) => {
+    const edit = new v.WorkspaceEdit();
+    edit.replace(v.Uri.file("/ws/a.md"), new v.Range(0, 0, doc?.lineCount ?? 1, 0), next);
+    assert.equal(await v.workspace.applyEdit(edit), true);
+  };
+  await write("two");
+  await write("three");
+  assert.equal(doc?.getText(), "three");
+  // Not the tab the user is in: undo is the editor's own, the document stays.
+  await v.commands.executeCommand("undo");
+  assert.equal(doc?.getText(), "three");
+  await h.call("webview", "mdTools.editor", {
+    ide: "viewerState",
+    instance: 3,
+    active: true,
+    visible: true,
+  });
+  await v.commands.executeCommand("undo");
+  assert.equal(doc?.getText(), "two");
+  await v.commands.executeCommand("undo");
+  assert.equal(doc?.getText(), "one");
+  await v.commands.executeCommand("redo");
+  assert.equal(doc?.getText(), "two");
+  // A new edit drops what could be redone.
+  await write("four");
+  await v.commands.executeCommand("redo");
+  assert.equal(doc?.getText(), "four");
+});
+
 test("D257: debug adapters, task providers and VS Code's git API", async () => {
   const h = harness({
     "git.repositories": () => [
@@ -604,6 +673,18 @@ test("D258: tree file icons and reveal, file decorations, language configuration
     | { input: { path: string } }
     | undefined;
   assert.equal(reveal2?.input.path, "/ws/a.md");
+
+  // vscode.openWith names how a file opens (D419): "default" is the text editor, anything else
+  // a custom editor's view type; a column beside opens it to the side, for vscode.open too.
+  const opened = () => h.requests("editor.open").pop()?.params;
+  await v.commands.executeCommand("vscode.openWith", v.Uri.file("/ws/a.md"), "default", -2);
+  assert.deepEqual(opened(), { path: "/ws/a.md", toSide: true, with: "text" });
+  await v.commands.executeCommand("vscode.openWith", v.Uri.file("/ws/a.md"), "acme.board");
+  assert.deepEqual(opened(), { path: "/ws/a.md", with: "acme.board" });
+  await v.commands.executeCommand("vscode.open", v.Uri.file("/ws/a.md"), {
+    viewColumn: v.ViewColumn.Beside,
+  });
+  assert.deepEqual(opened(), { path: "/ws/a.md", toSide: true });
 });
 
 test("D261: a terminal's shellArgs string splits as Windows reads a command line", () => {

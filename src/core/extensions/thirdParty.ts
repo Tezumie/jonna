@@ -310,6 +310,17 @@ export interface ContributedSnippets {
 }
 
 /**
+ * A JSON schema for files (VS Code's `contributes.jsonValidation`, D419): validation, completion
+ * and hovers in the JSON files `fileMatch` names. Only a schema file of the extension: one
+ * behind an http(s) `url` is left out (nothing is loaded from the network).
+ */
+export interface ContributedJsonValidation {
+  /** VS Code's patterns: "*.scene.json", "/.babelrc", "package.json". */
+  fileMatch: string[];
+  path: string;
+}
+
+/**
  * A named problem matcher or pattern (VS Code's `contributes.problemMatchers` /
  * `problemPatterns`): tasks name it as "$name". The definition is kept as written; the tasks
  * system checks it (tasks/problemMatchers.ts).
@@ -425,6 +436,7 @@ export interface ThirdPartyManifest {
     semanticTokenScopes?: ContributedSemanticTokenScopes[];
     semanticTokenTypes?: ContributedSemanticTokenType[];
     snippets: ContributedSnippets[];
+    jsonValidation?: ContributedJsonValidation[];
     problemMatchers: ContributedProblemMatcher[];
     problemPatterns: ContributedProblemPattern[];
     /** Commands offered to agents as tools (they need `agent: "discoverable"`). */
@@ -859,6 +871,19 @@ export function parseManifest(value: unknown, file: string): ThirdPartyManifest 
     const language = str(s.language);
     return path && language ? [{ language, path }] : [];
   });
+  // VS Code's jsonValidation, in both formats: `fileMatch` a pattern or several, `url` a file
+  // of the extension ("./schemas/a.json"); a web address isn't a relative path and is skipped.
+  const jsonValidation = arr(c.jsonValidation)
+    .slice(0, 50)
+    .flatMap((raw): ContributedJsonValidation[] => {
+      const v = obj(raw);
+      const url = str(v.url) ?? "";
+      const path = /^[a-z][a-z0-9+.-]*:/i.test(url) ? undefined : relPath(url);
+      const fileMatch = (Array.isArray(v.fileMatch) ? v.fileMatch : [v.fileMatch])
+        .filter((m): m is string => typeof m === "string" && m.length > 0 && m.length <= 200)
+        .slice(0, 20);
+      return path && fileMatch.length ? [{ fileMatch, path }] : [];
+    });
   // Declarative in both formats (a VS Code extension's matchers work as they are).
   const MATCHER_NAME = /^[\w.-]{1,60}$/;
   const problemMatchers = arr(c.problemMatchers)
@@ -999,6 +1024,7 @@ export function parseManifest(value: unknown, file: string): ThirdPartyManifest 
       ...(semanticTokenScopes.length && { semanticTokenScopes }),
       ...(semanticTokenTypes.length && { semanticTokenTypes }),
       snippets,
+      ...(jsonValidation.length && { jsonValidation }),
       problemMatchers,
       problemPatterns,
       agentTools,

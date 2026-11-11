@@ -21,7 +21,7 @@ const serializeArgument = (v: unknown): unknown => {
 };
 
 import type { Command } from "./languageTypes";
-import { Disposable, Position, Range, Uri } from "./types";
+import { Disposable, Position, Range, Uri, ViewColumn } from "./types";
 
 /** A command of the package as the IDE has it (D256: `vscodeId` when they differ). */
 export interface DeclaredCommand {
@@ -161,6 +161,12 @@ export class ShimCommands {
   treeSelection: TreeSelection = () => undefined;
   /** VS Code's `interactive.open` (the notebooks' part sets it). */
   openInteractive: ((args: unknown[]) => Promise<unknown>) | undefined;
+
+  /**
+   * Set once the webviews part exists (D419): takes `undo` / `redo` when a custom text editor of
+   * the extension is the tab the user is in (its file has no text editor to undo in).
+   */
+  customTextUndo: ((action: "undo" | "redo") => Promise<boolean>) | undefined;
 
   constructor(
     private readonly ide: WorkerApi,
@@ -322,6 +328,9 @@ export class ShimCommands {
   ): Promise<{ handled: boolean; value?: unknown }> {
     const ide = this.ide;
     const [a, b, c] = args;
+    // In one of its custom text editors, undo and redo are that document's (D419).
+    if ((id === "undo" || id === "redo") && (await this.customTextUndo?.(id)))
+      return { handled: true };
     switch (id) {
       case "setContext": {
         const value =
@@ -341,7 +350,11 @@ export class ShimCommands {
         if (!uri) return { handled: true };
         if (uri.scheme === "http" || uri.scheme === "https" || uri.scheme === "mailto")
           return { handled: true, value: await ide.env.openExternal(uri.toString(true)) };
-        const options = isPlainObject(b) ? b : {};
+        // vscode.open(uri, columnOrOptions); vscode.openWith(uri, viewType, columnOrOptions).
+        const viewType = id === "vscode.openWith" && typeof b === "string" ? b : undefined;
+        const third = id === "vscode.openWith" ? c : b;
+        const options = isPlainObject(third) ? third : {};
+        const column = typeof third === "number" ? third : options.viewColumn;
         const selection = Range.isRange(options.selection) ? options.selection : undefined;
         await ide.editor.open(pathOf(uri), {
           ...(selection && {
@@ -350,6 +363,9 @@ export class ShimCommands {
           }),
           ...(options.preview === false && { preview: false }),
           ...(options.preserveFocus === true && { preserveFocus: true }),
+          ...(column === ViewColumn.Beside && { toSide: true }),
+          // "default" is VS Code's text editor; anything else a custom editor's view type.
+          ...(viewType && { with: viewType === "default" ? "text" : viewType }),
         });
         return { handled: true };
       }

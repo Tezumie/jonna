@@ -4050,3 +4050,24 @@ Images in the chat (D381):
 2. Ask the agent with @docs:<a large source> twice: the second answer still cites the docs.
 3. A chat answer with a Mermaid diagram and a formula: both draw, and scroll back without
    flicker.
+
+## D419 — External agents as their chat's agent, the agents' guide, custom editors
+1. A chat with Claude Code (or Codex): ask it to "set a breakpoint on line 3 of <a file> with the
+   IDE's debugger". The question appears as a card in the chat, not a dialog over the window.
+   With the chat on full access it isn't asked.
+2. In the same chat: "what does help_agentGuide say about extensions?" It answers from the guide
+   (three formats, how to load and install).
+3. Ask it to load an extension folder outside the project (`extensions.loadUnpacked`): "Change
+   the IDE" is asked in the chat, then the extension's permissions; it shows under Development.
+   Ask it to install that folder (`extensions.installFromFolder`): it shows under Installed.
+   Change a file in the folder, raise its version, ask it to install again: the installed
+   version changes.
+4. `claude mcp add` from a terminal (the MCP server on): its calls still ask in a dialog, and
+   `extensions.installFromFolder` answers "Only the user or the agent can install extensions."
+5. A VS Code extension with a custom text editor (the three.js game editor, loaded unpacked):
+   open a `*.scene.json`. Its Play / Build / JSON buttons are in the tab's toolbar; Ctrl+Alt+P
+   toggles play. "Open scene as JSON" opens the text editor beside it, not a second scene editor.
+   Move an object, press the page's Undo, then Redo: the object goes back and forth. With two
+   scenes open, Play starts the one whose tab you are in.
+6. Give that extension a `schemas/scene.schema.json` (`contributes.jsonValidation`): in the JSON
+   text of a scene, a wrong property is underlined and completion offers the schema's.

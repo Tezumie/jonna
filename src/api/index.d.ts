@@ -1805,7 +1805,9 @@ declare namespace IdeExtension {
         /**
          * VS Code's showTextDocument options (D255): `selection` selects a range (instead of
          * `line` / `column`), `preserveFocus` keeps focus where it is, `toSide` opens it beside
-         * the focused group.
+         * the focused group. `with` (VS Code's `vscode.openWith`, D419) says how: "text" is
+         * the text editor even where the file has a viewer of its own, any other value a
+         * viewer's id (a custom editor's view type); without it the file's default opens.
          */
         options?: {
           line?: number;
@@ -1814,6 +1816,7 @@ declare namespace IdeExtension {
           selection?: TextRange;
           preserveFocus?: boolean;
           toSide?: boolean;
+          with?: string;
         },
       ): Promise<void>;
       /** A file's text as the editor has it (unsaved edits included; default: the active one). */

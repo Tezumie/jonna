@@ -278,6 +278,22 @@ export function manifestSchema(): Record<string, unknown> {
           languages: { type: "array", items: { type: "object" } },
           grammars: { type: "array", items: { type: "object" } },
           snippets: { type: "array", items: { type: "object" } },
+          jsonValidation: {
+            type: "array",
+            description:
+              "JSON schemas for files (VS Code's jsonValidation): validation, completion and hovers",
+            items: {
+              type: "object",
+              required: ["fileMatch", "url"],
+              properties: {
+                fileMatch: {
+                  description: 'A pattern or several: "*.board.json", "/.toolrc"',
+                  anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+                },
+                url: { type: "string", description: "The schema file, in the extension's folder" },
+              },
+            },
+          },
           problemMatchers: {
             type: "array",
             items: { type: "object", required: ["name"] },

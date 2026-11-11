@@ -62,6 +62,16 @@ export interface SnippetEntry {
   source: string;
 }
 
+/** A JSON schema an extension brings for files (VS Code's `jsonValidation`, D419). */
+export interface JsonSchemaEntry {
+  /** The schema's id, unique per extension and file. */
+  uri: string;
+  /** VS Code's patterns: "*.scene.json", "/.babelrc". */
+  fileMatch: readonly string[];
+  schema: unknown;
+  source: string;
+}
+
 export interface ColorThemeEntry {
   /** What the theme picker shows and `workbench.colorTheme` stores. */
   label: string;
@@ -102,6 +112,7 @@ export class Contributions {
   readonly grammars: Signal<readonly GrammarEntry[]> = signal([]);
   readonly semanticTokenScopes: Signal<readonly SemanticTokenScopesEntry[]> = signal([]);
   readonly snippets: Signal<readonly SnippetEntry[]> = signal([]);
+  readonly jsonSchemas: Signal<readonly JsonSchemaEntry[]> = signal([]);
   readonly themes: Signal<readonly ColorThemeEntry[]> = signal([]);
   readonly iconThemes: Signal<readonly IconThemeEntry[]> = signal([]);
   /** Product icon themes (D267). */
@@ -129,6 +140,10 @@ export class Contributions {
 
   addSnippets(entries: readonly SnippetEntry[]): Disposable {
     return this.add(this.snippets, entries);
+  }
+
+  addJsonSchemas(entries: readonly JsonSchemaEntry[]): Disposable {
+    return this.add(this.jsonSchemas, entries);
   }
 
   addThemes(entries: readonly ColorThemeEntry[]): Disposable {

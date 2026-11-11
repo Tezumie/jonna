@@ -9,6 +9,14 @@ The IDE is extended by extensions: a folder with `extension.json` (the manifest)
 a `main.js` that runs in a sandboxed worker with one global, `ide` (the API). Most of what a VS
 Code extension does, an extension here can do; the names differ (the table below).
 
+That sandboxed format is the default. Two others exist, for a reason only (the guide's
+`choosing-a-format` section): the same format with `"host": "node"` when the code needs npm
+packages, a server or files the sandbox doesn't allow, and a VS Code extension (`package.json`,
+`require("vscode")`) when it must also run in VS Code or you are changing one that exists. A VS
+Code extension's folder goes under `<workspace folder>/extensions/<name>` and loads with
+`call_command extensions.loadFromWorkspace`; `ide://ext/<id>/vscode` lists the VS Code calls the
+IDE doesn't support.
+
 ## Workflow
 
 1. **Create it with `call_command extensions.create`** (`name`, `displayName`, `description`). Never write the folder

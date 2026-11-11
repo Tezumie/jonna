@@ -1234,7 +1234,11 @@ export class AcpBackend {
       this.ideTools = "unsupported";
       return [];
     }
-    const lent = await mcpAgentAccess.acquire(`acp:${this.session.id}`);
+    // Its calls are this chat's (D419): questions show here, under this chat's access mode.
+    const lent = await mcpAgentAccess.acquire(`acp:${this.session.id}`, {
+      agent: this.config.name,
+      session: this.session.id,
+    });
     if (!lent) {
       this.ideTools = "off";
       return [];

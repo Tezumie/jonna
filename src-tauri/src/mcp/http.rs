@@ -36,6 +36,28 @@ fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// Whether an `Authorization` value is the server's token, alone or followed by a chat's key
+/// (`Bearer <token>.<key>`, D419): the key says which chat's agent calls, the token still decides.
+pub(super) fn authorized(value: &[u8], expected: &[u8]) -> bool {
+    if value.len() <= expected.len() {
+        return same(value, expected);
+    }
+    let (token, rest) = value.split_at(expected.len());
+    same(token, expected) && rest[0] == b'.' && valid_chat_key(&rest[1..])
+}
+
+fn valid_chat_key(key: &[u8]) -> bool {
+    !key.is_empty() && key.len() <= 64 && key.iter().all(u8::is_ascii_alphanumeric)
+}
+
+/// The chat key of an `Authorization` value that passed `authorized` (the token is hex: the
+/// first dot starts the key).
+pub(super) fn chat_key(value: &[u8]) -> Option<String> {
+    let dot = value.iter().position(|b| *b == b'.')?;
+    let key = &value[dot + 1..];
+    valid_chat_key(key).then(|| String::from_utf8_lossy(key).into_owned())
+}
+
 /// Binds, starts serving in the background, returns the port.
 pub async fn serve(
     catalog: Arc<RwLock<Catalog>>,
@@ -80,7 +102,7 @@ pub async fn serve(
                     let authorized = req
                         .headers()
                         .get(hyper::header::AUTHORIZATION)
-                        .is_some_and(|v| same(v.as_bytes(), expected.as_bytes()));
+                        .is_some_and(|v| authorized(v.as_bytes(), expected.as_bytes()));
                     let path_ok = req.uri().path() == "/mcp";
                     async move {
                         if !path_ok {

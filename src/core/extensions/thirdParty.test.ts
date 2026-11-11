@@ -223,11 +223,24 @@ test("parseManifest: a VS Code extension's declarative parts, its code once allo
         grammars: [{ language: "toml", scopeName: "source.toml", path: "./syntaxes/toml.json" }],
         languages: [{ id: "toml", extensions: [".toml"] }],
         snippets: [{ language: "javascript", path: "./snippets/js.json" }],
+        jsonValidation: [
+          { fileMatch: "*.scene.json", url: "./schemas/scene.schema.json" },
+          { fileMatch: ["/.owlrc", 7], url: "schemas/rc.json" },
+          // A schema on the web isn't loaded; one without a pattern matches nothing.
+          { fileMatch: "*.json", url: "https://example.com/schema.json" },
+          { fileMatch: [], url: "./schemas/none.json" },
+        ],
         commands: [{ command: "nightOwl.x", title: "X" }],
       },
     },
     "package.json",
   );
+  // JSON schemas for files (D419), kept while its code isn't allowed: they need none.
+  assert.deepEqual(m.contributes.jsonValidation, [
+    { fileMatch: ["*.scene.json"], path: "schemas/scene.schema.json" },
+    { fileMatch: ["/.owlrc"], path: "schemas/rc.json" },
+  ]);
+  assert.equal(declarativeOnly(m).contributes.jsonValidation?.length, 2);
   assert.equal(m.id, "sdras.night-owl");
   assert.equal(m.format, "vscode");
   // Its code runs in the Node host behind the shim (vscodePackage.test.ts has the rest).

@@ -8,7 +8,7 @@
 import type { WorkerApi } from "../rpc";
 import { webviewUri } from "../rpcWebviewPanels";
 import { pathOf, uriOf } from "./convert";
-import type { Documents } from "./document";
+import { type Documents, ShimTextDocument } from "./document";
 import { Disposable, EventEmitter, NONE_TOKEN, type Uri } from "./types";
 import { safeWebviewUri, withVscodeBridge } from "./views";
 
@@ -173,6 +173,9 @@ export function createWebviews(
     });
   };
 
+  /** The custom editor providers registered, for the `undo` / `redo` commands (D419). */
+  const customEditors = new Set<{ undoRedo(action: string): Promise<boolean> }>();
+
   type CustomProvider = {
     resolveCustomTextEditor?(document: unknown, panel: unknown, token: unknown): unknown;
     openCustomDocument?(uri: Uri, context: unknown, token: unknown): unknown;
@@ -195,8 +198,77 @@ export function createWebviews(
     const handle = ide.ui.webview(viewType);
     const tabs = new Map<
       number,
-      { messages: EventEmitter<unknown>; disposed: EventEmitter<void>; document: unknown }
+      {
+        messages: EventEmitter<unknown>;
+        disposed: EventEmitter<void>;
+        document: unknown;
+        /** VS Code's WebviewPanel.active / visible, kept current from the dock (D419). */
+        panel: { active: boolean; visible: boolean };
+        viewState: EventEmitter<unknown>;
+      }
     >();
+    /** A tab's state that arrived before its document was read. */
+    const earlyStates = new Map<number, { active: boolean; visible: boolean }>();
+    customEditors.add({
+      undoRedo: async (action) => {
+        // The tab the user is in: the extension's own "undo" from its page means this one.
+        const tab = [...tabs.values()].find((t) => t.panel.active);
+        return tab ? replay(tab.document, action) : false;
+      },
+    });
+    /**
+     * A custom text editor's edits (D419). Its file is no tab of the text editor, so the IDE's
+     * undo has nothing of it: each change of the document is kept here, and VS Code's `undo` /
+     * `redo` commands (what its page's buttons and keys run) put the earlier text back.
+     */
+    const histories = new Map<
+      unknown,
+      { undo: string[]; redo: string[]; last: string; replaying: boolean }
+    >();
+    const HISTORY_LIMIT = 100;
+    const textChanges = docs.onDidChange.event((e) => {
+      const history = histories.get(e.document);
+      if (!history) return;
+      const now = e.document.getText();
+      if (now === history.last) return;
+      if (!history.replaying) {
+        history.undo.push(history.last);
+        if (history.undo.length > HISTORY_LIMIT) history.undo.shift();
+        history.redo.length = 0;
+      }
+      history.last = now;
+    });
+    const replay = async (document: unknown, action: string): Promise<boolean> => {
+      const history = histories.get(document);
+      if (!history || history.replaying || !(document instanceof ShimTextDocument)) return false;
+      const from = action === "undo" ? history.undo : action === "redo" ? history.redo : null;
+      const text = from?.pop();
+      if (text === undefined) return false;
+      (action === "undo" ? history.redo : history.undo).push(history.last);
+      history.replaying = true;
+      try {
+        const path = pathOf(document.uri);
+        const last = document.lineAt(Math.max(0, document.lineCount - 1));
+        const edit = ide.workspace.createWorkspaceEdit();
+        edit.replace(
+          path,
+          {
+            startLine: 1,
+            startColumn: 1,
+            endLine: document.lineCount,
+            endColumn: last.text.length + 1,
+          },
+          text,
+        );
+        if (!(await ide.workspace.applyEdit(edit).catch(() => false))) return false;
+        // The document shows it, and the extension's change listener sends it to its page.
+        await docs.sync(path, undefined, { dirty: true }).catch(() => undefined);
+        return true;
+      } finally {
+        history.last = document.getText();
+        history.replaying = false;
+      }
+    };
     /** An editable custom document's edits (D258): undo / redo, and where it was last saved. */
     const editsOf = new Map<
       unknown,
@@ -233,6 +305,11 @@ export function createWebviews(
     });
     /** Ctrl+S / Z / Y in the page (the bridge sends them; the IDE's keys don't reach a page). */
     const key = async (document: unknown, action: string) => {
+      if (histories.has(document)) {
+        if (action === "save") await (document as ShimTextDocument).save();
+        else await replay(document, action);
+        return;
+      }
       const state = stateOf(document);
       if (action === "save") {
         if (!provider.saveCustomDocument) return;
@@ -262,7 +339,12 @@ export function createWebviews(
             { backupId: undefined, untitledDocumentData: undefined },
             NONE_TOKEN,
           )));
-      tabs.set(instance, { messages, disposed, document });
+      const viewState = new EventEmitter<unknown>();
+      const shown = earlyStates.get(instance) ?? { active: true, visible: true };
+      earlyStates.delete(instance);
+      tabs.set(instance, { messages, disposed, document, panel: shown, viewState });
+      if (text && document instanceof ShimTextDocument && !histories.has(document))
+        histories.set(document, { undo: [], redo: [], last: document.getText(), replaying: false });
       const title = path.split(/[\\/]/).pop() ?? path;
       const panel = {
         viewType,
@@ -280,22 +362,42 @@ export function createWebviews(
           !text,
         ),
         options: options?.webviewOptions ?? {},
-        active: true,
-        visible: true,
+        // Whether its tab is the one the user is in, and whether it shows (D419).
+        get active() {
+          return shown.active;
+        },
+        get visible() {
+          return shown.visible;
+        },
         viewColumn: 1,
         onDidDispose: disposed.event,
-        onDidChangeViewState: new EventEmitter<unknown>().event,
+        onDidChangeViewState: viewState.event,
         reveal: () => {},
         dispose: () => unsupported("WebviewPanel.dispose of a custom editor"),
       };
+      panels.set(instance, panel);
       if (text) await provider.resolveCustomTextEditor?.(document, panel, NONE_TOKEN);
       else await provider.resolveCustomEditor?.(document, panel, NONE_TOKEN);
     };
+    /** Each tab's panel, as its view state events carry it. */
+    const panels = new Map<number, unknown>();
     const listening = handle.onMessage((m) => {
       if (!isRecord(m) || typeof m.instance !== "number") return;
       if (m.ide === "viewerOpened" && typeof m.path === "string")
         void open(m.path, m.instance).catch((err: unknown) => console.error(err));
-      else if (m.ide === "viewerMessage") {
+      else if (m.ide === "viewerState") {
+        // The dock says which tab the user is in and which show (D419).
+        const next = { active: m.active === true, visible: m.visible !== false };
+        const tab = tabs.get(m.instance);
+        if (!tab) {
+          earlyStates.set(m.instance, next);
+          return;
+        }
+        if (tab.panel.active === next.active && tab.panel.visible === next.visible) return;
+        tab.panel.active = next.active;
+        tab.panel.visible = next.visible;
+        tab.viewState.fire({ webviewPanel: panels.get(m.instance) });
+      } else if (m.ide === "viewerMessage") {
         const tab = tabs.get(m.instance);
         const inner = m.message;
         if (isRecord(inner) && typeof inner.__ide === "string") {
@@ -306,10 +408,13 @@ export function createWebviews(
       } else if (m.ide === "viewerClosed") {
         const tab = tabs.get(m.instance);
         tabs.delete(m.instance);
+        panels.delete(m.instance);
+        earlyStates.delete(m.instance);
         tab?.disposed.fire();
         // The document goes with its last tab.
         if (tab && ![...tabs.values()].some((t) => t.document === tab.document)) {
           editsOf.delete(tab.document);
+          histories.delete(tab.document);
           (tab.document as { dispose?(): unknown } | undefined)?.dispose?.();
         }
       }
@@ -317,10 +422,19 @@ export function createWebviews(
     return new Disposable(() => {
       changes?.dispose();
       listening.dispose();
+      textChanges.dispose();
     });
   };
 
   /** The webview views' state for `ide://ext/<id>/vscode`. */
   const report = () => [...viewStates].map(([id, v]) => ({ id, ...v }));
-  return { registerWebviewViewProvider, registerCustomEditorProvider, report };
+  /**
+   * VS Code's `undo` / `redo` command while one of this extension's custom text editors is the
+   * tab the user is in (D419): true when it took it, false for the editor's own undo.
+   */
+  const undoRedo = async (action: "undo" | "redo"): Promise<boolean> => {
+    for (const editor of customEditors) if (await editor.undoRedo(action)) return true;
+    return false;
+  };
+  return { registerWebviewViewProvider, registerCustomEditorProvider, report, undoRedo };
 }

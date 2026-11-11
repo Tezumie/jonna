@@ -333,6 +333,17 @@ export class ExtensionApiHost implements Disposable {
       p.selection && typeof p.selection === "object"
         ? this.range(p.selection as Record<string, unknown>)
         : null;
+    // A viewer by its id (VS Code's `vscode.openWith(uri, viewType)`, D419).
+    if (typeof p.with === "string" && p.with !== "text") {
+      await this.exec("viewer.open", {
+        path: this.documentPath(p.path),
+        viewer: p.with,
+        ...(p.preview === false && { preview: false }),
+        ...(p.preserveFocus === true && { preserveFocus: true }),
+        ...(p.toSide === true && { toSide: true }),
+      });
+      return;
+    }
     await this.exec("editor.openFile", {
       path: this.documentPath(p.path),
       ...(selection
@@ -347,6 +358,8 @@ export class ExtensionApiHost implements Disposable {
       ...(p.preview === false && { preview: false }),
       ...(p.preserveFocus === true && { preserveFocus: true }),
       ...(p.toSide === true && { toSide: true }),
+      // The text editor even where a viewer is the file's default ("default" in VS Code).
+      ...(p.with === "text" && { asText: true }),
     });
     // VS Code's `selection` (D255): the range selected once it's open.
     if (selection)

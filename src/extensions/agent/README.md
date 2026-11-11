@@ -995,7 +995,7 @@ Claude Code's `run_in_background` / BashOutput / KillShell.
 - Test: `tests/scripts/acp-m7-6.jsonc` (the mock agent's "agent writes itself" and "scratch
   check").
 
-**External agents get the IDE's tools (D211):** `acp.ts` passes the lent MCP server in `session/new` and `session/load` when the agent advertises `mcpCapabilities.http`; `agent.externalAgents.ideTools` turns it off; `ide://agent/session` → `ideTools`.
+**External agents get the IDE's tools (D211):** `acp.ts` passes the lent MCP server in `session/new` and `session/load` when the agent advertises `mcpCapabilities.http`; `agent.externalAgents.ideTools` turns it off; `ide://agent/session` → `ideTools`. The server is lent with the chat's own token (D419), so the agent's calls run as caller `{ kind: "acp", agent, session }`: asked in this chat (`setAgentPermissionHandler`), under its access mode, with what the IDE's own agent may run. `help.agentGuide` tells it what the IDE's agent has in its prompt.
 With them on, each message carries the IDE state (`ideState`: editor, problems, git, open browser tabs and their console errors, D365) as an `<ide_state>` context block; `browser.console` is a core command, listed as `browser_console`.
 
 **D223 (MCP and external agents):**

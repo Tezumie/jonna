@@ -2,7 +2,6 @@
 // paints), file commands, `ide://editors` and `ide://editors/active`, and status bar items.
 // Tabs persist with the dock; this extension has no layout of its own.
 
-import { matchesWhen } from "../../core/context/index";
 import { diffLines, lineMarks, splitLines } from "../../core/diff/index";
 import type { TabRef } from "../../core/dock/index";
 import { on } from "../../core/dom/index";
@@ -16,12 +15,11 @@ import { isAbsolute as isAbsolutePath, pathKey, samePath } from "../../core/path
 import { computed, effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { showDialog } from "../../ui/Dialog";
-import { knownIcon } from "../../ui/Icon";
 import type { TabAction } from "../../workbench/dock/views";
 import { stateField } from "../../workbench/dock/views";
-import { resourceContext } from "../../workbench/extensionFeatures";
 import { uriScheme } from "../../workbench/extensionRegistries";
 import type { WorkbenchServices } from "../../workbench/services";
+import { contributedTitleActions } from "../../workbench/titleActions";
 import { registerEditorActions } from "./actions";
 import { registerEditorAi } from "./ai/index";
 import { registerNextEdit } from "./ai/nextEdit";
@@ -410,29 +408,12 @@ export const editorExtension: BuiltinExtension<WorkbenchServices> = {
       actionsFor: (path) => {
         const preview = services.viewers.previewFor(path);
         // Extensions' buttons (`menus` "editor/title", D176), after the IDE's own.
-        const keys = resourceContext(
-          path,
-          false,
-          (() => {
-            const doc = editors.find(path);
-            return doc ? documentLanguage(doc) : undefined;
-          })(),
-        );
-        const contributed: TabAction[] = services.extensionFeatures
-          .menuItems("editor/title", (when) =>
-            matchesWhen(when, (k: string) => (k in keys ? keys[k] : services.context.get(k))),
-          )
-          .slice(0, 5)
-          .map((m) => ({
-            icon: knownIcon(m.icon, "circle-dot"),
-            // Its own image, the dark one with a dark theme (D262).
-            ...((services.theme.theme.peek() === "dark" ? m.iconImageDark : m.iconImage) && {
-              iconImage: services.theme.theme.peek() === "dark" ? m.iconImageDark : m.iconImage,
-            }),
-            title: m.title,
-            command: m.command,
-            input: { path },
-          }));
+        const doc = editors.find(path);
+        const contributed = contributedTitleActions(services, path, {
+          resourceLangId: doc ? documentLanguage(doc) : "",
+          // A text tab is no custom editor, whatever another group shows (D419).
+          activeCustomEditorId: "",
+        });
         const own: TabAction[] = preview
           ? [
               {

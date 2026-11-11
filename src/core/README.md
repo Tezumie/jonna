@@ -215,7 +215,9 @@ Recommended section (a folder's `.vscode/extensions.json`, and a map from kinds 
 well-known Open VSX extensions). The host is `src/extensions/extensions/`.
 
 `vscode/` is the `vscode` shim (D256): what a VS Code extension gets for `require("vscode")` in the
-Node host, built on the worker API. `types.ts` and `languageTypes.ts` are VS Code's classes and
+Node host, built on the worker API. Custom editors (`webviews.ts`, D419): a panel's `active` /
+`visible` follow its tab, and a custom text editor keeps its document's earlier texts for the
+`undo` / `redo` commands (`ShimCommands.customTextUndo`). `types.ts` and `languageTypes.ts` are VS Code's classes and
 enums, `convert.ts` turns 0-based positions, Uris, edits and the rest into the IDE's shapes,
 `document.ts` the text documents (open, changed, closed from the IDE's events), `commands.ts`
 VS Code's command ids and arguments, `languages.ts` providers and diagnostic collections,

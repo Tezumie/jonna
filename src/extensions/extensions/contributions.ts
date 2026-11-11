@@ -16,6 +16,7 @@ import type {
   Contributions,
   GrammarEntry,
   IconThemeEntry,
+  JsonSchemaEntry,
   LanguageEntry,
   SemanticTokenScopesEntry,
   SnippetEntry,
@@ -269,6 +270,27 @@ export async function addDeclarative(
     )
   ).flat();
   store.add(contributions.addSnippets(snippets));
+  // JSON schemas for files (VS Code's jsonValidation, D419): the editor's JSON service gets them.
+  const jsonSchemas = (
+    await Promise.all(
+      (c.jsonValidation ?? []).map(async (v): Promise<JsonSchemaEntry[]> => {
+        try {
+          return [
+            {
+              uri: `ide://schemas/ext/${manifest.id}/${v.path}`,
+              fileMatch: v.fileMatch,
+              schema: await readJson(root, v.path),
+              source: manifest.id,
+            },
+          ];
+        } catch (err) {
+          warn(`${v.path}: ${err instanceof Error ? err.message : String(err)}`);
+          return [];
+        }
+      }),
+    )
+  ).flat();
+  store.add(contributions.addJsonSchemas(jsonSchemas));
   // Problem matchers and patterns, by name, for tasks (`"problemMatcher": "$name"`).
   store.add(
     contributions.addProblemMatchers(

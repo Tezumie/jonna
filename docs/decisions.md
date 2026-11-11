@@ -25,6 +25,7 @@ unless noted.
 | · Agents and subagents as in Claude Code, the plain chat panel, VS Code extensions as in VS Code | D284–D299 |
 | · The agent's tools at Claude Code's level, the command sandbox, desktop control, plugins, hooks | D300–D378 |
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
+| · The public repository, external agents as their chat's agent, custom editor fixes | D417–D419 |
 
 ## Seeded from PLAN §19
 
@@ -14734,3 +14735,59 @@ export.
   `noDescendingSpecificity` (false alarms across the stylesheets) and `noTemplateCurlyInString`
   (`${…}` in plain strings is deliberate here: task, launch and MCP placeholders). The debugger's
   bootloader keeps bare `require("fs")`, since it runs inside the user's own Node.
+
+### D419 — External agents are their chat's agent, a guide for them, custom editor fixes
+
+The owner asked Claude Code (an external agent, in a chat) for an extension that makes the IDE a
+game editor. It wrote an ordinary VS Code extension, never read the extension guide, and couldn't
+have installed the result. Reading why turned up one cause and several gaps.
+
+- **An external agent's calls are its chat's (the cause).** The caller kind `acp` was checked in
+  ten places and created nowhere: every call an external agent made through the lent MCP server
+  (D211) ran as `{ kind: "mcp" }`, an anonymous client. Its questions were a modal dialog instead
+  of a card in the chat, the chat's access mode didn't apply, nothing tied a command to the chat
+  (tabs it opened, pull request watches), and commands that accept agents refused it. Now a chat
+  that borrows the server gets a token of its own: the server's, a dot, a random key
+  (`chatToken`, `core/mcp/agentAccess.ts`). The Rust server accepts the token with or without a
+  key (`mcp/http.rs` `authorized`), the handler passes the key along with each call
+  (`BridgeRequest.chat`), and the MCP extension runs calls whose key it knows as
+  `{ kind: "acp", agent, session }`. The key rides on the token because both transports already
+  carry it (an HTTP header; the stdio proxy's environment variable), so neither changed. A key
+  the window doesn't know (a chat that ended) is an MCP client again. Any other client of the
+  server is unchanged.
+- **A guide for agents that aren't the IDE's own.** `help.agentGuide` (read-only, `agent:
+  "core"`, so it is among the listed tools) returns what the IDE's agent has in its prompt and an
+  external one never saw: this isn't VS Code, how commands and `ide://` state are reached, which
+  commands drive the debugger, tests, terminals, browser and git, where the documentation is.
+  `{ topic: "extensions" }`: which format to choose, how to load, check, install and update one,
+  where its log is. The MCP server's instructions point at it. Text in
+  `extensions/help/agentGuide.ts` (DOM-free, tested). A listed tool, not only instructions: some
+  clients don't show a server's instructions to their model.
+- **Agents can load and install a folder.** `extensions.loadUnpacked` and
+  `extensions.installFromFolder` were hidden from every agent. They are reachable now for the
+  user and an agent in a chat (the IDE's own or an external one): the agent must name the folder,
+  the "change the IDE" question is asked in the chat even with full access, and the extension's
+  permissions are asked as for any install. Extensions and MCP clients outside a chat are
+  refused, as `extensions.installPermanently` refuses them. Installing the same folder again
+  replaces the installed copy, which is how a folder-installed extension is updated; the command's
+  description and the guide say so.
+- **The guide says which format to choose** (`docs/extensions.md` "Choosing a format"): the IDE's
+  own sandboxed format first, the same in Node when the sandbox is the obstacle, a VS Code
+  extension when it must also run in VS Code or already exists. And where an extension's log and
+  unsupported calls are read (`ide://extensions?id=`, `extensions.try`, `ide://ext/<id>/vscode`):
+  agents had these, the external ones weren't told.
+- **VS Code shim, custom editors.** `activeCustomEditorId` is set (the active tab's viewer id);
+  a custom editor's tabs show `editor/title` buttons (`workbench/titleActions.ts`, shared with
+  the text editor); `vscode.openWith` honors its view type (`"default"`: the text editor) and,
+  with `vscode.open`, a column beside (`ide.editor.open`'s `with`); `WebviewPanel.active` /
+  `visible` follow the tab (`viewerState` from `extensions/viewers.ts`, for code-page viewers)
+  and `onDidChangeViewState` fires; a custom text editor keeps 100 earlier texts of its document
+  for the `undo` / `redo` commands; `contributes.jsonValidation` works in both formats
+  (`Contributions.jsonSchemas` → the editor's JSON service; no schemas from the network).
+- **Not done:** a custom text editor's document is still written to the file at each edit (no
+  unsaved state of its own), so `isDirty` is the shim's own flag. The build-extension skill is
+  still the IDE's agent's only; `help.agentGuide` covers the same ground for external ones.
+- **Tests:** `mcp/tests.rs` (the token with a key), `core/extensions/vscode/shim.test.ts`
+  (openWith, panel state, undo / redo), `thirdParty.test.ts` and `editor/jsonSchemas.test.ts`
+  (jsonValidation), `help/agentGuide.test.ts`. Not run in the GUI in this change: see
+  `docs/manual-test.md` D419.

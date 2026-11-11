@@ -281,6 +281,7 @@ export function createVscodeShim(o: ShimOptions) {
   const views = createViews(ide, commands, o.extensionPath, unsupported);
   const webviews = createWebviews(ide, docs, o.extensionPath, unsupported);
   webviewViews = webviews.report;
+  commands.customTextUndo = webviews.undoRedo;
   // Set when the extension starts stopping (D386): its messages are logged, not shown.
   let stopping = false;
   const window = createWindow(ide, commands, ide.env.appName, unsupported, {

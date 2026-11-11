@@ -17,6 +17,12 @@ terminal commands, read diagnostics…) and read the IDE's state.
   (*Allow once* / *Allow for this session* / *Deny*); destructive commands (delete, replace in
   files) ask every time. Commands marked as UI-only (`agent: "hidden"`, e.g. the palette) are not
   offered at all. Every call is in the audit log with its caller.
+- **Start with `help_agentGuide`.** It is among the listed tools: what the IDE offers an agent,
+  where its documentation is, and (`{ "topic": "extensions" }`) how to extend the IDE (D419).
+- **An agent in a chat is that chat's agent (D419).** An external agent the IDE runs in a chat
+  calls with a token of its own, so its calls run as that chat's agent rather than as an MCP
+  client: questions are cards in the chat, the chat's access mode applies, and it may run what
+  the IDE's own agent may (installing an extension from a folder, say).
 - **External agents borrow it.** An external agent the IDE runs over ACP (Claude Code, Codex…)
   gets the same server without `mcp.enabled` being on: over HTTP when it takes HTTP servers, else
   through the IDE's own program as a stdio proxy (D211, D223). `agent.externalAgents.ideTools`

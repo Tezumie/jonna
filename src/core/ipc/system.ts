@@ -320,8 +320,9 @@ export interface McpInfo {
 }
 
 export type McpRequest =
-  | { kind: "call"; id: number; client: string; command: string; input: unknown }
-  | { kind: "read"; id: number; client: string; uri: string }
+  /** `chat`: the key the server was lent to a chat's agent with (D419), when the call carries one. */
+  | { kind: "call"; id: number; client: string; chat?: string; command: string; input: unknown }
+  | { kind: "read"; id: number; client: string; chat?: string; uri: string }
   /** The caller of request `id` went away (Claude Code disconnected, D223): drop what it waits for. */
   | { kind: "cancel"; id: number };
 

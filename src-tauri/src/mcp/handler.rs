@@ -18,11 +18,7 @@ const FIND: &str = "ide_find_commands";
 const RUN: &str = "ide_run_command";
 
 const INSTRUCTIONS: &str =
-    "Tools are the IDE's commands (the same ones its UI uses). Core tools are \
-listed; find more with ide_find_commands and run them with ide_run_command. Read ide:// resources \
-for state (ide://workspace, ide://editors/active, ide://diagnostics, ide://terminals, \
-ide://layout…). Paths may be relative to the workspace root. Commands that change things may ask \
-the user first.";
+    "Tools are the IDE's commands (the same ones its UI uses). Core tools are listed; find more with ide_find_commands and run them with ide_run_command. Read ide:// resources for state (ide://workspace, ide://editors/active, ide://diagnostics, ide://terminals, ide://layout…). Paths may be relative to the workspace root. Commands that change things may ask the user first. This IDE is not VS Code: before describing its menus, keys or settings, or changing the IDE itself, run help_agentGuide (what the IDE offers agents and where its documentation is). To add a feature to the IDE (an extension, mod or plugin), run it with { \"topic\": \"extensions\" } first: the IDE has its own extension format and also runs VS Code extensions.";
 
 #[derive(Clone)]
 pub struct IdeServer {
@@ -54,6 +50,15 @@ fn client_name(context: &RequestContext<RoleServer>) -> String {
         .unwrap_or_else(|| "MCP client".into())
 }
 
+/// The chat key the request's token carried (`Bearer <token>.<key>`, D419), if any.
+fn chat_of(context: &RequestContext<RoleServer>) -> Option<String> {
+    context
+        .extensions
+        .get::<hyper::http::request::Parts>()
+        .and_then(|parts| parts.headers.get(hyper::header::AUTHORIZATION))
+        .and_then(|value| super::http::chat_key(value.as_bytes()))
+}
+
 fn text_result(value: &Value, is_error: bool) -> CallToolResponse {
     let text = match value {
         Value::String(s) => s.clone(),
@@ -76,11 +81,18 @@ impl IdeServer {
             .unwrap_or_default()
     }
 
-    async fn run(&self, client: String, command: String, input: Value) -> CallToolResponse {
+    async fn run(
+        &self,
+        client: String,
+        chat: Option<String>,
+        command: String,
+        input: Value,
+    ) -> CallToolResponse {
         let id = self.bridge.next_id();
         let request = BridgeRequest::Call {
             id,
             client,
+            chat,
             command,
             input,
         };
@@ -157,6 +169,7 @@ impl ServerHandler for IdeServer {
     ) -> Result<CallToolResponse, McpError> {
         let args = Value::Object(request.arguments.clone().unwrap_or_default());
         let client = client_name(&context);
+        let chat = chat_of(&context);
         let name = request.name.as_ref();
         if name == FIND {
             let query = args
@@ -179,14 +192,14 @@ impl ServerHandler for IdeServer {
                 ));
             }
             let input = args.get("input").cloned().unwrap_or_else(|| json!({}));
-            return Ok(self.run(client, command.to_string(), input).await);
+            return Ok(self.run(client, chat, command.to_string(), input).await);
         }
         match self
             .tools()
             .into_iter()
             .find(|t| tool_name(&t.command) == name)
         {
-            Some(tool) => Ok(self.run(client, tool.command, args).await),
+            Some(tool) => Ok(self.run(client, chat, tool.command, args).await),
             None => Err(McpError::invalid_params(
                 format!("unknown tool {name}"),
                 None,
@@ -224,6 +237,7 @@ impl ServerHandler for IdeServer {
         let ask = BridgeRequest::Read {
             id,
             client: client_name(&context),
+            chat: chat_of(&context),
             uri: uri.clone(),
         };
         match self.bridge.ask(id, ask).await {

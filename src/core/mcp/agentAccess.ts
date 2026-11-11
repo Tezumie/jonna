@@ -5,15 +5,43 @@
 //
 // Not a command on purpose: the result carries the server's token, which no extension or agent
 // should be able to ask for. The MCP extension provides it; the ACP backend borrows it.
+//
+// A chat that borrows it says who it is (D419): its token then ends in a key only that chat's
+// agent has, and calls made with it run as caller `{ kind: "acp", agent, session }`: questions
+// show in that chat, under its access mode, like the IDE's own agent's. Any other client of the
+// server stays `{ kind: "mcp" }`.
 
 export interface LentServer {
   url: string;
   token: string;
 }
 
+/** The chat an external agent works in: who its calls to the IDE's server are. */
+export interface LentTo {
+  /** The agent's name ("Claude Code"). */
+  agent: string;
+  /** The chat's id. */
+  session: string;
+}
+
+/** The token a chat's agent sends: the server's, a dot, the chat's key (Rust `mcp/http.rs`). */
+export function chatToken(token: string, key: string): string {
+  return `${token}.${key}`;
+}
+
+/** A new chat key: letters and digits only (what the server accepts after the token). */
+export function newChatKey(random: (bytes: Uint8Array<ArrayBuffer>) => void): string {
+  const bytes = new Uint8Array(new ArrayBuffer(16));
+  random(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export interface McpLender {
-  /** Starts the server if needed (without turning `mcp.enabled` on) and keeps it up for `owner`. */
-  acquire(owner: string): Promise<LentServer | null>;
+  /**
+   * Starts the server if needed (without turning `mcp.enabled` on) and keeps it up for `owner`.
+   * With `chat`, the token returned is that chat's own.
+   */
+  acquire(owner: string, chat?: LentTo): Promise<LentServer | null>;
   /** `owner` no longer needs it; the server stops when nobody does and the setting is off. */
   release(owner: string): void;
 }
@@ -63,8 +91,8 @@ export const mcpAgentAccess = {
   provide(l: McpLender | null): void {
     lender = l;
   },
-  acquire(owner: string): Promise<LentServer | null> {
-    return lender ? lender.acquire(owner) : Promise.resolve(null);
+  acquire(owner: string, chat?: LentTo): Promise<LentServer | null> {
+    return lender ? lender.acquire(owner, chat) : Promise.resolve(null);
   },
   release(owner: string): void {
     lender?.release(owner);

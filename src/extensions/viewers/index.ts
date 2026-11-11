@@ -142,6 +142,13 @@ export const viewersExtension: BuiltinExtension<WorkbenchServices> = {
         dock.focusedGroupId.value;
         const tab = dock.activeTab();
         services.context.set("activePreview", !!tab && previewTypes().has(tab.viewType));
+        // VS Code's `activeCustomEditorId` (D419): the id of the viewer the active tab shows (a
+        // VS Code package's custom editor's view type), "" in any other tab. Its keybindings
+        // and menu items test it.
+        services.context.set(
+          "activeCustomEditorId",
+          (tab && viewers.byViewType(tab.viewType)?.id) ?? "",
+        );
         return undefined;
       }),
     );

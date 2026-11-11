@@ -1,12 +1,14 @@
 // Built-in MCP server control (D64): starts/stops the Rust server with the `mcp.enabled` setting,
 // keeps its catalog (commands → tools, state paths → resources) current, and runs forwarded calls
-// as caller `{ kind: "mcp", client }` so the permission policy decides. Status bar shows it.
+// as caller `{ kind: "mcp", client }` (a chat's external agent: `{ kind: "acp" }`, D419) so the
+// permission policy decides. Status bar shows it.
 
 import type { CommandInfo } from "../../core/dispatcher/index";
+import type { Caller } from "../../core/dispatcher/types";
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { isTauri } from "../../core/ipc/invoke";
 import { clipboardIpc, type McpInfo, type McpRequest, mcpIpc } from "../../core/ipc/system";
-import { mcpAgentAccess } from "../../core/mcp/agentAccess";
+import { chatToken, type LentTo, mcpAgentAccess, newChatKey } from "../../core/mcp/agentAccess";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { showDialog } from "../../ui/Dialog";
@@ -48,10 +50,19 @@ export const mcpExtension: BuiltinExtension<WorkbenchServices> = {
       void mcpIpc.setCatalog(tools, resources).catch(() => {});
     };
 
+    /** The chats borrowing the server, by the key in their token (D419). */
+    const chats = new Map<string, LentTo>();
+    const chatKeys = new Map<string, string>();
+
     const handle = (request: McpRequest) => {
       // Only Claude Code's WebSocket cancels calls (D223); nothing to drop here.
       if (request.kind === "cancel") return;
-      const caller = { kind: "mcp" as const, client: request.client };
+      // A chat's agent (its token carried the chat's key, D419) is that chat's caller; any
+      // other client, or a key no chat holds any more, is an MCP client.
+      const chat = request.chat ? chats.get(request.chat) : undefined;
+      const caller: Caller = chat
+        ? { kind: "acp", agent: chat.agent, session: chat.session }
+        : { kind: "mcp", client: request.client };
       const work =
         request.kind === "call"
           ? dispatcher.execute(request.command, request.input ?? {}, caller)
@@ -115,14 +126,27 @@ export const mcpExtension: BuiltinExtension<WorkbenchServices> = {
       }),
     );
     mcpAgentAccess.provide({
-      acquire: async (owner) => {
+      acquire: async (owner, chat) => {
         borrowers.add(owner);
         await start();
         const info = running.peek();
-        if (!info) borrowers.delete(owner);
-        return info ? { url: info.url, token: info.token } : null;
+        if (!info) {
+          borrowers.delete(owner);
+          return null;
+        }
+        if (!chat) return { url: info.url, token: info.token };
+        // One key per borrower: asked again (a session loaded twice), the same chat's.
+        const key = chatKeys.get(owner) ?? newChatKey((bytes) => crypto.getRandomValues(bytes));
+        chatKeys.set(owner, key);
+        chats.set(key, chat);
+        return { url: info.url, token: chatToken(info.token, key) };
       },
       release: (owner) => {
+        const key = chatKeys.get(owner);
+        if (key) {
+          chats.delete(key);
+          chatKeys.delete(owner);
+        }
         if (!borrowers.delete(owner)) return;
         if (!enabled()) void stop();
       },
