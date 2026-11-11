@@ -68,8 +68,27 @@ The user guide is inside Jonna (Help → Documentation) and in [`docs/guide/`](d
 
 ## Status
 
-An alpha. The first builds are for Windows, with macOS and Linux to follow. Settings sync, spell
-check and real-time collaboration aren't there yet.
+An alpha. Windows is the system we test; the macOS and Linux installers are built by the same
+release and haven't been tried yet. Settings sync, spell check and real-time collaboration aren't
+there yet.
+
+## Install
+
+Get the installer for your system from the
+[latest release](https://github.com/Tezumie/jonna/releases/latest). The installers aren't
+code-signed yet, so your system warns you the first time:
+
+- **Windows**: on "Windows protected your PC", choose **More info**, then **Run anyway**.
+- **macOS**: if it says Jonna "is damaged" or "can't be opened", the app is fine, only unsigned.
+  Open **System Settings → Privacy & Security** and choose **Open Anyway**, or run this once:
+
+  ```sh
+  xattr -cr /Applications/Jonna.app
+  ```
+
+- **Linux**: for the AppImage, make it executable first: `chmod +x Jonna*.AppImage`.
+
+Updates after that arrive inside the app.
 
 ---
 
