@@ -298,10 +298,8 @@ mod tests {
     }
 
     fn temp_file(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "ide-account-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("ide-account-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("account.json")
@@ -358,7 +356,9 @@ mod tests {
                 let mut body = vec![0u8; length];
                 let _ = reader.read_exact(&mut body);
                 let body = String::from_utf8_lossy(&body).into_owned();
-                log.lock().unwrap().push(format!("{method} {path} {bearer}{body}"));
+                log.lock()
+                    .unwrap()
+                    .push(format!("{method} {path} {bearer}{body}"));
                 let (status, reply) = route(&method, &path, &bearer);
                 let _ = stream.write_all(
                     format!(
@@ -377,15 +377,31 @@ mod tests {
         let file = temp_file("migrate");
         let vault = MemoryVault::default();
         // A pre-D414 session: the tokens in the file.
-        store(&file, None, "https://a.example", &ada("Ada"), &pair("a1", "r1")).unwrap();
+        store(
+            &file,
+            None,
+            "https://a.example",
+            &ada("Ada"),
+            &pair("a1", "r1"),
+        )
+        .unwrap();
         assert!(std::fs::read_to_string(&file).unwrap().contains("a1"));
         let session = read_session(&file).unwrap();
-        assert_eq!(tokens_of(&file, &session, Some(&vault)), Some(pair("a1", "r1")));
+        assert_eq!(
+            tokens_of(&file, &session, Some(&vault)),
+            Some(pair("a1", "r1"))
+        );
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(!text.contains("a1") && !text.contains("r1"), "{text}");
         let session = read_session(&file).unwrap();
-        assert_eq!(tokens_of(&file, &session, Some(&vault)), Some(pair("a1", "r1")));
-        assert_eq!(profile(&file, "https://a.example/").map(|p| p.name), Some("Ada".into()));
+        assert_eq!(
+            tokens_of(&file, &session, Some(&vault)),
+            Some(pair("a1", "r1"))
+        );
+        assert_eq!(
+            profile(&file, "https://a.example/").map(|p| p.name),
+            Some("Ada".into())
+        );
         clear(&file, Some(&vault)).unwrap();
         assert!(vault.items.lock().unwrap().is_empty());
         assert!(!file.exists());
@@ -410,11 +426,17 @@ mod tests {
             let file = temp_file("refresh");
             let vault = MemoryVault::default();
             store(&file, Some(&vault), &base, &ada("Ada"), &pair("a1", "r1")).unwrap();
-            let p = check_with(&file, &base, Some(&vault)).await.unwrap().unwrap();
+            let p = check_with(&file, &base, Some(&vault))
+                .await
+                .unwrap()
+                .unwrap();
             assert_eq!((p.name.as_str(), p.plan.as_deref()), ("Ada L", Some("pro")));
             let session = read_session(&file).unwrap();
             assert_eq!(session.profile.name, "Ada L");
-            assert_eq!(tokens_of(&file, &session, Some(&vault)), Some(pair("a2", "r2")));
+            assert_eq!(
+                tokens_of(&file, &session, Some(&vault)),
+                Some(pair("a2", "r2"))
+            );
             let seen = seen.lock().unwrap().clone();
             assert!(seen[1].contains("grant_type=refresh_token"), "{seen:?}");
             assert!(seen[1].contains("refresh_token=r1"), "{seen:?}");
