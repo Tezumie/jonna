@@ -197,7 +197,7 @@ function handle(msg) {
       const { line, character } = params.position;
       const text = lines[line] ?? "";
       const m = /\w+/.exec(text.slice(character));
-      if (!m || m.index !== 0) return send({ id, result: null });
+      if (m?.index !== 0) return send({ id, result: null });
       const word = m[0];
       const next = (lines[line + 1] ?? "").indexOf(word);
       const ranges = [

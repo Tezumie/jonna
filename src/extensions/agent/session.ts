@@ -65,7 +65,7 @@ import { subagentChoices } from "./subagents";
 import { type AgentTool, CORE_TOOLS, PLAN_TOOL, type SubagentSpec } from "./tools";
 import { turnTools } from "./turnTools";
 
-export { type ChatMode, type PermissionRequest, type QueuedMessage, type SessionStatus };
+export type { ChatMode, PermissionRequest, QueuedMessage, SessionStatus };
 
 export class AgentSession {
   readonly title = signal("New session");

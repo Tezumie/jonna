@@ -267,7 +267,7 @@ export class ExtensionManager implements Disposable {
     // A VS Code package's code waits for its permissions; its declarative parts don't (D256).
     for (const record of records) {
       const m = record.manifest;
-      if (!m || m.format !== "vscode" || !m.main) continue;
+      if (m?.format !== "vscode" || !m.main) continue;
       if (!missingPermissions(m, this.granted(record.id, record)).length) continue;
       record.codeWaiting = [...m.permissions];
       record.manifest = declarativeOnly(m);

@@ -476,8 +476,7 @@ export class MonacoEditor implements EngineEditor {
       return;
     const change = e.changes[0];
     const model = this.editor.getModel();
-    if (!change || change.text !== ">" || !model || !TAG_LANGUAGES.has(model.getLanguageId()))
-      return;
+    if (change?.text !== ">" || !model || !TAG_LANGUAGES.has(model.getLanguageId())) return;
     const selections = this.editor.getSelections() ?? [];
     if (selections.length !== 1 || !selections[0]?.isEmpty()) return;
     const { startLineNumber: line, startColumn: column } = change.range;

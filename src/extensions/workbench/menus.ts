@@ -575,7 +575,7 @@ export function registerMenus(sub: DisposableStore, services: WorkbenchServices)
       const usable =
         entry.submenu !== undefined ||
         // A fixed submenu is usable while any of its items is.
-        (fixed !== undefined && fixed.some((i) => !i.disabled)) ||
+        fixed?.some((i) => !i.disabled) ||
         (enabled.get(command as string) === true && services.context.matches(entry.when));
       const key = entry.keys
         ? keyboard.labelForKeys(entry.keys, entry.mac)

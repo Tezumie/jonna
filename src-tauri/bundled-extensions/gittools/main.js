@@ -97,12 +97,12 @@ function stashLabel(st, now = Date.now() / 1000) {
 
 /** The web page of a notification's subject (its API URL turned around), else the repository. */
 function notificationUrl(n) {
-  const api = (n.subject && n.subject.url) || "";
+  const api = n.subject?.url || "";
   const m =
     /^https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)\/(pulls|issues|commits|releases)\/([^/?#]+)/.exec(
       api,
     );
-  if (!m) return (n.repository && n.repository.html_url) || "https://github.com/notifications";
+  if (!m) return n.repository?.html_url || "https://github.com/notifications";
   const kind = m[2] === "pulls" ? "pull" : m[2] === "commits" ? "commit" : m[2];
   return `https://github.com/${m[1]}/${kind}/${m[3]}`;
 }
@@ -531,7 +531,7 @@ exports.activate = async (ide) => {
       let files = stashFiles.get(index);
       if (!files) {
         const shown = await ide.commands.execute("git.stashShow", { index, ...input });
-        files = (shown && shown.files) || [];
+        files = shown?.files || [];
         stashFiles.set(index, files);
       }
       return files.map((f) => {

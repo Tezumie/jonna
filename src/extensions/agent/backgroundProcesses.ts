@@ -263,7 +263,7 @@ export class BackgroundProcesses {
   /** Ends a process and what it started. False when it isn't running. */
   async kill(id: string): Promise<boolean> {
     const p = this.all.get(id.trim());
-    if (!p || p.status !== "running") return false;
+    if (p?.status !== "running") return false;
     p.status = "killed";
     this.bump();
     await p.cancel().catch(() => {});

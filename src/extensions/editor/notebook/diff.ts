@@ -134,18 +134,13 @@ export function sourceLines(
   const out: { sign: "+" | "-" | " "; text: string }[] = [];
   const strip = (l: string) => l.replace(/\r?\n$/, "");
   let ia = 0;
-  let ib = 0;
   for (const ch of diffLines(a, b)) {
-    while (ia < ch.originalStart) {
-      out.push({ sign: " ", text: strip(a[ia++] ?? "") });
-      ib++;
-    }
+    while (ia < ch.originalStart) out.push({ sign: " ", text: strip(a[ia++] ?? "") });
     for (let i = ch.originalStart; i < ch.originalEnd; i++)
       out.push({ sign: "-", text: strip(a[i] ?? "") });
     for (let i = ch.modifiedStart; i < ch.modifiedEnd; i++)
       out.push({ sign: "+", text: strip(b[i] ?? "") });
     ia = ch.originalEnd;
-    ib = ch.modifiedEnd;
   }
   while (ia < a.length) out.push({ sign: " ", text: strip(a[ia++] ?? "") });
   return out;
@@ -159,7 +154,7 @@ const LABEL: Record<CellChange, string> = {
 };
 
 const outputSummary = (c: NbCell | undefined) => {
-  if (!c || c.kind !== "code") return "";
+  if (c?.kind !== "code") return "";
   const n = c.outputs.length;
   return n ? `${n} output${n === 1 ? "" : "s"}` : "no outputs";
 };

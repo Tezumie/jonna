@@ -14,11 +14,11 @@
   let inspector;
   try {
     // Worker threads are debugged through their parent's inspector (NodeWorker domain).
-    const threads = require("worker_threads");
+    const threads = require("node:worker_threads");
     if (!threads.isMainThread) return;
-    fs = require("fs");
-    path = require("path");
-    inspector = require("inspector");
+    fs = require("node:fs");
+    path = require("node:path");
+    inspector = require("node:inspector");
   } catch {
     return;
   }

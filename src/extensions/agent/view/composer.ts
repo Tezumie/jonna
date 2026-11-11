@@ -7,6 +7,7 @@
 import type { AcpSetting } from "../../../core/acp/client";
 import { isBigPaste, MAX_UPLOADS, textUpload } from "../../../core/agent/attachments";
 import { customModeId, EFFORT_VALUES, effortLabel } from "../../../core/agent/chatModes";
+import type { FaceSpec } from "../../../core/agent/faces";
 import { contextMentionCard } from "../../../core/agent/mentions";
 import { budgetState, formatCost } from "../../../core/agent/prices";
 import { splitSubmitWord } from "../../../core/agent/voice";
@@ -18,6 +19,7 @@ import { type IconName, icon } from "../../../ui/Icon";
 import { type MenuItem, showMenu } from "../../../ui/Menu";
 import { setTooltip } from "../../../ui/Tooltip";
 import { cachedSettings } from "../acp";
+import { chatModelKey } from "../chatAgentModel";
 import { extraMentionCard } from "../composerExtras";
 import { customModes } from "../customModes";
 import { memberInfo } from "../groupChat";
@@ -396,9 +398,14 @@ export class Composer implements Disposable {
         // The agent (D286); "· Plan" or "· Ask" only when it works other than its own way (the
         // main agent planning itself, an agent switched by a command).
         const main = mainAgent.value;
+        // A model logo is this chat's model's (as in the chat's header), not the default
+        // model's: a chat switched to another provider showed the wrong logo here.
+        const chatModel = chatModelKey(session, true) ?? "";
+        const here = (face: FaceSpec): FaceSpec =>
+          face.model !== undefined ? { ...face, model: chatModel } : face;
         if (agent)
           chatMode.replaceChildren(
-            agentFace(memberInfo(agent.name).face, { size: 14 }),
+            agentFace(here(memberInfo(agent.name).face), { size: 14 }),
             h(
               "span",
               null,
@@ -407,7 +414,7 @@ export class Composer implements Disposable {
           );
         else
           chatMode.replaceChildren(
-            agentFace(main.face, { size: 14 }),
+            agentFace(here(main.face), { size: 14 }),
             h("span", null, work.mode === "agent" ? main.label : `${main.label} · ${work.label}`),
           );
         chatMode.dataset.mode = current;
@@ -726,7 +733,14 @@ export class Composer implements Disposable {
       [
         {
           label: main.label,
-          iconElement: () => agentFace(main.face, { size: 16 }),
+          // Its logo in this chat: this chat's model's (the chip's, above).
+          iconElement: () =>
+            agentFace(
+              main.face.model !== undefined
+                ? { ...main.face, model: chatModelKey(session) ?? "" }
+                : main.face,
+              { size: 16 },
+            ),
           keybinding: "Agent",
           checked: onMain,
           run: () => (onMain ? undefined : setAgent("agent")),

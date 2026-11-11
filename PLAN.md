@@ -3,7 +3,7 @@
 > Master plan. Give this file, `AGENTS.md`, `DESIGN.md` and the current task prompt to any new work session.
 > **The product's name lives only in `product.json` (§4.3).** Never hard-code it anywhere, so a rename stays a one-line change. Use the neutral word "IDE" in prose and `ide` in identifiers.
 > **License:** source-available under the PolyForm Shield License 1.0.0 (`LICENSE`, §17).
-> **Not in the public repository:** a few working documents (the feature-gaps list, the long-term goals, audits and the owner's checklists). Where this plan or the code names one of them, use the issue tracker instead.
+> **Not in this repository:** a few working documents from before it started (the feature-gaps list, the long-term goals, audits and the owner's checklists; D418). Where this plan or the code names one of them, use the issue tracker instead.
 > **Where we are (November 2026, D394):** M1–M6 are done and M7 (polish and ship) is near its end:
 > the closed alpha waits on the owner's Windows pass and release keys. §16 has the history;
 > `docs/feature-gaps.md` tracks what VS Code, Cursor, Zed and IntelliJ have that we don't yet.
@@ -431,7 +431,7 @@ Reference machine: mid-range laptop from the last 4 years.
 - No secrets, keys or private URLs in the repo; config via env or keychain.
 - Only permissively licensed dependencies (§3). `npm run licenses` checks them and `npm run notices` writes `THIRD_PARTY_NOTICES.md`; run it after adding or updating a dependency.
 - No product name in code (§4.3), so a rename is mechanical.
-- The public repository is an export of this one without the private working documents (`.publicignore`, `node scripts/publish-public.mjs`).
+- This repository is where the work happens and what is published (D418): there is no private copy to export from.
 
 ## 18. Non-goals (v1, decided)
 Telemetry · bundled Chromium. (VS Code extension API compatibility moved from here to a phased plan: `docs/vscode-extensions-plan.md`, D254.) Deferred (possible later, tracked in `docs/feature-gaps.md`): cloud sync · real-time collaboration. Bigger directions after the alpha (a hosted web version as a paid option, among others) are in `docs/long-term-goals.md`. (Multi-root workspaces, SSH and dev containers were deferred here and are done: D251, D252, D266.) External accounts are opt-in and go through the user's own tools (`gh` for GitHub, D139/D148).

@@ -1,7 +1,7 @@
 {
   "name": "ide",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI-first desktop IDE (unnamed; names live in product.json)",
   "license": "PolyForm-Shield-1.0.0",
   "type": "module",

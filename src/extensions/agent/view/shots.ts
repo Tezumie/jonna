@@ -178,7 +178,12 @@ export function openViewer(items: readonly ViewerItem[], index: number): void {
       { class: "icon-button agent-viewer-nav", type: "button", "aria-label": label },
       icon(glyph),
     );
-    store.add(on(b, "click", (e) => (e.stopPropagation(), go(step))));
+    store.add(
+      on(b, "click", (e) => {
+        e.stopPropagation();
+        go(step);
+      }),
+    );
     return b;
   };
   const prev = nav("arrow-left", "Previous screenshot", -1);
@@ -277,7 +282,7 @@ export function openViewer(items: readonly ViewerItem[], index: number): void {
   );
   // Beside the chat: the viewer takes the rest of the window and follows its size.
   const place = () => {
-    const side = besideChat(chat && chat.isConnected ? chat : null);
+    const side = besideChat(chat?.isConnected ? chat : null);
     viewer.classList.toggle("is-beside", !!side);
     // The scrim fades toward the chat, so the viewer knows which side it's on.
     viewer.classList.toggle("is-chat-left", !!side && side.left > 0);

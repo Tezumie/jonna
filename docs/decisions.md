@@ -14714,3 +14714,23 @@ providing a product that competes with the IDE, paid or free.
   owner's checklists), and `node scripts/publish-public.mjs` copies the last commit without them into the
   public repository's folder, after checking that no file carries a personal home-folder path.
   It never commits or pushes. `PLAN.md` and `AGENTS.md` say that those documents may be missing.
+  *(Replaced by D418: the export was used once, for the first release.)*
+
+### D418 — One repository: the public one is where the work happens
+
+D417 kept a private workspace and exported it to the public repository. After the first release
+(0.1.0) the owner works in the public repository directly, so there is one repository and no
+export.
+
+- The private workspace is frozen as a record of the earlier history. Nothing is copied from it
+  any more; `.publicignore` and `scripts/publish-public.mjs` were never part of this repository.
+- The working documents D417 held back (the feature-gaps list, the long-term goals, audits, the
+  owner's checklists) are not here. `PLAN.md` and `AGENTS.md` say to use the issue tracker where
+  one of them is named.
+- Releases are tagged here (`docs/releasing.md`).
+- `.gitattributes` keeps text files with LF line endings in every checkout: on Windows, Git's
+  CRLF conversion made the formatter (`npm run lint`) reject every file.
+- The linter reports nothing now, so a new warning stands out. Two rules are off in `biome.json`:
+  `noDescendingSpecificity` (false alarms across the stylesheets) and `noTemplateCurlyInString`
+  (`${…}` in plain strings is deliberate here: task, launch and MCP placeholders). The debugger's
+  bootloader keeps bare `require("fs")`, since it runs inside the user's own Node.

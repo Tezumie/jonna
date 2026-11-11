@@ -116,10 +116,10 @@
   /** Runs an output's JavaScript the way the classic notebook did (`element` is its div). */
   function runJs(code, element) {
     try {
-      // biome-ignore lint/security/noGlobalEval: a notebook output's own code, in its own sandbox.
+      // Deliberate eval: a notebook output's own code, in its own sandbox.
       new Function("element", code).call(window, element);
     } catch (err) {
-      element.appendChild(note(`JavaScript error: ${err && err.message ? err.message : err}`));
+      element.appendChild(note(`JavaScript error: ${err?.message ? err.message : err}`));
     }
   }
 
@@ -252,18 +252,18 @@
       queued.push(m);
       return;
     }
-    const id = m.content && m.content.comm_id;
+    const id = m.content?.comm_id;
     if (m.kind === "comm_open") {
       if (comms.has(id)) return;
       await manager.handle_comm_open(new Comm(id, m.content.target_name), msgOf(m));
     } else if (m.kind === "comm_msg") {
       const c = comms.get(id);
-      if (c && c._onMsg) c._onMsg(msgOf(m));
+      if (c?._onMsg) c._onMsg(msgOf(m));
       else if (c) c._early.push(msgOf(m));
     } else if (m.kind === "comm_close") {
       const c = comms.get(id);
       comms.delete(id);
-      if (c && c._onClose) c._onClose(msgOf(m));
+      if (c?._onClose) c._onClose(msgOf(m));
     }
   }
 
@@ -317,7 +317,7 @@
     } catch (err) {
       el.replaceChildren(
         note(
-          `This widget can't be shown (${err && err.message ? err.message : err}). Widgets need the internet the first time (their scripts come from a CDN).`,
+          `This widget can't be shown (${err?.message ? err.message : err}). Widgets need the internet the first time (their scripts come from a CDN).`,
         ),
       );
       if (data["text/plain"]) el.appendChild(pre(textOf(data["text/plain"])));
@@ -345,17 +345,17 @@
       // Not a module (or this engine can't import a blob): a classic script.
     }
     const module = { exports: {} };
-    // biome-ignore lint/security/noGlobalEval: the extension's renderer, in this sandbox.
+    // Deliberate eval: the extension's renderer, in this sandbox.
     new Function("module", "exports", code)(module, module.exports);
     const mod = module.exports;
     if (mod && typeof mod.activate === "function") return mod;
-    if (mod && mod.default && typeof mod.default.activate === "function") return mod.default;
+    if (mod?.default && typeof mod.default.activate === "function") return mod.default;
     throw new Error("the renderer exports no activate(context)");
   }
 
   /** VS Code's output item: the output's data for one mime type. */
   function outputItem(output, mime) {
-    const value = (output.data || {})[mime];
+    const value = output.data?.[mime];
     const text = () =>
       typeof value === "string"
         ? value
@@ -376,7 +376,7 @@
     return {
       id: "output",
       mime,
-      metadata: (output.metadata || {})[mime] || output.metadata || {},
+      metadata: output.metadata?.[mime] || output.metadata || {},
       text,
       json: () => (typeof value === "string" ? JSON.parse(value) : value),
       data: bytes,
@@ -413,7 +413,7 @@
     cdn = r.cdn || cdn;
     applyTheme(r.theme);
     out.replaceChildren();
-    const data = (r.output && r.output.data) || {};
+    const data = r.output?.data || {};
     // Earlier outputs that set up libraries (a Bokeh load, init_notebook_mode's script).
     for (const js of r.preloads || []) runJs(js, document.createElement("div"));
     // The HTML outputs this one works on (Bokeh's plot element, its "Loading BokehJS" notice).
@@ -445,8 +445,8 @@
       if (data["application/javascript"]) return runJs(textOf(data["application/javascript"]), el);
       if (data["text/plain"]) el.appendChild(pre(textOf(data["text/plain"])));
     } catch (err) {
-      post({ error: String(err && err.message ? err.message : err) });
-      el.appendChild(note(`This output failed: ${err && err.message ? err.message : err}`));
+      post({ error: String(err?.message ? err.message : err) });
+      el.appendChild(note(`This output failed: ${err?.message ? err.message : err}`));
     } finally {
       requestAnimationFrame(reportHeight);
     }
@@ -462,15 +462,14 @@
     else if (m.commDone) {
       const cbs = callbacks.get(m.commDone.localId);
       callbacks.delete(m.commDone.localId);
-      if (cbs && cbs.iopub && cbs.iopub.status)
-        cbs.iopub.status({ content: { execution_state: "idle" } });
+      if (cbs?.iopub?.status) cbs.iopub.status({ content: { execution_state: "idle" } });
     } else if (m.theme) applyTheme(m.theme);
     else if ("rendererMessage" in m)
       for (const listener of rendererListeners) {
         try {
           listener(m.rendererMessage);
         } catch (err) {
-          post({ error: String(err && err.message ? err.message : err) });
+          post({ error: String(err?.message ? err.message : err) });
         }
       }
   });

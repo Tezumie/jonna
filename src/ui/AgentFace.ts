@@ -23,6 +23,14 @@ export type ModelFaceResolver = (model: string) => HTMLElement | null;
 
 let resolveModelFace: ModelFaceResolver = () => null;
 
+/**
+ * Every model face made, in the page or not. A view often builds its faces before it is put in
+ * the page (a chat's header and composer at startup); a redraw that looked only in the document
+ * missed those, and they kept their stand-in character after the models had loaded. Weak, so a
+ * face that is thrown away costs nothing; pruned on each redraw.
+ */
+const modelFaces = new Set<WeakRef<HTMLElement>>();
+
 /** How a model's logo is found (set by the agent extension, which knows the providers). */
 export function setModelFaceResolver(resolver: ModelFaceResolver): void {
   resolveModelFace = resolver;
@@ -45,6 +53,7 @@ function drawFace(el: HTMLElement, face: FaceSpec, size: number): void {
   const mark = face.model === undefined ? null : resolveModelFace(face.model);
   // What a redraw needs is on the element itself: a list that morphs its rows keeps the element.
   if (face.model !== undefined) {
+    if (el.dataset.model === undefined) modelFaces.add(new WeakRef(el));
     el.dataset.model = face.model;
     el.dataset.face = encodeFace(face);
   }
@@ -53,9 +62,17 @@ function drawFace(el: HTMLElement, face: FaceSpec, size: number): void {
   else el.innerHTML = faceSvg(face, size);
 }
 
-/** Redraws every model face in the window: the default model or a provider's logo changed. */
+/**
+ * Redraws every model face, shown or still being built: the default model or a provider's logo
+ * changed.
+ */
 export function refreshModelFaces(): void {
-  for (const el of document.querySelectorAll<HTMLElement>(".agent-face[data-model]")) {
+  for (const ref of [...modelFaces]) {
+    const el = ref.deref();
+    if (!el) {
+      modelFaces.delete(ref);
+      continue;
+    }
     const face = parseFace(el.dataset.face);
     const size = Number.parseFloat(el.style.getPropertyValue("--face-size")) || 24;
     if (face) drawFace(el, { ...face, model: el.dataset.model ?? "" }, size);

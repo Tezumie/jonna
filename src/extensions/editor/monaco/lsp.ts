@@ -97,7 +97,7 @@ export function attachLanguageClient(
             },
           )
           .then((r) => {
-            if (!r || r.kind !== "full" || model.isDisposed() || pullSeq.get(model) !== seq) return;
+            if (r?.kind !== "full" || model.isDisposed() || pullSeq.get(model) !== seq) return;
             const items = r.items ?? [];
             pendingMarkers.set(path, items);
             monaco.editor.setModelMarkers(

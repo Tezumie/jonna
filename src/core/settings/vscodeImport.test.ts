@@ -70,7 +70,6 @@ test("MCP configs in VS Code's, the portable and Claude Desktop's formats", () =
       github: {
         type: "http",
         url: "https://api.example.com/mcp",
-        // biome-ignore lint/suspicious/noTemplateCurlyInString: an MCP input placeholder
         headers: { Authorization: "Bearer ${input:gh-token}" },
       },
       fs: { type: "stdio", command: "npx", args: ["-y", "server-fs", 3], env: { A: "1", B: 2 } },

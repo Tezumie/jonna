@@ -1,5 +1,7 @@
 # Jonna
 
+[![Sponsor Tezumie on GitHub](https://img.shields.io/github/sponsors/Tezumie?logo=githubsponsors&label=Sponsor&color=ea4aaa)](https://github.com/sponsors/Tezumie)
+
 **A complete editor. Built for you and your agent.**
 
 Everything you need from an IDE and a full agent harness, in one native app. Bring your own

@@ -453,7 +453,7 @@ function pipInstallLine(python, shell) {
 /** The Python's Jupyter kernel when it has ipykernel now (installed since it was found), else null. */
 async function jupyterSpec(python, root) {
   const r = await probe(python, root);
-  return r && r.jupyter && r.ipykernel && Array.isArray(r.specs)
+  return r?.jupyter && r.ipykernel && Array.isArray(r.specs)
     ? r.specs.find((s) => (s.language || "python").toLowerCase() === "python") || null
     : null;
 }
@@ -474,7 +474,7 @@ async function offerIpykernel(kernel, python, context, version) {
   if (answer !== "Install ipykernel") return;
   const term = await ide.commands.execute("terminal.create", { cwd: context.root });
   const result = await ide.commands.execute("terminal.runCommand", {
-    command: pipInstallLine(python, term && term.shell),
+    command: pipInstallLine(python, term?.shell),
     ...(term && typeof term.id === "number" && { id: term.id }),
     timeoutMs: 600000,
   });

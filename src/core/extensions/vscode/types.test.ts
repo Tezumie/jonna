@@ -129,7 +129,6 @@ test("snippets, semantic tokens, selectors, l10n", () => {
     .appendText(", ")
     .appendTabstop()
     .appendText(")");
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a snippet's own syntax.
   assert.equal(s.value, "f(${1:a}, $2)");
   assert.equal(snippetText(s.value), "f(a, )");
 
@@ -254,7 +253,6 @@ test("audit: snippet edits in a WorkspaceEdit are text edits; snippet variables;
   const edit = new WorkspaceEdit();
   const a = Uri.file("/w/a.ts");
   edit.set(a, [
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a snippet's own syntax.
     new SnippetTextEdit(new Range(0, 0, 0, 1), new SnippetString("f(${1:x})$0")),
     [SnippetTextEdit.insert(new Position(1, 0), new SnippetString("y")), { label: "m" }],
   ]);
@@ -268,9 +266,7 @@ test("audit: snippet edits in a WorkspaceEdit are text edits; snippet variables;
   assert.ok(texts[1]?.range.isEmpty);
   // A variable's default is escaped, and none has no ":".
   const variable = new SnippetString().appendVariable("TM_FILENAME", "a}b").value;
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a snippet's own syntax.
   assert.equal(variable, "${TM_FILENAME:a\\}b}");
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a snippet's own syntax.
   assert.equal(new SnippetString().appendVariable("TM_FILENAME", "").value, "${TM_FILENAME}");
   // NotebookRange orders its bounds and refuses negative ones, as VS Code's.
   const r = new NotebookRange(4, 2);

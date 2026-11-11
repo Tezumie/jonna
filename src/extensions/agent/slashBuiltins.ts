@@ -88,7 +88,7 @@ export function registerSlashBuiltins(
     export: opens("agent.exportMarkdown", (s) => ({ session: s.id })),
     copy: async (s, _args, caller) => {
       const last = [...s.items].reverse().find((i) => i.type === "assistant" && i.text.trim());
-      if (!last || last.type !== "assistant") throw new Error("The agent hasn't answered yet.");
+      if (last?.type !== "assistant") throw new Error("The agent hasn't answered yet.");
       await exec(caller, "ui.copyText", { text: last.text });
       return { copied: last.text.length };
     },

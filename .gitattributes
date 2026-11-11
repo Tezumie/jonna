@@ -1,0 +1,7 @@
+# Text files use LF line endings in every checkout. Without this, Git on Windows checks them out
+# with CRLF and the formatter (`npm run lint`) rejects every file.
+* text=auto eol=lf
+
+# Windows batch files need CRLF to run.
+*.cmd text eol=crlf
+*.bat text eol=crlf

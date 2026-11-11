@@ -15,6 +15,7 @@ import { type Event, EventEmitter, TerminalExitReason, type Uri } from "./types"
 /** VS Code's Pseudoterminal (events and methods). */
 export interface VsPseudoterminal {
   onDidWrite: Event<string>;
+  // biome-ignore lint/suspicious/noConfusingVoidType: the VS Code API's own type
   onDidClose?: Event<number | undefined | void>;
   open(dimensions: unknown): void;
   close(): void;

@@ -108,12 +108,14 @@
     .agent-face .face-eyes,
     .agent-face .face-body,
     .agent-face::after {
+      /* biome-ignore lint/complexity/noImportantStyles: reduced motion wins over every state's animation */
       animation: none !important;
     }
   }
   :root[data-motion="reduced"] .agent-face .face-eyes,
   :root[data-motion="reduced"] .agent-face .face-body,
   :root[data-motion="reduced"] .agent-face::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion wins over every state's animation */
     animation: none !important;
   }
 }

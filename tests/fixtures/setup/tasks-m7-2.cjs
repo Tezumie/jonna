@@ -1,7 +1,7 @@
 // Writes the build files tests/scripts/tasks-m7-2.jsonc detects (D201): run in the sample copy.
-const fs = require("fs");
+const fs = require("node:fs");
 const w = (p, t, m) => {
-  fs.mkdirSync(require("path").dirname(p), { recursive: true });
+  fs.mkdirSync(require("node:path").dirname(p), { recursive: true });
   fs.writeFileSync(p, t);
   if (m) fs.chmodSync(p, m);
 };

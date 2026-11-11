@@ -140,10 +140,7 @@ test("the docker commands: find, build, run, lifecycle", () => {
 test("docker's and the CLI's answers", () => {
   assert.deepEqual(parseFound("0123456789ab\texited\n"), { id: "0123456789ab", running: false });
   assert.equal(parseFound("Cannot connect to the Docker daemon"), null);
-  assert.equal(
-    parseRunId("Unable to find image\npulling…\n" + "a".repeat(64) + "\n"),
-    "a".repeat(64),
-  );
+  assert.equal(parseRunId(`Unable to find image\npulling…\n${"a".repeat(64)}\n`), "a".repeat(64));
   assert.equal(parseRunId("error"), null);
   assert.deepEqual(
     parseCliUp(

@@ -39,13 +39,9 @@ export const DEFAULT_DENY_READ: readonly string[] = [
   "~/.gnupg",
   "~/.netrc",
   "~/.git-credentials",
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a placeholder of the setting
   "${secrets}",
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a placeholder of the setting
   "${keychains}",
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a placeholder of the setting
   "${browserProfiles}",
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: a placeholder of the setting
   "${envFiles}",
 ];
 

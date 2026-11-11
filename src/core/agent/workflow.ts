@@ -97,7 +97,6 @@ export function readLiteral(text: string, start: number): { value: LiteralValue;
         return out;
       }
       if (quote === "`" && c === "$" && text[i + 1] === "{")
-        // biome-ignore lint/suspicious/noTemplateCurlyInString: the message names the syntax
         fail("a template with ${…} in meta: it must be a pure literal");
       if (quote !== "`" && (c === "\n" || c === "\r")) fail("a line break inside a string");
       if (c === "\\") {

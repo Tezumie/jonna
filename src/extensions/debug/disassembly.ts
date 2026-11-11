@@ -42,7 +42,7 @@ export function disassemblyDescriptor(
 /** The paused frame's instruction address in the focused session, if it has one. */
 export function currentInstruction(debug: DebugController): string | null {
   const rs = debug.focused.peek();
-  if (!rs || rs.state.peek() !== "stopped") return null;
+  if (rs?.state.peek() !== "stopped") return null;
   return rs.frames.peek()[rs.frameIndex.peek()]?.instructionPointerReference ?? null;
 }
 

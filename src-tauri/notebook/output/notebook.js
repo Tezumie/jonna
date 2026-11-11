@@ -23,7 +23,7 @@
   const { limitNetwork, harden } = window.ideOutputSandbox;
   const root = document.getElementById("outputs");
   const post = (message) => parent.postMessage({ ns: NS, ...message }, "*");
-  const report = (err) => post({ error: String(err && err.message ? err.message : err) });
+  const report = (err) => post({ error: String(err?.message ? err.message : err) });
 
   /** A small Event / Emitter pair, VS Code's shape (listen → { dispose }). */
   const emitter = () => {
@@ -184,10 +184,10 @@
     }
     try {
       const module = { exports: {} };
-      // biome-ignore lint/security/noGlobalEval: an extension's own script, in this sandbox.
+      // Deliberate eval: an extension's own script, in this sandbox.
       new Function("module", "exports", code)(module, module.exports);
       const mod = module.exports;
-      return mod && mod.default && typeof mod.default.activate === "function" ? mod.default : mod;
+      return mod?.default && typeof mod.default.activate === "function" ? mod.default : mod;
     } catch (err) {
       throw moduleError || err;
     }
@@ -223,7 +223,7 @@
               new Promise((resolve) => setTimeout(resolve, 30_000)),
             ]);
         } catch (err) {
-          report(`Notebook preload ${p.id}: ${err && err.message ? err.message : err}`);
+          report(`Notebook preload ${p.id}: ${err?.message ? err.message : err}`);
         }
       }),
     );
@@ -440,7 +440,7 @@
       const plain = items.find((it) => it.mime === "text/plain");
       inner.replaceChildren();
       if (!(err && err.name === "vscode.fallbackToNextRenderer"))
-        inner.appendChild(note(`This output failed: ${err && err.message ? err.message : err}`));
+        inner.appendChild(note(`This output failed: ${err?.message ? err.message : err}`));
       if (plain) inner.appendChild(pre(textOf(plain.value)));
     }
   }

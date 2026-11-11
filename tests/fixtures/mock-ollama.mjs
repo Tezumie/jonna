@@ -329,7 +329,7 @@ let demoTurns = 0;
  * says, a step per tool call: load the skill, create, validate, read its status, try its
  * command. The answer says what each step saw. Null: not this.
  */
-function d254Scripted(messages, user, last) {
+function d254Scripted(messages, user, _last) {
   if (!user.includes("d254 build extension")) return null;
   const tools = messages.filter((m) => m.role === "tool").map((m) => String(m.content ?? ""));
   const call = (name, args) => ({ tool: { name, arguments: args } });

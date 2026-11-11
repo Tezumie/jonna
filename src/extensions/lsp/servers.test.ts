@@ -10,7 +10,6 @@ test("user settings override, extend and disable contributed servers", () => {
   const servers = resolveServers(contributed, {
     ra: { args: ["--log"] },
     py: { enabled: false },
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal placeholder, not a template
     mine: { command: "node", args: ["${workspaceFolder}/s.mjs"], languages: ["markdown"] },
     broken: { args: [] },
   });

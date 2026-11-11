@@ -95,7 +95,7 @@ class Lexer {
       this.pos = end < 0 ? s.length : end + 1;
       let out = "";
       for (let i = 0; i < hex.length; i += 2)
-        out += String.fromCharCode(parseInt((hex.slice(i, i + 2) + "0").slice(0, 2), 16));
+        out += String.fromCharCode(parseInt(`${hex.slice(i, i + 2)}0`.slice(0, 2), 16));
       return { str: out };
     }
     if (c === "[") {
@@ -359,7 +359,7 @@ class PdfFile {
           const hex = data.replace(/[^0-9a-fA-F]/g, "");
           let out = "";
           for (let i = 0; i < hex.length; i += 2)
-            out += String.fromCharCode(parseInt((hex.slice(i, i + 2) + "0").slice(0, 2), 16));
+            out += String.fromCharCode(parseInt(`${hex.slice(i, i + 2)}0`.slice(0, 2), 16));
           data = out;
         } else data = null; // images (DCT, JBIG2…) and LZW: not text
       }

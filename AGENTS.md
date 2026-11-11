@@ -2,7 +2,7 @@
 
 Read `PLAN.md` first. It is the source of truth for architecture and decisions. If you need to deviate, add an entry to `docs/decisions.md` explaining why.
 
-A few working documents named below are not in the public repository (`docs/feature-gaps.md`, `docs/long-term-goals.md`, audits and the owner's checklists). If one is missing where you work, skip that step and use the issue tracker for priorities.
+A few working documents named below were left behind when this repository started (`docs/feature-gaps.md`, `docs/long-term-goals.md`, audits and the owner's checklists; D418). They don't exist here: skip a step that needs one and use the issue tracker for priorities.
 
 ## Hard rules
 1. **No product name in the code.** The name (Jonna today) lives only in `product.json`, so a rename stays a one-line change. Never write a name into code, comments, identifiers, file names, UI strings or config. Read names from `product.json` (via the generated `src/core/product.ts` in TS, or the build-injected config in Rust). In prose say "the IDE", except in the repository's root `README.md` (the public page), which uses the product's name.

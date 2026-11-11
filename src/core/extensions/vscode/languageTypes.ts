@@ -2,16 +2,16 @@
 // (CompletionItem, Hover, CodeAction, DocumentSymbol, SemanticTokens…), from its documented API.
 // DOM-free.
 
-import {
-  type Location,
-  type MarkdownString,
+import type {
+  Location,
+  MarkdownString,
   Position,
   Range,
-  type SnippetString,
-  type TextEdit,
-  type ThemeIcon,
-  type Uri,
-  type WorkspaceEdit,
+  SnippetString,
+  TextEdit,
+  ThemeIcon,
+  Uri,
+  WorkspaceEdit,
 } from "./types";
 
 export interface Command {

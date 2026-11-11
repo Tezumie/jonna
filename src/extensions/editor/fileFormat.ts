@@ -29,7 +29,7 @@ export function registerFileFormatCommands(
   const docFor = (path?: string): EditorDocument => {
     const p = path ? workspace.resolve(path) : activePath();
     const doc = p ? editors.find(p) : undefined;
-    if (!doc || doc.kind !== "text") throw new Error("Open a text file first.");
+    if (doc?.kind !== "text") throw new Error("Open a text file first.");
     return doc;
   };
   const pickEncoding = async (

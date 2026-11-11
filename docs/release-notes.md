@@ -3,6 +3,17 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.1
+
+Small fixes, and the first update delivered through the app itself.
+
+- **The agent's icon is right from the start.** An agent that shows its model's logo could show a
+  stand-in character until something else redrew it.
+- **The icon beside the agent's name follows the chat's model.** It showed the default model's
+  logo even after the chat was switched to another provider.
+- **A macOS installer** (Apple silicon and Intel). It isn't signed yet: see Install in the README
+  for how to open it.
+
 ## 0.1.0 — The first public alpha
 
 Welcome. This is the first build anyone can download, so there is nothing to compare it with yet.

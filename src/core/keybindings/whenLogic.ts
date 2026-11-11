@@ -385,7 +385,7 @@ function normalForm(clause: string, constants?: WhenConstants): Dnf | null {
   try {
     const d = dnf(substitute(parseWhen(clause), constants), false, { left: BUDGET });
     // A list that contradicts itself can never hold.
-    return d && d.filter((list) => !contradicts(list, []));
+    return d?.filter((list) => !contradicts(list, [])) ?? null;
   } catch {
     return null;
   }

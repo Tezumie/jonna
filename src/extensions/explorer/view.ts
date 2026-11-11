@@ -515,7 +515,7 @@ export class ExplorerView implements Disposable {
           const inner = await fsIpc.listDir(last.path).catch(() => null);
           const visible = inner ? this.visibleEntries(last.path, inner) : [];
           const only = visible.length === 1 ? visible[0] : undefined;
-          if (!only || only.kind !== "dir" || only.isSymlink) break;
+          if (only?.kind !== "dir" || only.isSymlink) break;
           chain.push(only);
         }
         return chain;

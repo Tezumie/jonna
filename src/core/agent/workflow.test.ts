@@ -56,7 +56,6 @@ test("anything but a pure literal in meta is refused", () => {
     "export const meta = { name: NAME, description: 'd' }",
     "export const meta = { name: 'n', description: describe() }",
     "export const meta = { ...base, name: 'n', description: 'd' }",
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a script's template, as text
     "export const meta = { name: `n${x}`, description: 'd' }",
     "export const meta = { name, description: 'd' }",
     "export const meta = { [k]: 'n', description: 'd' }",

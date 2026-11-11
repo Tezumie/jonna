@@ -213,6 +213,7 @@
   .monaco-editor .editor-secret {
     border-radius: var(--radius-xs);
     background: var(--fg-disabled);
+    /* biome-ignore lint/complexity/noImportantStyles: it has to beat the editor's own token colors */
     color: transparent !important;
   }
   /* Paste from history: the entry selected in the picker, shown below the cursor's line. */

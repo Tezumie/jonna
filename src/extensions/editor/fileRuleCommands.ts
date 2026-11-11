@@ -108,7 +108,7 @@ export function registerFileRuleCommands(
     deps.activeTabId.value;
     if (settings.get<boolean>("workbench.statusBar.editorInfo") === false) return null;
     const doc = activeView()?.doc;
-    if (!doc || doc.kind !== "text") return null;
+    if (doc?.kind !== "text") return null;
     const path = doc.path.value;
     doc.model.value;
     if (path.startsWith("virtual:") || isUntitled(path)) return null;
