@@ -25,7 +25,7 @@ jobs:
         include:
           - os: windows-2022
             args: ""
-          - os: macos-14
+          - os: macos-latest
             args: "--target universal-apple-darwin"
           - os: ubuntu-22.04
             args: ""
@@ -64,6 +64,13 @@ jobs:
           "IDE_WINDOWS_SIGN_COMMAND=$cmd" | Out-File -FilePath $env:GITHUB_ENV -Append
       - run: npm ci
       - run: node scripts/gen.mjs
+      # tauri-action looks for the Tauri config but skips git-ignored files, and ours is generated
+      # and ignored: without this it reports "Failed to resolve Tauri path".
+      - name: Let the release action see the generated Tauri config
+        shell: bash
+        run: |
+          grep -v '^src-tauri/tauri\.conf\.json' .gitignore > .gitignore.new
+          mv .gitignore.new .gitignore
       # The signing keys only for the step that builds and signs (not for npm's install scripts).
       - uses: tauri-apps/tauri-action@v0
         env:
