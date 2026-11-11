@@ -39,6 +39,9 @@ export const ICONS = [
   "messages-square", "kanban", "list-todo", "list",
   "text-search", "message-square", "message-square-plus", "user-pen", "badge-check",
   "lock", "lock-open", "clipboard-clock",
+  // The composer's Send (D385). It was in Icon.ts's names but not here, so the button drew
+  // nothing; src/ui/iconNames.test.ts checks the names against the sprite now (D420).
+  "corner-down-left",
 ];
 
 // Our own glyphs (not Lucide): layout-region toggles in their "on" form (filled region), drawn

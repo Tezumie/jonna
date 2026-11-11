@@ -25,7 +25,7 @@ unless noted.
 | · Agents and subagents as in Claude Code, the plain chat panel, VS Code extensions as in VS Code | D284–D299 |
 | · The agent's tools at Claude Code's level, the command sandbox, desktop control, plugins, hooks | D300–D378 |
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
-| · The public repository, external agents as their chat's agent, custom editor fixes | D417–D419 |
+| · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 
 ## Seeded from PLAN §19
 
@@ -14791,3 +14791,36 @@ have installed the result. Reading why turned up one cause and several gaps.
   (openWith, panel state, undo / redo), `thirdParty.test.ts` and `editor/jsonSchemas.test.ts`
   (jsonValidation), `help/agentGuide.test.ts`. Not run in the GUI in this change: see
   `docs/manual-test.md` D419.
+
+### D420 — After the first extension built that way: fewer questions, pages under handles, tabs that come back
+
+The owner had Claude Code build and restyle the game editor extension with D419 in place. Four
+things showed.
+
+- **One question for one action.** An external agent asks its own permission question before it
+  uses an MCP tool ("may I use ide_run_command?"), and then the IDE asked whether the command may
+  run. The first says less and the IDE's policy decides every such call anyway, so a request
+  whose title names one of the lent server's tools (`mcp__<server>__…`, `isIdeToolRequest` in
+  `core/mcp/agentAccess.ts`) is allowed without asking (`acp.ts`). Only that form is recognized
+  (Claude Code's); an agent that names its tools another way still asks twice. What the IDE asks
+  is unchanged: "Change the IDE" once per chat ("Allow for this chat"), `agent.ideControl: false`
+  to never ask.
+- **Resize handles above pages.** Pages in the iframe layer and the handles were both at
+  `--z-sticky`, and the layer comes later, so a page covered half of a handle's hover line and of
+  its 6px grab area. Handles are one above (`workbench.css`).
+- **A VS Code package's pages get the IDE's tokens.** The bridge applied only the `--vscode-*`
+  variables of the theme message and swallowed the rest; it sets the IDE's own tokens too
+  (`--bg-surface`, `--radius-sm`, `--text-md`…, `vscode/views.ts`). VS Code's variables carry no
+  radius, shadow or type scale, so a page could not look like the IDE; with both, one stylesheet
+  serves the IDE and VS Code (`var(--bg-surface, var(--vscode-sideBar-background))`).
+- **The composer's Send icon is back.** `corner-down-left` (D385) was among `IconName`'s names
+  but not in `scripts/build-icons.mjs`'s list, so the sprite had no symbol for it and the button
+  drew an empty square. It is in the list and the sprite; `ui/iconNames.test.ts` fails when a
+  name has no symbol or a symbol no name.
+- **Files open in an extension's viewer come back after a restart.** They are `persist: false`
+  for the dock, which restores its layout before extensions load and drops tabs of unknown
+  types. The open files per viewer are now saved with the folder's state
+  (`extensions.viewerTabs`, `viewers.ts`) and reopened when the extension registers the viewer.
+  They return in the main group, in the background: their group and which one was active aren't
+  kept (a real fix would let the dock hold a tab for a type that isn't there yet).
+- Not run in the GUI: `docs/manual-test.md` D420.

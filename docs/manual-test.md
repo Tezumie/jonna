@@ -4071,3 +4071,15 @@ Images in the chat (D381):
    scenes open, Play starts the one whose tab you are in.
 6. Give that extension a `schemas/scene.schema.json` (`contributes.jsonValidation`): in the JSON
    text of a scene, a wrong property is underlined and completion offers the schema's.
+
+## D420 — Fewer questions, handles above pages, viewer tabs that come back
+1. A chat with Claude Code: ask it to reload an extension. One card ("Change the IDE"), not a
+   card from Claude Code about `ide_run_command` first. Choose Allow for this chat: the next
+   extension command in that chat isn't asked.
+2. Open a file in an extension's viewer (the game editor's scene) beside the sidebar or another
+   group. Hover the handle between them: the 2px line shows on both sides of it, and the handle
+   can be grabbed from the page's side.
+3. The game editor's page uses the IDE's colors, radii and text sizes; switch to a light theme:
+   it follows.
+4. With a scene open in the game editor, close the IDE and open the folder again: the scene's
+   tab is back once the extension has loaded. Close the tab, restart: it stays closed.

@@ -42,6 +42,7 @@ import {
   extensionsQuery,
   extensionsSectionShown,
 } from "./view";
+import { clearViewerTabs, loadViewerTabs, saveViewerTabs } from "./viewers";
 import { registerWorkbenchProviders } from "./workbenchCommands";
 
 const EXT_NAME = /^[a-z][a-z0-9-]{0,40}$/;
@@ -183,6 +184,14 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
       }),
     );
     sub.add(services.workspace.onDidClose(() => restorable.clear()));
+    // Files open in extensions' viewers (custom editors) come back too (D420, viewers.ts).
+    sub.add(
+      services.persistence.register("extensions.viewerTabs", {
+        save: () => saveViewerTabs(services),
+        restore: (data) => loadViewerTabs(services, data),
+      }),
+    );
+    sub.add(services.workspace.onDidClose(() => clearViewerTabs()));
     registerMediaCommands(sub, services, manager);
     registerAuthoringCommands(sub, services, manager);
     register({

@@ -69,7 +69,7 @@ export function ideMcpServer(
   productName: string,
   proxy: StdioProxyCommand | null,
 ): IdeMcpServer {
-  const name = productName.toLowerCase().replace(/[^a-z0-9_-]/g, "") || "ide";
+  const name = ideServerName(productName);
   if (!proxy)
     return {
       type: "http",
@@ -83,6 +83,21 @@ export function ideMcpServer(
     args: [proxy.flag, lent.url],
     env: [{ name: proxy.tokenEnv, value: lent.token }],
   };
+}
+
+/** The lent server's name, as the agent lists it among its MCP servers. */
+export function ideServerName(productName: string): string {
+  return productName.toLowerCase().replace(/[^a-z0-9_-]/g, "") || "ide";
+}
+
+/**
+ * Whether an agent's own permission request is about one of the lent server's tools (D420):
+ * agents name MCP tools `mcp__<server>__<tool>` (Claude Code's form). The agent asking "may I use
+ * the IDE's tool?" before the IDE asks "may it run this command?" was two questions for one
+ * action, and the first says less: the IDE's permission policy decides every such call anyway.
+ */
+export function isIdeToolRequest(title: string, productName: string): boolean {
+  return title.startsWith(`mcp__${ideServerName(productName)}__`);
 }
 
 let lender: McpLender | null = null;

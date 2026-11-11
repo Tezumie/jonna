@@ -33,7 +33,7 @@ import {
 } from "../../core/ipc/process";
 import { mcpIpc } from "../../core/ipc/system";
 import type { Disposable } from "../../core/lifecycle/index";
-import { ideMcpServer, mcpAgentAccess } from "../../core/mcp/agentAccess";
+import { ideMcpServer, isIdeToolRequest, mcpAgentAccess } from "../../core/mcp/agentAccess";
 import { pathKey, samePath } from "../../core/paths/index";
 import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
@@ -219,6 +219,12 @@ export class AcpBackend {
           toolCall.title ??
           this.tools.get(toolCall.toolCallId)?.summary ??
           "Allow the agent to continue?";
+        // One of the IDE's own tools (D420): not asked here. The command it runs goes through
+        // the IDE's permission policy as this chat's agent, which asks what needs asking.
+        if (this.ideTools === "on" && isIdeToolRequest(raw, product.nameShort)) {
+          const allow = options.find((o) => o.kind === "allow_once");
+          if (allow) return { outcome: "selected", optionId: allow.optionId };
+        }
         // A command as the user would type it, not its shell's full path and quoting (D208).
         const title = toolCall.kind === "execute" ? prettyCommand(raw).command || raw : raw;
         // Deletion protection (D179): a delete asks even with full access, and only once.

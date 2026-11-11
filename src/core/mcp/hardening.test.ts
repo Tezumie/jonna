@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseMcpConfig } from "../settings/vscodeImport";
-import { ideMcpServer } from "./agentAccess";
+import { chatToken, ideMcpServer, isIdeToolRequest, newChatKey } from "./agentAccess";
 import { identityHash, secretId, serverIdentity } from "./config";
 import { galleryConfig } from "./gallery";
 import { registryEntry, registryRefusal, runnerRisks } from "./registry";
@@ -210,4 +210,16 @@ test("the lent server for HTTP and stdio-only agents", () => {
   });
   // The token is never on the command line.
   assert.ok(!JSON.stringify("args" in stdio ? stdio.args : []).includes("t0k"));
+  // A chat's token carries its key (D419); the agent's own question about one of the server's
+  // tools is recognized by the server's name (D420), another server's isn't.
+  assert.equal(
+    chatToken(
+      "t0k",
+      newChatKey((b) => b.fill(171)),
+    ),
+    `t0k.${"ab".repeat(16)}`,
+  );
+  assert.equal(isIdeToolRequest("mcp__myide__ide_run_command", "My IDE"), true);
+  assert.equal(isIdeToolRequest("mcp__github__create_issue", "My IDE"), false);
+  assert.equal(isIdeToolRequest("Run npm test", "My IDE"), false);
 });

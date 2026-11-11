@@ -509,7 +509,10 @@ const WEBVIEW_DEFAULTS =
  * message itself as `event.data`). Put first in the page, with its CSP nonce when it has one.
  * The theme (D260): VS Code's `--vscode-*` variables, `color-scheme`, its body class
  * ("vscode-dark") and default styles, from the first line (the IDE fills INITIAL_THEME_SLOT when
- * it serves the page) and again on every theme message.
+ * it serves the page) and again on every theme message. The IDE's own design tokens too
+ * (`--bg-surface`, `--fg-muted`, `--radius-sm`…, D420): VS Code's variables have no radius,
+ * shadow or type scale, so a page written for this IDE can look like it and still fall back to
+ * VS Code's in VS Code (`var(--bg-surface, var(--vscode-sideBar-background))`).
  */
 export function withVscodeBridge(html: string, options: { editorKeys?: boolean } = {}): string {
   const nonce = /nonce-([A-Za-z0-9+/=_-]+)/.exec(html)?.[1];
@@ -519,7 +522,7 @@ var api={postMessage:function(m){parent.postMessage({ns:NS,message:m},"*")},getS
 var taken=false;window.acquireVsCodeApi=function(){if(taken)throw new Error("An instance of the VS Code API has already been acquired");taken=true;return api};
 var kind="vscode-dark",KINDS=["vscode-dark","vscode-light","vscode-high-contrast","vscode-high-contrast-light"];
 function mark(){var b=document.body;if(!b)return;b.classList.remove.apply(b.classList,KINDS);b.classList.add(kind);b.setAttribute("data-vscode-theme-kind",kind)}
-function apply(t){if(!t||typeof t!=="object")return;var s=document.documentElement.style,v=t.vscode||{};for(var k in v)if(k.indexOf("--vscode-")===0&&typeof v[k]==="string")s.setProperty(k,v[k]);if(KINDS.indexOf(t.vscodeClass)>=0)kind=t.vscodeClass;s.setProperty("color-scheme",/light/.test(kind)?"light":"dark");mark()}
+function apply(t){if(!t||typeof t!=="object")return;var s=document.documentElement.style,v=t.vscode||{},w=t.vars||{};for(var k in v)if(k.indexOf("--vscode-")===0&&typeof v[k]==="string")s.setProperty(k,v[k]);for(var j in w)if(j.indexOf("--")===0&&j.indexOf("--vscode-")!==0&&typeof w[j]==="string")s.setProperty(j,w[j]);if(KINDS.indexOf(t.vscodeClass)>=0)kind=t.vscodeClass;s.setProperty("color-scheme",/light/.test(kind)?"light":"dark");mark()}
 apply(${INITIAL_THEME_SLOT});
 try{var sheet=new CSSStyleSheet();sheet.replaceSync(${JSON.stringify(WEBVIEW_DEFAULTS)});document.adoptedStyleSheets=[sheet].concat(document.adoptedStyleSheets)}catch(e){}
 document.addEventListener("DOMContentLoaded",mark);

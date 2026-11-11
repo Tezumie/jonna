@@ -274,6 +274,71 @@ const closedTabs = new Map<string, { at: number; states: Json[] }>();
 const REOPEN_WITHIN_MS = 15_000;
 
 /**
+ * Viewer tabs across a restart (D420). The dock can't keep them (`persist: false`): when it
+ * restores its layout the extension isn't loaded, and a tab of an unknown type is dropped. So
+ * the files open in each viewer are saved with the folder's state here, and reopened when the
+ * extension registers the viewer again. They come back in the main group, in the background:
+ * which group and which was active aren't kept.
+ */
+const savedTabs = new Map<string, Json[]>();
+/** The viewer view types registered now. */
+const liveTypes = new Set<string>();
+const MAX_SAVED_TABS = 20;
+
+function openTabs(services: WorkbenchServices, viewType: string, states: readonly Json[]): void {
+  for (const state of states)
+    try {
+      services.dock.openView(viewType, state, undefined, false);
+    } catch {
+      // The type went again meanwhile.
+    }
+}
+
+/** What to save with the folder: the open viewer tabs, and those still waiting for their extension. */
+export function saveViewerTabs(services: WorkbenchServices): Json {
+  const out: Record<string, Json[]> = {};
+  const add = (type: string, states: readonly Json[]) => {
+    if (states.length) out[type] = [...(out[type] ?? []), ...states].slice(0, MAX_SAVED_TABS);
+  };
+  for (const type of liveTypes)
+    add(
+      type,
+      services.dock.tabs(type).map((t) => t.viewState ?? null),
+    );
+  // An extension that stopped before the window closed (shutdown order), or hasn't started yet.
+  for (const [type, closed] of closedTabs) if (!liveTypes.has(type)) add(type, closed.states);
+  for (const [type, states] of savedTabs) if (!liveTypes.has(type)) add(type, states);
+  return out;
+}
+
+/** The saved tabs of a folder being opened: opened now for viewers already registered. */
+export function loadViewerTabs(services: WorkbenchServices, data: unknown): void {
+  savedTabs.clear();
+  if (!data || typeof data !== "object" || Array.isArray(data)) return;
+  for (const [type, states] of Object.entries(data as Record<string, unknown>)) {
+    if (!type.startsWith("extviewer:") || !Array.isArray(states)) continue;
+    const list = (states as Json[]).slice(0, MAX_SAVED_TABS);
+    if (liveTypes.has(type)) {
+      // Not twice: a file whose tab is there already (the extension started first).
+      const open = new Set(
+        services.dock.tabs(type).map((t) => JSON.stringify(t.viewState ?? null)),
+      );
+      openTabs(
+        services,
+        type,
+        list.filter((s) => !open.has(JSON.stringify(s))),
+      );
+    } else savedTabs.set(type, list);
+  }
+}
+
+/** The folder closed: its tabs aren't another folder's. */
+export function clearViewerTabs(): void {
+  savedTabs.clear();
+  closedTabs.clear();
+}
+
+/**
  * Closes every tab of a view type when the extension that owns it stops (a page left open could
  * start a stopped extension again), and reopens them when it registers the type again soon
  * after: a development extension reloads on every save.
@@ -281,16 +346,15 @@ const REOPEN_WITHIN_MS = 15_000;
 export function closeTabsOf(services: WorkbenchServices, viewType: string): Disposable {
   const reopen = closedTabs.get(viewType);
   closedTabs.delete(viewType);
-  if (reopen && Date.now() - reopen.at < REOPEN_WITHIN_MS)
-    queueMicrotask(() => {
-      for (const state of reopen.states)
-        try {
-          services.dock.openView(viewType, state, undefined, false);
-        } catch {
-          // The type went again meanwhile.
-        }
-    });
+  // Tabs of the last session (D420), or of a reload a moment ago.
+  const saved = savedTabs.get(viewType);
+  savedTabs.delete(viewType);
+  const states =
+    saved ?? (reopen && Date.now() - reopen.at < REOPEN_WITHIN_MS ? reopen.states : []);
+  liveTypes.add(viewType);
+  if (states.length) queueMicrotask(() => openTabs(services, viewType, states));
   return toDisposable(() => {
+    liveTypes.delete(viewType);
     const tabs = services.dock.tabs(viewType);
     if (tabs.length)
       closedTabs.set(viewType, { at: Date.now(), states: tabs.map((t) => t.viewState ?? null) });

@@ -480,7 +480,9 @@
   .dock-sash {
     position: relative;
     flex: 0 0 max(1px, var(--size-gap-split));
-    z-index: var(--z-sticky);
+    /* One above the pages of the iframe layer (dock.css, also sticky): a page beside a handle
+       covered half of its hover line and of its 6px grab area (D420). */
+    z-index: calc(var(--z-sticky) + 1);
     touch-action: none;
     background: var(--border-subtle);
   }
