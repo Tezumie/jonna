@@ -1,5 +1,12 @@
 @layer extensions {
   /* Language server settings (D204): the settings page's rows and cards, plus two JSON fields. */
+  /* The scroll area sits straight in the view here (the settings editor has a column around
+     it), so the view is that column: without it the area grew with its content and never
+     scrolled. */
+  .lsp-settings-view {
+    display: flex;
+    flex-direction: column;
+  }
   .lsp-settings-json-card {
     display: flex;
     flex-direction: column;
