@@ -68,8 +68,9 @@ The user guide is inside Jonna (Help → Documentation) and in [`docs/guide/`](d
 
 ## Status
 
-An alpha. Windows is the system we test; the macOS and Linux installers are built by the same
-release and haven't been tried yet. Settings sync, spell check and real-time collaboration aren't
+An alpha. Windows is the system we test. The Linux installers are built by the same release and
+haven't been tried yet; a macOS installer isn't in a release yet, so [build it from
+source](#build-from-source) there. Settings sync, spell check and real-time collaboration aren't
 there yet.
 
 ## Install
@@ -79,7 +80,8 @@ Get the installer for your system from the
 code-signed yet, so your system warns you the first time:
 
 - **Windows**: on "Windows protected your PC", choose **More info**, then **Run anyway**.
-- **macOS**: if it says Jonna "is damaged" or "can't be opened", the app is fine, only unsigned.
+- **macOS** (once a release has it): if it says Jonna "is damaged" or "can't be opened", the app
+  is fine, only unsigned.
   Open **System Settings → Privacy & Security** and choose **Open Anyway**, or run this once:
 
   ```sh
