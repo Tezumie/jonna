@@ -3,6 +3,31 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.2
+
+Agents you bring (Claude Code, Codex…) work with the IDE the way its own agent does, and
+extensions with their own editors behave better.
+
+- **An agent you brought asks in its chat.** Its questions about IDE commands are cards in the
+  chat, under the chat's access mode, not a dialog over the window. One question per action, not
+  two.
+- **It knows this isn't VS Code.** A guide for agents is among its tools: how to reach the IDE,
+  where the documentation is, and how to build an extension in the IDE's own format or as a VS
+  Code extension.
+- **It can load and install an extension folder for you**, after asking. Installing the same
+  folder again updates the installed copy.
+- **Extensions with their own editors** (VS Code's custom editors):
+  - their buttons show in the tab's toolbar and their keys work;
+  - "open as text" opens the text editor;
+  - undo and redo work;
+  - a file open in one comes back when you reopen the folder;
+  - their pages can use the IDE's colors, sizes and corners;
+  - their JSON schemas check and complete your files.
+- **Resize handles next to an extension's page** show their highlight fully and are easier to
+  grab.
+- **The Send button's icon is back** in the agent's message box.
+- **The language server settings page scrolls.**
+
 ## 0.1.1
 
 Small fixes, and the first update delivered through the app itself.
