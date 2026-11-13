@@ -4106,3 +4106,11 @@ Images in the chat (D381):
    the next message; the original chat still has its own agent.
 5. Delete the original: its forks stay, at the top level.
 6. A narrow sidebar: a fork three levels deep still shows its title.
+
+## D423 — A double-clicked preview tab, VS Code 1.146
+1. Single-click a file in the explorer (its tab's title is italic), then double-click that tab
+   with the mouse: the title turns upright. Single-click another file: it opens in a tab of its
+   own. The same for the extension store's page tab.
+2. Double-click a terminal's tab: it still asks for a new name.
+3. Install Error Lens from the store: it installs its newest version (3.30.0 or later) and
+   activates.

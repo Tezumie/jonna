@@ -43,7 +43,21 @@ const DOUBLE_CLICK_SLOP = 6;
  * a press can redraw the dock, and the second press may land on a new one.
  */
 let lastTabPress: { tabId: string; at: number; x: number; y: number } | undefined;
-let doubleHandledAt = 0;
+let doubleHandled: { tabId: string; at: number } | undefined;
+
+/** Whether this press on a tab is the second of a double-click (same tab, close in time and place). */
+function isSecondPress(tabId: string, e: PointerEvent): boolean {
+  const last = lastTabPress;
+  const now = performance.now();
+  const second =
+    last?.tabId === tabId &&
+    now - last.at < DOUBLE_CLICK_MS &&
+    Math.abs(e.clientX - last.x) <= DOUBLE_CLICK_SLOP &&
+    Math.abs(e.clientY - last.y) <= DOUBLE_CLICK_SLOP;
+  // A third press starts over.
+  lastTabPress = second ? undefined : { tabId, at: now, x: e.clientX, y: e.clientY };
+  return second;
+}
 
 export class GroupElement implements Disposable {
   readonly element: HTMLElement;
@@ -132,10 +146,15 @@ export class GroupElement implements Disposable {
           return;
         }
         if (e.button !== 0) return;
+        // The second press of a double-click, found here and before the focus change: focusing
+        // the tab redraws the strip at once, so by the time another listener ran, this press's
+        // element was no longer in the strip (and no dblclick comes for a replaced element).
+        const second = isSecondPress(tabId, e);
         // No native text selection or focus change: the dock focuses the view itself.
         e.preventDefault();
         deps.run("layout.focusTab", { tabId });
         deps.onTabPointerDown(tabId, e, el);
+        if (second) this.tabDoubleClicked(tabId);
       }),
     );
     // Mouse wheel scrolls the strip (or the row under the pointer) sideways; overflow shows the
@@ -183,36 +202,11 @@ export class GroupElement implements Disposable {
         deps.onGroupPointerDown(this.node.id, e, this.element);
       }),
     );
-    // A double-click keeps a preview tab (or renames a terminal). The first press usually redraws
-    // the strip (the tab is focused), which replaces the tab's element, and the browser sends no
-    // dblclick to a replaced element. So two presses on the same tab, close in time and place,
-    // count as one here (the press is cancelled above, so no mousedown carries a click count).
-    const tabDoubleClicked = (tabId: string | undefined) => {
-      if (!tabId || performance.now() - doubleHandledAt < DOUBLE_CLICK_MS) return;
-      doubleHandledAt = performance.now();
-      deps.run("layout.pinTab", { tabId, doubleClick: true });
-    };
+    // The dblclick event, where it arrives (a tab that wasn't redrawn between the clicks).
     this.store.add(
-      delegate(this.tabsHost, "pointerdown", ".dock-tab", (e, el) => {
-        const tabId = el.dataset.tabId;
-        if (e.button !== 0 || !tabId) return;
-        if ((e.target as Element).closest(".dock-tab-close, .dock-tab-unpin")) return;
-        const last = lastTabPress;
-        const now = performance.now();
-        const again =
-          last?.tabId === tabId &&
-          now - last.at < DOUBLE_CLICK_MS &&
-          Math.abs(e.clientX - last.x) <= DOUBLE_CLICK_SLOP &&
-          Math.abs(e.clientY - last.y) <= DOUBLE_CLICK_SLOP;
-        // A third press starts over.
-        lastTabPress = again ? undefined : { tabId, at: now, x: e.clientX, y: e.clientY };
-        if (again) tabDoubleClicked(tabId);
+      delegate(this.tabsHost, "dblclick", ".dock-tab", (_e, el) => {
+        if (el.dataset.tabId) this.tabDoubleClicked(el.dataset.tabId);
       }),
-    );
-    this.store.add(
-      delegate(this.tabsHost, "dblclick", ".dock-tab", (_e, el) =>
-        tabDoubleClicked(el.dataset.tabId),
-      ),
     );
     this.store.add(
       delegate(this.tabsHost, "click", ".dock-tab-close:not(.dock-tab-unpin)", (_e, el) => {
@@ -585,6 +579,15 @@ export class GroupElement implements Disposable {
       on(button, "click", () => this.deps.run(command, { groupId: this.node.id, ...extra })),
     );
     return button;
+  }
+
+  /** A double-click keeps a preview tab, or is the view's (a terminal renames itself). */
+  private tabDoubleClicked(tabId: string): void {
+    // The second press and the dblclick event of one double-click count once.
+    const now = performance.now();
+    if (doubleHandled?.tabId === tabId && now - doubleHandled.at < DOUBLE_CLICK_MS) return;
+    doubleHandled = { tabId, at: now };
+    this.deps.run("layout.pinTab", { tabId, doubleClick: true });
   }
 
   private focusIfNeeded(focusView = true): void {

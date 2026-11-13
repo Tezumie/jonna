@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { STATE_KEY_SLOT } from "../../themes/webviewVars";
 import { createWorkerApi, type FromWorker, type RequestMessage, type ToWorker } from "../rpc";
 import { createVscodeShim, type ShimFileSystem } from "./index";
+import { VSCODE_VERSION } from "./version";
 import { splitCommandLine, withVscodeBridge } from "./views";
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -146,7 +147,7 @@ test("configuration is read before activation and answers synchronously", async 
   assert.deepEqual(h.vscode.workspace.getConfiguration().get("acme"), { greeting: "hi" });
   assert.equal(h.vscode.workspace.getConfiguration().get("nothingHere"), undefined);
   assert.equal(h.vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, "/ws");
-  assert.equal(h.vscode.version, "1.106.0");
+  assert.equal(h.vscode.version, VSCODE_VERSION);
 });
 
 test("commands: VS Code's ids, the IDE's arguments, arguments kept through the hidden command", async () => {

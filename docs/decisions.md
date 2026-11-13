@@ -26,7 +26,7 @@ unless noted.
 | · The agent's tools at Claude Code's level, the command sandbox, desktop control, plugins, hooks | D300–D378 |
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
-| · Large files, a section of settings read whole, updates that fit, chat forks | D421–D422 |
+| · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
 
 ## Seeded from PLAN §19
 
@@ -14902,3 +14902,24 @@ asked whether "Hand to another agent…" should be the same thing.
 - Not done: a fork doesn't show in the original where it branched off (a thread's "N replies"
   row does that for threads), and a group chat's fork can't be handed over (its agents are its
   members).
+
+## D423 — A double-clicked preview tab stays, this time with a real mouse; the shim reports VS Code's latest
+
+- **D421's fix for the double-clicked tab didn't work by hand.** It counted two presses in a
+  second `pointerdown` listener on the strip. With a real mouse, the first listener focuses the
+  tab and the strip is redrawn at once, inside the dispatch: by the time the second listener
+  ran, the press's element was out of the strip, and `delegate` skips an element its root no
+  longer holds. The UI script's `dev.click` dispatches on the tab itself and never showed it.
+  The check now runs in the first listener, before the focus change (`isSecondPress`,
+  `GroupElement.tabDoubleClicked`; counted once per tab with the dblclick event).
+- **How it was found:** real, browser-level mouse events over WebView2's debugging port
+  (`Input.dispatchMouseEvent`), with the test app on its own `WEBVIEW2_USER_DATA_FOLDER` and
+  the port in `browser-pane-debug-port`. `tests/scripts/tab-preview-m7-123.jsonc` keeps the
+  flows (focused, from the explorer, by command), but its clicks are synthetic: a change to tab
+  presses should be tried with a real mouse, or over the port.
+- **The shim reports VS Code 1.146** (`VSCODE_VERSION`), the latest stable, by the owner's
+  choice. It said 1.106, so the store installed an extension's last release for 1.106 and not
+  its newest (Error Lens 3.26.0, not 3.30.0, which asks for 1.107). What the shim covers was
+  checked against 1.106's `vscode.d.ts` and that hasn't been redone: an extension that needs
+  something added since may fail where it calls it (logged in `ide://ext/<id>/vscode`), where
+  before it would not have been offered at all.

@@ -1014,7 +1014,8 @@ D260 (Claude Code for VS Code): views and view containers honour their `when` cl
 context keys the package's views test counted as its own to set); `viewsContainers.secondarySidebar`
 is the dock's right side; container and view icon files are the activity bar's icons; a view
 without a name takes its container's title; `<view id>.focus` reveals one of its views; URI schemes
-may contain `_` (`_claude_fs_left`); the shim reports VS Code 1.106. Pages get VS Code's
+may contain `_` (`_claude_fs_left`); the shim reports VS Code 1.146 (the latest
+stable when set, D423). Pages get VS Code's
 `--vscode-*` colors (about 190, from the IDE's tokens), `color-scheme`, the body's `vscode-dark` /
 `vscode-light` class and VS Code's default page styles from their first paint, not only after
 loading. A VS Code package's file systems get no Explorer section (VS Code shows none). Open VSX

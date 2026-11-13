@@ -1,0 +1,77 @@
+// A preview tab (italic title) double-clicked becomes a normal tab: two presses on the tab, each
+// finding the tab's element anew, as a real double-click does (the first press focuses the tab,
+// which redraws the strip). Also with the keyboard focus elsewhere first, and Keep open.
+{
+  "name": "tab-preview-m7-123",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "printf 'one\\n' > one.txt && printf 'two\\n' > two.txt && printf 'three\\n' > three.txt",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "editor.openFile", "input": { "path": "one.txt", "preview": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview", "limit": 3, "html": 300 },
+      "expect": [{ "html": { "$contains": "one.txt" } }],
+      "timeoutMs": 8000
+    },
+    { "run": "dev.click", "input": { "selector": ".dock-tab.is-preview" } },
+    { "wait": 200 },
+    { "run": "dev.click", "input": { "selector": ".dock-tab.is-preview" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // The next preview opens beside it, not in its place.
+    { "run": "editor.openFile", "input": { "path": "two.txt", "preview": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type]", "limit": 20, "html": 300 },
+      "expect": { "$contains": "one.txt" },
+      "timeoutMs": 8000
+    },
+    // As it happens by hand: a single click in the explorer opens the preview (the focus stays in
+    // the explorer), then the tab is double-clicked.
+    { "wait": 700 },
+    { "run": "explorer.reveal", "input": { "path": "two.txt" } },
+    { "run": "dev.click", "input": { "selector": ".explorer-tree .vlist-row.is-selected" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview", "limit": 3, "html": 300 },
+      "expect": [{ "html": { "$contains": "two.txt" } }],
+      "timeoutMs": 8000
+    },
+    { "wait": 700 },
+    { "run": "dev.click", "input": { "selector": ".dock-tab.is-preview" } },
+    { "wait": 200 },
+    { "run": "dev.click", "input": { "selector": ".dock-tab.is-preview" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    },
+    // By command (the tab menu's Keep open).
+    { "run": "editor.openFile", "input": { "path": "three.txt", "preview": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    { "run": "layout.pinTab", "input": {} },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab.is-preview" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 3000
+    }
+  ]
+}
