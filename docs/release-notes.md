@@ -3,6 +3,30 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.5
+
+A layout to start from, and fixes from daily use.
+
+- **Choose your default layout.** Settings → Default layout has three cards: **Default** (Chats,
+  the Welcome page, the agent on the right), **Agent** (Chats and the chat, filling the window)
+  and **Code** (the Welcome page alone, as VS Code starts). It is what a window starts with when
+  it opens without a folder, when you close a folder, and the first time you open one.
+- **No terminal opens by itself.** A folder opened for the first time used to start one.
+  Ctrl+` opens it when you want it.
+- **Changing an external agent's model shows that it's working.** The model pill shows the model
+  you picked with a spinner until Claude Code, Codex or another agent has taken it; the first
+  change starts the agent and can take a while. The same for its reasoning level.
+- **The chat details panel and folders.** With nothing open, Environment shows "No folder":
+  click it to open one. Right-click a folder there to reveal it, copy its path, open a terminal
+  in it, change folder, or add another folder beside it; added folders are listed under the
+  first, and the agent works in all of them.
+- **A folder's tooltip in the Chats list no longer covers its + button.**
+- **Forks:** a fork of a thread or of a channel's conversation is a chat of its own (it wasn't
+  listed, or went with the channel); it starts with its own spend, takes its images along whole,
+  and a chat forked while it works no longer opens as interrupted.
+- **Extensions:** an update whose details couldn't be read isn't offered unchecked, and
+  pre-releases aren't offered as updates.
+
 ## 0.1.4
 
 Two follow-ups to 0.1.3.
