@@ -26,6 +26,7 @@ unless noted.
 | · The agent's tools at Claude Code's level, the command sandbox, desktop control, plugins, hooks | D300–D378 |
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
+| · Large files, a section of settings read whole, updates that fit | D421 |
 
 ## Seeded from PLAN §19
 
@@ -14824,3 +14825,37 @@ things showed.
   They return in the main group, in the background: their group and which one was active aren't
   kept (a real fix would let the dock hold a tab for a type that isn't there yet).
 - Not run in the GUI: `docs/manual-test.md` D420.
+
+## D421 — A 300,000-line file no longer freezes the window; a section of settings read whole; updates that fit; a double-clicked tab stays
+
+Four things the owner hit in a day of use.
+
+- **A large file froze the window for minutes.** Opening a tokenizer's `tokenizer.json` (7 MB,
+  303,000 lines) stopped the IDE for over two minutes. Not Monaco, the JSON service, breadcrumbs
+  or the outline (turning each off changed nothing): a CPU profile of the test app put all of it
+  in `splitLines` (`core/diff`), which the change bars call for every opened file. It looked for
+  the next "\n" and the next "\r" from the current line on every line, and a file with LF endings
+  has no "\r", so each line read the rest of the text: quadratic. Both positions are now kept
+  until passed (linear), and the change bars don't split a file that has nothing to compare with
+  (no repository, untracked). The editor's limits are unchanged (50 MB; Monaco's own switches
+  for files past 20 MB or 300,000 lines). `tests/scripts/large-files-m7-121.jsonc` opens such
+  files; the profile was taken over WebView2's debugging port with the test app on its own
+  `WEBVIEW2_USER_DATA_FOLDER` (it can't attach while it shares the installed app's browser).
+- **`getConfiguration().get("errorLens")`.** VS Code answers a section's name with an object of
+  the settings under it; the shim knew single keys only and answered undefined, so Error Lens
+  failed in `activate` ("Cannot read properties of undefined (reading 'enabled')"). The shim
+  builds that object from the settings it has read, nested by the dots in their keys
+  (`ShimConfiguration.sectionObject`, `vscode/workspace.ts`).
+- **An update that doesn't fit isn't offered.** Installing picks the newest release whose
+  `engines.vscode` accepts the VS Code version the shim follows (Error Lens 3.26.0, as 3.30.0
+  needs 1.107), but the update check compared with the latest alone and offered 3.30.0 the next
+  moment. `offeredUpdate` takes the same test (`fits`), so the newest release that is old enough
+  and fits is the one offered, or none.
+- **A double-clicked preview tab stays.** The tab's press handler cancels the press (no text
+  selection, no focus change) and focuses the tab, which redraws the strip: the tab's element is
+  replaced between the two clicks and the browser sends no dblclick to it. Two presses on the
+  same tab within 500 ms and 6px now count as the double-click (`dock/group.ts`); the dblclick
+  event still works where it arrives, and the two are counted once.
+- The `ui-test` skill's build line used a relative `CARGO_TARGET_DIR`, which cargo reads from
+  inside `src-tauri`: the build landed in `src-tauri/src-tauri/target-uitest`, unignored. It is
+  absolute now.

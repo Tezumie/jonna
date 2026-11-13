@@ -57,6 +57,9 @@ export const COMMON_SETTINGS = [
 
 const MAX_LATE_FETCHES = 200;
 
+/** Key parts never written into an object built from setting keys. */
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 /** VS Code's WorkspaceConfiguration (its values are also its properties). */
 export interface WorkspaceConfiguration {
   get<T>(key: string, defaultValue?: T): T | undefined;
@@ -106,24 +109,56 @@ export class ShimConfiguration {
   }
 
   private lookup(full: string): unknown {
-    if (this.cache.has(full)) return this.cache.get(full);
+    const known = this.cache.has(full);
+    if (known && this.cache.get(full) !== undefined) return this.cache.get(full);
     // A key inside an object setting ("eslint.codeActionsOnSave.mode").
     const parts = full.split(".");
     for (let i = parts.length - 1; i > 0; i--) {
       const parent = parts.slice(0, i).join(".");
-      if (!this.cache.has(parent)) continue;
+      if (this.cache.get(parent) === undefined) continue;
       let v = this.cache.get(parent);
       for (const p of parts.slice(i))
         v = v && typeof v === "object" ? (v as Record<string, unknown>)[p] : undefined;
       return v;
     }
+    // A section rather than a setting (`getConfiguration().get("errorLens")`): VS Code answers
+    // with an object of the settings under it, nested by the dots in their keys.
+    const section = this.sectionObject(full);
+    if (section) return section;
     // Not read before: read now for next time (VS Code's API is synchronous).
-    if (this.lateFetches < MAX_LATE_FETCHES) {
+    if (!known && this.lateFetches < MAX_LATE_FETCHES) {
       this.lateFetches++;
       this.cache.set(full, undefined);
       void this.preload([full]);
     }
     return undefined;
+  }
+
+  /** The cached settings under `section` as one nested object; undefined when there are none. */
+  private sectionObject(section: string): Record<string, unknown> | undefined {
+    const prefix = `${section}.`;
+    let out: Record<string, unknown> | undefined;
+    for (const [key, value] of this.cache) {
+      if (value === undefined || !key.startsWith(prefix)) continue;
+      const parts = key.slice(prefix.length).split(".");
+      if (parts.some((p) => !p || FORBIDDEN_KEYS.has(p))) continue;
+      const last = parts.pop();
+      if (!last) continue;
+      out ??= {};
+      let at = out;
+      for (const p of parts) {
+        const next = at[p];
+        if (next && typeof next === "object" && !Array.isArray(next)) {
+          at = next as Record<string, unknown>;
+        } else {
+          const made: Record<string, unknown> = {};
+          at[p] = made;
+          at = made;
+        }
+      }
+      at[last] = value;
+    }
+    return out;
   }
 
   get(section?: string): WorkspaceConfiguration {

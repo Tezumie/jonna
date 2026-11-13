@@ -142,6 +142,9 @@ test("configuration is read before activation and answers synchronously", async 
   assert.equal(config.get("missing", 7), 7);
   assert.equal(config.greeting, "hi");
   assert.equal(h.vscode.workspace.getConfiguration("editor").get("tabSize"), 2);
+  // A section read as one value (Error Lens: `getConfiguration().get("errorLens")`).
+  assert.deepEqual(h.vscode.workspace.getConfiguration().get("acme"), { greeting: "hi" });
+  assert.equal(h.vscode.workspace.getConfiguration().get("nothingHere"), undefined);
   assert.equal(h.vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, "/ws");
   assert.equal(h.vscode.version, "1.106.0");
 });

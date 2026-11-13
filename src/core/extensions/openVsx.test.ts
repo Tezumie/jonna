@@ -186,7 +186,7 @@ test("D267: a brand-new version waits; an older newer one is offered meanwhile",
   const asked: string[] = [];
   const releasedOf = async (v: string) => {
     asked.push(v);
-    return dates[v];
+    return { released: dates[v] };
   };
   const versions = ["1.3.0", "1.2.1", "1.2.0", "1.1.0"];
   const latest = { version: "1.3.0", released: dates["1.3.0"] };
@@ -197,4 +197,14 @@ test("D267: a brand-new version waits; an older newer one is offered meanwhile",
   // No delay: the latest.
   assert.equal(await offeredUpdate("1.1.0", latest, versions, releasedOf, now, 0), "1.3.0");
   assert.equal(await offeredUpdate("1.3.0", latest, versions, releasedOf, now, 24), null);
+});
+
+test("an update made for a newer VS Code isn't offered; an older one that fits is", async () => {
+  const engines: Record<string, string> = { "3.30.0": "^1.107.0", "3.29.0": "^1.107.0" };
+  const detailsOf = async (v: string) => ({ engine: engines[v] ?? "^1.100.0" });
+  const fits = (engine: string | undefined) => engine !== "^1.107.0";
+  const latest = { version: "3.30.0", engine: engines["3.30.0"] };
+  const versions = ["3.30.0", "3.29.0", "3.27.0", "3.26.0"];
+  assert.equal(await offeredUpdate("3.26.0", latest, versions, detailsOf, 0, 0, fits), "3.27.0");
+  assert.equal(await offeredUpdate("3.27.0", latest, versions, detailsOf, 0, 0, fits), null);
 });

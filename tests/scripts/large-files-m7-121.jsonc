@@ -1,0 +1,42 @@
+// Large files open without freezing the IDE: a JSON file of 300,000 lines whose one object has
+// 150,000 keys (a tokenizer, D421: the change bars' line splitter was quadratic), a JSONL file of
+// long lines, and a 35 MB binary file (the notice, not its bytes).
+{
+  "name": "large-files-m7-121",
+  "steps": [
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "node ../setup/large-files-m7-121.cjs", "timeoutMs": 60000 },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 90000
+    },
+
+    { "run": "editor.openFile", "input": { "path": "tokenizer.json" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "tokenizer.json", "cursor": { "$exists": true } },
+      "timeoutMs": 30000
+    },
+    // Long enough for the symbols, folding and the outline to be asked for.
+    { "wait": 6000 },
+    { "state": "ide://workspace", "expect": { "root": { "$exists": true } }, "timeoutMs": 10000 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "timeoutMs": 20000 },
+
+    { "run": "editor.openFile", "input": { "path": "train.jsonl" }, "timeoutMs": 30000 },
+    {
+      "state": "ide://editors/active",
+      "expect": { "path": "train.jsonl", "cursor": { "$exists": true } },
+      "timeoutMs": 30000
+    },
+
+    { "run": "editor.openFile", "input": { "path": "adapter.safetensors" }, "timeoutMs": 30000 },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".empty-state:not([hidden]) > div", "limit": 20, "html": 300 },
+      "expect": { "$contains": "binary file" },
+      "timeoutMs": 30000
+    },
+
+    { "state": "ide://workspace", "expect": { "root": { "$exists": true } }, "timeoutMs": 10000 }
+  ]
+}

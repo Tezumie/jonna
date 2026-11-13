@@ -19,9 +19,14 @@ export interface LineChange {
 export function splitLines(text: string): string[] {
   const lines: string[] = [];
   let at = 0;
+  // The next "\n" and "\r" at or after `at`, looked for again only once passed: searching for
+  // each on every line reads to the end of a text that has none of them (LF files have no "\r"),
+  // which took minutes on a file of 300,000 lines and froze the window.
+  let nl = text.indexOf("\n");
+  let cr = text.indexOf("\r");
   while (at < text.length) {
-    const nl = text.indexOf("\n", at);
-    const cr = text.indexOf("\r", at);
+    if (nl >= 0 && nl < at) nl = text.indexOf("\n", at);
+    if (cr >= 0 && cr < at) cr = text.indexOf("\r", at);
     if (nl < 0 && cr < 0) {
       lines.push(text.slice(at));
       break;

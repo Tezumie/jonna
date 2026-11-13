@@ -35,6 +35,16 @@ export interface GroupDeps {
   onGroupPointerDown(groupId: string, event: PointerEvent, groupElement: HTMLElement): void;
 }
 
+/** Two presses on a tab this close in time (and place, in px) are a double-click. */
+const DOUBLE_CLICK_MS = 500;
+const DOUBLE_CLICK_SLOP = 6;
+/**
+ * The last press on a tab and the last double-click handled. Kept outside the group's element:
+ * a press can redraw the dock, and the second press may land on a new one.
+ */
+let lastTabPress: { tabId: string; at: number; x: number; y: number } | undefined;
+let doubleHandledAt = 0;
+
 export class GroupElement implements Disposable {
   readonly element: HTMLElement;
   readonly strip: HTMLElement;
@@ -173,11 +183,36 @@ export class GroupElement implements Disposable {
         deps.onGroupPointerDown(this.node.id, e, this.element);
       }),
     );
+    // A double-click keeps a preview tab (or renames a terminal). The first press usually redraws
+    // the strip (the tab is focused), which replaces the tab's element, and the browser sends no
+    // dblclick to a replaced element. So two presses on the same tab, close in time and place,
+    // count as one here (the press is cancelled above, so no mousedown carries a click count).
+    const tabDoubleClicked = (tabId: string | undefined) => {
+      if (!tabId || performance.now() - doubleHandledAt < DOUBLE_CLICK_MS) return;
+      doubleHandledAt = performance.now();
+      deps.run("layout.pinTab", { tabId, doubleClick: true });
+    };
     this.store.add(
-      delegate(this.tabsHost, "dblclick", ".dock-tab", (_e, el) => {
+      delegate(this.tabsHost, "pointerdown", ".dock-tab", (e, el) => {
         const tabId = el.dataset.tabId;
-        if (tabId) deps.run("layout.pinTab", { tabId, doubleClick: true });
+        if (e.button !== 0 || !tabId) return;
+        if ((e.target as Element).closest(".dock-tab-close, .dock-tab-unpin")) return;
+        const last = lastTabPress;
+        const now = performance.now();
+        const again =
+          last?.tabId === tabId &&
+          now - last.at < DOUBLE_CLICK_MS &&
+          Math.abs(e.clientX - last.x) <= DOUBLE_CLICK_SLOP &&
+          Math.abs(e.clientY - last.y) <= DOUBLE_CLICK_SLOP;
+        // A third press starts over.
+        lastTabPress = again ? undefined : { tabId, at: now, x: e.clientX, y: e.clientY };
+        if (again) tabDoubleClicked(tabId);
       }),
+    );
+    this.store.add(
+      delegate(this.tabsHost, "dblclick", ".dock-tab", (_e, el) =>
+        tabDoubleClicked(el.dataset.tabId),
+      ),
     );
     this.store.add(
       delegate(this.tabsHost, "click", ".dock-tab-close:not(.dock-tab-unpin)", (_e, el) => {

@@ -15,13 +15,15 @@ running dev build doesn't lock the exe. Run it in the background and wait for it
 
 PowerShell:
 ```
-$env:CARGO_TARGET_DIR = "src-tauri/target-uitest"; npx tauri build --debug --no-bundle --config '{\"build\":{\"beforeBuildCommand\":\"node build.mjs --prod --with-dev\"}}'
+$env:CARGO_TARGET_DIR = "$PWD\src-tauri\target-uitest"; npx tauri build --debug --no-bundle --config '{\"build\":{\"beforeBuildCommand\":\"node build.mjs --prod --with-dev\"}}'
 ```
 bash:
 ```
-CARGO_TARGET_DIR=src-tauri/target-uitest npx tauri build --debug --no-bundle --config '{"build":{"beforeBuildCommand":"node build.mjs --prod --with-dev"}}'
+CARGO_TARGET_DIR="$PWD/src-tauri/target-uitest" npx tauri build --debug --no-bundle --config '{"build":{"beforeBuildCommand":"node build.mjs --prod --with-dev"}}'
 ```
-The exe is in `src-tauri/target-uitest/debug/` (named after product.json's name). Rebuild after
+The path is absolute on purpose: cargo runs inside `src-tauri`, so a relative one builds into
+`src-tauri/src-tauri/target-uitest`, which git doesn't ignore. The exe is in
+`src-tauri/target-uitest/debug/` (named after product.json's name). Rebuild after
 every source change you want to test: the app is bundled, nothing reloads.
 
 ## 2. Write a script

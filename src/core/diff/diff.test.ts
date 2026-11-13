@@ -19,6 +19,14 @@ test("splitLines keeps terminators and a last unterminated line", () => {
   assert.deepEqual(splitLines("a\nb\r\nc"), ["a\n", "b\r\n", "c"]);
   assert.deepEqual(splitLines(""), []);
   assert.deepEqual(splitLines("a\n"), ["a\n"]);
+  assert.deepEqual(splitLines("a\rb\r\n\nc\r"), ["a\r", "b\r\n", "\n", "c\r"]);
+  // A large LF-only text splits in linear time (it took minutes: each line searched the whole
+  // rest of the text for a "\r" that isn't there).
+  const big = "x\n".repeat(400_000);
+  const started = performance.now();
+  assert.equal(splitLines(big).length, 400_000);
+  assert.ok(performance.now() - started < 2000);
+  assert.equal(splitLines("y\r".repeat(50_000)).length, 50_000);
 });
 
 test("splitLines ends a line at a lone \\r, as the editor does", () => {

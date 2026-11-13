@@ -221,7 +221,8 @@ Node host, built on the worker API. Custom editors (`webviews.ts`, D419): a pane
 enums, `convert.ts` turns 0-based positions, Uris, edits and the rest into the IDE's shapes,
 `document.ts` the text documents (open, changed, closed from the IDE's events), `commands.ts`
 VS Code's command ids and arguments, `languages.ts` providers and diagnostic collections,
-`editors.ts`, `window.ts` and `views.ts` the window, `workspace.ts` configuration and files, and
+`editors.ts`, `window.ts` and `views.ts` the window, `workspace.ts` configuration (a section's name read as a key answers with an object of its
+settings, D421) and files, and
 `executeCommands.ts` VS Code's `vscode.execute…Provider` commands (`ide.languages.execute`'s
 answers as VS Code's classes), `index.ts` puts the module and the ExtensionContext together and logs what isn't supported
 (`ide://ext/<id>/vscode`). D257 added `webviews.ts` (webview views and custom editors on code

@@ -339,7 +339,8 @@ D284, as VS Code's: the search box takes VS Code's syntax (`core/extensions/exte
 `publisher:`, `@category:`, `@tag:`, `@id:`, `@sort:`, `@popular`, `@installed`, `@builtin`…;
 `store.ts` `searchStoreQuery` asks Open VSX, a publisher by each of its namespaces) and has a
 filter button. A pending update shows **Update** on the row, **Update to x.y.z** first on the page
-and in the gear menu (`pendingUpdate`). Verified publishers carry a check (`storeVerified`, learned
+and in the gear menu (`pendingUpdate`). Only a release whose `engines.vscode` fits the VS Code
+version the shim follows is offered, as installing picks one (D421). Verified publishers carry a check (`storeVerified`, learned
 from searches, pages and update checks; `parts.ts` `verifiedMark`). An installed extension's page
 fetches its Open VSX facts once (downloads, stars opening `extensions.openStorePage {id,
 reviews}`); the publisher, categories and tags search for themselves (`publisherLink`,

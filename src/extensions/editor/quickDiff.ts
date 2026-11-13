@@ -77,7 +77,8 @@ export function registerQuickDiff(
             heads.set(doc, head);
           }
           if (doc.model.peek() !== model) return;
-          const lines = splitLines(model.getText());
+          // Nothing to compare with (not in a repository, untracked): the text isn't read at all.
+          const lines = base === null && head === null ? [] : splitLines(model.getText());
           const list = base === null ? [] : diffLines(splitLines(base.replace(/^﻿/, "")), lines);
           changes.set(doc, list);
           const marks = lineMarks(list);

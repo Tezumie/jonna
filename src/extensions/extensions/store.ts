@@ -594,9 +594,11 @@ export function registerStore(
               latest,
               storeVersions(text),
               async (v) =>
-                parseStoreDetails(await extIpc.storeDetails(namespace, name, v))?.released,
+                parseStoreDetails(await extIpc.storeDetails(namespace, name, v)) ?? undefined,
               Date.now(),
               delayHours,
+              // What installing would refuse (a release for a newer VS Code) isn't an update.
+              (engine) => engineSatisfied(engine, VSCODE_VERSION),
             );
             return offered ? { id: r.id, installed, latest: offered } : null;
           }),

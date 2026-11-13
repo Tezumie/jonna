@@ -292,27 +292,31 @@ export function oldEnough(released: string | undefined, now: number, delayHours:
 }
 
 /**
- * The update to offer (D267): the newest version newer than `installed` that is old enough.
- * `newestFirst` are the store's versions; `releasedOf` reads one's date (its details), asked for
- * at most `maxLookups` versions besides the latest.
+ * The update to offer (D267): the newest version newer than `installed` that is old enough and
+ * that `fits` (its `engines.vscode` against the VS Code version the IDE follows: installing picks
+ * a release that fits, so a newer one that doesn't isn't an update). `newestFirst` are the
+ * store's versions; `detailsOf` reads one's date and engine, asked for at most `maxLookups`
+ * versions besides the latest.
  */
 export async function offeredUpdate(
   installed: string,
-  latest: { version: string; released?: string },
+  latest: { version: string; released?: string; engine?: string },
   newestFirst: readonly string[],
-  releasedOf: (version: string) => Promise<string | undefined>,
+  detailsOf: (version: string) => Promise<{ released?: string; engine?: string } | undefined>,
   now: number,
   delayHours: number,
+  fits: (engine: string | undefined) => boolean = () => true,
   maxLookups = 4,
 ): Promise<string | null> {
   if (!isNewerVersion(latest.version, installed)) return null;
-  if (oldEnough(latest.released, now, delayHours)) return latest.version;
+  if (oldEnough(latest.released, now, delayHours) && fits(latest.engine)) return latest.version;
   let looked = 0;
   for (const v of newestFirst) {
     if (v === latest.version) continue;
     if (!isNewerVersion(v, installed) || looked >= maxLookups) return null;
     looked++;
-    if (oldEnough(await releasedOf(v).catch(() => undefined), now, delayHours)) return v;
+    const d = await detailsOf(v).catch(() => undefined);
+    if (oldEnough(d?.released, now, delayHours) && fits(d?.engine)) return v;
   }
   return null;
 }

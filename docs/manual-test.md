@@ -4083,3 +4083,13 @@ Images in the chat (D381):
    it follows.
 4. With a scene open in the game editor, close the IDE and open the folder again: the scene's
    tab is back once the extension has loaded. Close the tab, restart: it stays closed.
+
+## D421 — Large files, Error Lens, updates that fit, a double-clicked tab
+1. Open a text file of 300,000 lines or more (a model's `tokenizer.json`): it shows at once and
+   the window keeps answering (it froze for minutes).
+2. Install Error Lens from the store: its page shows no "Activating failed". In a TypeScript file
+   write `const n: number = "x";`: the message shows at the end of the line.
+3. Right after installing it, its page offers no update to a version that needs a newer VS Code
+   than the IDE follows (3.26.0 stays; 3.30.0 needs 1.107).
+4. Single-click a file in the explorer (an italic tab), then double-click the tab: the title
+   turns upright and the next single-clicked file opens in a tab of its own.
