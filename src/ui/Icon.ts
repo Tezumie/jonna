@@ -70,6 +70,7 @@ export type IconName =
   | "case-upper"
   | "git-pull-request"
   | "git-fork"
+  | "chat-fork"
   | "folder-git-2"
   | "grip-vertical"
   | "list-chevrons-up-down"

@@ -88,6 +88,8 @@ export class AgentSession {
   room: string | null = null;
   /** A thread (D238): the message it answers ("Reply in thread"). */
   parent: import("../../core/agent/rooms").ThreadParent | null = null;
+  /** The chat this one was forked from (D422): the Chats list shows it under that one. */
+  forkOf: string | null = null;
   /**
    * A channel's or direct message's own conversation: named after it, and its first message
    * doesn't rename it (D415). Set each time the room is opened; threads don't have it.

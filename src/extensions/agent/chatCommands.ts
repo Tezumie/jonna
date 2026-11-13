@@ -1,6 +1,7 @@
 // The Chats list's commands (D124, D125): rename, pin, archive, fork, clear. A chat that isn't loaded is changed
 // in its saved file, without touching when it was last active. Also agent.showMessage (a thread's
 // "Show it in the conversation").
+import { forkedChat } from "../../core/agent/forks";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
@@ -137,32 +138,34 @@ export function registerChatCommands(
     id: "agent.forkSession",
     title: "Fork chat",
     description:
-      'Copies an agent chat\'s conversation into a new chat ("… (fork)") and opens it: the two go on separately. Edits waiting for review stay with the original.',
-    input: s.object({ session: sessionInput }),
+      'Starts a new chat from a point in an agent chat (D422): copies the conversation up to and including `item` (the id of a message in ide://agent/session; default: all of it) into a new chat ("… (fork)") and opens it. The original stays as it is and the two go on separately; the Chats list shows the fork under it. `agent` hands the fork to another agent (a name as agent.handoff takes: the name of an agent, `agent`, `plan` or `ask`). Edits waiting for review stay with the original.',
+    input: s.object({
+      session: sessionInput,
+      item: s.string().describe("Fork from this message (default: the whole chat)").optional(),
+      agent: s.string().describe("Hand the fork to this agent").optional(),
+    }),
     effects: ["write"],
     agent: "hidden",
-    run: async ({ session }, ctx) => {
+    run: async ({ session, item, agent }, ctx) => {
       const loaded = sessions.find(session);
       const id = loaded?.id ?? session;
       if (!id) throw new Error("No agent session.");
       if (loaded) await loaded.save();
       const text = await agentStoreIpc.load(id);
       if (!text) throw new Error("That chat has nothing to fork yet.");
-      const saved = JSON.parse(text) as Record<string, unknown> & {
-        meta?: Record<string, unknown>;
-      };
-      const meta = { ...saved.meta };
-      meta.title = `${typeof meta.title === "string" ? meta.title : "Chat"} (fork)`;
-      meta.updated = Date.now();
-      delete meta.pinned;
-      delete meta.archived;
-      // Its review state and file checkpoints are the original's.
-      const { changeset: _c, checkpoints: _k, ...rest } = saved;
+      const copy = forkedChat(JSON.parse(text) as Record<string, unknown>, {
+        from: id,
+        now: Date.now(),
+        ...(item !== undefined && { item }),
+      });
+      if (!copy) throw new Error(`That chat has no message ${item}.`);
       const fork = newId("s");
-      await agentStoreIpc.save(fork, JSON.stringify({ ...rest, meta }));
+      await agentStoreIpc.save(fork, JSON.stringify(copy));
       sessions.changed();
       await ctx.execute("agent.openThread", { session: fork });
-      return { session: fork };
+      // Handed over in the fork: the original keeps its agent.
+      if (agent) await ctx.execute("agent.handoff", { session: fork, to: agent });
+      return { session: fork, forkOf: id };
     },
   });
 

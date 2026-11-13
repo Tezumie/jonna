@@ -814,7 +814,7 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://agent", {
         description:
-          "Agent sessions in this window (id, title, status, model, pending changes) and the model providers.",
+          "Agent sessions in this window (id, title, status, model, pending changes, `forkOf` for a fork: the chat it was copied from) and the model providers.",
         get: () => ({
           active: sessions.active.peek(),
           sessions: sessions.all().map((s) => ({
@@ -828,6 +828,8 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
             // A group chat's agents and who wrote the newest reply (D231).
             ...(s.members.peek().length && { members: s.members.peek() }),
             speaker: s.lastSpeaker(),
+            // The chat it was forked from (D422).
+            ...(s.forkOf && { forkOf: s.forkOf }),
           })),
           providers: providers.statuses.peek(),
           models: providers.models.peek().map((m) => m.key),
@@ -985,6 +987,8 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
                 : i.type === "assistant"
                   ? {
                       type: i.type,
+                      // What agent.forkSession's `item` takes (D422).
+                      id: i.id,
                       text: i.text,
                       thinking: i.thinking.length > 0,
                       ...(i.speaker && { speaker: i.speaker }),

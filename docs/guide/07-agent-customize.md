@@ -177,7 +177,7 @@ after it, **Esc** closes the list. A command's other names find it too (`/new` i
 | `/btw` *question* | A quick side question about the chat, answered from what it says so far, with no tools. The answer shows in a card you can close; it isn't part of the conversation, and a running turn goes on. |
 | `/undo` | Puts back the files the agent's last turn changed. |
 | `/rewind` | Goes back to before one of your messages (its files too). |
-| `/fork` | A copy of this chat to try something else in. |
+| `/fork` | A copy of this chat to try something else in, listed under it. |
 | `/resume` | Opens an earlier chat. |
 | `/rename` *name* | Renames the chat. |
 | `/export` | Saves the chat as Markdown. |

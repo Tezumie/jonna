@@ -19,7 +19,7 @@ import { h, on } from "../../../core/dom/index";
 import { basename } from "../../../core/paths/index";
 import { agentFace, faceGroup } from "../../../ui/AgentFace";
 import { fileIcon, type IconName, icon } from "../../../ui/Icon";
-import { showContextMenu } from "../../../ui/Menu";
+import { showContextMenu, showMenu } from "../../../ui/Menu";
 import { renderMarkdown } from "../../../ui/markdown/render";
 import { timeAttrs } from "../../../ui/relativeTimes";
 import { setTooltip } from "../../../ui/Tooltip";
@@ -28,7 +28,14 @@ import { codeBlockActions } from "../codeBlocks";
 import { TOOL_SEARCH_ROW } from "../deferredTools";
 import { DISPLAY_TOOLS } from "../displayTools";
 import { EXPLORE_TOOL } from "../exploreTool";
-import { handoffsOf, memberInfo, mentionTargets, speakerHeader } from "../groupChat";
+import {
+  handoffsOf,
+  knownAgents,
+  memberInfo,
+  mentionTargets,
+  soloSpeaker,
+  speakerHeader,
+} from "../groupChat";
 import type { AgentSession } from "../session";
 import { allModeRules } from "../sessionTypes";
 import { installingFrom } from "../toolCardCommands";
@@ -388,12 +395,65 @@ export function repliesRow(host: ItemHost, item: string): HTMLElement | null {
   return row;
 }
 
+// `data-key`: a row updated in place (morph) keeps a button's listener, so a button is only ever
+// reused for the same action (D422: Retry's became Fork's when the row lost its Retry).
 const actionButton = (glyph: IconName, label: string, run: () => void): HTMLElement => {
-  const b = h("button", { class: "icon-button", type: "button", "aria-label": label }, icon(glyph));
+  const b = h(
+    "button",
+    { class: "icon-button", type: "button", "aria-label": label, "data-key": label },
+    icon(glyph),
+  );
   setTooltip(b, label);
   on(b, "click", run);
   return b;
 };
+
+/**
+ * Fork (D422): a new chat from this message on, this one left as it is. Its menu opens at the
+ * button: the chat's own agent first, then the others (the fork is handed to the one picked).
+ */
+function forkButton(host: ItemHost, item: string): HTMLElement {
+  const b = h(
+    "button",
+    {
+      class: "icon-button",
+      type: "button",
+      "aria-label": "Fork from here",
+      "data-fork": item,
+      "data-key": "fork",
+    },
+    icon("chat-fork"),
+  );
+  setTooltip(b, "Start a new chat from this point. This one stays as is.");
+  on(b, "click", () => {
+    const session = host.session;
+    const fork = (agent?: string) =>
+      host.run("agent.forkSession", { session: session.id, item, ...(agent && { agent }) });
+    // A group chat's fork keeps its agents.
+    const group = session.members.peek().length > 0;
+    const current = soloSpeaker(session.chatMode.peek());
+    const others = group ? [] : knownAgents().filter((a) => a.name !== current);
+    showMenu(
+      b,
+      [
+        {
+          label: group ? "Fork from here" : `Fork with ${memberInfo(current).label}`,
+          icon: "chat-fork",
+          run: () => fork(),
+        },
+        ...others.map((a, i) => ({
+          label: a.label,
+          iconElement: () => agentFace(a.face, { size: 16 }),
+          ...(i === 0 && { heading: "Fork and hand to" }),
+          ...(a.description && { tooltip: a.description }),
+          run: () => fork(a.name),
+        })),
+      ],
+      "Fork",
+    );
+  });
+  return b;
+}
 
 /** Your message: copy and edit (on hover); editing swaps the card for a box with Send / Cancel. */
 function renderUser(item: Extract<Item, { type: "user" }>, host: ItemHost): HTMLElement {
@@ -690,15 +750,14 @@ function renderAssistant(
           "div",
           { class: { "agent-msg-actions": true, "is-latest": answer === "latest" } },
           actionButton("copy", "Copy message", () => host.copy(item.text)),
+          // A new chat from this point, with this agent or another one (D422; it took the
+          // place of "Hand to another agent…", D231). Before Retry, which comes and goes: the
+          // row is updated in place (morph), where a button keeps its listener, so one that
+          // moved into another's place would do the other's work.
+          forkButton(host, item.id),
           answer === "latest" && host.idle() && host.canRetry()
             ? actionButton("refresh-ccw", "Retry", () =>
                 host.run("agent.retry", { session: host.session.id }),
-              )
-            : null,
-          // Hand the chat to another agent (D231): any agent, picked.
-          answer === "latest" && host.idle()
-            ? actionButton("arrow-right", "Hand to another agent…", () =>
-                host.run("agent.handoff", { session: host.session.id }),
               )
             : null,
           item.model ? h("span", { class: "agent-msg-model" }, item.model) : null,

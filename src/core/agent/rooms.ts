@@ -126,6 +126,8 @@ export interface ThreadRow {
   recap?: string;
   /** A thread: the message it answers. */
   parent?: ThreadParent;
+  /** A fork (D422): the chat it was copied from. */
+  forkOf?: string;
   /** Something new since you last looked (D238). */
   unread?: boolean;
   /** Pinned to the top of its folder's chats; archived: under Archived instead. */

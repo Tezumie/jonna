@@ -71,6 +71,7 @@ export function sessionJSON(session: AgentSession): unknown {
       // Its channel or direct message, and what the channel shows of it (D237).
       ...(session.room && { room: session.room }),
       ...(session.parent && { parent: session.parent }),
+      ...(session.forkOf && { forkOf: session.forkOf }),
       ...threadPreview(session.items),
       workspace: session.workspaceRoot,
       model: session.model.peek(),
@@ -193,6 +194,7 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
         archived?: boolean;
         room?: string;
         parent?: unknown;
+        forkOf?: unknown;
         worktree?: unknown;
       };
       items?: Item[];
@@ -210,6 +212,7 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
     session.archived = data.meta?.archived === true;
     session.room = typeof data.meta?.room === "string" ? data.meta.room : null;
     session.parent = threadParent(data.meta?.parent);
+    session.forkOf = typeof data.meta?.forkOf === "string" ? data.meta.forkOf : null;
     if (typeof data.meta?.workspace === "string") session.workspaceRoot = data.meta.workspace;
     restoreChatWorktree(session.id, data.meta?.worktree);
     session.model.value = data.meta?.model ?? null;

@@ -1,0 +1,140 @@
+// D422: a chat forked from a message. The reply's Fork button opens a menu at the button (this
+// agent, then the others); the fork holds the conversation up to that reply and opens, the
+// original stays as it was; the Chats list shows a fork under its chat, a fork of a fork under
+// that; `agent` hands the fork to another agent. Against tests/fixtures/mock-ollama.mjs.
+{
+  "name": "agent-fork-m7-122",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    {
+      "run": "agent.refreshModels",
+      "expect": [{ "model": "ollama/mock-coder:1b" }],
+      "timeoutMs": 10000
+    },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    {
+      "run": "terminal.runCommand",
+      "input": {
+        "command": "mkdir -p .vscode/agents && printf -- '---\\nname: scout\\nlabel: Scout\\nrole: Researcher\\ndescription: Finds things in the code.\\n---\\n\\nResearch first.\\n' > .vscode/agents/scout.md",
+        "timeoutMs": 20000
+      },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    { "run": "agent.newSession", "save": "a" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello", "session": "${a.session}" },
+      "expect": { "answer": "Hello from mock." },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello SECONDMARK", "session": "${a.session}", "wait": true },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "SECONDMARK" }, "status": "idle" },
+      "timeoutMs": 20000
+    },
+
+    // Every answer has the button (the old "Hand to another agent…" is gone); its menu opens at it.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-msg-actions [data-fork]", "limit": 5 },
+      "expect": { "$length": 2 },
+      "timeoutMs": 10000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-msg-actions [aria-label='Hand to another agent…']" },
+      "expect": { "$length": 0 }
+    },
+    // The turn's upkeep (its title) is done: the chat is idle and stays so.
+    { "wait": 3000 },
+    { "state": "ide://agent/session", "expect": { "status": "idle" }, "timeoutMs": 20000 },
+    { "run": "dev.click", "input": { "selector": ".agent-msg-actions [data-fork]" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "limit": 1, "html": 3000 },
+      "expect": [{ "html": { "$contains": "Fork and hand to" } }],
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    // The first entry: this agent. The fork holds the first exchange only, and is open.
+    { "run": "dev.click", "input": { "selector": ".menu .menu-item" } },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "title": { "$contains": "(fork)" },
+        "items": { "$contains": "Hello from mock." }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$not": { "$contains": "SECONDMARK" } } }
+    },
+    // The original is as it was.
+    {
+      "state": "ide://agent",
+      "expect": { "sessions": { "$contains": "\"forkOf\":\"${a.session}\"" } },
+      "timeoutMs": 5000
+    },
+    // In the Chats list the fork sits under its chat.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-recent.is-fork.is-current[data-fork-depth='1']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    // A fork of the fork (the whole of it, as the list's Fork and /fork do), one level deeper.
+    {
+      "run": "agent.forkSession",
+      "input": {},
+      "save": "f2",
+      "expect": { "session": { "$exists": true } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-recent.is-fork[data-session='${f2.session}'][data-fork-depth='2']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 10000
+    },
+    // (A second later: screenshots are named by the second.)
+    { "wait": 1200 },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    // Handed to another agent in the fork; the original keeps its own.
+    {
+      "run": "agent.forkSession",
+      "input": { "session": "${a.session}", "agent": "scout" },
+      "save": "f3",
+      "expect": { "forkOf": "${a.session}" },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "chatMode": "custom:scout",
+        "items": { "$contains": "Handed to Scout." }
+      },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "items": { "$contains": "SECONDMARK" } }
+    },
+    {
+      "run": "agent.forkSession",
+      "input": { "session": "${a.session}", "item": "no-such-item" },
+      "expectError": "has no message"
+    }
+  ]
+}

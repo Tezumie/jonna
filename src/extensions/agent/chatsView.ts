@@ -7,6 +7,7 @@
 // as in the explorer (Delete, Archive or Open them together from the right-click menu, Delete
 // and Escape keys too); rows drag onto the dock to open where they're dropped.
 
+import { forkOrder } from "../../core/agent/forks";
 import { MAIN_MEMBER } from "../../core/agent/groupChat";
 import { relativeAge, shortAge, type ThreadRow } from "../../core/agent/rooms";
 import { allGroups } from "../../core/dock/tree";
@@ -31,6 +32,19 @@ import { ROOM_VIEW, THREAD_VIEW } from "./threadTabs";
 
 /** About how many chats show unfolded: folders further down start folded (none are hidden). */
 const OPEN_CHATS = 20;
+/** Forks deeper than this are indented no further (the row keeps room for its title). */
+const MAX_FORK_INDENT = 4;
+/** A fork's row (D422): how deep it sits, and its indent (CSS), no deeper than MAX_FORK_INDENT. */
+const forkAttrs = (depth: number): Record<string, string> =>
+  depth > 0
+    ? {
+        "data-fork-depth": String(depth),
+        "data-fork-indent": String(Math.min(depth, MAX_FORK_INDENT)),
+      }
+    : {};
+/** A fork's place in the tree: an elbow from the chat above it. */
+const forkElbow = (depth: number): HTMLElement | null =>
+  depth > 0 ? h("span", { class: "ch-fork-elbow", "aria-hidden": "true" }) : null;
 /** The Pinned and Archived sections' keys in `folded` (no folder's path starts with a NUL). */
 const PINNED = "\0pinned";
 const ARCHIVED = "\0archived";
@@ -263,19 +277,24 @@ export class ChatsView implements ViewInstance {
     /** Chats in unfolded folders so far. */
     let open = 0;
     // Rows for the chats `keep` takes, this folder's and others', the one changed last first.
+    // Forks under their chats here too (D422), when both are in the section.
     const gathered = (keep: (c: { pinned?: boolean; archived?: boolean }) => boolean) =>
-      [
-        ...conversations.filter(keep).map((r) => ({
-          updated: r.updated,
-          row: () => this.chatRow(withThreads(r), visible.has(r.id)),
-        })),
-        ...others.filter(keep).map((o) => ({
-          updated: o.updated,
-          row: () => this.otherRow(o, visible.has(o.id)),
-        })),
-      ]
-        .sort(byAge)
-        .map((c) => c.row());
+      forkOrder(
+        [
+          ...conversations.filter(keep).map((r) => ({
+            id: r.id,
+            ...(r.forkOf && { forkOf: r.forkOf }),
+            updated: r.updated,
+            row: (depth: number) => this.chatRow(withThreads(r), visible.has(r.id), depth),
+          })),
+          ...others.filter(keep).map((o) => ({
+            id: o.id,
+            ...(o.forkOf && { forkOf: o.forkOf }),
+            updated: o.updated,
+            row: (depth: number) => this.otherRow(o, visible.has(o.id), depth),
+          })),
+        ].sort(byAge),
+      ).map(({ row, depth }) => row.row(depth));
     // Pinned chats, every folder's, first.
     const pinned = gathered((c) => !!c.pinned && !c.archived);
     if (pinned.length) {
@@ -289,7 +308,10 @@ export class ChatsView implements ViewInstance {
     // This folder's chats, all of them (only folding a folder hides any); with no folder open,
     // the chats started without one (D164).
     if (root || mine.length) {
-      const rows = mine.map((r) => this.chatRow(withThreads(r), visible.has(r.id)));
+      // A fork sits under the chat it came from (D422), forks of forks under those.
+      const rows = forkOrder(mine).map(({ row, depth }) =>
+        this.chatRow(withThreads(row), visible.has(row.id), depth),
+      );
       if (!rows.length)
         rows.push(h("div", { class: "ch-empty" }, query ? "No chats match." : "No chats yet."));
       const folded = ChatsView.folded.get(root ?? "") ?? false;
@@ -320,11 +342,13 @@ export class ChatsView implements ViewInstance {
         ChatsView.folded.get(folder) ??
         (!query && open >= OPEN_CHATS && !list.some((o) => visible.has(o.id)));
       if (!folded) open += list.length;
+      // Forks under their chats here too (D422).
+      const ordered = forkOrder(list);
       nodes.push(
         this.folder(
           folder,
-          list.map((o) => this.otherRow(o, visible.has(o.id))),
-          list.map((o) => o.id),
+          ordered.map(({ row, depth }) => this.otherRow(row, visible.has(row.id), depth)),
+          ordered.map(({ row }) => row.id),
           false,
           folded,
         ),
@@ -551,7 +575,7 @@ export class ChatsView implements ViewInstance {
     );
   }
 
-  private chatRow(r: ThreadRow, current: boolean): HTMLElement {
+  private chatRow(r: ThreadRow, current: boolean, depth = 0): HTMLElement {
     const busy = !!r.running && !r.waiting;
     const who = (r.members?.length ? r.members : [r.speaker ?? MAIN_MEMBER])
       .map((m) => memberInfo(m).label)
@@ -565,10 +589,13 @@ export class ChatsView implements ViewInstance {
           "is-current": current,
           "is-busy": busy,
           "has-news": !!r.unread || !!r.waiting,
+          "is-fork": depth > 0,
         },
         type: "button",
         "data-session": r.id,
+        ...forkAttrs(depth),
       },
+      forkElbow(depth),
       h("span", { class: "ch-row-lead" }, this.lead(r)),
       h("span", { class: "ch-row-label" }, r.title),
       r.waiting
@@ -583,6 +610,7 @@ export class ChatsView implements ViewInstance {
       row,
       [
         r.title,
+        depth > 0 ? "A fork of the chat above it" : "",
         // Where it stands: the agent's last wrap-up (D301).
         r.recap ?? "",
         `${who}${r.waiting ? " · needs you" : busy ? " · working" : ""}`,
@@ -598,14 +626,16 @@ export class ChatsView implements ViewInstance {
   }
 
   /** Another folder's chat: it opens here, offering its folder (agent.openChatFolder). */
-  private otherRow(o: OtherChat, current: boolean): HTMLElement {
+  private otherRow(o: OtherChat, current: boolean, depth = 0): HTMLElement {
     const row = h(
       "button",
       {
-        class: { "ch-row": true, "ch-recent": true, "is-current": current },
+        class: { "ch-row": true, "ch-recent": true, "is-current": current, "is-fork": depth > 0 },
         type: "button",
         "data-session": o.id,
+        ...forkAttrs(depth),
       },
+      forkElbow(depth),
       h("span", { class: "ch-row-lead" }, this.lead(o)),
       h("span", { class: "ch-row-label" }, o.title),
       o.updated
@@ -720,7 +750,7 @@ export class ChatsView implements ViewInstance {
         },
         {
           label: "Fork",
-          icon: "git-fork",
+          icon: "chat-fork",
           run: () => this.run("agent.forkSession", { session: id }),
         },
         {

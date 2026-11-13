@@ -223,7 +223,7 @@
     {
       "run": "dev.inspectDom",
       "input": {
-        "selector": "[data-session='${solo.session}'] .agent-msg-actions [aria-label='Hand to another agent…']"
+        "selector": "[data-session='${solo.session}'] .agent-msg-actions.is-latest [aria-label='Fork from here']"
       },
       "expect": { "$length": 1 }
     },

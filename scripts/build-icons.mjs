@@ -63,6 +63,10 @@ const CUSTOM = {
   // isn't mistaken for the editor's split (columns-2). Used by the terminal's split action only.
   "terminal-split":
     '<rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><path d="M15 3v18" /><path d="m6 9.5 2.5 2.5L6 14.5" /><path d="M10.5 14.5h1.5" />',
+  // A chat's fork (D422): one line going on, another leaving it, both with arrows (our own
+  // drawing; Lucide's git-fork reads as git's).
+  "chat-fork":
+    '<path d="M3 17h17" /><path d="m17 14 3 3-3 3" /><path d="M7 17c4 0 3-10 8-10h5" /><path d="m17 4 3 3-3 3" />',
   "panel-left-on":
     '<rect width="18" height="18" x="3" y="3" rx="2" /><path d="M5 5h4v14H5z" fill="currentColor" stroke="none" />',
   "panel-bottom-on":

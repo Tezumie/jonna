@@ -211,8 +211,14 @@ agents you pick.
 - **Who's speaking:** each reply shows its agent's face and name when the speaker changes. In a
   group chat, **@** lists the members first, and the members pill mentions one or opens **Agents
   in this chat…**. The mode pill and Shift+Tab are off: each agent answers in its own mode.
-- **Handing the chat over:** a reply's actions have **Hand to another agent…**, and an agent's file
-  can define handoff buttons (`handoffs:`) that switch the chat to another agent with a prompt.
+- **Forking a chat:** every reply has **Fork** among its actions. It starts a new chat from that
+  point and leaves this one as it is. Its menu opens at the button: the chat's own agent first,
+  then the others, so a fork can go on with another agent. In the Chats list a fork sits under the
+  chat it came from, and a fork of a fork under that. Right-click a chat and choose **Fork**, or
+  type `/fork`, to fork all of it.
+- **Handing the chat over:** an agent's file can define handoff buttons (`handoffs:`) that switch
+  the chat to another agent with a prompt, and **Hand the chat to another agent…** in the command
+  palette does it for any agent. To keep the chat as it is, fork it to that agent instead.
 - **Delegating is different:** the other agent does a task on its own and reports back, without
   joining the conversation. See [Handing work to agents](#handing-work-to-agents).
 - **A group chat on an external agent** (Codex, Claude Code…) plays every member with it, except a

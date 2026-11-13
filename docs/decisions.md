@@ -26,7 +26,7 @@ unless noted.
 | · The agent's tools at Claude Code's level, the command sandbox, desktop control, plugins, hooks | D300–D378 |
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
-| · Large files, a section of settings read whole, updates that fit | D421 |
+| · Large files, a section of settings read whole, updates that fit, chat forks | D421–D422 |
 
 ## Seeded from PLAN §19
 
@@ -14859,3 +14859,46 @@ Four things the owner hit in a day of use.
 - The `ui-test` skill's build line used a relative `CARGO_TARGET_DIR`, which cargo reads from
   inside `src-tauri`: the build landed in `src-tauri/src-tauri/target-uitest`, unignored. It is
   absolute now.
+
+## D422 — A chat forked from a message, with this agent or another; forks listed under their chat
+
+The owner asked for forking as in the Claude app: a button on a message that starts a new chat
+from that point and leaves this one as it is, forks shown under their chat like a file tree, and
+asked whether "Hand to another agent…" should be the same thing.
+
+- **They were different, and are now one button.** `agent.handoff` (D231) switches the agent of
+  the same chat: nothing is copied and the chat is no longer the first agent's. `agent.forkSession`
+  (D324's `/fork`, the Chats list's Fork) copied the whole chat with the same agent. A reply's
+  **Fork** button now does both: its menu opens at the button (`showMenu`, not the quick pick,
+  which opened at the top of the window, away from the pointer) with the chat's own agent first
+  and the other agents under "Fork and hand to"; the fork is handed over, the original keeps its
+  agent. The generic "Hand to another agent…" button on the latest reply is gone; the command
+  stays (the palette, an agent file's `handoffs:` buttons, agents calling it), since switching in
+  place is what `handoffs:` means in VS Code.
+- **From a message.** `agent.forkSession {item}` keeps the saved items up to and including that
+  message (`core/agent/forks.ts` `forkedChat`). Every final answer has the button, not only the
+  latest. A fork never takes pending edits, file checkpoints, the pull request watch or an
+  external agent's own session (it is told the conversation again from the items, as after a
+  restore); cut before the end, it also drops the plan and the rules and skills the agent had
+  been told, which belong to turns it no longer has.
+- **Listed under its chat.** The fork's meta names the chat it came from (`forkOf`); the Chats
+  list puts it right under that chat with an elbow, forks of forks deeper (`forkOrder`, indent
+  capped at four levels). A fork whose chat is deleted, archived, pinned or filtered out stands on
+  its own. Every folder's section nests its forks (the owner's first forks were of another
+  folder's chat and showed flat), and so do Pinned and Archived when a fork and its chat are
+  both there. Deleting a chat leaves its forks.
+- **Its own icon.** Lucide's `git-fork` read as git's; `chat-fork` is our drawing (one line going
+  on, another leaving it, both with arrows), on the button, its menu and the Chats list's Fork.
+- **A button keeps to its action.** A reply's row is updated in place (`morph`), where an element
+  keeps its listeners. With Fork after Retry, a reply that stopped being the latest had its old
+  Retry button relabelled Fork with Retry's listener still on it: a click on "Fork" ran the turn
+  again. Fork comes before Retry, and every action button carries `data-key` (its label), which
+  `morph` replaces instead of reusing. The same held for any button after one that comes and
+  goes; the UI script forks from the older reply for this.
+- **Handing over waits for the chat.** `agent.handoff` on a chat opened a moment ago (the fork)
+  ran before its conversation had loaded and saved it with the notice alone; it waits for
+  `hydrating` first, as a turn does.
+- `ide://agent/session` gives each reply's `id` (what `item` takes).
+- Not done: a fork doesn't show in the original where it branched off (a thread's "N replies"
+  row does that for threads), and a group chat's fork can't be handed over (its agents are its
+  members).

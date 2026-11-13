@@ -727,10 +727,21 @@ Usage stays a tab of its own.
   `mentionTargets(session)` (D275): the known agents plus the chat's members, any case.
 - Handoffs (VS Code's custom agents): `handoffs:` in an agent file (or a `.github/agents/*.agent.md`)
   — `{label, agent, prompt?, send?}` — parsed into `SubagentDef.handoffs` / `CustomMode.handoffs`,
-  shown as buttons under that agent's latest reply; the reply's actions also have "Hand to another
-  agent…". `agent.handoff {session?, to?, prompt?, send?}` switches the chat's mode (a notice says
+  shown as buttons under that agent's latest reply. The reply's "Hand to another agent…" button
+  became Fork (D422, below). `agent.handoff {session?, to?, prompt?, send?}` switches the chat's mode (a notice says
   so) and puts the prompt in the box or sends it; in a group chat the agent answers next (it joins
   if it isn't in it).
+- Forks (D422, `core/agent/forks.ts`): `agent.forkSession {session?, item?, agent?}` copies the
+  saved chat up to and including `item` (all of it without one) into a new chat and opens it
+  (`forkedChat`: no pending edits, checkpoints or external agent's session; cut at a message, no
+  plan or told rules / skills); `agent` hands the copy over (`agent.handoff` in the fork). The
+  copy's `forkOf` (the chat's id; `AgentSession.forkOf`, saved in its meta, `ThreadRow.forkOf`,
+  `ide://agent` sessions' `forkOf`) puts it under that chat in the Chats list (`forkOrder`,
+  `.ch-row.is-fork` with an elbow, in every folder's section and in Pinned and Archived; a fork
+  whose chat isn't in the same section stands on its own). Every final
+  answer has the Fork button (`view/items.ts` `forkButton`): its menu (`showMenu` at the button)
+  lists the chat's agent, then the others. The Chats list's Fork and `/fork` copy the whole
+  chat. UI script: `tests/scripts/agent-fork-m7-122.jsonc`.
 - Commands: `agent.newGroupChat {members?, title?}` (the Chats nav's New group chat, the agents
   row's "Start a group chat with…"; picks when fewer than 2), `agent.setGroupMembers {session?,
   members?}` (`[]` ends the group), `agent.handoff`. State: `ide://agent` sessions' `members` and

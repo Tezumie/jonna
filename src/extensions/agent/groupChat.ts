@@ -752,6 +752,9 @@ export function registerGroupChat(
         const target = session
           ? sessions.get(session)
           : (sessions.find(undefined) ?? sessions.get());
+        // A chat opened a moment ago (a fork, D422) may still be loading: switching it before its
+        // conversation is there would save it empty.
+        await target.hydrating;
         // A turn that has finished but is still saving: wait for it, as a message sent then does
         // (D273: a handoff the moment the answer appeared was refused).
         await target.settle();

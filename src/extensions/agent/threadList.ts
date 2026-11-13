@@ -29,6 +29,8 @@ export interface OtherChat {
   members?: readonly string[];
   /** The model that wrote most of its replies (D364), for its face's logo (D410). */
   usedModel?: string;
+  /** A fork (D422): the chat it was copied from. */
+  forkOf?: string;
   pinned?: boolean;
   archived?: boolean;
 }
@@ -66,6 +68,7 @@ function otherChat(id: string, raw: unknown, mine: Mine): OtherChat | null {
     ...((str(meta.usedModel) ?? str(meta.model)) && {
       usedModel: str(meta.usedModel) ?? str(meta.model),
     }),
+    ...(typeof meta.forkOf === "string" && { forkOf: meta.forkOf }),
     ...(meta.pinned === true && { pinned: true }),
     ...(meta.archived === true && { archived: true }),
   };
@@ -107,6 +110,7 @@ function savedRow(
     // The agent's wrap-up asked and stopped until the user answers (D301).
     ...(meta.blocked === true && meta.status !== "running" && { waiting: true }),
     ...(threadParent(meta.parent) && { parent: threadParent(meta.parent) as ThreadParent }),
+    ...(str(meta.forkOf) && { forkOf: str(meta.forkOf) }),
     ...(meta.pinned === true && { pinned: true }),
     ...(meta.archived === true && { archived: true }),
   };
@@ -127,6 +131,7 @@ export function liveRow(s: AgentSession): ThreadRow {
     ...(status === "waiting" && { waiting: true, running: true }),
     ...(!!s.error.peek() && { failed: true }),
     ...(s.parent && { parent: s.parent }),
+    ...(s.forkOf && { forkOf: s.forkOf }),
     ...(s.pinned && { pinned: true }),
     ...(s.archived && { archived: true }),
     ...(s.model.peek() && { usedModel: s.model.peek() as string }),

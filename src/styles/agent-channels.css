@@ -112,6 +112,28 @@
     color: var(--fg-default);
     font-weight: 600;
   }
+  /* A fork under its chat (D422): an elbow from the row above, as a file tree's. */
+  .ch-fork-elbow {
+    flex: none;
+    align-self: flex-start;
+    width: var(--space-2);
+    height: 50%;
+    border-left: 1px solid var(--border-default);
+    border-bottom: 1px solid var(--border-default);
+    border-bottom-left-radius: var(--radius-sm);
+  }
+  .ch-row.is-fork {
+    padding-left: var(--space-3);
+  }
+  .ch-row[data-fork-indent="2"] {
+    padding-left: calc(var(--space-3) * 2);
+  }
+  .ch-row[data-fork-indent="3"] {
+    padding-left: calc(var(--space-3) * 3);
+  }
+  .ch-row[data-fork-indent="4"] {
+    padding-left: calc(var(--space-3) * 4);
+  }
   .ch-row-lead {
     display: inline-flex;
     flex: none;

@@ -4093,3 +4093,16 @@ Images in the chat (D381):
    than the IDE follows (3.26.0 stays; 3.30.0 needs 1.107).
 4. Single-click a file in the explorer (an italic tab), then double-click the tab: the title
    turns upright and the next single-clicked file opens in a tab of its own.
+
+## D422 — Forking a chat
+1. In a chat with two or more replies, hover an earlier reply: its actions have a fork icon
+   ("Start a new chat from this point. This one stays as is."). Click it: a menu opens at the
+   button, "Fork with <this agent>" first, then the other agents under "Fork and hand to".
+2. Choose the first entry: a new chat "… (fork)" opens with the conversation up to that reply;
+   the original still has everything. In the Chats list the fork sits under the original, joined
+   by an elbow line.
+3. Fork the fork (right-click it in the list, Fork): it sits one level deeper.
+4. Fork a reply and pick another agent: the fork says "Handed to <agent>" and that agent answers
+   the next message; the original chat still has its own agent.
+5. Delete the original: its forks stay, at the top level.
+6. A narrow sidebar: a fork three levels deep still shows its title.
