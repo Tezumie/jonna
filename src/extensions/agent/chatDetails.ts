@@ -25,7 +25,7 @@ import { findCustomMode } from "../../core/agent/chatModes";
 import type { HelperState } from "../../core/agent/isolatedHelpers";
 import { describeRepeat } from "../../core/agent/schedules";
 import { type Disposable, type DisposableStore, toDisposable } from "../../core/lifecycle/index";
-import { basename } from "../../core/paths/index";
+import { basename, samePath } from "../../core/paths/index";
 import { type ReadonlySignal, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -53,6 +53,8 @@ export interface ChatDetailsData {
     /** Where the agent runs. */
     where: string;
     folder: { name: string; path: string; open: boolean } | null;
+    /** The workspace's other folders (D251), which the agent reads and edits too; this window's chat only. */
+    folders: { name: string; path: string }[];
     branch: string | null;
     model: string;
     /** One of the user's agents the chat is with (D230), or null for the main agent. */
@@ -154,6 +156,8 @@ export interface DetailsHost {
   useHelpers(helpers: IsolatedHelpers | null): void;
   /** Reads the helpers' list (an effect that calls it re-runs when a helper changes). */
   watchHelpers(): void;
+  /** Reads the workspace's folders (an effect that calls it re-runs when one is added or removed). */
+  watchFolders(): void;
 }
 
 const MODE_LABELS: Record<string, string> = { agent: "Agent", plan: "Plan", ask: "Ask" };
@@ -353,6 +357,13 @@ export function registerChatDetails(
       environment: {
         where: "This computer",
         folder: root ? { name: locationLabel(root), path: root, open: isOpen } : null,
+        folders: isOpen
+          ? workspace.folders.value
+              // Not the first one: the row above is it (also for a chat kept with its
+              // workspace file, D251, whose `root` is that file).
+              .filter((f) => !samePath(f.path, open ?? ""))
+              .map((f) => ({ name: f.name, path: f.path }))
+          : [],
         branch: isOpen ? extra.branch : null,
         model: modelLabel(providers, session),
         agent,
@@ -475,6 +486,9 @@ export function registerChatDetails(
     },
     watchHelpers: () => {
       helperSource.value?.list.value;
+    },
+    watchFolders: () => {
+      workspace.folders.value;
     },
     useHelpers: (helpers) => {
       helperSource.value = helpers;

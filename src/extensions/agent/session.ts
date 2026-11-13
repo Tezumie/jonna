@@ -125,6 +125,16 @@ export class AgentSession {
   /** An external agent's own models and reasoning levels, once it has started (D193). */
   readonly agentSettings: Signal<{ agent: string; settings: readonly AcpSetting[] } | null> =
     signal<{ agent: string; settings: readonly AcpSetting[] } | null>(null);
+  /**
+   * A model or reasoning level picked for the external agent that it hasn't taken yet: starting
+   * the agent and its answer can take a while, and the pill says so meanwhile.
+   */
+  readonly agentSettingPending = signal<{
+    /** The external agent it was picked for (the chat's model may change meanwhile). */
+    agent: string;
+    category: AcpSetting["category"];
+    value: string;
+  } | null>(null);
   readonly autoApply = signal(false);
   /**
    * How the agent works (D180, after Cursor's modes): "agent" does the work; "ask" answers with
@@ -666,7 +676,13 @@ export class AgentSession {
     if (!config) throw new Error("This chat isn't using an external agent.");
     if (this.status.peek() !== "idle")
       throw new Error("Wait for the agent's turn to end before changing its model.");
-    await (await externalFor(this, config)).setSetting(category, value);
+    const pending = { agent: config.name, category, value };
+    this.agentSettingPending.value = pending;
+    try {
+      await (await externalFor(this, config)).setSetting(category, value);
+    } finally {
+      if (this.agentSettingPending.peek() === pending) this.agentSettingPending.value = null;
+    }
   }
 
   /** Requests a subagent makes on its own model: its own ids, cancelled with it (D195). */

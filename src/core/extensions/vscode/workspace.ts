@@ -148,7 +148,7 @@ export class ShimConfiguration {
       let at = out;
       for (const p of parts) {
         const next = at[p];
-        if (next && typeof next === "object" && !Array.isArray(next)) {
+        if (isPlainObject(next)) {
           at = next as Record<string, unknown>;
         } else {
           const made: Record<string, unknown> = {};
@@ -156,7 +156,12 @@ export class ShimConfiguration {
           at = made;
         }
       }
-      at[last] = value;
+      // A copy (VS Code hands out clones): never the cached value itself, which the loop above
+      // would otherwise write into for a deeper key, and an extension could change.
+      const copy = cloneSetting(value);
+      const built = at[last];
+      // A deeper key came first ("x.b.c" before "x.b"): its keys stay beside the object's.
+      at[last] = isPlainObject(built) && isPlainObject(copy) ? { ...copy, ...built } : copy;
     }
     return out;
   }
@@ -648,4 +653,18 @@ export function createWorkspace(
       return new Disposable(() => {});
     },
   };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/** A setting's value as its own copy (JSON values; anything else as it is). */
+function cloneSetting(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
 }

@@ -496,7 +496,11 @@ files since then; your message goes back into the box so you can change it and s
 A panel on the right of the chat shows small cards:
 
 - **Environment:** this computer, the folder, the branch (click it to switch branch), the model,
-  the agent or mode, and the output style when it isn't Default.
+  the agent or mode, and the output style when it isn't Default. With nothing open the folder
+  row says "No folder": click it to open one. Right-click a folder for more: reveal it, copy its
+  path, open it in a terminal, change folder, or **Add folder…** to put another folder beside it.
+  Added folders are listed under the first; the agent reads and edits files in all of them
+  (name the folder in front of a path, as in `api/src/x.ts`). Remove one from its menu.
 - **Context:** how full the context window is, split into messages, attachments, system prompt,
   rules and memory, skills, built-in tools (click for each tool's share) and MCP tools (each
   server's). Deferred tools, which the agent loads by name when it needs them, are listed apart:

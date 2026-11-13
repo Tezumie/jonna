@@ -27,6 +27,7 @@ unless noted.
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
+| · Small cleanups, a default layout to choose, an audit of D421–D424 | D424–D425 |
 
 ## Seeded from PLAN §19
 
@@ -14923,3 +14924,101 @@ asked whether "Hand to another agent…" should be the same thing.
   checked against 1.106's `vscode.d.ts` and that hasn't been redone: an extension that needs
   something added since may fail where it calls it (logged in `ide://ext/<id>/vscode`), where
   before it would not have been offered at all.
+
+## D424 — Small cleanups: a folder's tooltip beside the Chats list, a model switch that shows it's working
+
+A batch of small fixes from the owner's use; more may be added to this entry until it's committed.
+
+- **A folder's tooltip in the Chats list is on its whole row.** It was on the name, placed
+  "right" of it, which is where the row's + (new chat) sits: the tooltip covered the button.
+  On the row (`.ch-section-head`) it shows beside the sidebar, as a chat's does. The + keeps its
+  own tooltip (the nearest `data-tooltip` wins).
+- **Changing an external agent's model or reasoning level shows that it's under way.** The
+  first change starts the agent (seconds, more through npx) and then waits for its answer;
+  until then the pill kept the old name and the pick looked ignored (Claude Code and Codex
+  both). `AgentSession.agentSettingPending` holds the choice while `setAgentSetting` runs; the
+  composer's model pill (or effort pill) shows the picked name with a spinner and a "Switching
+  to …" tooltip, and `ide://agent/session` has `agentSettingPending`. If the agent refuses, the
+  pill goes back and the error shows as before. The switch itself isn't faster: the time is the
+  agent's.
+- Test: `tests/scripts/agent-switching-m7-124.jsonc`, with the mock agent's `--slow-settings`
+  (it answers a setting 4 s late).
+- **The details panel's Environment card always has a folder row, with a menu, and lists the
+  workspace's other folders.** With nothing open it showed no folder row at all; now "No
+  folder", which opens one (`workspace.openFolder`). A folder row's right-click menu: Reveal in
+  explorer, Reveal in file manager, Copy path, Open in terminal, Change folder…, Add folder…
+  (`workspace.addFolder`), and on an added folder Remove from workspace. The owner asked for
+  "a secondary folder the agent can reference", as Claude Code's desktop app has: that is what a
+  multi-root workspace already is here (D251: the agent's tools and sandbox cover every folder
+  of the workspace), so the panel uses it and adds no second mechanism. The other folders are
+  listed under the first (`environment.folders` in `ide://agent/details`), for this window's
+  chat only. Not done: "Open repository on GitHub" (no command opens a repository's page yet),
+  and an external agent still starts in the first folder only (ACP's `session/new` takes one
+  `cwd`). Test: `tests/scripts/details-folders-m7-125.jsonc`.
+- **A default layout to choose: Default, Agent or Code** (`workbench.defaultLayout`, user
+  scope). It decides what a window starts with where there is nothing to restore: opened
+  without a folder, a folder closed, a folder opened for the first time (D163's base layout,
+  `workbench/baseLayout.ts`). **Default** is what it was: Chats, the welcome tab, the agent on
+  the right (with a folder: the explorer). **Agent**: the Chats list and the chat
+  alone, filling the window; no welcome tab, no terminal, and a new folder's README isn't
+  opened; the sidebar stays on Chats when a folder opens. A file opened later gets an editor
+  area on the left, as with any chat alone in the dock (D368). **Code**: the welcome tab alone
+  with the sidebar hidden, as VS Code starts; once a folder is open the explorer shows; no
+  agent column and no terminal (both a click or a key away). The plan per layout is DOM-free
+  and tested (`core/layout/startLayout.ts`). Unlike Cursor's switch, choosing one changes
+  nothing on screen: applying it would close the open tabs (the Settings tab among them), and
+  the owner asked for the starting layout only. A folder with a saved layout keeps it. The
+  settings page shows the three as cards with a small drawing of each
+  (`extensions/settings/layoutChoice.ts`), drawn with tokens, no images.
+  Test: `tests/scripts/default-layout-m7-126.jsonc`.
+- **No layout opens a terminal by itself any more.** The base layout started one the first time
+  a folder was opened (D163). VS Code doesn't; it started a shell (slow for PowerShell) and
+  took a third of the height before anyone asked. Ctrl+` and the Terminal menu open one as
+  before, at the bottom. The owner's call.
+
+## D425 — An audit of D421–D424: forks, update offers, the shim's sections, the new panel rows and layouts
+
+Two reviews before 0.1.5, one of this batch (D424) and one of D421–D423, each by reading the code.
+What was verified and fixed:
+
+- **A fork is a chat of its own.** `forkedChat` kept `meta.parent` and `meta.room`: a fork of a
+  thread was saved as another thread on the same message (never listed in Chats), and a fork of a
+  channel's conversation was deleted with the channel. Both are dropped. It also kept the
+  original's spend and its leave to pass the budget (`cost`, `budgetAllowed`): dropped. Cut at a
+  message it kept what the agent had read later (`seen`, so write_file's "you haven't read this
+  version" passed for files the fork never read) and the list's preview of the last reply and
+  wrap-up: dropped on a cut.
+- **A chat forked while it works** opened as "interrupted when the IDE closed": the reply still
+  streaming and the tools still running at the end stay with the original (`withoutUnfinishedTail`).
+- **A fork takes its images whole.** Chat images are kept by chat id (D381); the fork had only
+  the previews. `agent.forkSession` copies the stored ones (`storedImageIds`).
+- **`agent.forkSession { agent }` with a name nobody has** left a fork behind and reported an
+  error: the name is checked before anything is saved.
+- **An update that couldn't be read is not offered.** `offeredUpdate` treated a failed lookup
+  (offline, the store busy) as "old enough and fits" and offered that version unchecked; it is
+  skipped now. Pre-releases in the store's list are skipped too, as an install skips them.
+- **A settings section handed to an extension is a copy.** `sectionObject` could write a deeper
+  key into a cached setting's own object, depended on the cache's order when a key and a deeper
+  one both existed, and returned objects an extension could change in the cache. Values are
+  cloned and merged.
+- **One double-click on a tab, counted once however long the button is held.** The press's mark
+  expired after 500 ms while the dblclick event comes at the release; the event now uses the
+  mark up (3 s at most).
+- **D424's own:** the pending model names its agent, so picking another model meanwhile doesn't
+  show the wait on the wrong pill; a chat kept with its workspace file no longer lists the first
+  folder twice (with Remove); no "Open in terminal" on a workspace file; "Reveal in explorer"
+  from the menu no longer clicks a row that may have been redrawn; "No folder" on a chat while
+  the window has a folder says so and doesn't offer to replace the window's folder; "Change
+  folder…" only for this window's folder; the layout cards' listeners are the row's, the group
+  takes arrow keys with one tab stop, and the title's label no longer presses the Default card;
+  the sidebar isn't shown and then hidden for the Code layout.
+
+Left as they are, known:
+- A second press on a tab counts as a double-click at the press, before it's known not to be
+  the start of a drag: pressing a terminal's tab twice quickly and dragging asks for a new name.
+  Changing when it counts risks the fix D423 made with a real mouse; to revisit with one.
+- A fork of a chat that worked in a git worktree continues in the folder, without saying so.
+- The update check and an install still walk the store's versions with different limits (4 and
+  15 lookups).
+- The first-open path of the Agent and Code layouts, and the window's start without a folder,
+  have unit tests only; the UI script covers Close folder.

@@ -959,6 +959,10 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
             model: s.model.peek(),
             // An external agent's own models and reasoning levels (agent.setAgentModel, D193).
             agentSettings: s.agentSettings.peek(),
+            // A choice the agent hasn't taken yet (it is starting, or answering).
+            ...(s.agentSettingPending.peek() && {
+              agentSettingPending: s.agentSettingPending.peek(),
+            }),
             // An external agent with the IDE's MCP tools (D211): "on", "off", "unsupported".
             ...(s.externalIdeTools && { ideTools: s.externalIdeTools }),
             // An external agent's plan limits from its last /status (D233: Codex's 5h / weekly).

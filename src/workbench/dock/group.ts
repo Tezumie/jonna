@@ -44,6 +44,8 @@ const DOUBLE_CLICK_SLOP = 6;
  */
 let lastTabPress: { tabId: string; at: number; x: number; y: number } | undefined;
 let doubleHandled: { tabId: string; at: number } | undefined;
+/** How long after the second press its dblclick event may still arrive (a held button). */
+const DOUBLE_EVENT_MS = 3000;
 
 /** Whether this press on a tab is the second of a double-click (same tab, close in time and place). */
 function isSecondPress(tabId: string, e: PointerEvent): boolean {
@@ -154,7 +156,7 @@ export class GroupElement implements Disposable {
         e.preventDefault();
         deps.run("layout.focusTab", { tabId });
         deps.onTabPointerDown(tabId, e, el);
-        if (second) this.tabDoubleClicked(tabId);
+        if (second) this.tabDoubleClicked(tabId, false);
       }),
     );
     // Mouse wheel scrolls the strip (or the row under the pointer) sideways; overflow shows the
@@ -205,7 +207,7 @@ export class GroupElement implements Disposable {
     // The dblclick event, where it arrives (a tab that wasn't redrawn between the clicks).
     this.store.add(
       delegate(this.tabsHost, "dblclick", ".dock-tab", (_e, el) => {
-        if (el.dataset.tabId) this.tabDoubleClicked(el.dataset.tabId);
+        if (el.dataset.tabId) this.tabDoubleClicked(el.dataset.tabId, true);
       }),
     );
     this.store.add(
@@ -582,11 +584,15 @@ export class GroupElement implements Disposable {
   }
 
   /** A double-click keeps a preview tab, or is the view's (a terminal renames itself). */
-  private tabDoubleClicked(tabId: string): void {
-    // The second press and the dblclick event of one double-click count once.
+  private tabDoubleClicked(tabId: string, fromEvent: boolean): void {
+    // The second press and the dblclick event of one double-click count once: the event (it
+    // comes at the release, however long the button was held) uses up the press's mark.
     const now = performance.now();
-    if (doubleHandled?.tabId === tabId && now - doubleHandled.at < DOUBLE_CLICK_MS) return;
-    doubleHandled = { tabId, at: now };
+    if (fromEvent) {
+      const handled = doubleHandled?.tabId === tabId && now - doubleHandled.at < DOUBLE_EVENT_MS;
+      doubleHandled = undefined;
+      if (handled) return;
+    } else doubleHandled = { tabId, at: now };
     this.deps.run("layout.pinTab", { tabId, doubleClick: true });
   }
 

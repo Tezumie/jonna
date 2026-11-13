@@ -208,3 +208,18 @@ test("an update made for a newer VS Code isn't offered; an older one that fits i
   assert.equal(await offeredUpdate("3.26.0", latest, versions, detailsOf, 0, 0, fits), "3.27.0");
   assert.equal(await offeredUpdate("3.27.0", latest, versions, detailsOf, 0, 0, fits), null);
 });
+
+test("an update that can't be read, or is a pre-release, isn't offered", async () => {
+  const latest = { version: "2.0.0", engine: "^9.0.0" };
+  const fits = (engine: string | undefined) => engine !== "^9.0.0";
+  // The next one down fails to load: skipped, the one after is offered.
+  const flaky = async (v: string) => {
+    if (v === "1.9.0") throw new Error("offline");
+    return { engine: "^1.0.0" };
+  };
+  const versions = ["2.0.0", "2.0.0-rc.1", "1.9.0", "1.8.0"];
+  assert.equal(await offeredUpdate("1.0.0", latest, versions, flaky, 0, 0, fits), "1.8.0");
+  // Nothing readable: no update, rather than an unchecked one.
+  const none = async () => undefined;
+  assert.equal(await offeredUpdate("1.0.0", latest, versions, none, 0, 0, fits), null);
+});

@@ -1089,6 +1089,13 @@
   .agent-model-pill {
     gap: var(--space-2);
   }
+  /* A choice the agent is still taking: the spinner keeps its size beside a shortened name. */
+  .agent-pill > .agent-spinner {
+    flex: none;
+  }
+  .agent-reasoning:has(> .agent-spinner) {
+    gap: var(--space-2);
+  }
   @container (max-width: 440px) {
     .agent-model-pill {
       max-width: 60%;

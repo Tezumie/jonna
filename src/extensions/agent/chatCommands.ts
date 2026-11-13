@@ -1,7 +1,7 @@
 // The Chats list's commands (D124, D125): rename, pin, archive, fork, clear. A chat that isn't loaded is changed
 // in its saved file, without touching when it was last active. Also agent.showMessage (a thread's
 // "Show it in the conversation").
-import { forkedChat } from "../../core/agent/forks";
+import { forkedChat, storedImageIds } from "../../core/agent/forks";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
@@ -9,6 +9,7 @@ import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import { backgroundProcesses } from "./backgroundProcesses";
 import { isThisWorkspace } from "./chatWorkspace";
+import { memberInfo } from "./groupChat";
 import { newId } from "./ids";
 import type { SessionManager } from "./sessions";
 import { subagentRuns } from "./subagentRuns";
@@ -150,6 +151,10 @@ export function registerChatCommands(
       const loaded = sessions.find(session);
       const id = loaded?.id ?? session;
       if (!id) throw new Error("No agent session.");
+      // Before anything is saved: a name nobody has would leave a fork behind and an error.
+      const to = agent?.trim();
+      if (to && to !== "plan" && to !== "ask" && !memberInfo(to).known)
+        throw new Error(`No agent named ${to} (ide://agent/chatModes lists them).`);
       if (loaded) await loaded.save();
       const text = await agentStoreIpc.load(id);
       if (!text) throw new Error("That chat has nothing to fork yet.");
@@ -161,10 +166,15 @@ export function registerChatCommands(
       if (!copy) throw new Error(`That chat has no message ${item}.`);
       const fork = newId("s");
       await agentStoreIpc.save(fork, JSON.stringify(copy));
+      // Its images whole, not only their previews (D381: they're kept by chat).
+      for (const image of storedImageIds(copy.items)) {
+        const data = await agentStoreIpc.mediaGet(id, image).catch(() => null);
+        if (data) await agentStoreIpc.mediaPut(fork, image, data).catch(() => {});
+      }
       sessions.changed();
       await ctx.execute("agent.openThread", { session: fork });
       // Handed over in the fork: the original keeps its agent.
-      if (agent) await ctx.execute("agent.handoff", { session: fork, to: agent });
+      if (to) await ctx.execute("agent.handoff", { session: fork, to });
       return { session: fork, forkOf: id };
     },
   });

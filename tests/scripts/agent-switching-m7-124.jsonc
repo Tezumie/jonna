@@ -1,0 +1,101 @@
+// An external agent's model or reasoning level takes a while to change (the agent answers late):
+// the pill shows the choice with a spinner meanwhile, and ide://agent/session says it's pending.
+// Also: a folder's tooltip in the Chats list is on its whole row, so it shows beside the sidebar
+// and not over the row's + button.
+{
+  "name": "agent-switching-m7-124",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    {
+      "run": "settings.set",
+      "input": {
+        "key": "agent.externalAgents",
+        "value": {
+          "Mock agent": {
+            "command": "node",
+            "args": ["${workspaceFolder}/tools/mock-acp.mjs", "--slow-settings"]
+          }
+        }
+      }
+    },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.selectModel",
+      "input": { "model": "acp/Mock agent" },
+      "expect": { "model": "acp/Mock agent" },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": { "agentSettings": { "agent": "Mock agent" } },
+      "timeoutMs": 20000
+    },
+    { "run": "agent.setAgentModel", "input": { "value": "smart" }, "background": true },
+    {
+      "state": "ide://agent/session",
+      "expect": { "agentSettingPending": { "category": "model", "value": "smart" } },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill", "html": 300 },
+      "expect": [{ "html": { "$contains": "agent-spinner" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill", "html": 300 },
+      "expect": [{ "html": { "$contains": "Smart model" } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    // The agent answered: the spinner goes, the model stays.
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-model-pill .agent-spinner" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 10000
+    },
+    {
+      "state": "ide://agent/session",
+      "expect": {
+        "agentSettingPending": { "$exists": false },
+        "agentSettings": { "settings": [{ "current": "smart" }] }
+      },
+      "timeoutMs": 5000
+    },
+    // The reasoning level too.
+    {
+      "run": "agent.setAgentModel",
+      "input": { "setting": "thought_level", "value": "high" },
+      "background": true
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-reasoning .agent-spinner" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-reasoning .agent-spinner" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 10000
+    },
+    // ---- The Chats list: a folder's tooltip is its row's ----
+    { "run": "agent.showChats" },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-section-head[data-tooltip][data-tooltip-placement='right']",
+        "limit": 1
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-section-toggle[data-tooltip]" },
+      "expect": { "$length": 0 }
+    }
+  ]
+}

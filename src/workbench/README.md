@@ -61,7 +61,7 @@ D102); `fileIcons.ts` draws file and folder icons from the active file icon them
 D132); `productIcons.ts` the active product icon theme's glyphs for the IDE's icons (D267);
 `screenshot.ts` captures the IDE window, a region of it (a browser page) or a
 browser window as PNG (D96); `testRun.ts` runs `--run-test-script`; `baseLayout.ts` is the
-layout a window starts from when there's nothing to restore (D163). Layout, appearance and window commands live in the `workbench`
+layout a window starts from when there's nothing to restore (D163), as `workbench.defaultLayout` says (default, agent, code; D424). Layout, appearance and window commands live in the `workbench`
 built-in extension.
 
 ## Extension features and the workspace folder (D176, D177)

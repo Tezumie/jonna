@@ -22,7 +22,7 @@ import { type Disposable, DisposableStore } from "../../../core/lifecycle/index"
 import { effect, type ReadonlySignal, untracked } from "../../../core/reactive/index";
 import { agentFace } from "../../../ui/AgentFace";
 import { type IconName, icon } from "../../../ui/Icon";
-import { type MenuItem, showMenu } from "../../../ui/Menu";
+import { type MenuItem, showContextMenu, showMenu } from "../../../ui/Menu";
 import { setTooltip } from "../../../ui/Tooltip";
 import { backgroundProcesses } from "../backgroundProcesses";
 import { agentOwnModel } from "../chatAgentModel";
@@ -119,6 +119,7 @@ export class ChatDetails implements Disposable {
     setTooltip(this.button, "Chat details", "agent.toggleDetails");
     this.store.add(on(this.button, "click", () => this.toggle()));
     this.store.add(on(this.element, "click", (e) => this.onClick(e)));
+    this.store.add(on(this.element, "contextmenu", (e) => this.onContextMenu(e)));
     this.store.add(on(this.element, "pointerdown", (e) => this.startDrag(e)));
     this.store.add(
       on(this.element, "keydown", (e) => {
@@ -155,6 +156,7 @@ export class ChatDetails implements Disposable {
         prWatches.value;
         customModes.value;
         host.watchHelpers();
+        host.watchFolders();
         deps.openFolder.value;
         this.invalidate();
         return undefined;
@@ -401,12 +403,39 @@ export class ChatDetails implements Disposable {
         null,
         { action: "folder" },
       );
+      r.dataset.path = env.folder.path;
       setTooltip(
         r,
         env.folder.open
-          ? `${env.folder.path} · Reveal in explorer`
-          : `${env.folder.path} · Reveal in file manager`,
+          ? `${env.folder.path} · Reveal in explorer · Right-click for more`
+          : `${env.folder.path} · Reveal in file manager · Right-click for more`,
       );
+      body.push(r);
+    } else {
+      // Nothing open: the row is still there, and opens one. With a folder open (a chat
+      // started before it was), it says so without offering to replace the window's folder.
+      const windowHasFolder = !!this.deps.openFolder.peek();
+      const r = row("folder", "No folder", null, windowHasFolder ? null : { action: "openFolder" });
+      if (windowHasFolder) setTooltip(r, "This chat was started with no folder open");
+      else setTooltip(r, "No folder open · Open one", "workspace.openFolder");
+      body.push(r);
+    }
+    // The workspace's other folders (D251): the agent reads and edits them too.
+    for (const f of env.folders) {
+      const r = row(
+        "folder",
+        h(
+          "span",
+          { class: "agent-details-text" },
+          f.name,
+          h("span", { class: "agent-details-muted" }, ` · ${f.path}`),
+        ),
+        null,
+        { action: "folder" },
+      );
+      r.dataset.path = f.path;
+      r.dataset.extra = "";
+      setTooltip(r, `${f.path} · Also in the workspace · Right-click for more`);
       body.push(r);
     }
     if (env.branch) {
@@ -1041,16 +1070,9 @@ ${x.repeat} · next ${describeNext(x.next, now)}`,
       if (el.dataset.command === "agent.stopHelper") run("agent.stopHelper", { helper: id });
       else run("agent.helpers", { helper: id, action: el.dataset.act });
     } else if (a === "url") run("agent.openLink", { url: el.dataset.url });
-    else if (a === "folder") {
-      const folder = session.folder.peek();
-      if (!folder) return;
-      // The open folder shows in the explorer; another one (the chat moved on) in the system's.
-      const open = this.deps.openFolder.peek();
-      // This window's chat may be stored with its workspace file (D251), which the explorer
-      // doesn't list: its first folder is revealed instead.
-      if (open && this.deps.isThisWorkspace(folder)) run("explorer.reveal", { path: open });
-      else run("explorer.revealInOs", { path: folder });
-    } else if (a === "model") this.deps.showModelMenu(el);
+    else if (a === "openFolder") run("workspace.openFolder", {});
+    else if (a === "folder") this.revealFolder(el.dataset.extra !== undefined, el.dataset.path);
+    else if (a === "model") this.deps.showModelMenu(el);
     else if (a === "agent") run("agent.editAgent", { name: el.dataset.name });
     else if (a === "mode") this.showModes(el);
     else if (a === "outputStyle") run("agent.setOutputStyle", {});
@@ -1060,6 +1082,94 @@ ${x.repeat} · next ${describeNext(x.next, now)}`,
       if (el.dataset.external) run("agent.send", { session: session.id, message: "/compact" });
       else run("agent.compact", { session: session.id });
     }
+  }
+
+  /** Shows a folder row's folder: an added one (`extra`) by its path, else the chat's own. */
+  private revealFolder(extra: boolean, path: string | undefined): void {
+    const { session, run } = this.deps;
+    if (extra) {
+      if (path) run("explorer.reveal", { path });
+      return;
+    }
+    const folder = session.folder.peek();
+    if (!folder) return;
+    // The open folder shows in the explorer; another one (the chat moved on) in the system's.
+    const open = this.deps.openFolder.peek();
+    // This window's chat may be stored with its workspace file (D251), which the explorer
+    // doesn't list: its first folder is revealed instead.
+    if (open && this.deps.isThisWorkspace(folder)) run("explorer.reveal", { path: open });
+    else run("explorer.revealInOs", { path: folder });
+  }
+
+  /** A folder row's menu (right-click): where it is, another folder, one more beside it. */
+  private onContextMenu(e: MouseEvent): void {
+    const el = (e.target as Element).closest<HTMLElement>(
+      "[data-action='folder'], [data-action='openFolder']",
+    );
+    if (el?.dataset.action === "openFolder" && this.deps.openFolder.peek()) return;
+    if (!el || !this.element.contains(el)) return;
+    e.preventDefault();
+    const { run, host } = this.deps;
+    const path = el.dataset.path;
+    const extra = el.dataset.extra !== undefined;
+    // In this window's workspace: the explorer lists it, and folders can join it.
+    const first = this.deps.openFolder.peek();
+    const open = !!path && !!first && this.deps.isThisWorkspace(path);
+    // A chat stored with its workspace file (D251): a terminal starts in the first folder.
+    const cwd = open && !extra ? first : path;
+    const items: MenuItem[] = [];
+    if (path) {
+      if (open || extra)
+        items.push({
+          label: "Reveal in explorer",
+          icon: "folder",
+          // Not a click on the row: it may have been redrawn while the menu was open.
+          run: () => this.revealFolder(extra, path),
+        });
+      items.push(
+        {
+          label: "Reveal in file manager",
+          icon: "folder-open",
+          run: () => run("explorer.revealInOs", { path }),
+        },
+        {
+          label: "Copy path",
+          icon: "copy",
+          separatorBefore: true,
+          run: () => run("explorer.copyPath", { path }),
+        },
+      );
+      // A folder to start in: not a workspace file (another window's chat kept with one).
+      if (host.has("terminal.create") && cwd && !/\.code-workspace$/i.test(cwd))
+        items.push({
+          label: "Open in terminal",
+          icon: "terminal",
+          run: () => run("terminal.create", { cwd }),
+        });
+    }
+    items.push({
+      // "Change" only for this window's folder: another chat's folder isn't what it replaces.
+      label: open || extra ? "Change folder…" : "Open folder…",
+      icon: "folder-open",
+      separatorBefore: !!path,
+      run: () => run("workspace.openFolder", {}),
+    });
+    // Beside the open one (a multi-root workspace): the agent works in every folder of it.
+    if (!path || open || extra)
+      items.push({
+        label: "Add folder…",
+        icon: "folder-plus",
+        run: () => run("workspace.addFolder", {}),
+      });
+    if (extra)
+      items.push({
+        label: "Remove from workspace",
+        icon: "x",
+        separatorBefore: true,
+        run: () => run("workspace.removeFolder", { path }),
+      });
+    this.menu?.dispose();
+    this.menu = showContextMenu(e.clientX, e.clientY, items);
   }
 
   private showModes(anchor: HTMLElement): void {

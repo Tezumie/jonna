@@ -404,11 +404,11 @@ async function boot(): Promise<void> {
       },
     );
   }
-  // No folder: the base layout (explorer, welcome, agent; no terminal), the same every time (D163).
+  // No folder: the base layout the user chose (workbench.defaultLayout), the same every time (D163).
   if (!opened)
     applyBaseLayout(
-      { layout, dock },
-      { terminal: false, showSidebar: () => workbench.showSidebarView("agent.chats", false) },
+      { layout, dock, settings },
+      { folder: false, showSidebar: (view) => workbench.showSidebarView(view, false) },
     );
   perf.mark("workspaceRestored");
   // Files from the command line wait for the folder (D209); the other windows start now.

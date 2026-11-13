@@ -40,6 +40,8 @@
     // The terminal's text is 13 px (its rows 17 px high with Linux's monospace font, 18 px with
     // Windows' Consolas), measured on the DOM renderer's rows (WebGL draws on a canvas, D204).
     { "run": "settings.set", "input": { "key": "terminal.gpuAcceleration", "value": "off" } },
+    // A folder no longer starts with a terminal (D424): this one opens its own.
+    { "run": "terminal.create", "timeoutMs": 20000 },
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".xterm-rows > div", "limit": 1 },

@@ -19,6 +19,35 @@ export function itemsUpTo<T extends { id?: unknown }>(
   return at < 0 ? null : items.slice(0, at + 1);
 }
 
+type ForkItem = { id?: unknown; type?: unknown; streaming?: unknown; status?: unknown };
+
+/** `items` without the reply still streaming and the tools still running at its end. */
+function withoutUnfinishedTail(items: ForkItem[]): ForkItem[] {
+  let end = items.length;
+  while (end > 0) {
+    const it = items[end - 1];
+    const unfinished =
+      (it?.type === "assistant" && it.streaming === true) ||
+      (it?.type === "tool" && (it.status === "running" || it.status === "pending"));
+    if (!unfinished) break;
+    end--;
+  }
+  return end === items.length ? items : items.slice(0, end);
+}
+
+/** The ids of the images kept whole in a chat's media folder (D381) that `items` show. */
+export function storedImageIds(items: unknown): string[] {
+  const out: string[] = [];
+  for (const it of Array.isArray(items) ? items : []) {
+    const media = (it as { media?: unknown })?.media;
+    for (const img of Array.isArray(media) ? media : []) {
+      const x = img as { id?: unknown; stored?: unknown };
+      if (x?.stored === true && typeof x.id === "string" && !out.includes(x.id)) out.push(x.id);
+    }
+  }
+  return out;
+}
+
 /**
  * What a saved chat's fork is saved with. Edits waiting for review and file checkpoints stay
  * with the original; an external agent's own session too (the fork is told the conversation
@@ -38,6 +67,9 @@ export function forkedChat(
     acpResume: _acpResume,
     externalSeen: _externalSeen,
     pullRequest: _pullRequest,
+    // What the original spent, and its leave to go past the budget, are the original's.
+    cost: _cost,
+    budgetAllowed: _budgetAllowed,
     ...rest
   } = saved;
   const before = (saved.meta ?? {}) as Record<string, unknown>;
@@ -49,6 +81,10 @@ export function forkedChat(
     status: _status,
     error: _error,
     blocked: _blocked,
+    // A fork is a chat of its own: not another thread on the message its original hangs from,
+    // and not one of a channel's conversations (deleting the channel would delete it).
+    parent: _parent,
+    room: _room,
     ...meta
   } = before;
   const out: Record<string, unknown> = {
@@ -60,17 +96,29 @@ export function forkedChat(
       forkOf: options.from,
     },
   };
+  const items = Array.isArray(saved.items) ? (saved.items as ForkItem[]) : [];
+  let kept: ForkItem[] | null = items;
   if (options.item !== undefined) {
-    const items = Array.isArray(saved.items) ? (saved.items as { id?: unknown }[]) : [];
-    const kept = itemsUpTo(items, options.item);
+    kept = itemsUpTo(items, options.item);
     if (!kept) return null;
-    // The whole chat: nothing after it to forget.
-    if (kept.length < items.length) {
-      out.items = kept;
-      delete out.plan;
-      delete out.attachedRules;
-      delete out.toldSkills;
-    }
+  }
+  // Forked while the original works: what is still under way stays with it (the fork would
+  // open it as "interrupted when the IDE closed", which it wasn't).
+  kept = withoutUnfinishedTail(kept);
+  // The whole chat: nothing after it to forget.
+  if (kept.length < items.length) {
+    out.items = kept;
+    delete out.plan;
+    delete out.attachedRules;
+    delete out.toldSkills;
+    // Files read after the cut: the fork hasn't seen them (write_file's check, D221).
+    delete out.seen;
+    // The list's preview of the last reply and wrap-up: written again on the fork's first save.
+    const m = out.meta as Record<string, unknown>;
+    delete m.last;
+    delete m.lastBy;
+    delete m.replies;
+    delete m.recap;
   }
   return out;
 }

@@ -6,6 +6,7 @@
 // "folder" scope (D251) shows and edits one folder's own settings in a multi-root workspace.
 import { h, on } from "../../core/dom/index";
 import { clipboardIpc } from "../../core/ipc/system";
+import { startLayoutOf } from "../../core/layout/startLayout";
 import { DisposableStore } from "../../core/lifecycle/index";
 import { languageOverrideKey } from "../../core/settings/languageOverrides";
 import type { SettingsScope } from "../../core/settings/model";
@@ -15,6 +16,7 @@ import { showContextMenu } from "../../ui/Menu";
 import { setTooltip } from "../../ui/Tooltip";
 import type { WorkbenchServices } from "../../workbench/services";
 import { type EditScope, folderInherited, inspectFolder } from "./folderScope";
+import { layoutChoice } from "./layoutChoice";
 
 export interface SettingRow {
   readonly element: HTMLElement;
@@ -127,7 +129,16 @@ export function settingRow(
 
   const picker = info.type === "string" ? settings.picker(info.key) : undefined;
   const choices = info.type === "string" ? settings.choices(info.key) : undefined;
-  if (picker) {
+  if (info.key === "workbench.defaultLayout") {
+    // Cards with a drawing of each layout (D424), not a dropdown of three words.
+    const choice = layoutChoice(store, id, info.title, info.enumDescriptions, (v) => void write(v));
+    control = choice.element;
+    read = () => {
+      choice.show(current());
+      const index = info.enum?.indexOf(startLayoutOf(current())) ?? -1;
+      note.textContent = info.enumDescriptions?.[Math.max(0, index)] ?? "";
+    };
+  } else if (picker) {
     // A popup of its own (D288: models open the chat's model picker): a button with the value.
     const text = h("span", { class: "setting-picker-text" });
     const button = h(

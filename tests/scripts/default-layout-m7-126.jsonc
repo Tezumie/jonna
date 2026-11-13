@@ -1,0 +1,91 @@
+// workbench.defaultLayout (D424): what a window starts with when a folder is closed. "agent":
+// the chats list and the chat alone; "code": welcome alone, the sidebar hidden; "default": chats,
+// welcome, the agent on the right. The settings page shows the three as cards.
+{
+  "name": "default-layout-m7-126",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
+    { "state": "ide://workspace", "save": "ws" },
+    // ---- The cards on the settings page ----
+    { "run": "settings.open", "input": { "query": "workbench.defaultLayout" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".layout-choice", "limit": 5 },
+      "expect": { "$length": 3 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".layout-choice.is-selected[data-layout='default']" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    { "run": "dev.click", "input": { "selector": ".layout-choice[data-layout='agent']" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".layout-choice.is-selected[data-layout='agent']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 5000
+    },
+    // ---- Agent: the chat alone, beside the chats list ----
+    { "run": "workspace.closeFolder", "expect": { "closed": true }, "timeoutMs": 20000 },
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "visible": true, "activeView": "agent.chats" } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='agent']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='welcome']" },
+      "expect": { "$length": 0 }
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    // ---- Code: welcome alone, no sidebar ----
+    { "run": "settings.set", "input": { "key": "workbench.defaultLayout", "value": "code" } },
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}" }, "timeoutMs": 30000 },
+    { "wait": 1500 },
+    { "run": "workspace.closeFolder", "expect": { "closed": true }, "timeoutMs": 20000 },
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "visible": false, "activeView": "explorer.view" } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='welcome']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-tab[data-view-type='agent']" },
+      "expect": { "$length": 0 }
+    },
+    { "wait": 1100 },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    // ---- Default again ----
+    { "run": "settings.set", "input": { "key": "workbench.defaultLayout", "value": "default" } },
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}" }, "timeoutMs": 30000 },
+    { "wait": 1500 },
+    { "run": "workspace.closeFolder", "expect": { "closed": true }, "timeoutMs": 20000 },
+    {
+      "state": "ide://layout",
+      "expect": { "sidebar": { "visible": true, "activeView": "agent.chats" } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".dock-tab[data-view-type='welcome'], .dock-tab[data-view-type='agent']"
+      },
+      "expect": { "$length": 2 },
+      "timeoutMs": 8000
+    }
+  ]
+}

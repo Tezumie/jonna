@@ -312,11 +312,14 @@ export async function offeredUpdate(
   if (oldEnough(latest.released, now, delayHours) && fits(latest.engine)) return latest.version;
   let looked = 0;
   for (const v of newestFirst) {
-    if (v === latest.version) continue;
+    // Releases only (1.2.3), as an install picks them: not a pre-release the list also names.
+    if (v === latest.version || !/^\d+\.\d+\.\d+$/.test(v)) continue;
     if (!isNewerVersion(v, installed) || looked >= maxLookups) return null;
     looked++;
     const d = await detailsOf(v).catch(() => undefined);
-    if (oldEnough(d?.released, now, delayHours) && fits(d?.engine)) return v;
+    // A version that couldn't be read (offline, the store busy) is never offered unchecked.
+    if (!d) continue;
+    if (oldEnough(d.released, now, delayHours) && fits(d.engine)) return v;
   }
   return null;
 }

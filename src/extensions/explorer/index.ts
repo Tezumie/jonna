@@ -265,9 +265,10 @@ export const explorerExtension: BuiltinExtension<WorkbenchServices> = {
           // The same layout as a window opened without a folder (D163).
           if (closed)
             applyBaseLayout(services, {
-              terminal: false,
-              // Chats, without focus (D164): a palette opened meanwhile keeps it.
-              showSidebar: () => (services.views.active.value = "agent.chats"),
+              folder: false,
+              // The layout's view (Chats by default, D164), without focus: a palette opened
+              // meanwhile keeps it.
+              showSidebar: (view) => (services.views.active.value = view),
             });
           return { closed };
         },

@@ -4114,3 +4114,21 @@ Images in the chat (D381):
 2. Double-click a terminal's tab: it still asks for a new name.
 3. Install Error Lens from the store: it installs its newest version (3.30.0 or later) and
    activates.
+
+## D424 — Small cleanups
+1. Chats list: hover a folder's name. The tooltip (its path) shows beside the sidebar; the + at
+   the row's end stays visible and clickable, with its own "New chat" tooltip.
+2. A chat with Claude Code or Codex, in a fresh window: pick another of its models. The model
+   pill shows the picked name with a spinner until the agent has taken it, then the name alone.
+   The same for its reasoning level.
+3. With no folder open, a chat's details panel: Environment has a "No folder" row; clicking it
+   shows the folder picker.
+4. With a folder open: right-click the folder row, Add folder…, pick another. It shows under the
+   first, and the explorer lists both. Ask the agent to read a file in the added folder: it
+   does. Right-click the added row, Remove from workspace: it goes.
+5. Settings, search "default layout": three cards (Default, Agent, Code), Default selected. Pick
+   Agent, then File → Close folder (or restart with no folder): the Chats list and a chat fill
+   the window, no welcome tab. Pick Code and close a folder again: the welcome tab alone, no
+   sidebar; open a folder never opened before: the explorer shows, no agent column.
+6. Open a folder never opened before (Default layout): the explorer, its README, the agent on
+   the right, and no terminal. Ctrl+` opens one at the bottom.

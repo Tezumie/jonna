@@ -196,7 +196,9 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   waiting for the user come first under "Needs you".
 - **Details panel** (`chatDetails.ts`, `view/details.ts`, `core/agent/chatDetails.ts` tested,
   `styles/agent-details.css`, D231, after Claude Code's desktop app): small cards on the right of
-  the chat — Environment (this computer, folder → reveal, branch from `ide://git/status`, model →
+  the chat — Environment (this computer, folder → reveal, or "No folder" → open one; the workspace's
+  other folders under it, `environment.folders`; a folder row's right-click menu: reveal, copy
+  path, terminal, change folder, add folder, remove — D424; branch from `ide://git/status`, model →
   picker, the agent → edit, or the mode → menu), Context (used / window, a stacked bar, rows for
   messages, attachments, system prompt, rules and memory, skills, built-in tools, MCP tools per
   server, free; the split is estimated from sizes and scaled to the provider's count; the prompt's
@@ -456,7 +458,9 @@ Agent ergonomics (D191):
 ## External agents' models, MCP, worktrees, reviews (D193)
 - `acp.ts`: an external agent's model and reasoning level come from ACP's session config
   options (or the older `models` list); `session.agentSettings` holds them, the model picker lists
-  them (`view/modelPicker.ts`, the reasoning level is the composer's effort pill), `agent.setAgentModel` sets one, `agent.externalAgentChoices` remembers it.
+  them (`view/modelPicker.ts`, the reasoning level is the composer's effort pill), `agent.setAgentModel` sets one, `agent.externalAgentChoices` remembers it. While the agent takes a
+  choice (it may start first), `session.agentSettingPending` holds it and the pill shows it with a
+  spinner (D424).
   `acpAgents.ts` (split from `acp.ts`, D245): the agents it knows (`ACP_PRESETS`, extensions',
   registry-installed, `agent.externalAgents`: `externalAgents()`) and their command lines
   (`helpChoices`, `shellArg`, `helpCommandLine`).

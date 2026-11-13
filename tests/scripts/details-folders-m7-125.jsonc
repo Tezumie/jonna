@@ -1,0 +1,94 @@
+// The details panel's Environment card and folders: a folder added to the workspace shows under
+// the first one, a folder row's right-click menu offers Add folder and (on an added one) Remove
+// from workspace, and the row goes when the folder is removed.
+{
+  "name": "details-folders-m7-125",
+  "steps": [
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "dev.setWindowSize", "input": { "width": 1500, "height": 900 } },
+    { "state": "ide://workspace", "save": "ws" },
+    {
+      "run": "terminal.runCommand",
+      "input": { "command": "mkdir -p ../extra-m7-125 && echo hi > ../extra-m7-125/note.txt" },
+      "expect": { "exitCode": 0 },
+      "timeoutMs": 30000
+    },
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } }, "save": "chat" },
+    { "run": "agent.toggleDetails", "input": { "show": true }, "expect": { "shown": true } },
+    {
+      "state": "ide://agent/details",
+      "expect": { "environment": { "folder": { "open": true }, "folders": { "$length": 0 } } },
+      "timeoutMs": 5000
+    },
+    // The first folder's menu: Add folder, no Remove.
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-action='folder']",
+        "right": true
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Add folder…" } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$not": { "$contains": "Remove from workspace" } } }]
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    // A second folder joins: listed under the first.
+    {
+      "run": "workspace.addFolder",
+      "input": { "paths": ["${ws.root}/../extra-m7-125"], "trust": true },
+      "expect": { "added": [{ "name": "extra-m7-125" }] },
+      "timeoutMs": 20000
+    },
+    {
+      "state": "ide://agent/details",
+      "expect": { "environment": { "folders": [{ "name": "extra-m7-125" }] } },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-action='folder'][data-extra]",
+        "html": 400
+      },
+      "expect": [{ "html": { "$contains": "extra-m7-125" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.click",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-action='folder'][data-extra]",
+        "right": true
+      }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu", "html": 3000 },
+      "expect": [{ "html": { "$contains": "Remove from workspace" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true } },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    {
+      "run": "workspace.removeFolder",
+      "input": { "path": "extra-m7-125" },
+      "timeoutMs": 20000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": "[data-session='${chat.session}'] .agent-details [data-action='folder'][data-extra]"
+      },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    }
+  ]
+}

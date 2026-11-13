@@ -10,7 +10,7 @@ import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { showDialog } from "../../ui/Dialog";
-import { applyBaseLayout } from "../../workbench/baseLayout";
+import { applyBaseLayout, chosenStartLayout } from "../../workbench/baseLayout";
 import { EventFeed, FEED_SIZE } from "../../workbench/eventFeed";
 import {
   base64,
@@ -491,20 +491,26 @@ export function createWorkbenchExtension(
       sub.add({ dispose: () => openingLine?.remove() });
       sub.add(
         workspace.onDidOpen((root) => {
-          // The default tree (docs/dock.md §3): welcome, a terminal at the bottom, the agent on the right.
+          // The default tree (docs/dock.md §3): welcome, the agent on the right (no terminal, D424).
           // Chats filled the sidebar while no folder was open (D164): the folder's files now.
-          if (services.views.active.peek() === "agent.chats" && !sidebarRestored)
+          // (Not in the agent layout, D424: its sidebar stays on Chats.)
+          if (
+            services.views.active.peek() === "agent.chats" &&
+            !sidebarRestored &&
+            chosenStartLayout(services.settings, true).sidebar !== "agent.chats"
+          )
             services.views.active.value = "explorer.view";
           sidebarRestored = false;
           if (dockRestored) return;
-          // The base layout's widths, with a terminal for the folder (D163).
-          applyBaseLayout(services, {
-            terminal: true,
+          // The base layout's widths (D163).
+          const plan = applyBaseLayout(services, {
+            folder: true,
             // Without focus: a palette or editor opened meanwhile keeps it.
-            showSidebar: () => (services.views.active.value = "explorer.view"),
+            showSidebar: (view) => (services.views.active.value = view),
           });
           // A folder opened for the first time: its README, like VS Code's "readme" start page.
           if (
+            plan.readme &&
             services.settings.peek<boolean>("workbench.openReadme") !== false &&
             !services.context.get("testRun")
           )

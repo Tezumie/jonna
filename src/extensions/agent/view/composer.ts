@@ -346,12 +346,21 @@ export class Composer implements Disposable {
       effect(() => {
         // An external agent's own reasoning level (Codex's, Claude Code's), when it has one.
         const level = this.agentLevel();
-        if (level) {
-          const now = level.options.find((o) => o.id === level.current);
+        const switching = this.pendingChoice("thought_level");
+        if (level || switching) {
+          const now = level?.options.find((o) => o.id === level.current);
           reasoning.hidden = false;
-          reasoning.replaceChildren(h("span", null, now?.name ?? "Default"));
+          reasoning.replaceChildren(
+            ...(switching ? [h("span", { class: "agent-spinner" })] : []),
+            h("span", null, switching ?? now?.name ?? "Default"),
+          );
           reasoning.classList.remove("is-on");
-          setTooltip(reasoning, `Reasoning: ${now?.name ?? "the agent's default"}`);
+          setTooltip(
+            reasoning,
+            switching
+              ? `Switching the reasoning level to ${switching}…`
+              : `Reasoning: ${now?.name ?? "the agent's default"}`,
+          );
           return undefined;
         }
         if (session.members.value.length) {
@@ -586,8 +595,13 @@ export class Composer implements Disposable {
         const agent = session.model.value?.startsWith("acp/") ? session.model.value.slice(4) : "";
         const short =
           mark && agent && label.startsWith(`${agent} · `) ? label.slice(agent.length + 3) : label;
-        model.replaceChildren(...(mark ? [mark] : []), h("span", null, short));
-        setTooltip(model, `Model: ${label}`);
+        // A model picked that the agent hasn't taken yet (it may be starting): its name, turning.
+        const switching = this.pendingChoice("model");
+        model.replaceChildren(
+          ...(switching ? [h("span", { class: "agent-spinner" })] : mark ? [mark] : []),
+          h("span", null, switching ?? short),
+        );
+        setTooltip(model, switching ? `Switching to ${switching}…` : `Model: ${label}`);
         const autoRun = host.autoRunCommands();
         const full = host.fullAccess();
         const apply = session.autoApply.value;
@@ -856,6 +870,23 @@ export class Composer implements Disposable {
       },
     ];
     this.openMenu(showMenu(anchor, items, "Add context"));
+  }
+
+  /**
+   * The name of the model (or reasoning level) picked for the external agent while it is still
+   * taking it, or null: the agent may have to start first, which takes a while.
+   */
+  private pendingChoice(category: AcpSetting["category"]): string | null {
+    const { session } = this.host;
+    const pending = session.agentSettingPending.value;
+    if (!pending || pending.category !== category) return null;
+    // Another model picked meanwhile: the pill is that model's, not this wait's.
+    const name = pending.agent;
+    if (session.model.value !== `acp/${name}`) return null;
+    const live = session.agentSettings.value;
+    const settings = live?.agent === name ? live.settings : cachedSettings(name);
+    const offered = settings?.find((s) => s.category === category);
+    return offered?.options.find((o) => o.id === pending.value)?.name || pending.value || "Default";
   }
 
   /** The chat's external agent's reasoning setting (live, else from its last start), or null. */

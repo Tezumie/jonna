@@ -278,6 +278,8 @@ the Keyboard shortcuts tab (conflicts); `keys.ts` normalizes chords. The DOM sid
 
 `LayoutModel`: visibility and size signals for sidebar / panel / auxiliary bar, focused part,
 `resize` (clamped), `snapshot()` / `restore()` (persisted per workspace). DOM-free.
+`startLayout.ts` (D424): `startLayoutPlan(layout, folder)`, what each default layout (default,
+agent, code) puts in the sidebar and the dock; `startLayoutOf` reads the setting's value.
 
 ## lifecycle/
 

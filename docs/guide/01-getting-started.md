@@ -43,6 +43,18 @@ page has:
 
 The Welcome page comes back when the last editor closes, and from **Help → Welcome**.
 
+**Default layout** in Settings chooses what a window starts with (when it opens without a
+folder, when you close a folder, and the first time you open one):
+
+- **Default**: the Chats list, the Welcome page, and the agent's chat on the right.
+- **Agent**: the Chats list and the chat, filling the window. A file you open gets its own area
+  on the left.
+- **Code**: the Welcome page alone, as VS Code starts. The explorer shows once a folder is open;
+  the agent is a click away in the activity bar.
+
+Choosing one doesn't rearrange the window you're in, and a folder you've opened before keeps
+the layout it had.
+
 The next time you start the IDE, it reopens the folders you had open, each in its window, with
 its tabs and layout (`window.restoreWindows`; see
 [Workspaces and trust](20-workspaces.md#restore-windows)).
@@ -63,8 +75,8 @@ The window has five parts, as in VS Code:
 - **Side bar**: the view you picked on the activity bar. Ctrl+B shows or hides it.
 - **The dock**: everything else. Editors, the terminal, Problems, Output, the browser and the
   agent are all tabs in groups that you can split, move and resize. By default the editors are
-  in the middle, a terminal is at the bottom (once a folder is open) and the agent is on the
-  right.
+  in the middle and the agent is on the right; a terminal opens at the bottom when you ask for
+  one (Ctrl+`).
 - **Status bar** (bottom): the git branch and sync, problems, a running task or debug session,
   and for the active editor its line and column, indentation, encoding, line endings and
   language. Click an item to act on it (switch branch, change the indentation…). The bell on the
@@ -150,6 +162,7 @@ A dot on a tab marks unsaved changes, and the Explorer's icon counts unsaved fil
 | `files.hotExit` | `onExit` | Keep unsaved changes when the window closes; `off` asks instead |
 | `workbench.editor.enablePreview` | `true` | Single-click opens a preview tab that the next one replaces |
 | `workbench.openReadme` | `true` | Show a folder's README the first time it opens |
+| `workbench.defaultLayout` | `default` | What a window starts with: `default`, `agent` or `code` |
 
 ## Make it yours
 

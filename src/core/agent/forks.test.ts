@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { forkedChat, forkOrder, forkTitle, itemsUpTo } from "./forks";
+import { forkedChat, forkOrder, forkTitle, itemsUpTo, storedImageIds } from "./forks";
 
 test("a fork's title is marked once", () => {
   assert.equal(forkTitle("Plan the API"), "Plan the API (fork)");
@@ -78,4 +78,61 @@ test("forks are listed under their chat, forks of forks under those", () => {
       .sort(),
     ["a", "b", "c"],
   );
+});
+
+test("a fork is a chat of its own: no thread parent, channel, spend, or work still under way", () => {
+  const saved = {
+    meta: {
+      title: "T",
+      parent: { session: "p", item: "i" },
+      room: "r1",
+      last: "bye",
+      recap: "done",
+    },
+    items: [
+      { id: "a", type: "user" },
+      { id: "b", type: "assistant" },
+      { id: "c", type: "tool", status: "running" },
+      { id: "d", type: "assistant", streaming: true },
+    ],
+    seen: { "a.ts": "h" },
+    cost: 3,
+    budgetAllowed: true,
+    plan: [{ step: 1 }],
+  };
+  const whole = forkedChat(saved, { from: "s1", now: 1 });
+  const meta = whole?.meta as Record<string, unknown>;
+  assert.equal(meta.parent, undefined);
+  assert.equal(meta.room, undefined);
+  assert.equal(whole?.cost, undefined);
+  assert.equal(whole?.budgetAllowed, undefined);
+  // The reply and the tool still running stay with the original; so does what came with them.
+  assert.deepEqual(
+    (whole?.items as { id: string }[]).map((i) => i.id),
+    ["a", "b"],
+  );
+  assert.equal(whole?.seen, undefined);
+  assert.equal(meta.last, undefined);
+  assert.equal(meta.recap, undefined);
+  // A finished chat forked whole keeps what it read and its preview.
+  const done = { ...saved, items: saved.items.slice(0, 2) };
+  const kept = forkedChat(done, { from: "s1", now: 1 });
+  assert.deepEqual(kept?.seen, { "a.ts": "h" });
+  assert.equal((kept?.meta as Record<string, unknown>).last, "bye");
+});
+
+test("the images a fork takes along: stored ones, once each", () => {
+  const items = [
+    { id: "a", media: [{ id: "m1", stored: true }, { id: "m2" }] },
+    {
+      id: "b",
+      media: [
+        { id: "m1", stored: true },
+        { id: "m3", stored: true },
+      ],
+    },
+    { id: "c" },
+  ];
+  assert.deepEqual(storedImageIds(items), ["m1", "m3"]);
+  assert.deepEqual(storedImageIds(undefined), []);
 });

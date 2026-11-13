@@ -94,6 +94,7 @@ async function mcpCall(server, sessionHeader, body) {
 
 /** With MOCK_ACP_STDIO_MCP=1 it takes only stdio MCP servers (D223), as many agents do. */
 const stdioOnly = process.env.MOCK_ACP_STDIO_MCP === "1";
+const slowSettings = process.argv.includes("--slow-settings");
 
 /** A stdio MCP server started as the session says (command, args, env): one request at a time. */
 function stdioMcp(server) {
@@ -545,8 +546,12 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     return send({ id: msg.id, result: { configOptions: configOptions() } });
   }
   if (msg.method === "session/set_config_option") {
-    current[msg.params.configId] = msg.params.value;
-    return send({ id: msg.id, result: { configOptions: configOptions() } });
+    const answer = () => {
+      current[msg.params.configId] = msg.params.value;
+      send({ id: msg.id, result: { configOptions: configOptions() } });
+    };
+    // With --slow-settings it takes its time, as a real agent switching models can.
+    return void (slowSettings ? setTimeout(answer, 4000) : answer());
   }
   if (msg.method === "session/prompt") return void prompt(msg.id, msg.params);
   if (msg.method === "session/cancel") return;

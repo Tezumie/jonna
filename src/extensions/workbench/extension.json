@@ -706,6 +706,20 @@
         "description": "Which side of the window the activity bar and sidebar (explorer, search…) are on.",
         "order": 6.2
       },
+      "workbench.defaultLayout": {
+        "type": "string",
+        "enum": ["default", "agent", "code"],
+        "enumDescriptions": [
+          "The chats list, the welcome page, and the agent's chat on the right.",
+          "The chats list and the agent's chat, filling the window.",
+          "The welcome page alone, as VS Code starts; the explorer shows once a folder is open."
+        ],
+        "default": "default",
+        "scope": "user",
+        "title": "Default layout",
+        "description": "What a window starts with: when it opens without a folder, when a folder is closed, and the first time a folder is opened. A folder opened before keeps the layout it had.",
+        "order": 0.5
+      },
       "workbench.openReadme": {
         "type": "boolean",
         "default": true,

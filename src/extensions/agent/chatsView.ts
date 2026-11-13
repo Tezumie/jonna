@@ -444,7 +444,7 @@ export class ChatsView implements ViewInstance {
   }
 
   /** A section's name, which folds it (the whole row). */
-  private sectionToggle(key: string, name: string, folded: boolean, tip: string): HTMLElement {
+  private sectionToggle(key: string, name: string, folded: boolean): HTMLElement {
     this.sections.push(key);
     const toggle = h(
       "button",
@@ -452,7 +452,6 @@ export class ChatsView implements ViewInstance {
       h("span", null, name),
       icon(folded ? "chevron-right" : "chevron-down"),
     );
-    setTooltip(toggle, tip, undefined, { placement: "right" });
     toggle.addEventListener("click", () => {
       ChatsView.folded.set(key, !folded);
       this.render();
@@ -473,12 +472,7 @@ export class ChatsView implements ViewInstance {
     label?: string,
   ): HTMLElement {
     const name = label ?? (basename(path) || path);
-    const toggle = this.sectionToggle(
-      path,
-      name,
-      folded,
-      label ? "Chats started with no folder open" : here ? `${path} (this folder)` : path,
-    );
+    const toggle = this.sectionToggle(path, name, folded);
     const newChat = () => {
       if (here) this.run("agent.newSession");
       // Another folder's: it opens as the workspace first (as its chats do, agent.openChatFolder).
@@ -496,6 +490,13 @@ export class ChatsView implements ViewInstance {
     setTooltip(add, here ? "New chat" : `New chat in ${name} (opens the folder)`);
     add.addEventListener("click", newChat);
     const head = h("div", { class: "ch-section-head" }, toggle, add);
+    // On the row, not the name: beside the name it covered the + button.
+    setTooltip(
+      head,
+      label ? "Chats started with no folder open" : here ? `${path} (this folder)` : path,
+      undefined,
+      { placement: "right", ariaLabel: false },
+    );
     head.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const items: MenuItem[] = [
@@ -543,11 +544,12 @@ export class ChatsView implements ViewInstance {
     folded: boolean,
     tip: string,
   ): HTMLElement {
-    const toggle = this.sectionToggle(key, name, folded, tip);
+    const head = h("div", { class: "ch-section-head" }, this.sectionToggle(key, name, folded));
+    setTooltip(head, tip, undefined, { placement: "right", ariaLabel: false });
     return h(
       "div",
       { class: "ch-section ch-folder", "data-folder": key.slice(1), role: "group" },
-      h("div", { class: "ch-section-head" }, toggle),
+      head,
       folded ? null : h("div", { class: "ch-section-rows" }, ...rows),
     );
   }
