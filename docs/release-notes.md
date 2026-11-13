@@ -3,6 +3,24 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.3
+
+Fork a chat from any reply, and several fixes from daily use.
+
+- **Fork a chat from any reply.** Every reply has a Fork button: it starts a new chat from that
+  point and leaves this one as it is. Its menu opens at the button, with the chat's own agent
+  first and your other agents below, so a fork can go on with another agent. It takes the place
+  of "Hand to another agent…" on replies.
+- **Forks sit under their chat** in the Chats list, and a fork of a fork under that. Right-click
+  a chat and choose Fork, or type `/fork`, to fork all of it.
+- **Very large files open at once.** A text file of a few hundred thousand lines (a model's
+  tokenizer, a big data file) froze the window for minutes.
+- **VS Code extensions that read all their settings in one go start.** Error Lens failed with
+  "Cannot read properties of undefined".
+- **No update offered that can't be installed.** An extension whose newest version needs a newer
+  VS Code than the IDE follows was offered that version right after installing an older one.
+- **Double-clicking a preview tab (italic title) keeps it open.**
+
 ## 0.1.2
 
 Agents you bring (Claude Code, Codex…) work with the IDE the way its own agent does, and
