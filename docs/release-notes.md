@@ -3,6 +3,16 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.4
+
+Two follow-ups to 0.1.3.
+
+- **Double-clicking a preview tab (italic title) keeps it open.** 0.1.3's fix didn't work with a
+  real mouse; this one does.
+- **Extensions install their newest version.** The IDE now reports VS Code 1.146 to extensions,
+  so the store no longer holds one back at an older release (Error Lens stayed on 3.26.0). An
+  extension that relies on something very new in VS Code may still not work.
+
 ## 0.1.3
 
 Fork a chat from any reply, and several fixes from daily use.
