@@ -108,7 +108,7 @@ test("a fork is a chat of its own: no thread parent, channel, spend, or work sti
   assert.equal(whole?.budgetAllowed, undefined);
   // The reply and the tool still running stay with the original; so does what came with them.
   assert.deepEqual(
-    (whole?.items as { id: string }[]).map((i) => i.id),
+    ((whole?.items ?? []) as { id: string }[]).map((i) => i.id),
     ["a", "b"],
   );
   assert.equal(whole?.seen, undefined);
@@ -118,7 +118,7 @@ test("a fork is a chat of its own: no thread parent, channel, spend, or work sti
   const done = { ...saved, items: saved.items.slice(0, 2) };
   const kept = forkedChat(done, { from: "s1", now: 1 });
   assert.deepEqual(kept?.seen, { "a.ts": "h" });
-  assert.equal((kept?.meta as Record<string, unknown>).last, "bye");
+  assert.equal(((kept?.meta ?? {}) as Record<string, unknown>).last, "bye");
 });
 
 test("the images a fork takes along: stored ones, once each", () => {
