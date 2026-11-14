@@ -3,6 +3,20 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.6
+
+More room for the conversation, and two fixes.
+
+- **A chat has no header row.** The line under a chat's tab that repeated its name is gone, so
+  the conversation gets that space. Its buttons are beside the tabs now, where a terminal's and
+  a preview's are: **Chapters** (when the chat has some), **Chat actions** (the ⋯ menu: new
+  session, sessions, checkpoints, export, delete and the rest) and **Chat details**. New chat
+  and Sessions are in the Chats list and the ⋯ menu. A thread and a channel keep their title.
+- **Dragging a divider follows the mouse** even while something else on screen updates. A tab
+  refreshing during the drag could put the old sizes back until the next move.
+- **The logo is dark on light themes,** in the title bar, the Welcome page and menus. It was
+  faint there.
+
 ## 0.1.5
 
 A layout to start from, and fixes from daily use.
