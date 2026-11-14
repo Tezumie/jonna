@@ -36,6 +36,11 @@ export interface TabAction {
    * `x` / `y`, the button's bottom left, to open its menu there.
    */
   dropdown?: boolean;
+  /**
+   * An ordinary button whose command opens a menu (the chat's actions, its chapters): the command
+   * gets `x` / `y`, the button's bottom left, as a dropdown's does.
+   */
+  menu?: boolean;
 }
 
 export interface DockView extends Disposable {

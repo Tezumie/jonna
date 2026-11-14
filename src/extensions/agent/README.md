@@ -157,7 +157,8 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   `agent.runWrapUpAction`; only actions available now are accepted; finishes the plan; the box
   under the latest turn, after the plan card; its first sentence is the chat's `recap` in the
   lists, `blocked` marks the chat as needing the user), `mark_chapter` (a divider, moved above the
-  message when it opens the turn; the header's Chapters menu, `agent.showChapter`),
+  message when it opens the turn; the Chapters button beside the chat's tabs,
+  `agent.chaptersMenu`, `agent.showChapter`),
   `propose_task` / `dismiss_task` (a "New task" card: `agent.startTask` opens a new chat with the
   brief, `agent.dismissTask`; its state is the call's `summary`), `enter_plan_mode` (a consent
   card through `session.question`; yes switches the chat and the rest of the turn to Plan,
@@ -208,7 +209,7 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   when GitHub is there),
   Background (worktree helpers with Stop / Review / Merge, subagents, commands with elapsed time
   and Stop, "N finished"), Plan. Beside the chat when the tab fits the column plus 280px
-  (`agent.detailsPanel`: auto / always / never), else a sheet from the header's button (Esc or a
+  (`agent.detailsPanel`: auto / always / never), else a sheet from the Chat details button beside the tabs (Esc or a
   click outside closes). `agent.toggleDetails { session?, show? }`; `agent.moveDetailsCard
   { card, before? }` (dragging a header's grip, D409); folded cards, their order and "hidden"
   are kept in the global state; `ide://agent/details`. The branch row runs `git.checkout`.

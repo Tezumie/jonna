@@ -1,19 +1,17 @@
 // How the turn tools show in the chat (D301–D304): a chapter's divider, a proposed task's card,
-// the Plan mode consent card, the wrap-up box at the end of the latest turn, and the chapters
-// menu in the chat's header. Plain DOM with tokens; every button runs a command.
+// the Plan mode consent card, and the wrap-up box at the end of the latest turn. (The chapters
+// menu is agent.chaptersMenu, behind the button beside the chat's tabs, D426.) Plain DOM with
+// tokens; every button runs a command.
 
 import type { Item } from "../../../core/agent/conversation";
 import {
-  chaptersOf,
   proposalOf,
   TASK_DISMISSED,
   TASK_STARTED,
   type WrapUp,
 } from "../../../core/agent/turnTools";
 import { h, on } from "../../../core/dom/index";
-import { type Disposable, DisposableStore } from "../../../core/lifecycle/index";
 import { icon } from "../../../ui/Icon";
-import { showMenu } from "../../../ui/Menu";
 import { setTooltip } from "../../../ui/Tooltip";
 import type { AgentSession } from "../session";
 import { PLAN_NO, PLAN_YES, WRAP_UP_LABELS } from "../turnTools";
@@ -213,62 +211,4 @@ export function wrapUpBox(wrapUp: WrapUp, host: TurnCardHost, live: boolean): HT
       }),
     ),
   );
-}
-
-/**
- * The chat's table of contents (D302): a header button, shown once the agent marked a chapter,
- * whose menu lists them; picking one scrolls there (agent.showChapter).
- */
-export class ChapterMenu implements Disposable {
-  readonly button: HTMLElement;
-  private shown = "";
-  private readonly store = new DisposableStore();
-
-  constructor(
-    private readonly session: AgentSession,
-    private readonly run: (command: string, input?: unknown) => void,
-  ) {
-    this.button = h(
-      "button",
-      {
-        class: "icon-button agent-chapters",
-        type: "button",
-        "aria-label": "Chapters",
-        "aria-haspopup": "menu",
-        hidden: true,
-      },
-      icon("bookmark"),
-    );
-    setTooltip(this.button, "Chapters");
-    this.store.add(on(this.button, "click", () => this.open()));
-  }
-
-  /** Shown when there are chapters (cheap: called on each redraw). */
-  update(items: readonly Item[]): void {
-    const key = chaptersOf(items)
-      .map((c) => c.id)
-      .join(",");
-    if (key === this.shown) return;
-    this.shown = key;
-    this.button.hidden = !key;
-  }
-
-  private open(): void {
-    const chapters = chaptersOf(this.session.items);
-    if (!chapters.length) return;
-    showMenu(
-      this.button,
-      chapters.map((c, i) => ({
-        label: `${i + 1}. ${c.title}`,
-        ...(c.summary && { tooltip: c.summary }),
-        run: () => this.run("agent.showChapter", { session: this.session.id, chapter: c.id }),
-      })),
-      "Chapters",
-    );
-  }
-
-  dispose(): void {
-    this.store.dispose();
-    this.button.remove();
-  }
 }

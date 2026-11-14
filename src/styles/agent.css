@@ -10,6 +10,10 @@
     min-height: 0;
     background: var(--bg-surface);
   }
+  /* Nothing in it to show (D426: a chat in its own tab, its buttons beside the tabs): no row. */
+  .agent-header:not(:has(> :not([hidden]):not(.diff-spacer))) {
+    display: none;
+  }
   .agent-header {
     flex: none;
     display: flex;

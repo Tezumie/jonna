@@ -26,7 +26,7 @@
     // No chapters: no Chapters button.
     {
       "run": "dev.inspectDom",
-      "input": { "selector": ".agent-header .agent-chapters:not([hidden])", "limit": 1 },
+      "input": { "selector": ".dock-view-actions button[aria-label='Chapters']", "limit": 1 },
       "expect": { "$length": 0 }
     },
     {
@@ -65,12 +65,15 @@
     },
     {
       "run": "dev.inspectDom",
-      "input": { "selector": ".agent-header .agent-chapters:not([hidden])", "limit": 1 },
+      "input": { "selector": ".dock-view-actions button[aria-label='Chapters']", "limit": 1 },
       "expect": { "$length": 1 }
     },
     { "run": "workbench.screenshot", "input": {}, "print": true },
-    // The table of contents: the header button's menu lists them.
-    { "run": "dev.click", "input": { "selector": ".agent-header .agent-chapters" } },
+    // The table of contents: the menu of the button beside the tabs lists them.
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dock-view-actions button[aria-label='Chapters']" }
+    },
     { "wait": 300 },
     {
       "run": "dev.inspectDom",

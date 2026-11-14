@@ -80,6 +80,10 @@ export class DockRenderer implements Disposable {
       this.element.replaceChildren(this.build(maximized ?? root, []));
     } else {
       this.applySizes(maximized ?? root, []);
+      // A divider being dragged shows sizes the tree doesn't have yet (they're committed on
+      // release): a redraw for anything else (a tab's title, a view's buttons) keeps them,
+      // where it used to put the old sizes back until the next move (D426).
+      this.dragPreview?.();
     }
     const live = new Set<string>();
     for (const node of dock.allGroups(root)) {
@@ -138,6 +142,9 @@ export class DockRenderer implements Disposable {
     return split;
   }
 
+  /** Re-applies the sizes of the divider being dragged, if one is (see render). */
+  private dragPreview: (() => void) | null = null;
+
   private applySizes(node: DockNode, path: number[]): void {
     if (node.kind === "group") return;
     const total =
@@ -182,16 +189,20 @@ export class DockRenderer implements Disposable {
         const start = horizontal ? e.clientX : e.clientY;
         const a = n - 1;
         let current = [...sizes];
-        const move = (ev: PointerEvent) => {
-          const delta = (horizontal ? ev.clientX : ev.clientY) - start;
-          current = [...sizes];
-          [current[a], current[n]] = dragPair(sizes[a] ?? 0, sizes[n] ?? 0, delta, min);
-          // Live preview by flex only; the tree is committed on release (no re-render per move).
+        // Live preview by flex only; the tree is committed on release (no re-render per move).
+        const preview = () => {
           const sum = current.reduce((x, y) => x + y, 0);
           cells.forEach((c, i) => {
             c.style.flex = `${(current[i] ?? 0) / sum} 1 0`;
           });
         };
+        const move = (ev: PointerEvent) => {
+          const delta = (horizontal ? ev.clientX : ev.clientY) - start;
+          current = [...sizes];
+          [current[a], current[n]] = dragPair(sizes[a] ?? 0, sizes[n] ?? 0, delta, min);
+          preview();
+        };
+        this.dragPreview = preview;
         // In the structure's store: a rebuild mid-drag (a tab closing on its own, an agent opening
         // one) removes this sash, and its pointerup never comes; the body's resize class (every
         // element click-through) must not stay on. The old path no longer applies then: no commit.
@@ -202,6 +213,7 @@ export class DockRenderer implements Disposable {
             sash.removeEventListener("pointercancel", end);
             sash.classList.remove("is-active");
             document.body.classList.remove("is-resizing-vertical", "is-resizing-horizontal");
+            if (this.dragPreview === preview) this.dragPreview = null;
           }),
         );
         const end = () => {

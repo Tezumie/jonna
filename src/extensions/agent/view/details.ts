@@ -44,6 +44,8 @@ export interface ChatDetailsDeps {
   /** Whether a chat stored with `stored` is this window's (D251: first folder or workspace file). */
   isThisWorkspace(stored: string | null | undefined): boolean;
   showModelMenu(anchor: HTMLElement): void;
+  /** The panel was shown, hidden or moved (side / sheet / off): the tab's button follows. */
+  placed?(): void;
 }
 
 /** A helper's state in words (core/agent/isolatedHelpers.ts). */
@@ -82,8 +84,6 @@ const TITLES: Record<DetailsCard, string> = {
 export class ChatDetails implements Disposable {
   /** The panel (beside the chat, or the sheet). */
   readonly element: HTMLElement;
-  /** The header's button: shows or hides the panel. */
-  readonly button: HTMLElement;
   private readonly store = new DisposableStore();
   private readonly body: HTMLElement;
   private view: HTMLElement | null = null;
@@ -111,13 +111,6 @@ export class ChatDetails implements Disposable {
       },
       this.body,
     );
-    this.button = h(
-      "button",
-      { class: "icon-button agent-details-toggle", type: "button", "aria-label": "Chat details" },
-      icon("panel-right"),
-    );
-    setTooltip(this.button, "Chat details", "agent.toggleDetails");
-    this.store.add(on(this.button, "click", () => this.toggle()));
     this.store.add(on(this.element, "click", (e) => this.onClick(e)));
     this.store.add(on(this.element, "contextmenu", (e) => this.onContextMenu(e)));
     this.store.add(on(this.element, "pointerdown", (e) => this.startDrag(e)));
@@ -126,7 +119,12 @@ export class ChatDetails implements Disposable {
         if (e.key === "Escape" && this.layout() !== "side" && this.sheetOpen) {
           e.stopPropagation();
           this.toggle(false);
-          this.button.focus();
+          // Back to the button that opened it (beside the chat's tabs, D426), else the chat.
+          const group = this.view?.closest(".dock-group");
+          const opener = group?.querySelector<HTMLElement>(
+            ".dock-view-actions button[aria-label='Chat details']",
+          );
+          (opener ?? this.view?.querySelector<HTMLElement>("textarea"))?.focus();
         }
       }),
     );
@@ -214,7 +212,9 @@ export class ChatDetails implements Disposable {
       on(document, "pointerdown", (e) => {
         if (!this.sheetOpen || this.layout() === "side") return;
         const t = e.target as Element | null;
-        if (!t || this.element.contains(t) || this.button.contains(t)) return;
+        if (!t || this.element.contains(t)) return;
+        // Its button beside the tabs (D426): the click toggles it, this mustn't close it first.
+        if (t.closest(".dock-view-actions")) return;
         if (t.closest(".menu, .model-picker, [role='menu']")) return;
         this.toggle(false);
       }),
@@ -241,6 +241,17 @@ export class ChatDetails implements Disposable {
       this.width,
       detailsSetting(untracked(() => this.deps.setting("agent.detailsPanel"))),
     );
+  }
+
+  /** What the tab's button last showed (offered:shown), so the dock is told only of changes. */
+  private placedState = "";
+
+  /**
+   * Whether its button (beside the chat's tabs) shows at all: "never" hides it too (D231); the
+   * command still opens the sheet, and the button is there while it's open.
+   */
+  offered(): boolean {
+    return this.layout() !== "off" || this.sheetOpen;
   }
 
   visible(): boolean {
@@ -270,10 +281,13 @@ export class ChatDetails implements Disposable {
     this.element.hidden = !shown;
     this.element.dataset.layout = layout === "side" ? "side" : "sheet";
     this.view.classList.toggle("has-details", shown && layout === "side");
-    // "never" hides the button too (the command still opens the sheet).
-    this.button.hidden = layout === "off" && !this.sheetOpen;
-    this.button.setAttribute("aria-pressed", String(shown));
-    this.button.replaceChildren(icon(shown ? "panel-right-on" : "panel-right"));
+    // Only when the tab's button would look different: place() runs on every step of a resize,
+    // and telling the dock each time redrew it mid-drag (the chat only followed on release).
+    const state = `${this.offered()}:${shown}`;
+    if (state !== this.placedState) {
+      this.placedState = state;
+      this.deps.placed?.();
+    }
     if (shown) {
       if (this.dirty) this.render();
       if (this.branch === null) this.readBranch();

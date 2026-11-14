@@ -11,6 +11,7 @@ import { backgroundProcesses } from "./backgroundProcesses";
 import { isThisWorkspace } from "./chatWorkspace";
 import { memberInfo } from "./groupChat";
 import { newId } from "./ids";
+import { showMoreMenu } from "./menus";
 import type { SessionManager } from "./sessions";
 import { subagentRuns } from "./subagentRuns";
 import { messageReveal } from "./threadTabs";
@@ -132,6 +133,29 @@ export function registerChatCommands(
         else delete m.archived;
       });
       return { archived: meta.archived === true };
+    },
+  });
+
+  register({
+    id: "agent.chatMenu",
+    title: "Chat actions…",
+    description:
+      "Opens a chat's menu of actions (new session, sessions, checkpoints, export, rename, delete…): what the ⋯ button beside the chat's tabs opens (D426). `x` / `y`: where (default: the middle of the window).",
+    input: s.object({
+      session: sessionInput,
+      x: s.number().optional(),
+      y: s.number().optional(),
+    }),
+    effects: [],
+    agent: "hidden",
+    palette: false,
+    run: ({ session, x, y }) => {
+      const target = sessions.require(session);
+      showMoreMenu(services, target, {
+        x: x ?? Math.round(window.innerWidth / 2),
+        y: y ?? Math.round(window.innerHeight / 3),
+      });
+      return { session: target.id };
     },
   });
 

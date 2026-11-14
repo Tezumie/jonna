@@ -6,7 +6,7 @@ import { greetingName, pickGreeting } from "../../core/agent/greetings";
 import { MAIN_MEMBER } from "../../core/agent/groupChat";
 import { h, on } from "../../core/dom/index";
 import { agentFace } from "../../ui/AgentFace";
-import { type MenuItem, showMenu } from "../../ui/Menu";
+import { type MenuAnchor, type MenuItem, showMenu } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
 import { locationLabel } from "../../workbench/workspace";
 import { cachedSettings } from "./acp";
@@ -273,10 +273,11 @@ export function showMembersAccess(
   );
 }
 
+/** The chat's own actions (new, sessions, checkpoints, export, delete…), at a button or a point. */
 export function showMoreMenu(
   services: WorkbenchServices,
   session: AgentSession,
-  anchor: HTMLElement,
+  anchor: MenuAnchor,
 ): void {
   const run =
     (command: string, input: unknown = {}) =>
@@ -444,7 +445,7 @@ export function showMoreMenu(
         run: run("agent.deleteSession", { session: session.id }),
       },
     ],
-    "Agent",
+    "Chat actions",
   );
 }
 

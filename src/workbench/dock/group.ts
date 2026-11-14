@@ -366,7 +366,7 @@ export class GroupElement implements Disposable {
             class: a.dropdown ? "icon-button dock-action-dropdown" : "icon-button",
             type: "button",
             "aria-label": a.title,
-            ...(a.dropdown && { "aria-haspopup": "menu" }),
+            ...((a.dropdown || a.menu) && { "aria-haspopup": "menu" }),
           },
           a.iconImage ? imageIcon(a.iconImage) : icon(a.icon),
         );
@@ -380,7 +380,7 @@ export class GroupElement implements Disposable {
           ]),
         );
         b.addEventListener("click", () => {
-          if (!a.dropdown) return this.deps.run(a.command, input);
+          if (!a.dropdown && !a.menu) return this.deps.run(a.command, input);
           const r = b.getBoundingClientRect();
           this.deps.run(a.command, { ...input, x: Math.round(r.left), y: Math.round(r.bottom) });
         });

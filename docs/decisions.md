@@ -27,7 +27,7 @@ unless noted.
 | · Speed pass, images, code font, status bar items, dictation on device, F11, extension fixes, slash commands, tools on demand, a full audit, the sandbox keeps git's settings, read-only files, hidden secrets, paste from history, an upkeep pass, the final app identifier, a stuck CI log, quieter Customize pages, files opened behind a maximized group, Customize pages alike, CI's runners, agents' tabs and sign-in, quieter approval cards, an agent's own changes, centered badge digits, an external agent's chats keep its logo, popular extensions, an audit of D392–D406, the local UI suite, the details panel as Claude Code's, agents named, logos, drag corners, stray carriage returns, restored tabs in the explorer, menu icons, the IDE account live, channel names kept, caches bounded by size | D379–D416 |
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
-| · Small cleanups, a default layout to choose, an audit of D421–D424 | D424–D425 |
+| · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
 
 ## Seeded from PLAN §19
 
@@ -15022,3 +15022,38 @@ Left as they are, known:
   15 lookups).
 - The first-open path of the Agent and Code layouts, and the window's start without a folder,
   have unit tests only; the UI script covers Close folder.
+
+## D426 — A chat's header keeps only what is the chat's own
+
+More small changes from the owner's use; added to until it's committed.
+
+- **A chat in its own tab has no face, title, + or Sessions button in its header.** The tab above
+  it already shows the same face and title; New chat is in the Chats list, and both it and
+  Sessions… are in the header's ⋯ menu. What stays: the worktree chip, Chapters, the details
+  panel's button and ⋯. A channel's tab keeps its title and + (its title is the channel's, and +
+  starts the channel's next conversation), and a thread keeps "Thread ›" with its title. The
+  elements are hidden, not removed (`view/view.ts`), so the face's state and the title still
+  feed the tab.
+- **The chat's remaining buttons are beside its tabs, and its header row is gone.** Chapters
+  (when there are some), the chat's menu and the details panel's button are tab actions now
+  (`AgentView.actions()`), where a terminal's and a preview's are, left of the group's own.
+  The chat's menu comes before the details button, so it isn't beside the group's ⋯. A tab
+  action may open a menu at its button (`TabAction.menu`: the command gets `x` / `y`), through
+  two commands: `agent.chatMenu` and `agent.chaptersMenu`. The menu's button says "Chat
+  actions" (it said "More"). With nothing left to show, the header takes no room (CSS: a header
+  whose children are all hidden isn't laid out), which gives the conversation a row more; it
+  still appears for a worktree's chip, a thread's "Thread ›" and a channel's title and +. A
+  click on the details button while the sheet is open toggles it rather than closing and
+  reopening it.
+- **A redraw while a divider is dragged keeps the sizes being dragged.** The dock previews a
+  drag by flex alone and commits the tree on release; any redraw meanwhile (a tab's title, a
+  view's buttons) put the tree's old sizes back until the next move. The chat's moved details
+  button first showed it: the panel told the dock on every step of a resize, so the chat only
+  followed on release; it now tells it only when the button would look different, and the dock
+  re-applies the drag's sizes after a redraw (`dragPreview`, `workbench/dock/render.ts`), which
+  covers every view.
+- **What the old header left behind is gone:** the header's own menu button and its host hook
+  (`showMoreMenu` on the view's host), the Chapters button's class (`ChapterMenu`), the details
+  panel's own button and its CSS. Esc on the details sheet returns the focus to the Chat
+  details button beside the tabs (else the message box). The sheet starts at the top of the
+  chat when there is no header, and under it when there is one.

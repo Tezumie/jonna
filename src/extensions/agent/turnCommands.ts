@@ -9,6 +9,7 @@ import {
 } from "../../core/agent/turnTools";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
+import { showMenu } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { AgentSession } from "./session";
 import type { SessionManager } from "./sessions";
@@ -120,6 +121,39 @@ export function registerTurnCommands(
       target.bump();
       void target.save();
       return { dismissed: true };
+    },
+  });
+
+  register({
+    id: "agent.chaptersMenu",
+    title: "Chapters…",
+    description:
+      "Lists a chat's chapters (the agent's mark_chapter dividers, D302) in a menu; picking one scrolls to it (agent.showChapter). What the bookmark button beside the chat's tabs opens (D426). `x` / `y`: where (default: the middle of the window).",
+    input: s.object({
+      session: sessionInput,
+      x: s.number().optional(),
+      y: s.number().optional(),
+    }),
+    effects: [],
+    agent: "hidden",
+    palette: false,
+    run: ({ session, x, y }) => {
+      const target = sessions.require(session);
+      const chapters = chaptersOf(target.items);
+      if (!chapters.length) throw new Error("This chat has no chapters.");
+      showMenu(
+        { x: x ?? Math.round(window.innerWidth / 2), y: y ?? Math.round(window.innerHeight / 3) },
+        chapters.map((c, i) => ({
+          label: `${i + 1}. ${c.title}`,
+          ...(c.summary && { tooltip: c.summary }),
+          run: () =>
+            void dispatcher
+              .execute("agent.showChapter", { session: target.id, chapter: c.id })
+              .catch(() => {}),
+        })),
+        "Chapters",
+      );
+      return { chapters: chapters.length };
     },
   });
 

@@ -172,7 +172,7 @@
     {
       "run": "dev.click",
       "input": {
-        "selector": "[data-session='${top.id}'] .agent-header .icon-button[aria-label='More']"
+        "selector": ".dock-view-actions button[aria-label='Chat actions']"
       },
       "timeoutMs": 5000
     },

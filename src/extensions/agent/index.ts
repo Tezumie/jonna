@@ -88,7 +88,6 @@ import {
   showMembersEffort,
   showMembersModels,
   showModeMenu,
-  showMoreMenu,
 } from "./menus";
 import { registerModelChoices } from "./modelChoices";
 import { registerNewChatMenu } from "./newChatMenu";
@@ -370,7 +369,6 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
         pickFolder: (title) => dialogIpc.pickFolder(title),
         autoRunCommands: () => services.settings.get<string>("agent.runCommands") !== "ask",
         fullAccess: () => services.settings.get<string>("agent.runCommands") === "full",
-        showMoreMenu: (s, a) => showMoreMenu(services, s, a),
         emptyState: (s) => setupCard(s) ?? emptyState(services, providers, s),
         streamText: () => services.settings.get<boolean>("agent.streamText") !== false,
         setting: (key) => services.settings.get<unknown>(key),

@@ -14,9 +14,6 @@
     min-width: 0;
     min-height: 0;
   }
-  .agent-details-toggle[hidden] {
-    display: none;
-  }
 
   .agent-details {
     --details-width: 280px;
@@ -36,7 +33,13 @@
   .agent-details[hidden] {
     display: none;
   }
-  /* Narrow tabs: a sheet over the right edge, under the header. */
+  /* Narrow tabs: a sheet over the right edge, under the header when the chat has one (a
+     thread's, a channel's, a worktree's chip); from the top otherwise (D426). */
+  .agent-view:not(:has(.agent-header > :not([hidden]):not(.diff-spacer)))
+  > .agent-details[data-layout="sheet"] {
+    top: 0;
+    border-top-left-radius: 0;
+  }
   .agent-details[data-layout="sheet"] {
     position: absolute;
     top: var(--space-9);

@@ -27,7 +27,7 @@
     {
       "run": "dev.inspectDom",
       "input": {
-        "selector": "[data-session='${chat.session}'] .agent-header .agent-details-toggle"
+        "selector": ".dock-view-actions button[aria-label='Chat details']"
       },
       "expect": { "$length": 1 },
       "timeoutMs": 5000
@@ -153,7 +153,7 @@
     {
       "run": "dev.inspectDom",
       "input": {
-        "selector": "[data-session='${chat.session}'] .agent-header .agent-details-toggle:not([hidden])"
+        "selector": ".dock-view-actions button[aria-label='Chat details']"
       },
       "expect": { "$length": 0 },
       "timeoutMs": 5000

@@ -161,7 +161,7 @@ Type in the message box and press **Enter** to send; **Shift+Enter** adds a new 
   sentence is the chat's status in the Inbox and the Chats list's tooltip; a box that waits on you
   marks the chat as needing you.
 - **Chapters:** in a long chat the agent marks where the work changes phase with a divider. Once
-  there's one, the **Chapters** button (a bookmark) in the chat's header lists them; pick one to
+  there's one, the **Chapters** button (a bookmark) beside the chat's tabs lists them; pick one to
   scroll there (`agent.showChapter`).
 - **Proposed tasks:** when the agent finds separate work worth doing (a bug elsewhere, missing
   tests), it may offer it as a **New task** card: **Start in a new chat** opens a chat with the
@@ -518,7 +518,8 @@ Each card folds from its header. To move one, hover its header and drag the grip
 edge; the order holds for every chat.
 
 The panel sits beside the chat when the tab is wide enough, and otherwise opens as a sheet from the
-header's button. `agent.detailsPanel` (`auto`, `always`, `never`) and **Toggle chat details**
+**Chat details** button beside the chat's tabs. The chat's **⋯** menu (**Chat actions**) is the
+button to its left. `agent.detailsPanel` (`auto`, `always`, `never`) and **Toggle chat details**
 control it.
 
 ## Commands that keep running

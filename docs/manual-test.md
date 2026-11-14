@@ -4132,3 +4132,10 @@ Images in the chat (D381):
    sidebar; open a folder never opened before: the explorer shows, no agent column.
 6. Open a folder never opened before (Default layout): the explorer, its README, the agent on
    the right, and no terminal. Ctrl+` opens one at the bottom.
+
+## D426 — A chat's header
+1. Open a chat: there is no header row under its tabs. Beside the tabs, left of the group's own
+   buttons: Chapters (when there are chapters), ⋯ ("Chat actions": New session, Sessions… and
+   the rest), then the details panel's button, which shows and hides the panel.
+2. A thread ("Reply in thread") still shows "Thread ›" and its title; a channel's tab still has
+   its title and +.

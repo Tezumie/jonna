@@ -8,7 +8,7 @@ import { agentFace as faceOf } from "../../../core/agent/faces";
 import { findMentions } from "../../../core/agent/groupChat";
 import { planBeforeLastMessage } from "../../../core/agent/plan";
 import { relativeAge, threadRoom, threadsByMessage } from "../../../core/agent/rooms";
-import { latestWrapUp } from "../../../core/agent/turnTools";
+import { chaptersOf, latestWrapUp } from "../../../core/agent/turnTools";
 import type { Json } from "../../../core/dock/index";
 import { h, morph, on, replaceChildren } from "../../../core/dom/index";
 import { Emitter } from "../../../core/events/index";
@@ -20,7 +20,7 @@ import { HoverCards } from "../../../ui/HoverCard";
 import { icon } from "../../../ui/Icon";
 import { keepTimesCurrent, refreshTimes } from "../../../ui/relativeTimes";
 import { setTooltip } from "../../../ui/Tooltip";
-import type { DockView, DockViewContext } from "../../../workbench/dock/views";
+import type { DockView, DockViewContext, TabAction } from "../../../workbench/dock/views";
 import { locationLabel } from "../../../workbench/workspace";
 import { chatModelKey } from "../chatAgentModel";
 import type { DetailsHost } from "../chatDetails";
@@ -42,7 +42,7 @@ import { type ItemHost, type RenderOptions, renderItem, signature, toolLabel } f
 import { folderCard, permissionCard } from "./permissionCards";
 import { shotPreview } from "./shots";
 import { renderRow, rowSignature } from "./steps";
-import { ChapterMenu, wrapUpBox } from "./turnCards";
+import { wrapUpBox } from "./turnCards";
 import {
   draftActivity,
   layoutTurns,
@@ -97,7 +97,6 @@ export interface AgentViewHost {
   autoRunCommands(): boolean;
   /** Full access: nothing asks (agent.runCommands "full", D163); reactive. */
   fullAccess(): boolean;
-  showMoreMenu(session: AgentSession, anchor: HTMLElement): void;
   /** Empty-state text: which model will answer, or how to get one. */
   emptyState(session: AgentSession): HTMLElement;
   activated(session: AgentSession): void;
@@ -139,7 +138,8 @@ export class AgentView implements DockView {
   private readonly jump: HTMLElement;
   private readonly composer: Composer;
   /** The chat's table of contents in the header (D302). */
-  private readonly chapters: ChapterMenu;
+  private readonly details: ChatDetails;
+  private hasChapters = false;
   /** The chat's workflow runs (D338), under the plan. */
   private readonly workflows: WorkflowCards;
   private readonly cache = new Map<string, { el: HTMLElement; sig: string; at?: number }>();
@@ -198,11 +198,6 @@ export class AgentView implements DockView {
     const roomLink = h("button", { class: "agent-room-link", type: "button" });
     // Who the chat is with (D230): the agent's face, in its state (working, waiting for you).
     const face = h("span", { class: "agent-header-face" });
-    const more = h(
-      "button",
-      { class: "icon-button", type: "button", "aria-label": "More" },
-      icon("ellipsis"),
-    );
     const fresh = h(
       "button",
       { class: "icon-button", type: "button", "aria-label": "New chat" },
@@ -228,7 +223,6 @@ export class AgentView implements DockView {
       icon("history"),
     );
     setTooltip(history, "Sessions", "agent.showHistory");
-    setTooltip(more, "More");
     const progress = h("div", { class: "progress-line", hidden: true });
     this.column = h("div", { class: "agent-column" });
     this.cards = h("div", { class: "agent-cards" });
@@ -332,7 +326,6 @@ export class AgentView implements DockView {
     const loop = this.store.add(new LoopStrip(session.id, host.run));
     // What the chat has working in the background (D326): a chip under the conversation.
     this.bgChip = this.store.add(new BackgroundChip(session.id, host.run, () => this.schedule()));
-    this.chapters = this.store.add(new ChapterMenu(session, host.run));
     this.workflows = this.store.add(new WorkflowCards(session.id, host.run));
     // The branch of the worktree the chat works in (D337).
     const worktreeChip = this.store.add(new WorktreeChip(session.id, host.run));
@@ -372,8 +365,10 @@ export class AgentView implements DockView {
         openFolder: host.openFolder,
         isThisWorkspace: (stored) => host.isThisWorkspace(stored),
         showModelMenu: (anchor) => host.showModelMenu(session, anchor),
+        placed: () => this.changed.fire(),
       }),
     );
+    this.details = details;
     this.element = h(
       "div",
       // data-os-drop: files dropped here from the system are ours (the explorer leaves them).
@@ -395,12 +390,9 @@ export class AgentView implements DockView {
           title,
           worktreeChip.element,
           h("span", { class: "diff-spacer" }),
-          this.chapters.button,
           fresh,
           freshWith,
           history,
-          details.button,
-          more,
         ),
         progress,
         elsewhere,
@@ -437,7 +429,18 @@ export class AgentView implements DockView {
     const roomOf = () => host.room ?? threadRoom(liveRow(session), rooms.peek());
     // + starts this channel's or direct message's conversation over (the old one stays in
     // Sessions…); a thread has none: reply in it, or start another from the channel.
-    fresh.hidden = !!session.parent;
+    // A chat in its own tab (D426): the tab already has its face and title, and New chat and
+    // Sessions are in the Chats list and the chat's menu. Chapters, the details panel's button
+    // and the chat's menu are beside the tabs (`actions()`), as a terminal's or a preview's
+    // are, so the header has nothing left and takes no room (CSS: a header with nothing shown
+    // isn't laid out); a worktree's chip still shows in it. A channel's tab and a thread keep
+    // theirs: the title there is the channel's or follows "Thread ›", and + starts the
+    // channel's next conversation.
+    const plain = !host.room && !session.parent;
+    face.hidden = plain;
+    title.hidden = plain;
+    history.hidden = plain;
+    fresh.hidden = plain || !!session.parent;
     this.store.add(
       on(fresh, "click", () =>
         host.room
@@ -518,7 +521,6 @@ export class AgentView implements DockView {
       }),
     );
     this.store.add(on(history, "click", () => host.run("agent.showHistory")));
-    this.store.add(on(more, "click", () => host.showMoreMenu(session, more)));
     this.store.add(on(this.element, "focusin", () => host.activated(session)));
     this.store.add(
       on(this.log, "scroll", () => {
@@ -886,7 +888,12 @@ export class AgentView implements DockView {
     const wrapUp = this.wrapUpCard(items, running);
     if (wrapUp) nodes.push(wrapUp);
     if (this.bgChip.visible) nodes.push(this.bgChip.element);
-    this.chapters.update(items);
+    // The Chapters button beside the tabs comes and goes with the first chapter.
+    const chapters = chaptersOf(items).length > 0;
+    if (chapters !== this.hasChapters) {
+      this.hasChapters = chapters;
+      this.changed.fire();
+    }
     if (working) nodes.push(working);
     for (const id of [...this.queuedEls.keys()])
       if (!queued.some((q) => q.id === id)) this.queuedEls.delete(id);
@@ -1252,6 +1259,36 @@ export class AgentView implements DockView {
 
   title(): string {
     return this.host.room ? roomTitle(this.host.room) : this.session.title.peek();
+  }
+
+  /** Beside the tabs (D426): the chapters when there are some, the chat's menu, the details panel. */
+  actions(): TabAction[] {
+    const session = this.session.id;
+    const out: TabAction[] = [];
+    if (chaptersOf(this.session.items).length)
+      out.push({
+        icon: "bookmark",
+        title: "Chapters",
+        command: "agent.chaptersMenu",
+        input: { session },
+        menu: true,
+      });
+    // The chat's menu before the details button: not beside the group's own ⋯ (the owner's ask).
+    out.push({
+      icon: "ellipsis",
+      title: "Chat actions",
+      command: "agent.chatMenu",
+      input: { session },
+      menu: true,
+    });
+    if (this.details.offered())
+      out.push({
+        icon: this.details.visible() ? "panel-right-on" : "panel-right",
+        title: "Chat details",
+        command: "agent.toggleDetails",
+        input: { session },
+      });
+    return out;
   }
 
   focus(): void {
