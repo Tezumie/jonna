@@ -15057,3 +15057,8 @@ More small changes from the owner's use; added to until it's committed.
   panel's own button and its CSS. Esc on the details sheet returns the focus to the Chat
   details button beside the tabs (else the message box). The sheet starts at the top of the
   chat when there is no header, and under it when there is one.
+- **The app logo is dark on light themes.** It is drawn for dark backgrounds and was faint on a
+  light one. Every logo (`ui/Logo.ts`: the title bar, the Welcome tab and page, menus, the MCP
+  page) carries `app-logo`, whose filter is the theme's `--logo-filter` token: none on dark
+  themes, `invert(0.9)` on light ones, as the website does it. It follows `data-theme`, so
+  extension themes of either kind get the right one. `tests/scripts/logo-theme-m7-127.jsonc`.

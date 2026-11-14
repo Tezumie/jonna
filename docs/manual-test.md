@@ -4139,3 +4139,5 @@ Images in the chat (D381):
    the rest), then the details panel's button, which shows and hides the panel.
 2. A thread ("Reply in thread") still shows "Thread ›" and its title; a channel's tab still has
    its title and +.
+3. Switch to a light theme (Light+): the logo in the title bar, on the Welcome tab and on the
+   Welcome page is dark. Back on a dark theme it is light again.

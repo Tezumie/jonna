@@ -1,0 +1,35 @@
+// The app logo follows the theme (D426): every logo carries `app-logo`, which a light theme turns
+// dark (--logo-filter). A screenshot of the welcome page on a light theme, then back to dark.
+{
+  "name": "logo-theme-m7-127",
+  "steps": [
+    { "run": "layout.openView", "input": { "viewType": "welcome" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".welcome-logo.app-logo" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".titlebar-logo .app-logo" },
+      "expect": { "$length": 1 }
+    },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Light+" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "html[data-theme='light'] .welcome-logo.app-logo" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    { "wait": 600 },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    { "run": "settings.set", "input": { "key": "workbench.colorTheme", "value": "Dark+" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": "html[data-theme='dark'] .welcome-logo.app-logo" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    }
+  ]
+}

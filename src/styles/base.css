@@ -90,6 +90,10 @@
     color: var(--fg-default);
     font-weight: 600;
   }
+  /* The app logo (ui/Logo.ts) follows the theme: light on dark themes, dark on light ones. */
+  .app-logo {
+    filter: var(--logo-filter);
+  }
   svg.icon {
     width: var(--size-icon-md);
     height: var(--size-icon-md);

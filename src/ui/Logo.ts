@@ -6,7 +6,8 @@ const LOGO_URL = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
 
 export function logo(size: number, className = "logo"): HTMLImageElement {
   const img = document.createElement("img");
-  img.className = className;
+  // "app-logo" on every one: the theme turns it dark on a light background (--logo-filter).
+  img.className = `app-logo ${className}`;
   img.src = LOGO_URL;
   img.width = size;
   img.height = size;

@@ -132,6 +132,8 @@
   :root,
   :root[data-theme="dark"] {
     color-scheme: dark;
+    /* The app logo is drawn for dark backgrounds: as it is here, turned dark on light themes. */
+    --logo-filter: none;
     --bg-app: var(--gray-950);
     --bg-surface: var(--gray-950);
     --bg-surface-sunken: var(--gray-975);
@@ -253,6 +255,7 @@
   /* ---------- light ---------- */
   :root[data-theme="light"] {
     color-scheme: light;
+    --logo-filter: invert(0.9);
     --bg-app: #f7f7f7;
     --bg-surface: #f7f7f7;
     --bg-surface-sunken: #f0f0f0;
