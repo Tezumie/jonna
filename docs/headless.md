@@ -65,7 +65,9 @@ Every message, both directions:
 
 - Missing optional args are `None`. Unknown args are ignored.
 - Arg names are camelCase on the wire unless the Rust command says `rename_all = "snake_case"`.
-- Sync Rust commands may run on a blocking thread; async ones on the runtime.
+- Sync Rust commands run one at a time, in the order their requests arrived on the connection
+  (`pty_write`, `pty_resize`: keystrokes can't overtake each other), on a thread of their own;
+  async ones run on the runtime, many at once. Answers still come in any order.
 - One host process serves one client connection at a time and one workspace session. A second
   TCP connection while one is open is refused (v1).
 - Desktop-only commands (windows, native dialogs through the window, the embedded browser,

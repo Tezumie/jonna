@@ -318,6 +318,16 @@ async function overStdio() {
       () => seen.toString("utf8").includes("smoke-pty-marker"),
       "the terminal's output",
     );
+    // Keystrokes sent without waiting for answers reach the terminal in the order sent
+    // (`pty_write` is a sync command: the host runs those one at a time, as the desktop does).
+    const typed = "echo order-abcdefghijklmnopqrstuvwxyz-0123456789\r";
+    await Promise.all(
+      [...typed].map((key) => client.call("pty_write", { id: terminal.id, data: key })),
+    );
+    await waitFor(
+      () => seen.toString("utf8").includes("order-abcdefghijklmnopqrstuvwxyz-0123456789"),
+      "keystrokes in the order they were sent",
+    );
     await client.call("pty_write", { id: terminal.id, data: "exit\r" });
     await waitFor(() => exited, "the terminal's exit message", 10_000).catch(() =>
       client.call("pty_kill", { id: terminal.id }),

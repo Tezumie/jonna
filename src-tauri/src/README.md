@@ -45,7 +45,9 @@ the end of stdin, Ctrl+C or SIGTERM: `AppState::shutdown`, exit 0). `frame.rs`: 
 frame (two little-endian u32 lengths, a JSON header, a raw body; 64 MiB / 1 GiB limits).
 `server.rs`: one client's connection: `$/hello` first (protocol 1, the token over TCP, the list
 of commands), requests run as tasks (at most 1024 at once, 16 frames read ahead: beyond that the
-host stops reading and the stream pushes back), answers in any order through one writer thread,
+host stops reading and the stream pushes back; sync commands one at a time on the connection's
+own thread, in the order their requests arrived, as the desktop runs them: the shim's
+`SyncQueue`), answers in any order through one writer thread,
 channel messages (`{channel, data}` or raw), `{channel, end}` once the host dropped a channel,
 `$/channelClose` (later sends on it fail, as on the desktop when the page is gone), a panic in a
 command answers `Unknown`. Commands see the client as the window label `main`. `stdio.rs`: the

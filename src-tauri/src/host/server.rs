@@ -2,8 +2,9 @@
 //!
 //! The reader and the writer are threads of their own (the carriers are blocking streams); every
 //! frame to the client goes through the one writer, in the order it was queued. Requests run as
-//! tasks on the shared runtime, many at once, and answer in any order. A command that panics
-//! answers an error; the host keeps running.
+//! tasks on the shared runtime, many at once, and answer in any order; the sync commands among
+//! them run one at a time on the connection's own thread, in the order they arrived (as the
+//! desktop runs them). A command that panics answers an error; the host keeps running.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -12,7 +13,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use serde::Deserialize;
 use serde_json::Value;
-use tauri::host::{ChannelSink, CommandEntry, CommandFuture, Invocation, Reply};
+use tauri::host::{ChannelSink, CommandEntry, CommandFuture, Invocation, Reply, SyncQueue};
 use tauri::ipc::{InvokeBody, InvokeResponseBody};
 use tauri::AppHandle;
 
@@ -215,8 +216,8 @@ impl Server {
         let reading = std::thread::Builder::new()
             .name("host-reader".into())
             .spawn(move || read_loop(reader, frames));
-        let ended = match (&writing, &reading) {
-            (Ok(_), Ok(_)) => {
+        let ended = match (&writing, &reading, SyncQueue::new()) {
+            (Ok(_), Ok(_), Ok(ordered)) => {
                 let mut greeted = false;
                 loop {
                     // A place for the next request first: none is read while all are taken.
@@ -232,7 +233,7 @@ impl Server {
                             break Ended::Closed;
                         }
                     };
-                    match self.handle(&connection, frame, &mut greeted, token, place) {
+                    match self.handle(&connection, &ordered, frame, &mut greeted, token, place) {
                         Next::Continue => {}
                         Next::End(ended) => break ended,
                     }
@@ -257,6 +258,7 @@ impl Server {
     fn handle(
         &self,
         connection: &Arc<Connection>,
+        ordered: &SyncQueue,
         frame: Frame,
         greeted: &mut bool,
         token: Option<&str>,
@@ -386,11 +388,14 @@ impl Server {
             body,
             headers,
             channels: connection.clone(),
+            ordered: ordered.clone(),
         };
         let connection = connection.clone();
+        // Called here, in the order the frames arrived: a sync command takes its turn now.
+        let running = run(invocation);
         tokio::spawn(async move {
             // A task of its own, so a panic inside the command ends only the command.
-            let reply = match tokio::spawn(run(invocation)).await {
+            let reply = match tokio::spawn(running).await {
                 Ok(reply) => reply,
                 Err(e) => tauri::host::reply_panic(&e.to_string()),
             };

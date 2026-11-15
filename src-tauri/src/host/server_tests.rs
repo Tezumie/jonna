@@ -68,6 +68,21 @@ mod commands {
     pub async fn panics() -> u32 {
         panic!("on purpose (a test)")
     }
+
+    /// What `note` was called with, in the order the calls ran.
+    pub static NOTES: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
+
+    /// A sync command, as a terminal's write is: the order of the calls is the result.
+    #[tauri::command]
+    pub fn note(n: u64, wait_ms: Option<u64>) {
+        std::thread::sleep(Duration::from_millis(wait_ms.unwrap_or(0)));
+        NOTES.lock().unwrap().push(n);
+    }
+
+    #[tauri::command]
+    pub async fn noted() -> Vec<u64> {
+        NOTES.lock().unwrap().clone()
+    }
 }
 
 fn table() -> &'static [CommandEntry] {
@@ -78,6 +93,8 @@ fn table() -> &'static [CommandEntry] {
         commands::count,
         commands::slow,
         commands::panics,
+        commands::note,
+        commands::noted,
     ]
 }
 
@@ -166,7 +183,7 @@ fn hello_lists_the_commands() {
     assert_eq!(result["pid"], std::process::id());
     assert_eq!(
         result["commands"],
-        json!(["echo", "fails", "upper", "count", "slow", "panics"])
+        json!(["echo", "fails", "upper", "count", "slow", "panics", "note", "noted"])
     );
 }
 
@@ -353,6 +370,40 @@ fn requests_are_answered_as_they_finish() {
     assert_eq!(order.last(), Some(&2));
     order.sort_unstable();
     assert_eq!(order, (2..40).collect::<Vec<u64>>());
+}
+
+#[test]
+fn sync_commands_run_one_at_a_time_in_the_order_sent() {
+    let mut client = connect(None);
+    client.hello();
+    // The first one is slow: run each on a thread of its own and it would finish last.
+    client.send(
+        json!({ "id": 2, "method": "note", "params": { "n": 2, "waitMs": 300 } }),
+        b"",
+    );
+    for id in 3..200u64 {
+        client.send(
+            json!({ "id": id, "method": "note", "params": { "n": id } }),
+            b"",
+        );
+    }
+    // An async command doesn't wait behind them.
+    client.send(
+        json!({ "id": 200, "method": "echo", "params": { "text": "now" } }),
+        b"",
+    );
+    let mut order = Vec::new();
+    for _ in 2..=200 {
+        order.push(client.next().0["id"].as_u64().unwrap());
+    }
+    assert_eq!(order.first(), Some(&200));
+    // Answers come in any order; what counts is the order the commands ran in.
+    order.sort_unstable();
+    assert_eq!(order, (2..=200).collect::<Vec<u64>>());
+    assert_eq!(
+        client.call(201, "noted", json!({}))["result"],
+        json!((2..200).collect::<Vec<u64>>())
+    );
 }
 
 #[test]

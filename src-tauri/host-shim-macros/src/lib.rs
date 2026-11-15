@@ -24,13 +24,17 @@ enum Rename {
 
 struct CommandOptions {
     rename: Rename,
+    /// `async` on a sync command: off the caller's thread, in no order.
+    unordered: bool,
 }
 
 impl Parse for CommandOptions {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut rename = Rename::Camel;
+        let mut unordered = false;
         while !input.is_empty() {
-            let name: syn::Ident = input.parse()?;
+            // `async` is a keyword: any identifier, keywords too.
+            let name = input.call(<syn::Ident as syn::ext::IdentExt>::parse_any)?;
             if name == "rename_all" {
                 input.parse::<Token![=]>()?;
                 let value: LitStr = input.parse()?;
@@ -45,8 +49,9 @@ impl Parse for CommandOptions {
                     }
                 };
             } else if name == "async" {
-                // The framework's "run this sync command on the async runtime": the host runs
-                // sync commands off the runtime's threads either way.
+                // The framework's "run this sync command on the async runtime": not one of
+                // the sync commands that run one after another.
+                unordered = true;
             } else {
                 return Err(syn::Error::new(
                     name.span(),
@@ -58,7 +63,7 @@ impl Parse for CommandOptions {
             }
             input.parse::<Token![,]>()?;
         }
-        Ok(Self { rename })
+        Ok(Self { rename, unordered })
     }
 }
 
@@ -124,9 +129,19 @@ fn expand_command(options: CommandOptions, function: ItemFn) -> syn::Result<Toke
                 #reply(#name(#(#names),*).await)
             })
         }
-    } else {
+    } else if options.unordered {
         quote! {
             ::host_shim::host::run_blocking(move || {
+                let __inv = __inv;
+                #(#bindings)*
+                #reply(#name(#(#names),*))
+            })
+        }
+    } else {
+        // Queued when the adapter is called: sync commands run in the order called.
+        quote! {
+            let __queue = __inv.ordered.clone();
+            ::host_shim::host::run_ordered(&__queue, move || {
                 let __inv = __inv;
                 #(#bindings)*
                 #reply(#name(#(#names),*))
