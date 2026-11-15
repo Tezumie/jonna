@@ -24,6 +24,8 @@ export function connectEngineKeybindings(
   editors: EditorService,
 ): void {
   const { keyboard, dispatcher } = services;
+  // The engine's keys come with the engine, which only a screen loads.
+  if (!services.hasScreen) return;
   void editors
     .ensureEngine()
     .then((engine) => {

@@ -31,7 +31,13 @@ export class ErrorCapture implements Disposable {
     output.append(WINDOW_CHANNEL, level, `[${source}] ${message}`);
   }
 
-  install(win: Window): void {
+  /** `win`: the window whose uncaught errors are recorded; null (no screen): console.error only. */
+  install(win: Window | null): void {
+    if (win) this.installWindow(win);
+    this.installConsole();
+  }
+
+  private installWindow(win: Window): void {
     const onError = (e: ErrorEvent) => {
       const where = e.filename
         ? ` (${e.filename.replace(/^.*\//, "")}:${e.lineno}:${e.colno})`
@@ -46,7 +52,9 @@ export class ErrorCapture implements Disposable {
       win.removeEventListener("error", onError);
       win.removeEventListener("unhandledrejection", onRejection);
     });
+  }
 
+  private installConsole(): void {
     // console.error: still printed; recorded once (an error while recording isn't recorded again).
     const original = console.error;
     let inside = false;

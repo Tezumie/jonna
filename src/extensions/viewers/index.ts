@@ -4,6 +4,7 @@
 // and every viewer of a file. New viewers: register a dock view type taking `{ path }` and a
 // `services.viewers` entry.
 import type { BuiltinExtension } from "../../core/extensions/index";
+import type { DisposableStore } from "../../core/lifecycle/index";
 import { samePath } from "../../core/paths/index";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -33,36 +34,8 @@ export const viewersExtension: BuiltinExtension<WorkbenchServices> = {
     ])
       sub.add(dock.views.register(d));
     // VS Code's markdown.preview.fontFamily / fontSize / lineHeight (D279), as variables the
-    // preview's document reads.
-    sub.add(
-      effect(() => {
-        const root = document.documentElement.style;
-        const family = services.settings.get<string>("markdown.preview.fontFamily")?.trim();
-        const size = services.settings.get<number>("markdown.preview.fontSize");
-        const height = services.settings.get<number>("markdown.preview.lineHeight");
-        if (family) root.setProperty("--md-preview-font-family", family);
-        else root.removeProperty("--md-preview-font-family");
-        root.setProperty(
-          "--md-preview-font-size",
-          `${typeof size === "number" && size >= 8 && size <= 40 ? size : 14}px`,
-        );
-        root.setProperty(
-          "--md-preview-line-height",
-          String(typeof height === "number" && height >= 1 && height <= 3 ? height : 1.6),
-        );
-        return undefined;
-      }),
-    );
-    sub.add({
-      dispose: () => {
-        for (const name of [
-          "--md-preview-font-family",
-          "--md-preview-font-size",
-          "--md-preview-line-height",
-        ])
-          document.documentElement.style.removeProperty(name);
-      },
-    });
+    // preview's document reads (there is no document without a screen).
+    if (services.hasScreen) markdownPreviewVariables(sub, services);
     // D118: binary files as hex, audio/video in a player, CSV/TSV as a table.
     sub.add(
       viewers.register({
@@ -380,3 +353,36 @@ export const viewersExtension: BuiltinExtension<WorkbenchServices> = {
     });
   },
 };
+
+/** The Markdown preview's font settings as variables on the page (read by the preview's document). */
+function markdownPreviewVariables(sub: DisposableStore, services: WorkbenchServices): void {
+  sub.add(
+    effect(() => {
+      const root = document.documentElement.style;
+      const family = services.settings.get<string>("markdown.preview.fontFamily")?.trim();
+      const size = services.settings.get<number>("markdown.preview.fontSize");
+      const height = services.settings.get<number>("markdown.preview.lineHeight");
+      if (family) root.setProperty("--md-preview-font-family", family);
+      else root.removeProperty("--md-preview-font-family");
+      root.setProperty(
+        "--md-preview-font-size",
+        `${typeof size === "number" && size >= 8 && size <= 40 ? size : 14}px`,
+      );
+      root.setProperty(
+        "--md-preview-line-height",
+        String(typeof height === "number" && height >= 1 && height <= 3 ? height : 1.6),
+      );
+      return undefined;
+    }),
+  );
+  sub.add({
+    dispose: () => {
+      for (const name of [
+        "--md-preview-font-family",
+        "--md-preview-font-size",
+        "--md-preview-line-height",
+      ])
+        document.documentElement.style.removeProperty(name);
+    },
+  });
+}

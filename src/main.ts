@@ -10,7 +10,7 @@ import { ExtensionHost } from "./core/extensions/index";
 import { instancesIpc } from "./core/ipc/instances";
 import { isTauri } from "./core/ipc/invoke";
 import { execIpc } from "./core/ipc/process";
-import { appIpc, auditIpc } from "./core/ipc/system";
+import { appIpc, auditIpc, storeIpc } from "./core/ipc/system";
 import type { Platform } from "./core/keybindings/index";
 import { basename } from "./core/paths/index";
 import { perf } from "./core/perf";
@@ -112,6 +112,7 @@ async function boot(): Promise<void> {
       askAgent: askAgentPermission,
       testMode: () => testRun,
     },
+    stateBackend: storeIpc,
     audit: (entry) => (isTauri() ? auditIpc.append(entry) : undefined),
     validateOutput: __DEV__,
     notifications: () => {

@@ -11,8 +11,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 export const DEFAULT_PRODUCT_ICONS = "Default";
 
 export function registerProductIconThemes(sub: DisposableStore, services: WorkbenchServices): void {
-  const { contributions, settings, dispatcher, notifications } = services;
-  const themes = sub.add(new ProductIconThemes());
+  const { contributions, settings, dispatcher } = services;
   sub.add(
     settings.registerChoices("workbench.productIconTheme", () => [
       { value: DEFAULT_PRODUCT_ICONS, label: "Default", description: "The IDE's own icons" },
@@ -23,26 +22,8 @@ export function registerProductIconThemes(sub: DisposableStore, services: Workbe
       })),
     ]),
   );
-
-  let failed = "";
-  sub.add(
-    effect(() => {
-      const wanted =
-        settings.get<string | null>("workbench.productIconTheme") || DEFAULT_PRODUCT_ICONS;
-      // An extension's theme that isn't loaded (yet): the IDE's icons meanwhile.
-      const entry = contributions.productIconThemes.value.find((t) => t.id === wanted) ?? null;
-      void themes.apply(entry).catch((err: unknown) => {
-        if (failed === wanted) return;
-        failed = wanted;
-        notifications.show(
-          "error",
-          `Couldn't load the product icon theme "${wanted}": ${err instanceof Error ? err.message : String(err)}`,
-        );
-        void themes.apply(null);
-      });
-      return undefined;
-    }),
-  );
+  // Icons are drawn: the chosen theme is loaded and applied only where there is a screen.
+  if (services.hasScreen) applyProductIconThemes(sub, services);
 
   sub.add(
     dispatcher.register({
@@ -84,6 +65,31 @@ export function registerProductIconThemes(sub: DisposableStore, services: Workbe
         );
         return { id: pick };
       },
+    }),
+  );
+}
+
+/** Loads the chosen product icon theme and applies it to the window's documents. */
+function applyProductIconThemes(sub: DisposableStore, services: WorkbenchServices): void {
+  const { contributions, settings, notifications } = services;
+  const themes = sub.add(new ProductIconThemes());
+  let failed = "";
+  sub.add(
+    effect(() => {
+      const wanted =
+        settings.get<string | null>("workbench.productIconTheme") || DEFAULT_PRODUCT_ICONS;
+      // An extension's theme that isn't loaded (yet): the IDE's icons meanwhile.
+      const entry = contributions.productIconThemes.value.find((t) => t.id === wanted) ?? null;
+      void themes.apply(entry).catch((err: unknown) => {
+        if (failed === wanted) return;
+        failed = wanted;
+        notifications.show(
+          "error",
+          `Couldn't load the product icon theme "${wanted}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+        void themes.apply(null);
+      });
+      return undefined;
     }),
   );
 }

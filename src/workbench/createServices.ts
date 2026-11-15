@@ -21,7 +21,7 @@ import { ExtensionFeatures } from "./extensionFeatures";
 import { GitAccess } from "./gitAccess";
 import { GutterMarks } from "./gutterMarks";
 import { KeyboardService } from "./keyboard";
-import { PersistenceService } from "./persistence";
+import { PersistenceService, type StateBackend } from "./persistence";
 import {
   DocumentTexts,
   type ExtensionGate,
@@ -72,6 +72,8 @@ export interface ServiceImplementations {
    * client's and an agent's requests, and whether a test script is running.
    */
   permissions: Pick<M2PolicyOptions, "confirm" | "askMcp" | "askAgent" | "testMode">;
+  /** Where the saved state (global, and the open workspace's) is read and written. */
+  stateBackend: StateBackend;
   /** Keeps one audit entry (the backend appends it to its log). */
   audit(entry: AuditEntry): Promise<void> | void;
   /** Check commands' outputs against their schemas (dev builds). */
@@ -112,7 +114,7 @@ export function createServices(impl: ServiceImplementations): WorkbenchServices 
   const layout = new LayoutModel();
   const views = new ViewRegistry();
   const dock = new DockService(new DockViewRegistry());
-  const persistence = new PersistenceService();
+  const persistence = new PersistenceService(impl.stateBackend);
   const workspace = new WorkspaceService(context, persistence);
 
   const extensionGate: ExtensionGate = {
@@ -149,6 +151,7 @@ export function createServices(impl: ServiceImplementations): WorkbenchServices 
   /** The active editor's name, shown in the window title (set by the editor extension). */
   const titleDetail: Signal<string | null> = signal<string | null>(null);
   const logic: LogicServices = {
+    hasScreen: impl.hasScreen,
     screenPlatform: impl.screenPlatform,
     backendPlatform: impl.backendPlatform,
     // One machine in the desktop app; a screenless set has only the backend's.

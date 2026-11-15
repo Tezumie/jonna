@@ -38,10 +38,12 @@ export function applyBaseLayout(
   // After the view is chosen: showing a view shows the sidebar.
   layout.sidebarVisible.value = plan.sidebarVisible;
   // The dock's width once the sidebar has its default width (the DOM may not have caught up).
-  const main = document.querySelector<HTMLElement>(".workbench-main");
-  const bar = document.querySelector<HTMLElement>(".activitybar")?.offsetWidth ?? 48;
+  // Without a screen nothing has a width: the agent column gets its default share.
+  const page = typeof document === "undefined" ? null : document;
+  const main = page?.querySelector<HTMLElement>(".workbench-main");
+  const bar = page?.querySelector<HTMLElement>(".activitybar")?.offsetWidth ?? 48;
   const sidebar = plan.sidebarVisible ? SIDEBAR_LIMITS.default : 0;
-  const width = (main?.clientWidth || window.innerWidth) - bar - sidebar;
+  const width = page ? (main?.clientWidth || window.innerWidth) - bar - sidebar : 0;
   const share = width > 0 ? Math.min(0.45, Math.max(0.2, BASE_AGENT_PX / width)) : 0.3;
   dock.resetToDefault(plan.main, plan.bottom, plan.right, share);
   // The share is for the width the dock is about to have: the next resize mustn't scale it again.

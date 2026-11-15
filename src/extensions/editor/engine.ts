@@ -2,6 +2,7 @@
 // monaco/), the on-demand loader of the engine bundle, and the host the engine calls back into.
 
 import type { LineMark } from "../../core/diff/index";
+import { NeedsScreenError } from "../../core/dispatcher/screen";
 import type { Event } from "../../core/events/index";
 import type { ProviderQuery } from "../../core/extensions/providerQuery";
 import { fsIpc } from "../../core/ipc/fs";
@@ -699,6 +700,9 @@ export function loadEditorEngine(
   theme: () => EditorTheme,
   host: EngineHost,
 ): Promise<EditorEngine> {
+  // The engine draws into the page: there is none to load into without a screen.
+  if (typeof document === "undefined")
+    return Promise.reject(new NeedsScreenError("The editor engine"));
   pending ??= (async () => {
     const css = document.createElement("link");
     css.rel = "stylesheet";

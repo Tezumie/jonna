@@ -299,6 +299,12 @@ export type IframeHost = Pick<IframeLayer, "attach" | "wake">;
 
 export interface WorkbenchServices {
   /**
+   * Whether this session has a screen (a window to draw in). Without one, views are registered
+   * but never made, and what only a page can do (listen for its events, measure, paint) is left
+   * out: code that runs at activation checks this before it reaches for the page.
+   */
+  readonly hasScreen: boolean;
+  /**
    * The machine the screen is on: keys and their labels, the modifier that opens links, what the
    * browser underneath can do. Without a screen it equals `backendPlatform`.
    */

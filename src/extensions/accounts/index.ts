@@ -79,6 +79,8 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
     let avatarUrl = "";
     let avatarBlob = "";
     const showAvatar = async () => {
+      // The picture goes on a button of the window's activity bar.
+      if (!services.hasScreen) return;
       const login = github.peek().find((g) => g.active && g.host === "github.com");
       const url =
         profile.peek()?.avatarUrl ?? (login ? `https://github.com/${login.login}.png?size=64` : "");
@@ -102,9 +104,12 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
     };
     sub.add({ dispose: () => avatarBlob && URL.revokeObjectURL(avatarBlob) });
     void refreshIfStale(0);
-    const onFocus = () => void refreshIfStale(5 * 60_000);
-    window.addEventListener("focus", onFocus);
-    sub.add({ dispose: () => window.removeEventListener("focus", onFocus) });
+    // Coming back to the window: signed in or out in the browser meanwhile, perhaps.
+    if (services.hasScreen) {
+      const onFocus = () => void refreshIfStale(5 * 60_000);
+      window.addEventListener("focus", onFocus);
+      sub.add({ dispose: () => window.removeEventListener("focus", onFocus) });
+    }
 
     const run =
       (id: string, input: unknown = {}) =>
@@ -144,6 +149,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
         input: s.empty(),
         effects: [],
         agent: "hidden",
+        needsScreen: true,
         run: async () => {
           // Show at once from what's known; refresh in the background when it's old (gh is slow).
           void refreshIfStale(30_000);

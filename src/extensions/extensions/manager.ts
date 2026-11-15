@@ -134,7 +134,7 @@ export class ExtensionManager implements Disposable {
   };
   private readonly loaded = new Map<string, Loaded>();
   private readonly logs = new Map<string, LogLine[]>();
-  private timer = 0;
+  private timer: ReturnType<typeof setTimeout> | undefined;
   private refreshing: Promise<void> | null = null;
   private disposed = false;
   /** Ids the user was already asked about this session (don't ask again on every refresh). */
@@ -715,19 +715,21 @@ export class ExtensionManager implements Disposable {
   }
 
   private schedulePoll(): void {
-    window.clearTimeout(this.timer);
+    clearTimeout(this.timer);
     if (this.disposed) return;
     if (!this.records.peek().some((r) => r.dev)) {
       // Nothing unpacked: just look for new folders in <workspace folder>/extensions now and then.
       if (!this.services.workspace.root.peek()) return;
-      this.timer = window.setTimeout(() => {
-        if (document.visibilityState === "hidden") return this.schedulePoll();
+      this.timer = setTimeout(() => {
+        if (this.services.hasScreen && document.visibilityState === "hidden")
+          return this.schedulePoll();
         void this.rescanWorkspace().finally(() => this.schedulePoll());
       }, FOLDER_POLL_MS);
       return;
     }
-    this.timer = window.setTimeout(() => {
-      if (document.visibilityState === "hidden") return this.schedulePoll();
+    this.timer = setTimeout(() => {
+      if (this.services.hasScreen && document.visibilityState === "hidden")
+        return this.schedulePoll();
       void this.refresh().catch(() => this.schedulePoll());
     }, DEV_POLL_MS);
   }
@@ -1272,7 +1274,7 @@ export class ExtensionManager implements Disposable {
 
   dispose(): void {
     this.disposed = true;
-    window.clearTimeout(this.timer);
+    clearTimeout(this.timer);
     for (const loaded of this.loaded.values()) loaded.runtime.dispose();
     this.loaded.clear();
     this.subscriptions.dispose();

@@ -49,13 +49,41 @@ import { registerTrustCommands } from "./trustCommands";
 import { registerUpdates } from "./updates";
 import { welcomeViewDescriptor } from "./views";
 
-/** The workbench is passed in because these commands drive the shell directly. */
+/** What these commands drive of the window's shell. */
+export type WorkbenchShell = Pick<Workbench, "showSidebarView" | "dockSize" | "sidebarHasFocus">;
+
+/**
+ * The shell where there is no window: a view shown becomes the active one in the registry (what
+ * `ide://layout` reports), and there is nothing to focus or measure.
+ */
+function screenlessShell(services: WorkbenchServices): WorkbenchShell {
+  const { views, layout } = services;
+  return {
+    showSidebarView: (viewId) => {
+      if (views.inDock.peek().has(viewId)) return views.dockHost?.reveal(viewId, false) ?? false;
+      const home = views.sectionHost(viewId);
+      if (home) views.setSection(viewId, { collapsed: false });
+      if (!views.activate(home ?? viewId)) return false;
+      layout.sidebarVisible.value = true;
+      return true;
+    },
+    dockSize: () => ({ width: 0, height: 0 }),
+    sidebarHasFocus: () => false,
+  };
+}
+
+/**
+ * The workbench is passed in because these commands drive the shell directly; null where there is
+ * no window (a screenless session): the commands and state are registered all the same, and what
+ * only a page can do is left out.
+ */
 export function createWorkbenchExtension(
-  workbench: Workbench,
+  mounted: Workbench | null,
 ): BuiltinExtension<WorkbenchServices> {
   return {
     manifest,
     activate({ subscriptions: sub, services }) {
+      const workbench: WorkbenchShell = mounted ?? screenlessShell(services);
       registerCommandProgress(sub, services);
       const { dispatcher, layout, persistence, workspace, dock, notifications } = services;
       sub.add(dock.views.register(welcomeViewDescriptor(services)));
@@ -66,14 +94,15 @@ export function createWorkbenchExtension(
       // The whole status bar or single items hidden (D179, D383).
       registerStatusBarCommands(sub, services);
       // Centered layout (D192, VS Code's): text editors keep a readable width on wide screens.
-      sub.add(
-        effect(() => {
-          services.settings.version.value;
-          const on = services.settings.peek<boolean>("workbench.editor.centeredLayout") === true;
-          document.querySelector(".workbench")?.classList.toggle("is-centered-layout", on);
-          return undefined;
-        }),
-      );
+      if (services.hasScreen)
+        sub.add(
+          effect(() => {
+            services.settings.version.value;
+            const on = services.settings.peek<boolean>("workbench.editor.centeredLayout") === true;
+            document.querySelector(".workbench")?.classList.toggle("is-centered-layout", on);
+            return undefined;
+          }),
+        );
       sub.add(
         dispatcher.register({
           id: "layout.toggleCenteredLayout",
@@ -172,6 +201,7 @@ export function createWorkbenchExtension(
             selector: s.string().describe("Only the element matching this CSS selector").optional(),
           }),
           effects: ["read"],
+          needsScreen: true,
           run: async ({ save, open, inline, view, selector }, ctx) => {
             // Menus and the palette close first, so they aren't in the picture.
             await nextPaint();
@@ -203,6 +233,13 @@ export function createWorkbenchExtension(
         await persistence.flush();
         return true;
       };
+      /** The ones that act on the window itself: there is nothing to do without one. */
+      const onlyWithWindow = new Set([
+        "window.minimize",
+        "window.toggleMaximize",
+        "window.toggleFullscreen",
+        "window.close",
+      ]);
       const windowCommand = (
         id: string,
         title: string,
@@ -217,6 +254,7 @@ export function createWorkbenchExtension(
             description,
             input: s.empty(),
             effects: [],
+            needsScreen: onlyWithWindow.has(id),
             run,
           }),
         );
@@ -282,27 +320,32 @@ export function createWorkbenchExtension(
         setZoom(zoomLevel() - 1),
       );
       windowCommand("window.zoomReset", "Reset zoom", "Back to 100 %.", () => setZoom(0));
-      sub.add(
-        effect(() => {
-          services.settings.version.value;
-          const scale = 1.2 ** zoomLevel();
-          void windowIpc.setZoom(scale).catch(() => {});
-          return undefined;
-        }),
-      );
-      // Header buttons always visible (D169; on by default since D196): off, they show on hover
-      // or focus.
-      sub.add(
-        effect(() => {
-          services.settings.version.value;
-          const always = services.settings.peek<boolean>("workbench.view.alwaysShowHeaderActions");
-          document.documentElement.toggleAttribute("data-header-actions", always !== false);
-          return undefined;
-        }),
-      );
-      sub.add({
-        dispose: () => document.documentElement.removeAttribute("data-header-actions"),
-      });
+      // The settings applied to the window's page: only where there is one.
+      if (services.hasScreen) {
+        sub.add(
+          effect(() => {
+            services.settings.version.value;
+            const scale = 1.2 ** zoomLevel();
+            void windowIpc.setZoom(scale).catch(() => {});
+            return undefined;
+          }),
+        );
+        // Header buttons always visible (D169; on by default since D196): off, they show on hover
+        // or focus.
+        sub.add(
+          effect(() => {
+            services.settings.version.value;
+            const always = services.settings.peek<boolean>(
+              "workbench.view.alwaysShowHeaderActions",
+            );
+            document.documentElement.toggleAttribute("data-header-actions", always !== false);
+            return undefined;
+          }),
+        );
+        sub.add({
+          dispose: () => document.documentElement.removeAttribute("data-header-actions"),
+        });
+      }
       windowCommand(
         "workbench.about",
         "About",
@@ -349,10 +392,11 @@ export function createWorkbenchExtension(
         },
       );
       // OS-initiated close (Alt+F4, Cmd+Q, dock) goes through the same checks.
-      void windowIpc
-        .onCloseRequested(closeWindow)
-        .then((d) => sub.add(d))
-        .catch((err) => console.warn("close handler unavailable", err));
+      if (services.hasScreen)
+        void windowIpc
+          .onCloseRequested(closeWindow)
+          .then((d) => sub.add(d))
+          .catch((err) => console.warn("close handler unavailable", err));
 
       // ---- Startup timings (all builds; PLAN §13 budgets) --------------------------------
       sub.add(
@@ -474,7 +518,7 @@ export function createWorkbenchExtension(
       let openingLine: HTMLElement | null = null;
       sub.add(
         effect(() => {
-          const opening = workspace.opening.value !== null;
+          const opening = services.hasScreen && workspace.opening.value !== null;
           if (opening && !openingLine) {
             openingLine = document.createElement("div");
             openingLine.className = "progress-line workspace-opening";

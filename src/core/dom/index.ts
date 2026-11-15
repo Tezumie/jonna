@@ -1,5 +1,6 @@
 // Minimal DOM helpers: `h()` to build elements, `on()` / `delegate()` to listen with a Disposable.
 // No virtual DOM. Components create their DOM once and update it in place (often from effects).
+import { NeedsScreenError } from "../dispatcher/screen";
 import { type Disposable, toDisposable } from "../lifecycle/index";
 
 export type Child = Node | string | number | null | undefined | false | readonly Child[];
@@ -87,7 +88,10 @@ export function setDocumentForTests(doc: DocumentLike | undefined): void {
   testDocument = doc;
 }
 function currentDocument(): DocumentLike {
-  return testDocument ?? globalThis.document;
+  const doc = testDocument ?? (globalThis as { document?: Document }).document;
+  // No page (a session without a screen): say so, instead of failing on the first member read.
+  if (!doc) throw new NeedsScreenError("Building a view");
+  return doc;
 }
 
 // ---- Events -----------------------------------------------------------------

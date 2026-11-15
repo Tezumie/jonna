@@ -136,29 +136,32 @@ export const explorerExtension: BuiltinExtension<WorkbenchServices> = {
     // A drag coming in from the system while the explorer is hidden opens it (once per drag),
     // so there's somewhere to drop.
     let opened = false;
-    void dragDropIpc
-      .listen((e) => {
-        if (e.kind !== "over") opened = false;
-        else if (!opened && workspace.root.peek() && !services.layout.sidebarVisible.peek()) {
-          opened = true;
-          if (!document.elementFromPoint(e.x, e.y)?.closest("[data-os-drop]"))
-            void dispatcher.execute("view.show", { id: "explorer.view" }).catch(() => {});
-        }
-        if (e.kind === "leave") return view?.osDragOver(null);
-        // Over a part that takes system drops itself (the agent chat attaches them).
-        if (document.elementFromPoint(e.x, e.y)?.closest("[data-os-drop]"))
-          return view?.osDragOver(null);
-        const dir = view?.canEditInline() ? view.dropFolderAt(e.x, e.y) : null;
-        if (e.kind === "over") return view?.canEditInline() && view.osDragOver({ x: e.x, y: e.y });
-        view?.osDragOver(null);
-        if (dir) {
-          void dispatcher.execute("explorer.importDropped", { dest: dir }).catch(() => {});
-          return;
-        }
-        // Elsewhere: open them (files in an editor, a folder as or beside the workspace, D281).
-        void dispatcher.execute("explorer.openDropped", { x: e.x, y: e.y }).catch(() => {});
-      })
-      .then((d) => sub.add(d));
+    // Only a window is dragged onto.
+    if (services.hasScreen)
+      void dragDropIpc
+        .listen((e) => {
+          if (e.kind !== "over") opened = false;
+          else if (!opened && workspace.root.peek() && !services.layout.sidebarVisible.peek()) {
+            opened = true;
+            if (!document.elementFromPoint(e.x, e.y)?.closest("[data-os-drop]"))
+              void dispatcher.execute("view.show", { id: "explorer.view" }).catch(() => {});
+          }
+          if (e.kind === "leave") return view?.osDragOver(null);
+          // Over a part that takes system drops itself (the agent chat attaches them).
+          if (document.elementFromPoint(e.x, e.y)?.closest("[data-os-drop]"))
+            return view?.osDragOver(null);
+          const dir = view?.canEditInline() ? view.dropFolderAt(e.x, e.y) : null;
+          if (e.kind === "over")
+            return view?.canEditInline() && view.osDragOver({ x: e.x, y: e.y });
+          view?.osDragOver(null);
+          if (dir) {
+            void dispatcher.execute("explorer.importDropped", { dest: dir }).catch(() => {});
+            return;
+          }
+          // Elsewhere: open them (files in an editor, a folder as or beside the workspace, D281).
+          void dispatcher.execute("explorer.openDropped", { x: e.x, y: e.y }).catch(() => {});
+        })
+        .then((d) => sub.add(d));
 
     sub.add(
       dispatcher.register({

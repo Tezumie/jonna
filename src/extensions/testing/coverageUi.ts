@@ -493,7 +493,8 @@ export function registerCoverage(deps: CoverageDeps): { inline: Signal<boolean> 
       return { on: next };
     },
   });
-  registerCoverageToolbar(sub, services, tests, inline);
+  // The toolbar floats over the editors: only where there is a window.
+  if (services.hasScreen) registerCoverageToolbar(sub, services, tests, inline);
   // The editor's coverage actions (VS Code's floating coverage toolbar), in its title bar while a
   // coverage report is loaded: previous / next uncovered line, inline coverage on or off.
   sub.add(

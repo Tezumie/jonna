@@ -85,7 +85,7 @@ export function registerCloseDeleted(sub: DisposableStore, services: WorkbenchSe
   const missingSince = new Map<string, number>();
   let busy = false;
   const check = async () => {
-    if (busy || document.hidden) return;
+    if (busy || (services.hasScreen && document.hidden)) return;
     busy = true;
     try {
       const live = new Set<string>();
@@ -114,11 +114,12 @@ export function registerCloseDeleted(sub: DisposableStore, services: WorkbenchSe
   };
   const timer = setInterval(() => void check(), POLL_MS);
   const onFocus = () => void check();
-  window.addEventListener("focus", onFocus);
+  // Coming back to the window checks at once; without a screen only the timer does.
+  if (services.hasScreen) window.addEventListener("focus", onFocus);
   sub.add({
     dispose: () => {
       clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
+      if (services.hasScreen) window.removeEventListener("focus", onFocus);
     },
   });
 }

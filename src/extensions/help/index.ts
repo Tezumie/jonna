@@ -22,7 +22,7 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
     const { dispatcher, dock } = services;
     // The session log's frontend side first, so later activation errors are in it (D204).
     const capture = sub.add(new ErrorCapture(services));
-    capture.install(window);
+    capture.install(services.hasScreen ? window : null);
     registerReportCommands(sub, services, capture);
     // Output channels, log.level, the Output tab (D209).
     registerOutput(sub, services);

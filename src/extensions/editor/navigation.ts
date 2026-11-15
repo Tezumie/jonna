@@ -107,20 +107,22 @@ export function registerNavigation(sub: DisposableStore, services: WorkbenchServ
   );
 
   // The mouse's back and forward buttons (VS Code's): no page history to step through here.
-  sub.add(
-    on(window, "mouseup", (e) => {
-      if (e.button !== 3 && e.button !== 4) return;
-      e.preventDefault();
-      void dispatcher
-        .execute(e.button === 3 ? "workbench.navigateBack" : "workbench.navigateForward", {})
-        .catch(() => {});
-    }),
-  );
-  sub.add(
-    on(window, "mousedown", (e) => {
-      if (e.button === 3 || e.button === 4) e.preventDefault();
-    }),
-  );
+  if (services.hasScreen) {
+    sub.add(
+      on(window, "mouseup", (e) => {
+        if (e.button !== 3 && e.button !== 4) return;
+        e.preventDefault();
+        void dispatcher
+          .execute(e.button === 3 ? "workbench.navigateBack" : "workbench.navigateForward", {})
+          .catch(() => {});
+      }),
+    );
+    sub.add(
+      on(window, "mousedown", (e) => {
+        if (e.button === 3 || e.button === 4) e.preventDefault();
+      }),
+    );
+  }
 
   // Where the buttons are, for the title bar and the tab strips.
   sub.add(

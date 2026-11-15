@@ -387,28 +387,29 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
 
     // Files dropped from the OS onto a terminal: their paths typed at the prompt, quoted for the
     // shell (VS Code and every terminal app do this). The view is marked `data-os-drop`, so the
-    // explorer leaves the drop alone.
-    void dragDropIpc
-      .listen((e) => {
-        if (e.kind !== "drop" || !e.paths.length) return;
-        const el = document.elementFromPoint(e.x, e.y)?.closest<HTMLElement>(".terminal-pane");
-        const view = [...views.values()].find(
-          (v) => v.element === el || v.element.contains(el ?? null),
-        );
-        const t = view?.instance;
-        if (!t || t.exitCode.peek() !== null) return;
-        void ptyIpc
-          .write(
-            t.id,
-            `${e.paths.map((p) => quotePathForShell(p, t.info.shell, t.info.msys)).join(" ")} `,
-          )
-          .catch(() => {});
-        t.renderer.focus();
-      })
-      .then((d) => {
-        if (sub.isDisposed) d.dispose();
-        else sub.add(d);
-      });
+    // explorer leaves the drop alone. Only a window is dragged onto.
+    if (services.hasScreen)
+      void dragDropIpc
+        .listen((e) => {
+          if (e.kind !== "drop" || !e.paths.length) return;
+          const el = document.elementFromPoint(e.x, e.y)?.closest<HTMLElement>(".terminal-pane");
+          const view = [...views.values()].find(
+            (v) => v.element === el || v.element.contains(el ?? null),
+          );
+          const t = view?.instance;
+          if (!t || t.exitCode.peek() !== null) return;
+          void ptyIpc
+            .write(
+              t.id,
+              `${e.paths.map((p) => quotePathForShell(p, t.info.shell, t.info.msys)).join(" ")} `,
+            )
+            .catch(() => {});
+          t.renderer.focus();
+        })
+        .then((d) => {
+          if (sub.isDisposed) d.dispose();
+          else sub.add(d);
+        });
 
     const tabOf = (id: number) => [...views.values()].find((v) => v.instance?.id === id);
     const recentTerminalTab = () => dock.recentTab((t) => t.viewType === "terminal");
