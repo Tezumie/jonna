@@ -10,7 +10,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +34,12 @@ const TIMEOUT_MS = 120_000;
 const gitConfig = join(scratch, "gitconfig");
 const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
 const git = (cwd, ...args) =>
-  execFileSync("git", args, { cwd, env: gitEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  execFileSync("git", args, {
+    cwd,
+    env: gitEnv,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 
 function encodeFrame(header) {
   const head = Buffer.from(JSON.stringify(header), "utf8");
@@ -207,7 +212,7 @@ await rm(scratch, { recursive: true, force: true });
 await mkdir(scratch, { recursive: true });
 await writeFile(
   gitConfig,
-  "[user]\n\tname = Tester\n\temail = tester@example.com\n[init]\n\tdefaultBranch = main\n[core]\n\tautocrlf = false\n[protocol \"file\"]\n\tallow = always\n",
+  '[user]\n\tname = Tester\n\temail = tester@example.com\n[init]\n\tdefaultBranch = main\n[core]\n\tautocrlf = false\n[protocol "file"]\n\tallow = always\n',
 );
 const hosts = [];
 
@@ -472,28 +477,73 @@ try {
     await writeFile(join(deskProject, "debug.log"), "ignored");
 
     await desk.call("workspace_open", { path: deskProject });
-    const made = await desk.sync("snapshot_create", { root: deskProject, collection: "snap.p1", everything: false, force: false });
-    check(made && made.summary.kind === "git" && made.summary.branch === "feature", JSON.stringify(made?.summary));
+    const made = await desk.sync("snapshot_create", {
+      root: deskProject,
+      collection: "snap.p1",
+      everything: false,
+      force: false,
+    });
+    check(
+      made && made.summary.kind === "git" && made.summary.branch === "feature",
+      JSON.stringify(made?.summary),
+    );
     check(made.summary.files === 3 && made.summary.deleted === 1, JSON.stringify(made.summary));
-    check(made.summary.deviceName === "Desk" && made.summary.head === git(deskProject, "rev-parse", "HEAD"), "who and where");
-    const again = await desk.sync("snapshot_create", { root: deskProject, collection: "snap.p1", everything: false, force: false });
+    check(
+      made.summary.deviceName === "Desk" &&
+        made.summary.head === git(deskProject, "rev-parse", "HEAD"),
+      "who and where",
+    );
+    const again = await desk.sync("snapshot_create", {
+      root: deskProject,
+      collection: "snap.p1",
+      everything: false,
+      force: false,
+    });
     check(again === null, "nothing changed: no second snapshot");
 
     const listed = await laptop.sync("snapshot_files", { collection: "snap.p1", id: made.id });
     check(
       JSON.stringify(listed.map((f) => [f.path, f.deleted])) ===
-        JSON.stringify([["a.txt", false], ["b.txt", false], ["gone.txt", true], ["new dir/untracked file.txt", false]]),
+        JSON.stringify([
+          ["a.txt", false],
+          ["b.txt", false],
+          ["gone.txt", true],
+          ["new dir/untracked file.txt", false],
+        ]),
       JSON.stringify(listed),
     );
 
     await laptop.call("workspace_open", { path: laptopProject });
-    check((await laptop.sync("snapshot_local_changes", { root: laptopProject })).length === 0, "the laptop's copy is clean");
-    const restored = await laptop.sync("snapshot_restore", { collection: "snap.p1", id: made.id, root: laptopProject, stash: false });
-    check(restored.files === 3 && restored.deleted === 1 && restored.branch === "feature" && !restored.detached, JSON.stringify(restored));
-    check(git(laptopProject, "rev-parse", "HEAD") === git(deskProject, "rev-parse", "HEAD"), "the same commit");
+    check(
+      (await laptop.sync("snapshot_local_changes", { root: laptopProject })).length === 0,
+      "the laptop's copy is clean",
+    );
+    const restored = await laptop.sync("snapshot_restore", {
+      collection: "snap.p1",
+      id: made.id,
+      root: laptopProject,
+      stash: false,
+    });
+    check(
+      restored.files === 3 &&
+        restored.deleted === 1 &&
+        restored.branch === "feature" &&
+        !restored.detached,
+      JSON.stringify(restored),
+    );
+    check(
+      git(laptopProject, "rev-parse", "HEAD") === git(deskProject, "rev-parse", "HEAD"),
+      "the same commit",
+    );
     check(git(laptopProject, "symbolic-ref", "--short", "HEAD") === "feature", "the same branch");
-    check(git(laptopProject, "status", "--porcelain") === git(deskProject, "status", "--porcelain"), `status: ${git(laptopProject, "status", "--porcelain")}`);
-    check(git(laptopProject, "diff", "--cached") === git(deskProject, "diff", "--cached"), "what was staged");
+    check(
+      git(laptopProject, "status", "--porcelain") === git(deskProject, "status", "--porcelain"),
+      `status: ${git(laptopProject, "status", "--porcelain")}`,
+    );
+    check(
+      git(laptopProject, "diff", "--cached") === git(deskProject, "diff", "--cached"),
+      "what was staged",
+    );
     const [here, there] = [await tree(laptopProject), await tree(deskProject)];
     delete there["node_modules/dep/index.js"];
     delete there["debug.log"];
@@ -504,7 +554,12 @@ try {
     const deskProject = join(scratch, "desk-project");
     const laptopProject = join(scratch, "laptop-project");
     await writeFile(join(deskProject, "b.txt"), "two changed again on the desk\n");
-    const made = await desk.sync("snapshot_create", { root: deskProject, collection: "snap.p1", everything: false, force: false });
+    const made = await desk.sync("snapshot_create", {
+      root: deskProject,
+      collection: "snap.p1",
+      everything: false,
+      force: false,
+    });
     check(made !== null, "a changed file makes a new snapshot");
     // Unchanged files weren't read or sent again.
     check(made.uploadedBytes < 2000, `uploaded ${made.uploadedBytes}`);
@@ -512,22 +567,60 @@ try {
     const dirty = await laptop.sync("snapshot_local_changes", { root: laptopProject });
     check(dirty.includes("local.txt"), JSON.stringify(dirty));
     await fails(
-      laptop.sync("snapshot_restore", { collection: "snap.p1", id: made.id, root: laptopProject, stash: false }),
+      laptop.sync("snapshot_restore", {
+        collection: "snap.p1",
+        id: made.id,
+        root: laptopProject,
+        stash: false,
+      }),
       "SyncDirty",
       "a restore over local changes",
     );
-    check((await readFile(join(laptopProject, "local.txt"), "utf8")).includes("own work"), "nothing was touched");
-    const restored = await laptop.sync("snapshot_restore", { collection: "snap.p1", id: made.id, root: laptopProject, stash: true });
+    check(
+      (await readFile(join(laptopProject, "local.txt"), "utf8")).includes("own work"),
+      "nothing was touched",
+    );
+    const restored = await laptop.sync("snapshot_restore", {
+      collection: "snap.p1",
+      id: made.id,
+      root: laptopProject,
+      stash: true,
+    });
     check(restored.stashed?.includes("Desk"), JSON.stringify(restored));
-    check(git(laptopProject, "stash", "list").includes("Before continuing from Desk"), "the local work is in a stash");
-    check((await readFile(join(laptopProject, "b.txt"), "utf8")) === "two changed again on the desk\n", "the new content");
-    check(git(laptopProject, "status", "--porcelain") === git(deskProject, "status", "--porcelain"), "status again");
+    check(
+      git(laptopProject, "stash", "list").includes("Before continuing from Desk"),
+      "the local work is in a stash",
+    );
+    check(
+      (await readFile(join(laptopProject, "b.txt"), "utf8")) === "two changed again on the desk\n",
+      "the new content",
+    );
+    check(
+      git(laptopProject, "status", "--porcelain") === git(deskProject, "status", "--porcelain"),
+      "status again",
+    );
     // One file from the earlier snapshot.
-    const first = (await laptop.sync("changes", { since: 0 })).records.filter((r) => r.collection === "snap.p1" && !r.deleted).map((r) => r.id).sort()[0];
-    await laptop.sync("snapshot_restore_file", { collection: "snap.p1", id: first, root: laptopProject, path: "b.txt" });
-    check((await readFile(join(laptopProject, "b.txt"), "utf8")) === "two changed\n", "one file, from the older snapshot");
+    const first = (await laptop.sync("changes", { since: 0 })).records
+      .filter((r) => r.collection === "snap.p1" && !r.deleted)
+      .map((r) => r.id)
+      .sort()[0];
+    await laptop.sync("snapshot_restore_file", {
+      collection: "snap.p1",
+      id: first,
+      root: laptopProject,
+      path: "b.txt",
+    });
+    check(
+      (await readFile(join(laptopProject, "b.txt"), "utf8")) === "two changed\n",
+      "one file, from the older snapshot",
+    );
     await fails(
-      laptop.sync("snapshot_restore_file", { collection: "snap.p1", id: first, root: laptopProject, path: "../outside.txt" }),
+      laptop.sync("snapshot_restore_file", {
+        collection: "snap.p1",
+        id: first,
+        root: laptopProject,
+        path: "../outside.txt",
+      }),
       "Sync",
       "a path outside the project",
     );
@@ -542,38 +635,94 @@ try {
     git(source, "commit", "-q", "-m", "one");
     await writeFile(join(source, "note.txt"), "uncommitted\n");
     await desk.call("workspace_open", { path: source });
-    const first = await desk.sync("snapshot_create", { root: source, collection: "snap.solo", everything: false, force: false });
+    const first = await desk.sync("snapshot_create", {
+      root: source,
+      collection: "snap.solo",
+      everything: false,
+      force: false,
+    });
     check(first.summary.kind === "git" && first.summary.files === 1, JSON.stringify(first.summary));
 
     // The other computer has nothing: an empty folder becomes the project.
     const target = join(scratch, "laptop-solo");
     await mkdir(target, { recursive: true });
     await laptop.call("workspace_open", { path: target });
-    const restored = await laptop.sync("snapshot_restore", { collection: "snap.solo", id: first.id, root: target, stash: false });
+    const restored = await laptop.sync("snapshot_restore", {
+      collection: "snap.solo",
+      id: first.id,
+      root: target,
+      stash: false,
+    });
     check(restored.branch === "main" && restored.files === 1, JSON.stringify(restored));
-    check(git(target, "log", "--format=%H %s") === git(source, "log", "--format=%H %s"), "the same history");
-    check(JSON.stringify(await tree(target)) === JSON.stringify(await tree(source)), "the same files");
+    check(
+      git(target, "log", "--format=%H %s") === git(source, "log", "--format=%H %s"),
+      "the same history",
+    );
+    check(
+      JSON.stringify(await tree(target)) === JSON.stringify(await tree(source)),
+      "the same files",
+    );
 
     // A second commit: the next snapshot carries a small bundle, not the history again.
     await writeFile(join(source, "note.txt"), "committed now\n");
     git(source, "add", "-A");
     git(source, "commit", "-q", "-m", "two");
-    const second = await desk.sync("snapshot_create", { root: source, collection: "snap.solo", everything: false, force: false });
-    check(second.uploadedBytes < 20_000, `the second snapshot uploaded ${second.uploadedBytes} bytes`);
-    const next = await laptop.sync("snapshot_restore", { collection: "snap.solo", id: second.id, root: target, stash: false });
+    const second = await desk.sync("snapshot_create", {
+      root: source,
+      collection: "snap.solo",
+      everything: false,
+      force: false,
+    });
+    check(
+      second.uploadedBytes < 20_000,
+      `the second snapshot uploaded ${second.uploadedBytes} bytes`,
+    );
+    const next = await laptop.sync("snapshot_restore", {
+      collection: "snap.solo",
+      id: second.id,
+      root: target,
+      stash: false,
+    });
     check(!next.detached, JSON.stringify(next));
-    check(git(target, "log", "--format=%H %s") === git(source, "log", "--format=%H %s"), "both commits");
+    check(
+      git(target, "log", "--format=%H %s") === git(source, "log", "--format=%H %s"),
+      "both commits",
+    );
     check(git(target, "status", "--porcelain") === "", "clean, as on the desk");
-    check(git(target, "stash", "list") === "", "the first snapshot's changes were replaced, not stashed");
+    check(
+      git(target, "stash", "list") === "",
+      "the first snapshot's changes were replaced, not stashed",
+    );
     // The laptop holds the desk's state: it stores nothing of its own until something changes.
-    const own = await laptop.sync("snapshot_create", { root: target, collection: "snap.solo", everything: false, force: false });
+    const own = await laptop.sync("snapshot_create", {
+      root: target,
+      collection: "snap.solo",
+      everything: false,
+      force: false,
+    });
     check(own === null, "no snapshot of a state that is a snapshot");
     await writeFile(join(target, "laptop.txt"), "work done on the laptop\n");
-    const mine = await laptop.sync("snapshot_create", { root: target, collection: "snap.solo", everything: false, force: false });
-    check(mine?.summary.deviceName === "Laptop" && mine.summary.files === 1, JSON.stringify(mine?.summary));
+    const mine = await laptop.sync("snapshot_create", {
+      root: target,
+      collection: "snap.solo",
+      everything: false,
+      force: false,
+    });
+    check(
+      mine?.summary.deviceName === "Laptop" && mine.summary.files === 1,
+      JSON.stringify(mine?.summary),
+    );
     // And back on the desk, which was left as that second snapshot.
-    const back = await desk.sync("snapshot_restore", { collection: "snap.solo", id: mine.id, root: source, stash: false });
-    check(back.files === 1 && (await readFile(join(source, "laptop.txt"), "utf8")).includes("laptop"), JSON.stringify(back));
+    const back = await desk.sync("snapshot_restore", {
+      collection: "snap.solo",
+      id: mine.id,
+      root: source,
+      stash: false,
+    });
+    check(
+      back.files === 1 && (await readFile(join(source, "laptop.txt"), "utf8")).includes("laptop"),
+      JSON.stringify(back),
+    );
   });
 
   await step("a folder without git travels, minus the heavy folders", async () => {
@@ -584,41 +733,86 @@ try {
     await writeFile(join(source, "src", "deep", "main.py"), "print('hi')\n");
     await writeFile(join(source, "node_modules", "x", "index.js"), "heavy");
     await desk.call("workspace_open", { path: source });
-    const made = await desk.sync("snapshot_create", { root: source, collection: "snap.folder", everything: false, force: false });
+    const made = await desk.sync("snapshot_create", {
+      root: source,
+      collection: "snap.folder",
+      everything: false,
+      force: false,
+    });
     check(made.summary.kind === "folder" && made.summary.files === 2, JSON.stringify(made.summary));
     const target = join(scratch, "laptop-folder");
     await mkdir(target, { recursive: true });
     await laptop.call("workspace_open", { path: target });
-    const restored = await laptop.sync("snapshot_restore", { collection: "snap.folder", id: made.id, root: target, stash: false });
+    const restored = await laptop.sync("snapshot_restore", {
+      collection: "snap.folder",
+      id: made.id,
+      root: target,
+      stash: false,
+    });
     check(restored.files === 2, JSON.stringify(restored));
-    check(JSON.stringify(await tree(target)) === JSON.stringify({ "readme.md": "# hello\n", "src/deep/main.py": "print('hi')\n" }), JSON.stringify(await tree(target)));
+    check(
+      JSON.stringify(await tree(target)) ===
+        JSON.stringify({ "readme.md": "# hello\n", "src/deep/main.py": "print('hi')\n" }),
+      JSON.stringify(await tree(target)),
+    );
     await fails(
-      desk.sync("snapshot_create", { root: scratch, collection: "snap.folder", everything: false, force: true }),
+      desk.sync("snapshot_create", {
+        root: scratch,
+        collection: "snap.folder",
+        everything: false,
+        force: true,
+      }),
       "OutsideScope",
       "a folder that isn't the open one",
     );
   });
 
   await step("a pinned snapshot is named; a deleted one frees its storage", async () => {
-    const all = (await desk.sync("changes", { since: 0 })).records.filter((r) => r.collection === "snap.solo" && !r.deleted);
+    const all = (await desk.sync("changes", { since: 0 })).records.filter(
+      (r) => r.collection === "snap.solo" && !r.deleted,
+    );
     check(all.length === 3, `${all.length} snapshots`);
-    await desk.sync("snapshot_pin", { collection: "snap.solo", id: all[0].id, name: "Before the rewrite" });
+    await desk.sync("snapshot_pin", {
+      collection: "snap.solo",
+      id: all[0].id,
+      name: "Before the rewrite",
+    });
     const pinned = await laptop.sync("record_get", { collection: "snap.solo", id: all[0].id });
-    check(JSON.parse(pinned.text).pinned === "Before the rewrite" && pinned.refs === all[0].refs, pinned.text);
+    check(
+      JSON.parse(pinned.text).pinned === "Before the rewrite" && pinned.refs === all[0].refs,
+      pinned.text,
+    );
     // Still restorable after the pin rewrote its record.
     const files = await laptop.sync("snapshot_files", { collection: "snap.solo", id: all[0].id });
     check(files.length === 1, JSON.stringify(files));
     const before = (await desk.sync("status")).usageBytes;
-    for (const r of (await desk.sync("changes", { since: 0 })).records.filter((x) => x.collection === "snap.solo" && !x.deleted)) {
-      const gone = await desk.sync("record_put", { collection: "snap.solo", id: r.id, expect: r.version, text: null });
+    for (const r of (await desk.sync("changes", { since: 0 })).records.filter(
+      (x) => x.collection === "snap.solo" && !x.deleted,
+    )) {
+      const gone = await desk.sync("record_put", {
+        collection: "snap.solo",
+        id: r.id,
+        expect: r.version,
+        text: null,
+      });
       check(gone.outcome === "done", JSON.stringify(gone));
     }
     const after = await desk.sync("gc");
     check(typeof after === "number" && after < before - 250_000, `${before} then ${after}`);
-    await fails(laptop.sync("snapshot_files", { collection: "snap.solo", id: all[0].id }), "Sync", "a deleted snapshot");
+    await fails(
+      laptop.sync("snapshot_files", { collection: "snap.solo", id: all[0].id }),
+      "Sync",
+      "a deleted snapshot",
+    );
     // What the other snapshots need is still there.
-    const kept = (await desk.sync("changes", { since: 0 })).records.find((r) => r.collection === "snap.folder" && !r.deleted);
-    check((await laptop.sync("snapshot_files", { collection: "snap.folder", id: kept.id })).length === 2, "the others still open");
+    const kept = (await desk.sync("changes", { since: 0 })).records.find(
+      (r) => r.collection === "snap.folder" && !r.deleted,
+    );
+    check(
+      (await laptop.sync("snapshot_files", { collection: "snap.folder", id: kept.id })).length ===
+        2,
+      "the others still open",
+    );
   });
 
   await step("a third computer joins with the recovery key", async () => {
