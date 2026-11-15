@@ -1,10 +1,14 @@
 //! Browser previews (crate::browser): proxies for local dev servers and workspace folders,
 //! external windows with the bridge, sites shown inside a tab (embed) and downloads.
 
-use tauri::{AppHandle, State, Webview};
+use tauri::State;
+#[cfg(feature = "desktop")]
+use tauri::{AppHandle, Webview};
 
 use crate::browser::netlog::BrowserEvent;
-use crate::browser::{self, ProxyInfo, WINDOW_PREFIX};
+#[cfg(feature = "desktop")]
+use crate::browser::WINDOW_PREFIX;
+use crate::browser::{self, ProxyInfo};
 use crate::error::{Error, Result};
 use crate::AppState;
 
@@ -32,6 +36,7 @@ pub async fn browser_proxy_stop_all(state: State<'_, AppState>) -> Result<()> {
 
 /// Opens an http(s) page in its own window with the bridge; returns the window label. `popup`:
 /// another tab's `window.open` asked for it (its bridge gets a relaying `window.opener`).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_window_open(
     app: AppHandle,
@@ -49,6 +54,7 @@ pub async fn browser_window_open(
 /// Shows an http(s) page in a webview over a browser tab's page area (`browser.embedSites`):
 /// `host` is the IDE window that shows the tab ("main" or an auxiliary window), `bounds` the
 /// area in physical pixels. Returns the webview's label (used like a site window's).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_embed_open(
     app: AppHandle,
@@ -73,6 +79,7 @@ pub async fn browser_embed_open(
 }
 
 /// Places a tab's site webview (bounds in physical pixels, shown or hidden, page zoom).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_embed_place(
     app: AppHandle,
@@ -86,12 +93,14 @@ pub async fn browser_embed_place(
 }
 
 /// Gives the keyboard to a tab's site webview.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_embed_focus(app: AppHandle, label: String) -> Result<()> {
     browser::embed::focus(&app, &label)
 }
 
 /// Sends a call to the bridge in an external window.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_window_send(
     app: AppHandle,
@@ -102,6 +111,7 @@ pub async fn browser_window_send(
 }
 
 /// Closes a site's window, or its webview inside a tab.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_window_close(app: AppHandle, label: String) -> Result<()> {
     browser::embed::close(&app, &label)
@@ -120,6 +130,7 @@ pub async fn browser_subscribe(
 
 /// From the bridge in an external window (the only command those pages may call): forwarded to
 /// the IDE's browser Channel. Page data, untrusted.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_bridge_post(
     state: State<'_, AppState>,
@@ -139,6 +150,7 @@ pub async fn browser_bridge_post(
 }
 
 /// The downloads list (previews, site windows, sites inside tabs).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_downloads(
     state: State<'_, AppState>,
@@ -147,12 +159,14 @@ pub async fn browser_downloads(
 }
 
 /// Cancels a running download (Windows only; elsewhere an error says so).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_download_cancel(app: AppHandle, id: u64) -> Result<()> {
     browser::downloads::cancel(&app, id)
 }
 
 /// Opens a finished download with the system's program for it.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_download_open(state: State<'_, AppState>, id: u64) -> Result<()> {
     let path = state.browser.shared.downloads.finished_path(id)?;
@@ -160,6 +174,7 @@ pub async fn browser_download_open(state: State<'_, AppState>, id: u64) -> Resul
 }
 
 /// Shows a finished download in the system's file manager.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_download_reveal(state: State<'_, AppState>, id: u64) -> Result<()> {
     let path = state.browser.shared.downloads.finished_path(id)?;
@@ -167,6 +182,7 @@ pub async fn browser_download_reveal(state: State<'_, AppState>, id: u64) -> Res
 }
 
 /// Forgets finished downloads (the files stay).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_downloads_clear(state: State<'_, AppState>) -> Result<()> {
     state.browser.shared.downloads.clear_finished();
@@ -199,6 +215,7 @@ pub fn browser_bridge_source() -> String {
 /// Trusted input for a browser tab's page (D346): one `Input.*` DevTools protocol call into
 /// webview `label` (the IDE's own, whose frame shows the page, or a site's), in process. The IDE
 /// checks that the point is on the page's frame before it calls.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn browser_trusted_input(
     app: AppHandle,
@@ -276,6 +293,7 @@ pub async fn net_port_open(port: u16) -> Result<bool> {
 
 /// A PNG of a window as it is on screen: the IDE ("main", with its browser tabs) or a browser
 /// window. Returned as raw bytes.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn screenshot_window(
     app: AppHandle,
@@ -294,12 +312,14 @@ pub async fn screenshot_window(
 }
 
 /// The label of the auxiliary window opened last (to screenshot or focus it).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn aux_window_label() -> Result<Option<String>> {
     Ok(crate::aux_window::latest())
 }
 
 /// Closes an auxiliary window (script `window.close()` doesn't on every engine).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn aux_window_close(app: AppHandle, label: String) -> Result<()> {
     use tauri::Manager;

@@ -8,12 +8,14 @@ pub mod agent;
 pub mod agent_windows;
 pub mod app;
 pub mod browser;
+#[cfg(feature = "desktop")]
 pub mod desktop;
 pub mod diagnostics;
 pub mod extensions;
 pub mod fs;
 pub mod git;
 pub mod history;
+#[cfg(feature = "desktop")]
 pub mod instances;
 pub mod mcp;
 pub mod notify;

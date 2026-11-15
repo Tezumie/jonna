@@ -445,6 +445,7 @@ pub async fn fs_copy(state: State<'_, AppState>, path: String, dest_dir: String)
 /// Copies the files and folders last dropped onto the window from the OS into `dest_dir` (a
 /// workspace folder). Only paths the OS reported in a drop can be imported, so the webview can't
 /// use this to read arbitrary files.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn fs_import_dropped(
     state: State<'_, AppState>,
@@ -474,6 +475,7 @@ pub async fn fs_import_dropped(
 /// The paths last dropped onto the window from the OS, each with whether it's a folder (D281:
 /// dropped files open in an editor, a dropped folder opens or joins the workspace). Only paths the
 /// OS reported in a drop are described, so the webview can't probe the disk with this.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn fs_dropped_entries(state: State<'_, AppState>) -> Result<Vec<DroppedEntry>> {
     let dropped = state
@@ -490,6 +492,7 @@ pub async fn fs_dropped_entries(state: State<'_, AppState>) -> Result<Vec<Droppe
         .collect())
 }
 
+#[cfg(feature = "desktop")]
 #[derive(serde::Serialize)]
 pub struct DroppedEntry {
     path: String,
@@ -866,6 +869,7 @@ async fn remote_replace(
 /// Starts a native drag of `paths` (files or folders in the workspace) out of the window, for
 /// other apps to take (D200). Called when an explorer drag leaves the window, with the mouse
 /// button still down. Returns "dropped" or "cancelled".
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn fs_start_drag(
     state: State<'_, AppState>,

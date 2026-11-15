@@ -600,9 +600,11 @@ mod snippet_path_tests {
     }
 }
 
+#[cfg(feature = "desktop")]
 /// Most bytes of a profile file read back (settings, keybindings and snippets are small).
 const MAX_PROFILE_BYTES: u64 = 8 * 1024 * 1024;
 
+#[cfg(feature = "desktop")]
 /// Debug builds (UI tests) may name the file; release builds always ask with the system dialog,
 /// so the frontend can't read or write arbitrary paths through these commands.
 fn test_path(path: Option<String>) -> Option<PathBuf> {
@@ -614,6 +616,7 @@ fn test_path(path: Option<String>) -> Option<PathBuf> {
 }
 
 /// Saves a settings profile (D130) where the user picks: returns the path, or None if cancelled.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn profile_save(
     app: tauri::AppHandle,
@@ -655,6 +658,7 @@ pub async fn profile_save(
 /// the system dialog: the bytes are the raw body, `x-name` the suggested file name. The path comes
 /// only from the dialog (or, in debug builds, `x-test-path` for UI tests), never from the page.
 /// Returns the path, or None if cancelled.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn attachment_save(
     app: tauri::AppHandle,
@@ -713,6 +717,7 @@ pub async fn attachment_save(
 }
 
 /// Reads a settings profile the user picks: `{ path, text }`, or None if cancelled.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn profile_open(
     app: tauri::AppHandle,

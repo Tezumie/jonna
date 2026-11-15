@@ -1,0 +1,17 @@
+[package]
+name = "host-shim-macros"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Shield-1.0.0"
+description = "The command attribute and the command table of the windowless host build."
+
+[lib]
+proc-macro = true
+
+# Build-time only, and already built for serde's and thiserror's derives (MIT/Apache-2.0).
+[dependencies]
+heck = "0.5"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

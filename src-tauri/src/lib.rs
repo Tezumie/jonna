@@ -1,25 +1,45 @@
 //! Native side of the IDE: low-level services exposed as Tauri commands (PLAN §4).
 //! The command dispatcher lives in the frontend; these are the primitives it builds on.
+//!
+//! Built one of two ways (Cargo features): `desktop`, the app with its window, or `host`, the
+//! same services with no window, answering the same commands over a byte stream (`host/`). The
+//! host build compiles this code against `host-shim`, a stand-in with the part of the desktop
+//! framework's API the services use, under the framework's name; what needs a window is behind
+//! `#[cfg(feature = "desktop")]`.
 
+#[cfg(all(feature = "desktop", feature = "host"))]
+compile_error!("the `desktop` and `host` features can't be built together: pick one");
+#[cfg(not(any(feature = "desktop", feature = "host")))]
+compile_error!("build with the `desktop` feature (the default) or the `host` feature");
+
+#[cfg(all(feature = "host", not(feature = "desktop")))]
+extern crate host_shim as tauri;
+
+#[cfg(feature = "desktop")]
 mod accelerators;
 mod accounts;
 mod acp_agents;
 mod agent;
 mod ai;
 mod audit;
+#[cfg(feature = "desktop")]
 mod aux_window;
 mod browser;
 mod cli;
 mod debug;
+#[cfg(feature = "desktop")]
 mod desktop;
 mod diagnostics;
 mod error;
 mod exec;
 mod extensions;
+#[cfg(feature = "desktop")]
 mod frame_guard;
 mod fs;
 mod git;
 mod history;
+#[cfg(feature = "host")]
+mod host;
 mod index;
 mod instances;
 mod ipc;
@@ -29,19 +49,23 @@ mod mcp;
 mod node_runtime;
 mod pty;
 mod remote;
+#[cfg(feature = "desktop")]
 mod screenshot;
 mod search;
 mod speech;
 mod store;
+#[cfg(feature = "desktop")]
 mod update;
 mod url_scheme;
 mod user_folders;
 mod watch;
+#[cfg(feature = "desktop")]
 mod window_bounds;
 mod wsl;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "desktop")]
 use tauri::{Manager, RunEvent};
 
 /// Shared service state, managed by Tauri and injected into commands.
@@ -87,13 +111,173 @@ pub struct AppState {
     /// The session log, extensions off, the version before (D204).
     pub session: ipc::diagnostics::SessionState,
     /// The main window's bounds, remembered for the next start.
+    #[cfg(feature = "desktop")]
     pub window_bounds: window_bounds::Tracker,
+}
+
+/// Now, as the frontend's clock counts (milliseconds since 1970): when the process started.
+pub(crate) fn now_ms() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .unwrap_or(0.0)
+}
+
+/// Opens the session log and notes the start in it (D204): the first thing after the app's
+/// folders are known, so a panic from here on is in the log. Both builds start with this.
+pub(crate) fn open_session(
+    dirs: &store::AppDirs,
+    cli: &cli::CliArgs,
+    version: &str,
+) -> ipc::diagnostics::SessionState {
+    let log = std::sync::Arc::new(diagnostics::log::SessionLog::open(
+        &dirs.logs,
+        dirs.home.as_deref(),
+    ));
+    diagnostics::log::install_panic_hook(log.clone());
+    let extensions_off = diagnostics::take_extensions_off(&dirs.data, cli.disable_extensions);
+    let previous_version = diagnostics::record_version(&dirs.data, version);
+    log.write(
+        "info",
+        "app",
+        &format!(
+            "Started {version} on {} {}{}{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            if cfg!(debug_assertions) {
+                " (debug build)"
+            } else {
+                ""
+            },
+            match extensions_off {
+                Some(_) => ", extensions off",
+                None => "",
+            }
+        ),
+    );
+    ipc::diagnostics::SessionState {
+        log,
+        extensions_off,
+        previous_version,
+    }
+}
+
+impl AppState {
+    /// The services, none started yet. Both builds make them here, the same way.
+    pub(crate) fn new(
+        dirs: store::AppDirs,
+        cli: cli::CliArgs,
+        process_start_ms: f64,
+        session: ipc::diagnostics::SessionState,
+    ) -> Self {
+        let audit = audit::AuditLog::new(&dirs.logs);
+        let history = history::LocalHistory::new(&dirs.data);
+        let data_dir = dirs.data.clone();
+        // What the IDE's git checks before it runs (D392).
+        git::guard::init(&dirs.data);
+        Self {
+            dirs,
+            workspace: fs::Workspace::default(),
+            watcher: watch::Watcher::default(),
+            settings_watcher: watch::Watcher::default(),
+            docs_watcher: watch::Watcher::default(),
+            skills_watcher: watch::Watcher::recursive(),
+            agent_sessions_watcher: watch::Watcher::default(),
+            index: index::FileIndex::default(),
+            search: search::SearchService::default(),
+            git: git::GitService::default(),
+            mcp: mcp::McpService::default(),
+            lsp: lsp::LspHost::default(),
+            debug: debug::DebugSockets::default(),
+            monitor_sockets: agent::socket::MonitorSockets::default(),
+            ai: ai::AiService::default(),
+            exec: std::sync::Arc::new(exec::ExecService::default()),
+            pty: std::sync::Arc::new(pty::PtyManager::default()),
+            audit,
+            history,
+            browser: browser::BrowserService::default(),
+            extensions: extensions::ExtensionStore::new(&data_dir),
+            process_start_ms,
+            cli,
+            dropped: std::sync::Mutex::new(Vec::new()),
+            session,
+            #[cfg(feature = "desktop")]
+            window_bounds: window_bounds::Tracker::default(),
+        }
+    }
+
+    /// Tells the remote layer which folders are this machine's whatever the session works on
+    /// (the app's own, the temp folder, the program's), and connects a session started for a
+    /// remote (`--remote`, D252): its paths are the remote's from the first call on.
+    pub(crate) fn set_local_dirs(&self) {
+        let mut local = vec![
+            self.dirs.data.clone(),
+            self.dirs.config.clone(),
+            self.dirs.logs.clone(),
+            std::env::temp_dir(),
+        ];
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                local.push(dir.to_path_buf());
+            }
+        }
+        remote::set_local_dirs(local);
+        if let Some(authority) = &self.cli.remote {
+            if let Err(e) = remote::set_window_remote(authority) {
+                self.session.log.write("warn", "remote", &e.to_string());
+            }
+        }
+    }
+
+    /// What exiting does to the services: everything they started ends with the app.
+    pub(crate) fn shutdown(&self) {
+        self.pty.kill_all();
+        self.exec.cancel_all();
+        self.lsp.stop_all();
+        // The remote server ends what it started when its connection closes.
+        remote::disconnect();
+        // Also removes mcp.json.
+        let _ = self.mcp.stop();
+        // Claude Code's lock file (~/.claude/ide/<port>.lock) goes too, or /ide
+        // would list an IDE that's gone, with its token on disk.
+        let _ = self.mcp.ide.stop();
+        self.mcp.streams.stop_all();
+    }
 }
 
 /// Started as the command line (D209: `<cli> file:line`, a folder already open, `--wait`):
 /// handed to a running window, the exit code; None to start as a window.
+#[cfg(feature = "desktop")]
 pub fn cli_forward() -> Option<i32> {
     instances::client::forward()
+}
+
+/// The windowless host program (`host/`): its exit code. The services start the program again
+/// for small jobs, as they start the desktop one (`main.rs`): each is answered first, before
+/// anything else runs.
+#[cfg(feature = "host")]
+pub fn host_program() -> i32 {
+    // A remote session's relay (remote/relay.rs, D252): runs a program there, exits with its code.
+    if let Some(code) = remote_relay() {
+        return code;
+    }
+    // Started by git or ssh as their sign-in prompt (git/askpass.rs): answer and exit.
+    if let Some(code) = askpass_client() {
+        return code;
+    }
+    // Started by an external agent as its stdio MCP server, bridging to the IDE's (D223).
+    if let Some(code) = mcp_stdio_proxy() {
+        return code;
+    }
+    // Started to send Ctrl+C to a program's console (lsp/ctrl_c.rs): done.
+    if let Some(code) = ctrl_c_helper() {
+        return code;
+    }
+    // Started from an npm script or another editor's terminal: what they set for their own
+    // programs isn't passed on to the ones the host starts (D192).
+    forget_npm_launcher();
+    forget_parent_editor();
+    host::main()
 }
 
 /// Started as the Ctrl+C helper (`lsp/ctrl_c.rs`, D229): the exit code after sending it.
@@ -250,6 +434,7 @@ fn npm_script_path(p: &std::path::Path) -> bool {
 
 /// The folder this window has open (its `.code-workspace` file when one is open), as the window
 /// registry and bounds keep it.
+#[cfg(feature = "desktop")]
 fn window_folder(state: &AppState) -> Option<String> {
     state
         .workspace
@@ -258,11 +443,391 @@ fn window_folder(state: &AppState) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Every command, in two lists. `desktop_only`: what needs a window (windows themselves, the
+/// embedded browser, screenshots of the web view, native dialogs, drag out, the updater, the
+/// window registry); the windowless host doesn't answer these. `common`: everything else, which
+/// both builds answer. `scripts/check-commands.mjs` reads the names from here.
+macro_rules! all_commands {
+    () => {
+        command_table! {
+            desktop_only [
+                ipc::app::app_show_cursor,
+                ipc::app::app_request_attention,
+                ipc::app::app_exit,
+                ipc::app::app_new_window,
+                ipc::instances::instances_listen,
+                ipc::instances::instances_done,
+                ipc::instances::instances_focus_folder,
+                ipc::instances::instances_restorable,
+                ipc::instances::instances_adopt_empty,
+                ipc::instances::instances_empty_backups_load,
+                ipc::instances::instances_empty_backups_save,
+                ipc::instances::instances_others_running,
+                ipc::instances::shell_command_plan,
+                ipc::instances::shell_command_install,
+                ipc::instances::shell_command_uninstall,
+                ipc::instances::jump_list_set,
+                ipc::app::app_windows_alive,
+                ipc::fs::fs_start_drag,
+                ipc::browser::screenshot_window,
+                ipc::desktop::desktop_info,
+                ipc::desktop::desktop_capture,
+                ipc::desktop::desktop_window_at,
+                ipc::desktop::desktop_input,
+                ipc::desktop::desktop_banner,
+                ipc::desktop::desktop_take_stop,
+                ipc::browser::aux_window_label,
+                update::update_check,
+                update::update_install,
+                ipc::diagnostics::app_relaunch,
+                ipc::browser::aux_window_close,
+                ipc::browser::browser_window_open,
+                ipc::browser::browser_window_send,
+                ipc::browser::browser_window_close,
+                ipc::browser::browser_embed_open,
+                ipc::browser::browser_embed_place,
+                ipc::browser::browser_embed_focus,
+                ipc::browser::browser_downloads,
+                ipc::browser::browser_download_cancel,
+                ipc::browser::browser_download_open,
+                ipc::browser::browser_download_reveal,
+                ipc::browser::browser_downloads_clear,
+                ipc::browser::browser_bridge_post,
+                ipc::browser::browser_trusted_input,
+                ipc::fs::fs_import_dropped,
+                ipc::fs::fs_dropped_entries,
+                ipc::settings::profile_save,
+                ipc::settings::attachment_save,
+                ipc::settings::profile_open,
+                ipc::process::debug_set_pane_port,
+                ipc::agent::attach_pick,
+                ipc::agent::dropped_list,
+                ipc::agent::dropped_read,
+                ipc::agent::docs_render,
+                ipc::agent::docs_render_post,
+            ]
+            common [
+                ipc::app::app_info,
+                ipc::app::app_refresh_path,
+                ipc::app::test_log,
+                ipc::accounts::account_profile,
+                ipc::accounts::account_check,
+                ipc::accounts::account_sign_in,
+                ipc::accounts::account_cancel,
+                ipc::accounts::account_sign_out,
+                ipc::accounts::account_avatar,
+                ipc::app::state_load,
+                ipc::app::state_save,
+                ipc::app::audit_append,
+                ipc::fs::workspace_open,
+                ipc::fs::workspace_create_folder,
+                ipc::fs::workspace_close,
+                ipc::fs::workspace_folders_set,
+                ipc::fs::workspace_folders,
+                ipc::fs::workspace_set_file,
+                ipc::fs::workspace_file_read,
+                ipc::fs::workspace_file_write,
+                ipc::fs::workspace_untitled_path,
+                ipc::fs::fs_read,
+                ipc::remote_image::remote_image,
+                ipc::acp_agents::acp_registry_platform,
+                ipc::acp_agents::acp_registry_fetch,
+                ipc::acp_agents::acp_registry_cached,
+                ipc::acp_agents::acp_registry_icon,
+                ipc::acp_agents::acp_agent_install,
+                ipc::acp_agents::acp_agent_cancel,
+                ipc::acp_agents::acp_agent_remove,
+                ipc::acp_agents::acp_agents_on_disk,
+                ipc::fs::fs_write,
+                ipc::fs::encoding_encode,
+                ipc::fs::encoding_guess,
+                ipc::fs::fs_stat,
+                ipc::fs::fs_list_dir,
+                ipc::fs::fs_create_file,
+                ipc::fs::fs_create_dir,
+                ipc::fs::fs_rename,
+                ipc::fs::fs_delete,
+                ipc::history::history_list,
+                ipc::history::history_read,
+                ipc::history::history_restore,
+                ipc::history::fs_trash,
+                ipc::history::fs_untrash,
+                ipc::history::fs_trash_exists,
+                ipc::history::fs_trash_list,
+                ipc::history::fs_hash,
+                ipc::browser::browser_proxy,
+                ipc::extensions::ext_list,
+                ipc::extensions::ext_peek,
+                ipc::extensions::ext_registry_save,
+                ipc::extensions::ext_read,
+                ipc::extensions::ext_files,
+                ipc::extensions::ext_install,
+                ipc::extensions::ext_uninstall,
+                ipc::extensions::ext_restore_bundled,
+                ipc::extensions::ext_reinstall_bundled,
+                ipc::process::notebook_output_origin,
+                ipc::fs::workspace_allow_file,
+                ipc::fs::workspace_allow_root,
+                ipc::fs::workspace_forget_root,
+                ipc::diagnostics::session_info,
+                ipc::diagnostics::log_write,
+                ipc::diagnostics::log_recent,
+                ipc::diagnostics::log_git_commands,
+                ipc::diagnostics::report_save_zip,
+                wsl::wsl_distros,
+                wsl::wsl_home,
+                ipc::remote::remote_connect,
+                ipc::remote::remote_askpass_answer,
+                ipc::remote::remote_disconnect,
+                ipc::remote::remote_status,
+                ipc::remote::remote_browse,
+                ipc::remote::remote_log,
+                ipc::remote::remote_hosts,
+                ipc::remote::remote_forward_port,
+                ipc::remote::remote_unforward,
+                ipc::remote::remote_forwarded,
+                ipc::remote::remote_listening,
+                ipc::remote::remote_docker,
+                ipc::remote::remote_set_docker,
+                ipc::extensions::ext_download_git,
+                ipc::extensions::ext_unpack_vsix,
+                ipc::extensions::ext_discard_download,
+                ipc::extensions::ext_store_search,
+                ipc::extensions::ext_node_host_script,
+                ipc::extensions::ext_store_details,
+                ipc::extensions::ext_store_file,
+                ipc::extensions::ext_store_download,
+                ipc::extensions::ext_github_avatar,
+                ipc::extensions::ext_delete_unpacked,
+                ipc::extensions::ext_storage_load,
+                ipc::extensions::ext_storage_save,
+                ipc::extensions::ext_secret_get,
+                ipc::extensions::ext_secret_set,
+                ipc::extensions::ext_fetch,
+                ipc::extensions::ext_webview_proxy,
+                ipc::extensions::ext_node_status,
+                ipc::extensions::ext_node_install,
+                ipc::speech::speech_status,
+                ipc::speech::speech_install,
+                ipc::speech::speech_cancel,
+                ipc::speech::speech_remove,
+                ipc::speech::speech_transcribe,
+                ipc::extensions::ext_webview_page,
+                ipc::extensions::ext_webview_roots,
+                ipc::browser::browser_proxy_stop_all,
+                ipc::browser::browser_subscribe,
+                ipc::browser::net_port_open,
+                ipc::browser::browser_network_body,
+                ipc::browser::browser_bridge_source,
+                ipc::browser::browser_set_no_cache,
+                ipc::browser::browser_overlay,
+                ipc::fs::index_query,
+                ipc::fs::index_watch,
+                ipc::fs::docs_watch_start,
+                ipc::fs::docs_watch_set_dirs,
+                ipc::fs::search_start,
+                ipc::mcp::mcp_start,
+                ipc::mcp::mcp_stop,
+                ipc::mcp::mcp_info,
+                ipc::mcp::mcp_stdio_proxy,
+                ipc::mcp::mcp_set_catalog,
+                ipc::mcp::mcp_respond,
+                ipc::fs::search_cancel,
+                ipc::fs::search_replace,
+                ipc::fs::fs_move,
+                ipc::fs::fs_copy,
+                ipc::fs::watch_start,
+                ipc::fs::watch_set_dirs,
+                ipc::fs::watch_stop,
+                ipc::settings::settings_paths,
+                ipc::settings::user_file_delete,
+                ipc::settings::settings_vscode_user,
+                ipc::settings::settings_editor_profiles,
+                ipc::mcp::mcp_remote_post,
+                ipc::agent::agent_worktree_copy,
+                ipc::agent::agent_worktree_run,
+                ipc::agent::agent_monitor_socket_open,
+                ipc::agent::agent_monitor_socket_close,
+                ipc::agent::agent_worktree_diff,
+                ipc::agent::agent_worktree_apply,
+                ipc::agent::docs_index_save,
+                ipc::agent::docs_index_load,
+                ipc::agent::docs_index_delete,
+                ipc::mcp::mcp_oauth_status,
+                ipc::mcp::mcp_oauth_begin,
+                ipc::mcp::mcp_oauth_finish,
+                ipc::mcp::mcp_oauth_sign_out,
+                ipc::mcp::mcp_remote_listen,
+                ipc::mcp::mcp_remote_unlisten,
+                ipc::mcp::ide_integration_start,
+                ipc::mcp::ide_integration_update,
+                ipc::mcp::ide_integration_stop,
+                ipc::mcp::ide_integration_info,
+                ipc::mcp::ide_integration_notify,
+                ipc::mcp::ide_integration_respond,
+                ipc::settings::mcp_discover,
+                ipc::git::git_diff_range,
+                ipc::settings::settings_watch_start,
+                ipc::settings::settings_watch_set_dirs,
+                ipc::skills::skills_delete_user,
+                ipc::skills::skills_watch_start,
+                ipc::skills::skills_watch_set_dirs,
+                ipc::process::pty_spawn,
+                ipc::process::pty_write,
+                ipc::process::pty_resize,
+                ipc::process::pty_ack,
+                ipc::process::pty_kill,
+                ipc::process::pty_commands,
+                ipc::process::pty_profiles,
+                ipc::process::pty_path_commands,
+                ipc::process::pty_list_dir,
+                ipc::process::pty_shell_globals,
+                ipc::process::pty_attach,
+                ipc::process::pty_detach,
+                ipc::process::pty_kill_detached,
+                ipc::git::git_open,
+                ipc::git::git_init,
+                ipc::git::git_watch,
+                ipc::git::git_status,
+                ipc::git::git_trust_settings,
+                ipc::git::git_show,
+                ipc::git::git_merge_base,
+                ipc::git::git_write_index,
+                ipc::git::git_stage,
+                ipc::git::git_unstage,
+                ipc::git::git_discard,
+                ipc::git::git_commit,
+                ipc::git::git_branches,
+                ipc::git::git_checkout,
+                ipc::git::git_log,
+                ipc::git::git_remote,
+                ipc::git::git_blame,
+                ipc::git::git_stash_list,
+                ipc::git::git_stash,
+                ipc::git::git_clone,
+                ipc::git::git_log_range,
+                ipc::git::git_graph,
+                ipc::git::git_worktrees,
+                ipc::git::git_worktree_op,
+                ipc::git::git_rebase_plan,
+                ipc::git::git_rebase_interactive,
+                ipc::git::git_askpass_listen,
+                ipc::git::git_askpass_reply,
+                ipc::git::github_cli,
+                ipc::git::git_commit_detail,
+                ipc::git::git_repo_op,
+                ipc::git::git_repo_state,
+                ipc::git::git_diff,
+                ipc::git::git_discover,
+                ipc::git::git_blame_file,
+                ipc::git::git_log_lines,
+                ipc::git::git_diff_names,
+                ipc::git::git_rev_parse,
+                ipc::git::git_merge_base_of,
+                ipc::process::lsp_start,
+                ipc::process::lsp_send,
+                ipc::process::lsp_stop,
+                ipc::process::lsp_close_stdin,
+                ipc::process::lsp_interrupt,
+                ipc::process::debug_socket_connect,
+                ipc::process::debug_socket_send,
+                ipc::process::debug_inspector_targets,
+                ipc::process::debug_local_get,
+                ipc::process::debug_socket_close,
+                ipc::process::debug_dap_connect,
+                ipc::process::debug_autoattach_prepare,
+                ipc::process::debug_autoattach_take,
+                ipc::process::debug_autoattach_dispose,
+                ipc::process::debug_list_processes,
+                ipc::process::debug_find_browser,
+                ipc::agent::ai_list_models,
+                ipc::agent::ai_model_details,
+                ipc::agent::ai_chat,
+                ipc::agent::ai_fim,
+                ipc::agent::ai_image_generate,
+                ipc::agent::agent_media_put,
+                ipc::agent::agent_media_get,
+                ipc::agent::ai_cancel,
+                ipc::agent::web_fetch,
+                ipc::agent::web_search,
+                ipc::agent::ai_set_key,
+                ipc::agent::ai_has_key,
+                ipc::agent::ai_transcribe,
+                ipc::agent::ai_embed,
+                ipc::process::exec_run,
+                ipc::process::exec_cancel,
+                ipc::process::exec_blocked_hosts,
+                ipc::process::exec_sandbox_info,
+                ipc::process::exec_sandbox_unhide,
+                ipc::process::page_loaded,
+                ipc::process::programs_installed,
+                ipc::process::format_project,
+                ipc::agent::ai_rate_limits,
+                ipc::agent::ai_provider_limits,
+                ipc::agent::usage_append,
+                ipc::agent::usage_load,
+                ipc::agent::usage_clear,
+                ipc::agent::agent_scratch_dir,
+                ipc::agent::agent_scratch_read,
+                ipc::agent::agent_scratch_write,
+                ipc::agent::agent_session_save,
+                ipc::agent::agent_session_load,
+                ipc::agent::agent_session_stamps,
+                ipc::agent::agent_session_version,
+                ipc::agent::agent_session_list,
+                ipc::agent::agent_session_delete,
+                ipc::agent::agent_report_put,
+                ipc::agent::agent_report_list,
+                ipc::agent::agent_report_claim,
+                ipc::plugins::plugins_save_record,
+                ipc::plugins::plugins_claude_info,
+                ipc::plugins::plugins_npm,
+                ipc::plugins::plugins_copy,
+                ipc::plugins::plugins_clone,
+                ipc::plugins::plugins_remove,
+                ipc::notify::notify_webhook_post,
+                ipc::notify::notify_webhook_store,
+                ipc::agent_windows::agent_windows_publish,
+                ipc::agent_windows::agent_windows_unpublish,
+                ipc::agent_windows::agent_windows_list,
+                ipc::agent_windows::agent_mail_put,
+                ipc::agent_windows::agent_mail_list,
+                ipc::agent_windows::agent_mail_claim,
+                ipc::agent::agent_sessions_watch,
+                ipc::agent::agent_sessions_unwatch,
+                ipc::agent::agent_tree_stats,
+                ipc::agent::agent_checkpoint_add,
+                ipc::agent::agent_checkpoint_load,
+            ]
+        }
+    };
+}
+
+/// The desktop's handler: every command.
+#[cfg(feature = "desktop")]
+macro_rules! command_table {
+    (desktop_only [$($desktop:tt)*] common [$($common:tt)*]) => {
+        tauri::generate_handler![$($desktop)* $($common)*]
+    };
+}
+
+/// The host's table: the common commands.
+#[cfg(not(feature = "desktop"))]
+macro_rules! command_table {
+    (desktop_only [$($desktop:tt)*] common [$($common:tt)*]) => {
+        tauri::generate_handler![$($common)*]
+    };
+}
+
+/// The commands the windowless host answers, by name.
+#[cfg(feature = "host")]
+pub(crate) fn host_commands() -> &'static [tauri::host::CommandEntry] {
+    all_commands!()
+}
+
+#[cfg(feature = "desktop")]
 pub fn run() {
-    let process_start_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64() * 1000.0)
-        .unwrap_or(0.0);
+    let process_start_ms = now_ms();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -309,103 +874,23 @@ pub fn run() {
                 });
             }
             // The session log first, so a panic from here on is in it (D204).
-            let log = std::sync::Arc::new(diagnostics::log::SessionLog::open(
-                &dirs.logs,
-                dirs.home.as_deref(),
-            ));
-            diagnostics::log::install_panic_hook(log.clone());
             let version = app.package_info().version.to_string();
-            let extensions_off =
-                diagnostics::take_extensions_off(&dirs.data, cli.disable_extensions);
-            let previous_version = diagnostics::record_version(&dirs.data, &version);
-            log.write(
-                "info",
-                "app",
-                &format!(
-                    "Started {version} on {} {}{}{}",
-                    std::env::consts::OS,
-                    std::env::consts::ARCH,
-                    if cfg!(debug_assertions) {
-                        " (debug build)"
-                    } else {
-                        ""
-                    },
-                    match extensions_off {
-                        Some(_) => ", extensions off",
-                        None => "",
-                    }
-                ),
-            );
-            let session = ipc::diagnostics::SessionState {
-                log,
-                extensions_off,
-                previous_version,
-            };
-            let audit = audit::AuditLog::new(&dirs.logs);
-            let history = history::LocalHistory::new(&dirs.data);
-            let data_dir = dirs.data.clone();
-            // What the IDE's git checks before it runs (D392).
-            git::guard::init(&dirs.data);
+            let session = open_session(&dirs, &cli, &version);
+            let state = AppState::new(dirs, cli, process_start_ms, session);
             // The browser pane as a debugging target (D204): WebView2 reads its extra arguments
             // when the first webview is created, below.
             #[cfg(windows)]
-            if let Some(port) = debug::pane_port::load(&dirs.data) {
+            if let Some(port) = debug::pane_port::load(&state.dirs.data) {
                 std::env::set_var(
                     debug::pane_port::WEBVIEW2_ARGS_VAR,
                     debug::pane_port::browser_args(port),
                 );
             }
-            app.manage(AppState {
-                dirs,
-                workspace: fs::Workspace::default(),
-                watcher: watch::Watcher::default(),
-                settings_watcher: watch::Watcher::default(),
-                docs_watcher: watch::Watcher::default(),
-                skills_watcher: watch::Watcher::recursive(),
-                agent_sessions_watcher: watch::Watcher::default(),
-                index: index::FileIndex::default(),
-                search: search::SearchService::default(),
-                git: git::GitService::default(),
-                mcp: mcp::McpService::default(),
-                lsp: lsp::LspHost::default(),
-                debug: debug::DebugSockets::default(),
-                monitor_sockets: agent::socket::MonitorSockets::default(),
-                ai: ai::AiService::default(),
-                exec: std::sync::Arc::new(exec::ExecService::default()),
-                pty: std::sync::Arc::new(pty::PtyManager::default()),
-                audit,
-                history,
-                browser: browser::BrowserService::default(),
-                extensions: extensions::ExtensionStore::new(&data_dir),
-                process_start_ms,
-                cli,
-                dropped: std::sync::Mutex::new(Vec::new()),
-                session,
-                window_bounds: window_bounds::Tracker::default(),
-            });
+            app.manage(state);
             // A remote window (`--remote`, D252): its paths are the remote's from the first call
             // on; the frontend connects before it opens the folder. The app's own folders stay
             // local wherever the window works.
-            {
-                let state = app.state::<AppState>();
-                let mut local = vec![
-                    state.dirs.data.clone(),
-                    state.dirs.config.clone(),
-                    state.dirs.logs.clone(),
-                    std::env::temp_dir(),
-                ];
-                if let Ok(exe) = std::env::current_exe() {
-                    if let Some(dir) = exe.parent() {
-                        local.push(dir.to_path_buf());
-                    }
-                }
-                remote::set_local_dirs(local);
-                if let Some(authority) = &state.cli.remote {
-                    if let Err(e) = remote::set_window_remote(authority) {
-                        state.session.log.write("warn", "remote", &e.to_string());
-                    }
-                }
-            }
+            app.state::<AppState>().set_local_dirs();
             // This window in the registry of windows (D209): other launches find it, hand it
             // files, focus it for its folder; the first window of a session may reopen the
             // last session's (window.restoreWindows).
@@ -569,353 +1054,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            ipc::app::app_info,
-            ipc::app::app_refresh_path,
-            ipc::app::app_show_cursor,
-            ipc::app::app_request_attention,
-            ipc::app::test_log,
-            ipc::app::app_exit,
-            ipc::app::app_new_window,
-            ipc::instances::instances_listen,
-            ipc::instances::instances_done,
-            ipc::instances::instances_focus_folder,
-            ipc::instances::instances_restorable,
-            ipc::instances::instances_adopt_empty,
-            ipc::instances::instances_empty_backups_load,
-            ipc::instances::instances_empty_backups_save,
-            ipc::instances::instances_others_running,
-            ipc::instances::shell_command_plan,
-            ipc::instances::shell_command_install,
-            ipc::instances::shell_command_uninstall,
-            ipc::instances::jump_list_set,
-            ipc::app::app_windows_alive,
-            ipc::accounts::account_profile,
-            ipc::accounts::account_check,
-            ipc::accounts::account_sign_in,
-            ipc::accounts::account_cancel,
-            ipc::accounts::account_sign_out,
-            ipc::accounts::account_avatar,
-            ipc::app::state_load,
-            ipc::app::state_save,
-            ipc::app::audit_append,
-            ipc::fs::workspace_open,
-            ipc::fs::workspace_create_folder,
-            ipc::fs::workspace_close,
-            ipc::fs::workspace_folders_set,
-            ipc::fs::workspace_folders,
-            ipc::fs::workspace_set_file,
-            ipc::fs::workspace_file_read,
-            ipc::fs::workspace_file_write,
-            ipc::fs::workspace_untitled_path,
-            ipc::fs::fs_read,
-            ipc::remote_image::remote_image,
-            ipc::acp_agents::acp_registry_platform,
-            ipc::acp_agents::acp_registry_fetch,
-            ipc::acp_agents::acp_registry_cached,
-            ipc::acp_agents::acp_registry_icon,
-            ipc::acp_agents::acp_agent_install,
-            ipc::acp_agents::acp_agent_cancel,
-            ipc::acp_agents::acp_agent_remove,
-            ipc::acp_agents::acp_agents_on_disk,
-            ipc::fs::fs_start_drag,
-            ipc::fs::fs_write,
-            ipc::fs::encoding_encode,
-            ipc::fs::encoding_guess,
-            ipc::fs::fs_stat,
-            ipc::fs::fs_list_dir,
-            ipc::fs::fs_create_file,
-            ipc::fs::fs_create_dir,
-            ipc::fs::fs_rename,
-            ipc::fs::fs_delete,
-            ipc::history::history_list,
-            ipc::history::history_read,
-            ipc::history::history_restore,
-            ipc::history::fs_trash,
-            ipc::history::fs_untrash,
-            ipc::history::fs_trash_exists,
-            ipc::history::fs_trash_list,
-            ipc::history::fs_hash,
-            ipc::browser::browser_proxy,
-            ipc::browser::screenshot_window,
-            ipc::desktop::desktop_info,
-            ipc::desktop::desktop_capture,
-            ipc::desktop::desktop_window_at,
-            ipc::desktop::desktop_input,
-            ipc::desktop::desktop_banner,
-            ipc::desktop::desktop_take_stop,
-            ipc::browser::aux_window_label,
-            ipc::extensions::ext_list,
-            ipc::extensions::ext_peek,
-            ipc::extensions::ext_registry_save,
-            ipc::extensions::ext_read,
-            ipc::extensions::ext_files,
-            ipc::extensions::ext_install,
-            ipc::extensions::ext_uninstall,
-            ipc::extensions::ext_restore_bundled,
-            ipc::extensions::ext_reinstall_bundled,
-            ipc::process::notebook_output_origin,
-            ipc::fs::workspace_allow_file,
-            ipc::fs::workspace_allow_root,
-            ipc::fs::workspace_forget_root,
-            update::update_check,
-            update::update_install,
-            ipc::diagnostics::session_info,
-            ipc::diagnostics::log_write,
-            ipc::diagnostics::log_recent,
-            ipc::diagnostics::log_git_commands,
-            ipc::diagnostics::report_save_zip,
-            ipc::diagnostics::app_relaunch,
-            wsl::wsl_distros,
-            wsl::wsl_home,
-            ipc::remote::remote_connect,
-            ipc::remote::remote_askpass_answer,
-            ipc::remote::remote_disconnect,
-            ipc::remote::remote_status,
-            ipc::remote::remote_browse,
-            ipc::remote::remote_log,
-            ipc::remote::remote_hosts,
-            ipc::remote::remote_forward_port,
-            ipc::remote::remote_unforward,
-            ipc::remote::remote_forwarded,
-            ipc::remote::remote_listening,
-            ipc::remote::remote_docker,
-            ipc::remote::remote_set_docker,
-            ipc::extensions::ext_download_git,
-            ipc::extensions::ext_unpack_vsix,
-            ipc::extensions::ext_discard_download,
-            ipc::extensions::ext_store_search,
-            ipc::extensions::ext_node_host_script,
-            ipc::extensions::ext_store_details,
-            ipc::extensions::ext_store_file,
-            ipc::extensions::ext_store_download,
-            ipc::extensions::ext_github_avatar,
-            ipc::extensions::ext_delete_unpacked,
-            ipc::extensions::ext_storage_load,
-            ipc::extensions::ext_storage_save,
-            ipc::extensions::ext_secret_get,
-            ipc::extensions::ext_secret_set,
-            ipc::extensions::ext_fetch,
-            ipc::extensions::ext_webview_proxy,
-            ipc::extensions::ext_node_status,
-            ipc::extensions::ext_node_install,
-            ipc::speech::speech_status,
-            ipc::speech::speech_install,
-            ipc::speech::speech_cancel,
-            ipc::speech::speech_remove,
-            ipc::speech::speech_transcribe,
-            ipc::extensions::ext_webview_page,
-            ipc::extensions::ext_webview_roots,
-            ipc::browser::aux_window_close,
-            ipc::browser::browser_proxy_stop_all,
-            ipc::browser::browser_window_open,
-            ipc::browser::browser_window_send,
-            ipc::browser::browser_window_close,
-            ipc::browser::browser_embed_open,
-            ipc::browser::browser_embed_place,
-            ipc::browser::browser_embed_focus,
-            ipc::browser::browser_downloads,
-            ipc::browser::browser_download_cancel,
-            ipc::browser::browser_download_open,
-            ipc::browser::browser_download_reveal,
-            ipc::browser::browser_downloads_clear,
-            ipc::browser::browser_bridge_post,
-            ipc::browser::browser_subscribe,
-            ipc::browser::net_port_open,
-            ipc::browser::browser_network_body,
-            ipc::browser::browser_bridge_source,
-            ipc::browser::browser_trusted_input,
-            ipc::browser::browser_set_no_cache,
-            ipc::browser::browser_overlay,
-            ipc::fs::index_query,
-            ipc::fs::index_watch,
-            ipc::fs::docs_watch_start,
-            ipc::fs::docs_watch_set_dirs,
-            ipc::fs::search_start,
-            ipc::mcp::mcp_start,
-            ipc::mcp::mcp_stop,
-            ipc::mcp::mcp_info,
-            ipc::mcp::mcp_stdio_proxy,
-            ipc::mcp::mcp_set_catalog,
-            ipc::mcp::mcp_respond,
-            ipc::fs::search_cancel,
-            ipc::fs::search_replace,
-            ipc::fs::fs_move,
-            ipc::fs::fs_copy,
-            ipc::fs::fs_import_dropped,
-            ipc::fs::fs_dropped_entries,
-            ipc::fs::watch_start,
-            ipc::fs::watch_set_dirs,
-            ipc::fs::watch_stop,
-            ipc::settings::settings_paths,
-            ipc::settings::user_file_delete,
-            ipc::settings::profile_save,
-            ipc::settings::attachment_save,
-            ipc::settings::profile_open,
-            ipc::settings::settings_vscode_user,
-            ipc::settings::settings_editor_profiles,
-            ipc::mcp::mcp_remote_post,
-            ipc::agent::agent_worktree_copy,
-            ipc::agent::agent_worktree_run,
-            ipc::agent::agent_monitor_socket_open,
-            ipc::agent::agent_monitor_socket_close,
-            ipc::agent::agent_worktree_diff,
-            ipc::agent::agent_worktree_apply,
-            ipc::agent::docs_index_save,
-            ipc::agent::docs_index_load,
-            ipc::agent::docs_index_delete,
-            ipc::mcp::mcp_oauth_status,
-            ipc::mcp::mcp_oauth_begin,
-            ipc::mcp::mcp_oauth_finish,
-            ipc::mcp::mcp_oauth_sign_out,
-            ipc::mcp::mcp_remote_listen,
-            ipc::mcp::mcp_remote_unlisten,
-            ipc::mcp::ide_integration_start,
-            ipc::mcp::ide_integration_update,
-            ipc::mcp::ide_integration_stop,
-            ipc::mcp::ide_integration_info,
-            ipc::mcp::ide_integration_notify,
-            ipc::mcp::ide_integration_respond,
-            ipc::settings::mcp_discover,
-            ipc::git::git_diff_range,
-            ipc::settings::settings_watch_start,
-            ipc::settings::settings_watch_set_dirs,
-            ipc::skills::skills_delete_user,
-            ipc::skills::skills_watch_start,
-            ipc::skills::skills_watch_set_dirs,
-            ipc::process::pty_spawn,
-            ipc::process::pty_write,
-            ipc::process::pty_resize,
-            ipc::process::pty_ack,
-            ipc::process::pty_kill,
-            ipc::process::pty_commands,
-            ipc::process::pty_profiles,
-            ipc::process::pty_path_commands,
-            ipc::process::pty_list_dir,
-            ipc::process::pty_shell_globals,
-            ipc::process::pty_attach,
-            ipc::process::pty_detach,
-            ipc::process::pty_kill_detached,
-            ipc::git::git_open,
-            ipc::git::git_init,
-            ipc::git::git_watch,
-            ipc::git::git_status,
-            ipc::git::git_trust_settings,
-            ipc::git::git_show,
-            ipc::git::git_merge_base,
-            ipc::git::git_write_index,
-            ipc::git::git_stage,
-            ipc::git::git_unstage,
-            ipc::git::git_discard,
-            ipc::git::git_commit,
-            ipc::git::git_branches,
-            ipc::git::git_checkout,
-            ipc::git::git_log,
-            ipc::git::git_remote,
-            ipc::git::git_blame,
-            ipc::git::git_stash_list,
-            ipc::git::git_stash,
-            ipc::git::git_clone,
-            ipc::git::git_log_range,
-            ipc::git::git_graph,
-            ipc::git::git_worktrees,
-            ipc::git::git_worktree_op,
-            ipc::git::git_rebase_plan,
-            ipc::git::git_rebase_interactive,
-            ipc::git::git_askpass_listen,
-            ipc::git::git_askpass_reply,
-            ipc::git::github_cli,
-            ipc::git::git_commit_detail,
-            ipc::git::git_repo_op,
-            ipc::git::git_repo_state,
-            ipc::git::git_diff,
-            ipc::git::git_discover,
-            ipc::git::git_blame_file,
-            ipc::git::git_log_lines,
-            ipc::git::git_diff_names,
-            ipc::git::git_rev_parse,
-            ipc::git::git_merge_base_of,
-            ipc::process::lsp_start,
-            ipc::process::lsp_send,
-            ipc::process::lsp_stop,
-            ipc::process::lsp_close_stdin,
-            ipc::process::lsp_interrupt,
-            ipc::process::debug_socket_connect,
-            ipc::process::debug_socket_send,
-            ipc::process::debug_inspector_targets,
-            ipc::process::debug_local_get,
-            ipc::process::debug_socket_close,
-            ipc::process::debug_dap_connect,
-            ipc::process::debug_autoattach_prepare,
-            ipc::process::debug_autoattach_take,
-            ipc::process::debug_autoattach_dispose,
-            ipc::process::debug_list_processes,
-            ipc::process::debug_find_browser,
-            ipc::process::debug_set_pane_port,
-            ipc::agent::ai_list_models,
-            ipc::agent::ai_model_details,
-            ipc::agent::ai_chat,
-            ipc::agent::ai_fim,
-            ipc::agent::ai_image_generate,
-            ipc::agent::agent_media_put,
-            ipc::agent::agent_media_get,
-            ipc::agent::ai_cancel,
-            ipc::agent::web_fetch,
-            ipc::agent::web_search,
-            ipc::agent::attach_pick,
-            ipc::agent::dropped_list,
-            ipc::agent::dropped_read,
-            ipc::agent::ai_set_key,
-            ipc::agent::ai_has_key,
-            ipc::agent::ai_transcribe,
-            ipc::agent::ai_embed,
-            ipc::process::exec_run,
-            ipc::process::exec_cancel,
-            ipc::process::exec_blocked_hosts,
-            ipc::process::exec_sandbox_info,
-            ipc::process::exec_sandbox_unhide,
-            ipc::process::page_loaded,
-            ipc::process::programs_installed,
-            ipc::process::format_project,
-            ipc::agent::ai_rate_limits,
-            ipc::agent::ai_provider_limits,
-            ipc::agent::usage_append,
-            ipc::agent::usage_load,
-            ipc::agent::usage_clear,
-            ipc::agent::agent_scratch_dir,
-            ipc::agent::agent_scratch_read,
-            ipc::agent::agent_scratch_write,
-            ipc::agent::agent_session_save,
-            ipc::agent::agent_session_load,
-            ipc::agent::agent_session_stamps,
-            ipc::agent::agent_session_version,
-            ipc::agent::agent_session_list,
-            ipc::agent::agent_session_delete,
-            ipc::agent::agent_report_put,
-            ipc::agent::agent_report_list,
-            ipc::agent::agent_report_claim,
-            ipc::plugins::plugins_save_record,
-            ipc::plugins::plugins_claude_info,
-            ipc::plugins::plugins_npm,
-            ipc::plugins::plugins_copy,
-            ipc::plugins::plugins_clone,
-            ipc::plugins::plugins_remove,
-            ipc::notify::notify_webhook_post,
-            ipc::notify::notify_webhook_store,
-            ipc::agent_windows::agent_windows_publish,
-            ipc::agent_windows::agent_windows_unpublish,
-            ipc::agent_windows::agent_windows_list,
-            ipc::agent_windows::agent_mail_put,
-            ipc::agent_windows::agent_mail_list,
-            ipc::agent_windows::agent_mail_claim,
-            ipc::agent::agent_sessions_watch,
-            ipc::agent::agent_sessions_unwatch,
-            ipc::agent::docs_render,
-            ipc::agent::docs_render_post,
-            ipc::agent::agent_tree_stats,
-            ipc::agent::agent_checkpoint_add,
-            ipc::agent::agent_checkpoint_load,
-        ])
+        .invoke_handler(all_commands!())
         .build(tauri::generate_context!());
 
     match app {
@@ -924,17 +1063,7 @@ pub fn run() {
                 // Gone from the registry, or (the last window) kept for the next start (D209).
                 instances::server::exiting();
                 if let Some(state) = handle.try_state::<AppState>() {
-                    state.pty.kill_all();
-                    state.exec.cancel_all();
-                    state.lsp.stop_all();
-                    // The remote server ends what it started when its connection closes.
-                    remote::disconnect();
-                    // Also removes mcp.json.
-                    let _ = state.mcp.stop();
-                    // Claude Code's lock file (~/.claude/ide/<port>.lock) goes too, or /ide
-                    // would list an IDE that's gone, with its token on disk.
-                    let _ = state.mcp.ide.stop();
-                    state.mcp.streams.stop_all();
+                    state.shutdown();
                 }
             }
         }),
@@ -984,6 +1113,7 @@ mod parent_editor_tests {
 /// A development build (`npm run dev`, debug) shows the orange logo in the taskbar and window
 /// list, so it can be told apart from the installed app at a glance (D381); release builds keep
 /// the normal one. Only the window's icon: the app's own logos are unchanged.
+#[cfg(feature = "desktop")]
 pub(crate) fn dev_icon<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     // Raw 256×256 RGBA (from the orange logo), in debug builds only: nothing to decode, and
     // release builds carry neither the pixels nor an image decoder.

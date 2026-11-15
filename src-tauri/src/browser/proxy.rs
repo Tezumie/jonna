@@ -84,6 +84,7 @@ pub struct Shared {
     /// folder; canonical. Served at `/__fs/<absolute path>` on that folder's origin.
     pub webview_roots: Mutex<HashMap<PathBuf, Vec<PathBuf>>>,
     /// Downloads from previews and site windows (`downloads.rs`).
+    #[cfg(feature = "desktop")]
     pub downloads: super::downloads::Downloads,
     /// Counts the folder's changes (saved files, live edits) for `LIVE_PATH`; waiters are woken.
     pub live_generation: std::sync::atomic::AtomicU64,

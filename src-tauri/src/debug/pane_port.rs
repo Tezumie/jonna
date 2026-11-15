@@ -9,6 +9,10 @@
 //! so no other WebView2 program opens a debugging port.
 //! WebKitGTK (Linux) and WKWebView (macOS) have no such protocol: the setting does nothing there.
 
+// The windowless host has no browser pane: only the variable's name is used there (programs
+// it starts must not inherit it).
+#![cfg_attr(not(feature = "desktop"), allow(dead_code))]
+
 use std::path::{Path, PathBuf};
 
 use crate::error::Result;

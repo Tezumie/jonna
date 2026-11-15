@@ -4,6 +4,61 @@ The native side: Tauri commands are registered in `lib.rs` and implemented by th
 (`ipc/` holds the thin `#[tauri::command]` layer; each other folder is one service). One section
 per folder.
 
+## Two builds: desktop and host
+
+The crate builds one of two ways (Cargo features; exactly one, `lib.rs` refuses anything else):
+
+- `desktop` (the default): the app with its window. Program `ide` (`main.rs`).
+- `host`: the same services with no window, answering the same commands over a byte stream.
+  Program `ide-host` (`host_main.rs`, `host/`). `cargo build --no-default-features --features
+  host --bin ide-host`.
+
+The source is the same. The host build compiles it against `../host-shim` (with
+`../host-shim-macros`), a stand-in that offers the part of the desktop framework's API the
+services use under the framework's own name (`extern crate host_shim as tauri` in `lib.rs`):
+`#[tauri::command]`, `generate_handler!`, `State`, `ipc::{Channel, Request, Response,
+InvokeBody, InvokeResponseBody}`, `async_runtime` (over tokio), `AppHandle` + `Manager` (managed
+state, `path()` with the desktop's folder formulas), `Url`, `Error`, and `Webview` / `Window` /
+`WebviewWindow` that carry only a label (who owns a request). What needs a window isn't faked:
+it is behind `#[cfg(feature = "desktop")]` (whole modules: `accelerators`, `aux_window`,
+`desktop`, `frame_guard`, `screenshot`, `update`, `window_bounds`, `agent/render`,
+`browser/{downloads,embed,trusted_input}`, `instances/{client,dock_menu,jump_list,server,
+shell_command}`, `ipc/{desktop,instances}`; single commands elsewhere).
+
+`lib.rs` lists every command once, in `all_commands!`: `desktop_only [...]` and `common [...]`.
+The desktop registers both; the host answers the common ones. A new command goes in one of the
+two lists (and, as before, in `build.rs` COMMANDS and a capability file;
+`scripts/check-commands.mjs` checks all of it). `AppState::new`, `open_session`,
+`AppState::set_local_dirs` and `AppState::shutdown` are what both builds do at start and exit.
+
+Checks for both: `cargo clippy -- -D warnings` and `cargo clippy --no-default-features
+--features host -- -D warnings`; `cargo test --lib` and `cargo test --no-default-features
+--features host --lib`; `node scripts/host-smoke.mjs` runs the built host program.
+
+## host/
+
+The windowless host (the `host` feature only). `mod.rs`: the program's arguments (`--listen
+127.0.0.1:<port>`, `--token-file`, `--linger`, `--user-data-dir` and `--disable-extensions` as
+the desktop's, `--help`, `--version`), start (the same app folders as the desktop app, by
+product.json's identifier; the session log; `AppState`), serving, and the exit (`$/shutdown`,
+the end of stdin, Ctrl+C or SIGTERM: `AppState::shutdown`, exit 0). `frame.rs`: the wire's
+frame (two little-endian u32 lengths, a JSON header, a raw body; 64 MiB / 1 GiB limits).
+`server.rs`: one client's connection: `$/hello` first (protocol 1, the token over TCP, the list
+of commands), requests run as tasks (at most 1024 at once, 16 frames read ahead: beyond that the
+host stops reading and the stream pushes back), answers in any order through one writer thread,
+channel messages (`{channel, data}` or raw), `{channel, end}` once the host dropped a channel,
+`$/channelClose` (later sends on it fail, as on the desktop when the page is gone), a panic in a
+command answers `Unknown`. Commands see the client as the window label `main`. `stdio.rs`: the
+process's stdin and stdout are the client's stream, so they are taken out of the standard
+handles first (stdin becomes the null device, stdout becomes stderr, the pipes aren't
+inherited): a stray print or a started program can't corrupt the stream. Over TCP (loopback
+only) one client is served at a time, others are closed at once; when the client goes, the host
+waits `--linger` seconds (60) for it to come back, then exits. The port is printed on stderr
+(`host: listening on 127.0.0.1:<port>`). The program answers the same helper starts as the
+desktop one first (the remote relay, git's prompt, the MCP stdio proxy, the Ctrl+C helper).
+Tests: `server_tests.rs` (a socket pair and a small command table), `shim_tests.rs` (the
+attribute's argument and return mapping), `folders_tests.rs` (the app folders' formulas).
+
 ## accounts/
 
 The IDE account (D140, D414): OAuth code + PKCE through the system browser with a loopback

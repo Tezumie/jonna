@@ -118,6 +118,7 @@ pub async fn app_refresh_path() -> Result<bool> {
 /// repository's Enter), since the webview never sees the mouse move that shows it again. Not
 /// async: Tauri runs it on the main thread, the one that owns the window the dialog belongs to.
 /// Elsewhere it does nothing.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn app_show_cursor() {
     #[cfg(windows)]
@@ -146,6 +147,7 @@ pub fn app_show_cursor() {
 /// Asks for the user's attention without taking focus (D254): the taskbar button flashes on
 /// Windows, the Dock icon bounces once on macOS, the window is marked urgent on Linux. Stops by
 /// itself once the window is focused.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn app_request_attention(window: tauri::WebviewWindow) -> Result<()> {
     window.request_user_attention(Some(tauri::UserAttentionType::Informational))?;
@@ -162,6 +164,7 @@ pub async fn test_log(line: String) -> Result<()> {
 }
 
 /// Ends a test run with `code` (0 = all steps passed). Only in test mode.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn app_exit(app: tauri::AppHandle, state: State<'_, AppState>, code: i32) -> Result<()> {
     if state.cli.test_script.is_none() {
@@ -178,6 +181,7 @@ pub async fn app_exit(app: tauri::AppHandle, state: State<'_, AppState>, code: i
 /// one was given. Test runs don't spawn (returns false). `restored`: started by the last
 /// session's restore, so it opens where that folder's window was (D229). `empty`: the last
 /// session's empty window with that backup id (one this start was handed), with its unsaved text.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn app_new_window(
     state: State<'_, AppState>,
@@ -267,6 +271,7 @@ pub async fn app_new_window(
 /// when unknown. A tag this process didn't start (or no longer knows: this window restarted)
 /// is answered from the window registry when `folders` gives its folder (D222): open when a
 /// running window has that folder open, else closed.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn app_windows_alive(
     tags: Vec<String>,
@@ -294,6 +299,7 @@ pub async fn app_windows_alive(
     .map_err(|e| Error::Exec(e.to_string()))
 }
 
+#[cfg(feature = "desktop")]
 /// The folder as a window's registration names it (canonical, D209), else as given.
 fn canonical_folder(folder: &str) -> String {
     // A network folder is compared as given: touching it makes Windows connect (D161).
@@ -306,6 +312,7 @@ fn canonical_folder(folder: &str) -> String {
         .unwrap_or_else(|_| folder.to_string())
 }
 
+#[cfg(feature = "desktop")]
 /// The windows this process started with a tag, by tag (D207).
 mod windows {
     use std::process::Child;

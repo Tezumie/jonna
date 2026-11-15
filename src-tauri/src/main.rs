@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "desktop")]
 fn main() {
     // Started as a remote window's relay (remote/relay.rs, D252): runs a program there, exits
     // with its code. First: it starts for every git call in a remote window.
@@ -32,4 +33,11 @@ fn main() {
     // Started from another editor's terminal: its variables aren't passed on (D192).
     ide_lib::forget_parent_editor();
     ide_lib::run();
+}
+
+/// Built with the `host` feature there is no window: this program is then the windowless host
+/// too (`ide-host` is its proper name).
+#[cfg(not(feature = "desktop"))]
+fn main() {
+    std::process::exit(ide_lib::host_program());
 }

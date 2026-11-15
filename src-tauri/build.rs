@@ -349,9 +349,21 @@ const COMMANDS: &[&str] = &[
 ];
 
 fn main() {
-    let attrs = tauri_build::Attributes::new()
-        .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
-    if let Err(err) = tauri_build::try_build(attrs) {
-        panic!("tauri build script failed: {err:#}");
+    // The windowless host build (the `host` feature) has no window, bundle or permissions: the
+    // framework's build step is the desktop's only. What the code reads of the product (its
+    // names, its identifier) comes from product.json at compile time in both builds.
+    #[cfg(feature = "desktop")]
+    {
+        let attrs = tauri_build::Attributes::new()
+            .app_manifest(tauri_build::AppManifest::new().commands(COMMANDS));
+        if let Err(err) = tauri_build::try_build(attrs) {
+            panic!("tauri build script failed: {err:#}");
+        }
+    }
+    #[cfg(not(feature = "desktop"))]
+    {
+        let _ = COMMANDS;
+        println!("cargo:rerun-if-changed=build.rs");
+        println!("cargo:rerun-if-changed=../product.json");
     }
 }

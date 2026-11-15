@@ -3,6 +3,7 @@
 //! applied (`agent/checkpoints/<session>/<turn>.json`), for one-click restore.
 
 pub mod docs;
+#[cfg(feature = "desktop")]
 pub mod render;
 pub mod reports;
 pub mod scratch;

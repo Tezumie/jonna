@@ -51,6 +51,7 @@ pub fn take_extensions_off(data: &Path, command_line: bool) -> Option<Extensions
 
 /// What the next start does: `Some(true)` extensions off, `Some(false)` on (even with the
 /// command-line flag), `None` as usual.
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub fn set_next_start(data: &Path, extensions_off: Option<bool>) -> std::io::Result<()> {
     let file = data.join(NEXT_START_FILE);
     match extensions_off {
