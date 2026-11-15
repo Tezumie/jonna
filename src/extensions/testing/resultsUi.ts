@@ -3,6 +3,7 @@
 // assertion's values) and "Debug test" (the test under the debugger, through debug.start with a
 // launch configuration made for its framework, debugConfig.ts).
 import type { DisposableStore } from "../../core/lifecycle/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { Discovered, TestController } from "./controller";
@@ -108,7 +109,7 @@ export function registerResults(deps: ResultsDeps): void {
         throw new Error(
           run === undefined ? "That test hasn't run yet." : `Run ${run} didn't run that test.`,
         );
-      if (ctx.caller.kind === "user" || ctx.caller.kind === "test") {
+      if (isUserCaller(ctx.caller)) {
         dock.openView("testResults", null, "bottom", true);
         // The tab draws its runs first.
         await new Promise((r) => setTimeout(r, 50));

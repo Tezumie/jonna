@@ -13,6 +13,7 @@
 import { type Disposable, toDisposable } from "../../core/lifecycle/index";
 import { type Signal, signal } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { promptPolicyOf, type UnattendedPolicy } from "./unattended";
 
 /** Who is watching: the window focused and visible, a chat on screen. */
 export interface Presence {
@@ -247,6 +248,12 @@ export interface AgentHost {
   readonly prompts: HostPrompts;
   /** Where a workflow's script runs; null: nowhere, and run_workflow is left out. */
   readonly workers: WorkerFactory | null;
+  /**
+   * The permission policy of a run with nobody at the window (unattended.ts): its deny and allow
+   * lists, and what happens to a question nobody can answer. None in the window: a chat's
+   * questions are its cards.
+   */
+  readonly permissions?: UnattendedPolicy | null;
 }
 
 /** The host of a run with no window. Everything defaults to "nobody there". */
@@ -257,13 +264,19 @@ export function headlessAgentHost(
     prompts?: HostPrompts;
     policy?: PromptPolicy;
     workers?: WorkerFactory | null;
+    /** The run's permission policy; host prompts follow it unless `policy` or `prompts` is given. */
+    permissions?: UnattendedPolicy | null;
   } = {},
 ): AgentHost {
+  const permissions = options.permissions ?? null;
   return {
     screen: false,
     presence: options.presence ?? NOBODY,
-    prompts: options.prompts ?? headlessPrompts(options.policy),
+    prompts:
+      options.prompts ??
+      headlessPrompts(options.policy ?? (permissions ? promptPolicyOf(permissions) : undefined)),
     workers: options.workers ?? null,
+    permissions,
   };
 }
 

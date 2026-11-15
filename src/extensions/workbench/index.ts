@@ -555,6 +555,7 @@ export function createWorkbenchExtension(
           // A folder opened for the first time: its README, like VS Code's "readme" start page.
           if (
             plan.readme &&
+            services.hasScreen &&
             services.settings.peek<boolean>("workbench.openReadme") !== false &&
             !services.context.get("testRun")
           )

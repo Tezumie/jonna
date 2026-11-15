@@ -41,7 +41,32 @@ export class SettingsModel {
   /** Each folder's own settings in a multi-root workspace (D251), by folder key. */
   private folders = new Map<string, Record<string, unknown>>();
 
+  /**
+   * Values for this run only, above every file's: what a command line's flags say (the model,
+   * the access mode). Never written anywhere, and gone with the process.
+   */
+  private overrides: Record<string, unknown> = {};
+
   constructor(private readonly registry: SettingsRegistry) {}
+
+  /**
+   * Replaces the values that hold for this run only (above the user's and the folder's settings;
+   * an object setting replaces, it doesn't merge). Nothing is written to a settings file.
+   */
+  setOverrides(values: Readonly<Record<string, unknown>>): void {
+    const before = this.snapshot();
+    const also = [...Object.keys(this.overrides), ...Object.keys(values)];
+    this.overrides = { ...values };
+    this.emitDiff(
+      before,
+      also.filter((k) => !this.registry.get(k)),
+    );
+  }
+
+  /** The values set for this run only. */
+  overrideValues(): Record<string, unknown> {
+    return { ...this.overrides };
+  }
 
   /** The folder's trust changed: restricted settings from its files apply, or stop applying. */
   setTrusted(trusted: boolean): void {
@@ -149,6 +174,7 @@ export class SettingsModel {
     key: string,
     folder: string | null | undefined,
   ): { value: unknown; source: "default" | SettingsScope | "vscode" | "folder" } {
+    if (this.overrides[key] !== undefined) return this.resolve(key);
     const layer = folder ? this.folders.get(folder) : undefined;
     const value = layer?.[key];
     if (value !== undefined) {
@@ -202,9 +228,15 @@ export class SettingsModel {
     return this.resolve(key).value as T;
   }
 
-  /** The value and the layer it came from. */
+  /**
+   * The value and the layer it came from. A value set for this run only (`setOverrides`) wins
+   * and reads as the user's: the person chose it, on the command line.
+   */
   resolve(key: string): { value: unknown; source: "default" | SettingsScope | "vscode" } {
     const schema = this.registry.get(key);
+    const override = this.overrides[key];
+    if (override !== undefined && (!schema || isValid(schema, override)))
+      return { value: override, source: "user" };
     if (schema && mergesObjects(schema, key)) return this.resolveMerged(key, schema);
     if (schema) {
       const folder = this.folderMaySet(schema);

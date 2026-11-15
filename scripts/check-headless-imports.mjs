@@ -28,6 +28,14 @@ const ENTRIES = [
   "src/extensions/agent/mcp.ts",
   "src/extensions/agent/mcpFeatures.ts",
   "src/extensions/agent/mcpSampling.ts",
+  // A front end that isn't the window: a chat's events, the run's permission policy, and the
+  // brain itself (the extensions it activates are handed to it: src/headless/extensions.ts
+  // imports their modules, views and all, and only the headless build's entry imports that).
+  "src/extensions/agent/sessionEvents.ts",
+  "src/extensions/agent/unattended.ts",
+  "src/extensions/agent/runtime.ts",
+  "src/headless/boot.ts",
+  "src/headless/brain.ts",
 ];
 
 /** Why a module (a path from the repository root, `/` separators) is view code; null when it isn't. */

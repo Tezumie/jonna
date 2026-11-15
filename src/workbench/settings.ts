@@ -204,6 +204,15 @@ export class SettingsService implements Disposable {
     });
   }
 
+  /**
+   * Values that hold for this run only, above every settings file and never written to one (a
+   * command line's flags: the model, the access mode, a limit). Replaces the earlier set.
+   */
+  setOverrides(values: Readonly<Record<string, unknown>>): void {
+    this.model.setOverrides(values);
+    this.version.value = this.version.peek() + 1;
+  }
+
   /** Effective value (reactive inside effects). */
   get<T>(key: string): T {
     this.version.value;

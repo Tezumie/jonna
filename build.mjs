@@ -3,6 +3,8 @@
 //   node build.mjs --prod    minified production build to dist/
 //   node build.mjs --serve   watch + serve dist/ on :1420 with live reload (used by `tauri dev`)
 //   add --with-dev to a --prod build to keep dev-only commands (for measuring release startup)
+//   node build.mjs --headless [--prod]   the brain without a window, for Node, to dist-headless/
+//                            (its own folder: dist/ and the window's bundle are not touched)
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -15,11 +17,103 @@ const prod = args.has("--prod");
 const serve = args.has("--serve");
 const devFeatures = !prod || args.has("--with-dev");
 const outdir = join(root, "dist");
+const headlessOutdir = join(root, "dist-headless");
 const DEV_PORT = 1420;
 
 // Keep generated files (product.ts, tokens.css, tauri.conf.json) fresh.
 const gen = spawnSync(process.execPath, [join(root, "scripts/gen.mjs")], { stdio: "inherit" });
 if (gen.status !== 0) process.exit(gen.status ?? 1);
+
+if (args.has("--headless")) {
+  await buildHeadless();
+  process.exit(0);
+}
+
+/**
+ * The brain without a window (src/headless/run.ts) as ES modules for Node: `brain.mjs`, the
+ * chunks it loads lazily, and `workflow.worker.mjs` (a worker thread's script, one file). The
+ * extensions' view code comes along where their modules import it, and is never run: views are
+ * registered and never made without a screen. Stylesheets, fonts and images are left out.
+ */
+async function buildHeadless() {
+  await rm(headlessOutdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await mkdir(headlessOutdir, { recursive: true });
+  /** @type {import("esbuild").BuildOptions} */
+  const node = {
+    absWorkingDir: root,
+    bundle: true,
+    minify: prod,
+    sourcemap: prod ? false : "linked",
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    outExtension: { ".js": ".mjs" },
+    define: { __DEV__: JSON.stringify(devFeatures) },
+    legalComments: prod ? "external" : "inline",
+    logLevel: "info",
+    loader: { ".svg": "text", ".css": "empty", ".ttf": "empty", ".woff2": "empty" },
+  };
+  const raw = {
+    name: "raw",
+    setup(build) {
+      build.onResolve({ filter: /\?raw$/ }, (a) => ({
+        path: join(a.resolveDir, a.path.slice(0, -4)),
+        namespace: "raw",
+      }));
+      build.onLoad({ filter: /.*/, namespace: "raw" }, async (a) => ({
+        contents: await readFile(a.path, "utf8"),
+        loader: "text",
+      }));
+    },
+  };
+  /** The Node extension host's script is a window extension's (never started here): empty. */
+  const noNodeHost = {
+    name: "no-node-host",
+    setup(build) {
+      build.onResolve({ filter: /^virtual:node-host$/ }, () => ({
+        path: "node-host",
+        namespace: "no-node-host",
+      }));
+      build.onLoad({ filter: /.*/, namespace: "no-node-host" }, () => ({
+        contents: "",
+        loader: "text",
+      }));
+    },
+  };
+  const monacoEsm = {
+    name: "monaco-esm",
+    setup(build) {
+      build.onResolve({ filter: /^monaco-vim$/ }, () => ({
+        path: join(root, "node_modules/monaco-vim/dist/index.mjs"),
+      }));
+      build.onResolve({ filter: /^monaco-editor\/esm\/vs\// }, (a) => ({
+        path: join(root, "node_modules", `${a.path.replace(/\.js$/, "")}.js`),
+      }));
+    },
+  };
+  const results = await Promise.all([
+    esbuild.build({
+      ...node,
+      entryPoints: { brain: "src/headless/run.ts" },
+      outdir: headlessOutdir,
+      splitting: true, // what loads lazily in the window (the editor engine, grammars) stays lazy
+      chunkNames: "chunks/[name]-[hash]",
+      plugins: [raw, noNodeHost, monacoEsm],
+      metafile: true,
+    }),
+    esbuild.build({
+      ...node,
+      entryPoints: { "workflow.worker": "src/workers/node/workflow.ts" },
+      outdir: headlessOutdir,
+      metafile: true,
+    }),
+  ]);
+  await mkdir(join(root, ".build-meta"), { recursive: true });
+  await writeFile(
+    join(root, ".build-meta/headless-meta.json"),
+    JSON.stringify({ brain: results[0].metafile, workers: results[1].metafile }),
+  );
+}
 
 // On Windows a folder something else just touched (a watcher, an antivirus scan) can fail to go
 // with ENOTEMPTY or EBUSY for a moment: Node retries those.

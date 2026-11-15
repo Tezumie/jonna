@@ -11,9 +11,12 @@
 // below are the verified ones; the rest are checked in their own commands (README, Security).
 import type { Caller } from "../dispatcher/types";
 
-/** The user, or a test script standing in for them: never limited by these checks. */
+/**
+ * The user, a front end acting for them (a terminal, an attached client), or a test script
+ * standing in for them: never limited by these checks.
+ */
 export function isUserCaller(caller: Caller): boolean {
-  return caller.kind === "user" || caller.kind === "test";
+  return caller.kind === "user" || caller.kind === "frontend" || caller.kind === "test";
 }
 
 /**

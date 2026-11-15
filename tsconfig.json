@@ -20,5 +20,12 @@
     "noEmit": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "src/api/**", "src/core/ipc/node/**"]
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/api/**",
+    "src/core/ipc/node/**",
+    "src/headless/node/**",
+    "src/headless/run.ts",
+    "src/workers/node/**"
+  ]
 }

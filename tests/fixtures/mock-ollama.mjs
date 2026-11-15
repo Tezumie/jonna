@@ -2039,7 +2039,51 @@ function demoScripted(messages, user) {
   return null;
 }
 
+/**
+ * The brain without a window (scripts/headless-e2e.mjs): "headless e2e: write and run" writes a
+ * file, runs a command and says how both went; "headless e2e: push" runs a command a policy is
+ * expected to refuse and says whether it was; "headless e2e: recall" answers with what the
+ * conversation already holds (a continued chat). Null: not one of these.
+ */
+function headlessE2eScripted(messages, user) {
+  if (!user.includes("headless e2e:")) return null;
+  // This turn's tool results only (after the last user message).
+  const from = messages.findLastIndex((m) => m.role === "user");
+  const results = messages.slice(from + 1).filter((m) => m.role === "tool");
+  const content = (i) => String(results[i]?.content ?? "");
+  if (user.includes("headless e2e: write and run")) {
+    if (results.length === 0)
+      return {
+        tool: {
+          name: "write_file",
+          arguments: { path: "headless-e2e.txt", content: "written with no window\n" },
+        },
+      };
+    if (results.length === 1)
+      return { tool: { name: "run_command", arguments: { command: "echo headless-e2e-ran" } } };
+    return {
+      text: `Headless: wrote=${/denied|refus|not allowed/i.test(content(0)) ? "no" : "yes"} ran=${content(1).includes("headless-e2e-ran") ? "yes" : "no"}`,
+    };
+  }
+  if (user.includes("headless e2e: push")) {
+    if (results.length === 0)
+      return { tool: { name: "run_command", arguments: { command: "git push origin main" } } };
+    return {
+      text: `Headless push: ${/refus|denied|didn't allow|not allowed/i.test(content(0)) ? "refused" : "ran"}`,
+    };
+  }
+  if (user.includes("headless e2e: recall")) {
+    const earlier = messages
+      .slice(0, from)
+      .some((m) => m.role === "assistant" && String(m.content).startsWith("Headless"));
+    return { text: `Headless recall: ${earlier ? "remembers" : "nothing"}` };
+  }
+  return null;
+}
+
 function scripted(messages) {
+  const headlessE2e = headlessE2eScripted(messages, lastUser(messages));
+  if (headlessE2e) return headlessE2e;
   const demo = demoScripted(messages, lastUser(messages));
   if (demo) return demo;
   const d389 = d389Scripted(messages, lastUser(messages));

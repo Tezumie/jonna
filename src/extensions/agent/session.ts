@@ -25,6 +25,7 @@ import {
 } from "../../core/agent/slash";
 import type { RuleContext } from "../../core/agent/toolRules";
 import { WIDGET_GUIDE_TOOL, WIDGET_TOOL } from "../../core/agent/widgets";
+import { Emitter } from "../../core/events/index";
 import { aiIpc } from "../../core/ipc/agent";
 import { execIpc } from "../../core/ipc/process";
 import { effect, type Signal, signal } from "../../core/reactive/index";
@@ -66,6 +67,7 @@ import {
 import { subagentChoices } from "./subagents";
 import { type AgentTool, CORE_TOOLS, PLAN_TOOL, type SubagentSpec } from "./tools";
 import { turnTools } from "./turnTools";
+import { type AskedCall, listDecision, type PermissionDecision } from "./unattended";
 
 export type { ChatMode, PermissionRequest, QueuedMessage, SessionStatus };
 
@@ -474,7 +476,7 @@ export class AgentSession {
   ): Promise<"once" | "always" | "deny"> {
     if (!request.evenWithFullAccess && !request.danger && this.preApproves(name, args))
       return Promise.resolve("once");
-    return this.ask(request);
+    return this.ask(request, { name, args });
   }
 
   /** The home folder, for `~/` patterns in allowed-tools (read when a turn starts). */
@@ -534,11 +536,31 @@ export class AgentSession {
     return chatTools(this.services, this.small, () => this.items, this.extraTools());
   }
 
-  /** Asks the user inline; resolves when they answer (or the session stops). */
-  ask(request: Omit<PermissionRequest, "id" | "resolve">): Promise<"once" | "always" | "deny"> {
+  private readonly decided = new Emitter<PermissionDecision>();
+  /**
+   * Every permission question's outcome, as it is given: by the run's policy (unattended.ts),
+   * by full access, or on the chat (a card's button, `agent.respondPermission`, Stop).
+   */
+  readonly onDidDecide = this.decided.event;
+
+  /** @internal */ toldDecision(decision: PermissionDecision): void {
+    this.decided.fire(decision);
+  }
+
+  /** Why the last turn ended when it wasn't its answer: out of steps, or stopped. */
+  /** @internal */ endedBy: "max_steps" | "stopped" | null = null;
+
+  /**
+   * Asks the user inline; resolves when they answer (or the session stops). `call`: the tool
+   * call that asks, for a run's allow and deny lists.
+   */
+  ask(
+    request: Omit<PermissionRequest, "id" | "resolve">,
+    call?: AskedCall,
+  ): Promise<"once" | "always" | "deny"> {
     // After Stop, nothing new is asked: the step is being torn down.
     if (this.cancelled) return Promise.resolve("deny");
-    return this.askBeforeSend(request);
+    return this.askBeforeSend(request, call);
   }
 
   /**
@@ -547,13 +569,36 @@ export class AgentSession {
    */
   askBeforeSend(
     request: Omit<PermissionRequest, "id" | "resolve">,
+    call?: AskedCall,
   ): Promise<"once" | "always" | "deny"> {
+    const told = (decision: Pick<PermissionDecision, "answer" | "by" | "rule" | "id">) =>
+      this.decided.fire({
+        title: request.title,
+        ...(request.kind && { kind: request.kind }),
+        ...(request.code && { code: request.code }),
+        ...(call && { tool: call.name }),
+        ...decision,
+      });
+    // A run with nobody at the window (unattended.ts): its deny list, then its allow list.
+    const policy = agentHost(this.services).permissions ?? null;
+    const listed = listDecision(policy, request, call);
+    if (listed) {
+      told({ ...listed, by: "policy" });
+      return Promise.resolve(listed.answer);
+    }
     // Full access (D163): the user is away; everything is allowed, nothing waits on an answer.
     if (
       this.services.settings.peek<string>("agent.runCommands") === "full" &&
       !request.evenWithFullAccess
-    )
+    ) {
+      told({ answer: "once", by: "mode" });
       return Promise.resolve("once");
+    }
+    // Nobody can answer: refused now, instead of a card that waits forever.
+    if (policy && policy.otherwise !== "wait") {
+      told({ answer: "deny", by: "policy" });
+      return Promise.resolve("deny");
+    }
     return new Promise((resolve) => {
       const entry: PermissionRequest = {
         ...request,
@@ -561,6 +606,7 @@ export class AgentSession {
         resolve: (answer) => {
           this.permissions.value = this.permissions.peek().filter((p) => p !== entry);
           this.resumeIfAnswered();
+          told({ id: entry.id, answer, by: "user" });
           resolve(answer);
         },
       };
@@ -1134,6 +1180,7 @@ export class AgentSession {
       return;
     }
     this.stopReason = reason ?? null;
+    this.endedBy = "stopped";
     this.cancelled = true;
     this.interruptStep = false;
     this.sendHeldAfterCancel = false;
@@ -1290,6 +1337,7 @@ export class AgentSession {
     clearTimeout(this.saveTimer);
     clearTimeout(this.hungTimer);
     clearTimeout(this.reportTimer);
+    this.decided.dispose();
   }
 }
 

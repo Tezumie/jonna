@@ -15,6 +15,7 @@ import {
 import type { Json } from "../../core/dock/index";
 import { h } from "../../core/dom/index";
 import { DisposableStore } from "../../core/lifecycle/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { type IconName, icon } from "../../ui/Icon";
@@ -277,7 +278,7 @@ export function registerAutoApprove(
       agent: "hidden",
       palette: false,
       run: async ({ category, pattern, allow }, ctx) => {
-        if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test")
+        if (!isUserCaller(ctx.caller))
           throw new Error("Only you can change what the agent may do without asking.");
         const current = approveRules(services);
         const map = { ...(current[category] ?? {}) };

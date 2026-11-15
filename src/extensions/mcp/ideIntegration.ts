@@ -24,6 +24,7 @@ import {
   notebookForCode,
 } from "../../core/mcp/ideTools";
 import { basename, isAbsolute, samePath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { product } from "../../core/product";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -580,7 +581,7 @@ export function registerIdeIntegration(sub: DisposableStore, services: Workbench
       run: async ({ enabled }, ctx) => {
         // It opens a local server that reads the editors: the user's choice, like the setting
         // (settings.set refuses mcp.claudeCode.enabled to agents; this writes it directly).
-        if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test")
+        if (!isUserCaller(ctx.caller))
           throw new Error("Only you can turn on Claude Code's IDE integration.");
         const on = enabled ?? settings.peek<boolean>("mcp.claudeCode.enabled") !== true;
         await settings.update("mcp.claudeCode.enabled", on, "user");

@@ -10,6 +10,7 @@ import {
   JUPYTER_NOTEBOOK,
   type KernelOption,
 } from "../../../core/notebook/providers";
+import { isUserCaller } from "../../../core/permissions/commandGuards";
 import { s } from "../../../core/schema/index";
 import type { QuickPickItem } from "../../../ui/QuickInput";
 import type { WorkbenchServices } from "../../../workbench/services";
@@ -63,7 +64,7 @@ export function registerKernelCommands(
     agent: "hidden",
     run: async ({ grant }, ctx) => {
       // The user's choice (the kernel picker): an extension or agent can't turn it back on.
-      if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test")
+      if (!isUserCaller(ctx.caller))
         throw new Error("Only the user can enable the Jupyter extension (Select kernel).");
       if (notebooks.source(JUPYTER_KERNELS)) return { enabled: true, already: true };
       const ext = await jupyterExtension();
@@ -139,7 +140,7 @@ export function registerKernelCommands(
         await view.useKernel(choice);
         return { kernel: choice.label, detail: choice.detail };
       }
-      if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test" && !found.length)
+      if (!isUserCaller(ctx.caller) && !found.length)
         throw new Error(view.runner.noKernelMessage(false, view.language()));
 
       type Row = QuickPickItem & { run: () => Promise<unknown> };

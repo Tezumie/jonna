@@ -33,7 +33,8 @@ export type ConfirmFn = (message: string, title: string) => Promise<boolean>;
 export function createM1Policy(confirm: ConfirmFn): PermissionPolicy {
   return {
     async authorize(request) {
-      if (request.caller.kind !== "user") return "deny";
+      // The person: at the window, or at a front end that acts for them (a terminal).
+      if (request.caller.kind !== "user" && request.caller.kind !== "frontend") return "deny";
       if (request.effects.includes("destructive")) {
         const message = request.confirmMessage ?? `Run "${request.title}"? This cannot be undone.`;
         return (await confirm(message, request.title)) ? "allow" : "deny";
@@ -79,7 +80,7 @@ export function createM2Policy(options: M2PolicyOptions): PermissionPolicy {
   return {
     async authorize(request) {
       const { caller, effects } = request;
-      if (caller.kind === "user") return user.authorize(request);
+      if (caller.kind === "user" || caller.kind === "frontend") return user.authorize(request);
       if (caller.kind === "test") return options.testMode() ? "allow" : "deny";
       if (caller.kind === "agent" || caller.kind === "acp") {
         // Agents (M4, PLAN §6): read freely; UI-only commands (no effects) are harmless; anything

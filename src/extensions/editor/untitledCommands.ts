@@ -8,6 +8,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { appIpc, dialogIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { dirname, isAbsolute, joinPath, pathKey } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { EditorDocument, EditorService } from "./service";
@@ -49,7 +50,7 @@ export function registerUntitled(
         const target = asked === undefined || !root ? asked : workspace.resolve(asked);
         if (target !== undefined) {
           // Saving writes outside the folder without asking: only for the user's own paths.
-          if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test")
+          if (!isUserCaller(ctx.caller))
             throw new Error("Only the user can open an untitled editor for a path.");
           if (!isAbsolute(target)) throw new Error("`path` must be absolute (no folder is open).");
         }

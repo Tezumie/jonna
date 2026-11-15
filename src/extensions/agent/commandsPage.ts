@@ -10,6 +10,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { settingsIpc } from "../../core/ipc/system";
 import { DisposableStore } from "../../core/lifecycle/index";
 import { isWithin, joinPath, samePath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { confirmAction } from "../../ui/Dialog";
@@ -270,7 +271,7 @@ export function registerCommandsPage(sub: DisposableStore, services: WorkbenchSe
       const text = `# ${clean}\n\nWrite your command's prompt here.\n\nThis command is available in chat with /${clean}\n`;
       await fsIpc.write(path, new TextEncoder().encode(text));
       version.value++;
-      if (ctx.caller.kind === "user" || ctx.caller.kind === "test")
+      if (isUserCaller(ctx.caller))
         await dispatcher.execute("editor.openFile", { path }).catch(() => {});
       return { created: true, name: clean, path };
     },

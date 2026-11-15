@@ -41,7 +41,7 @@ export function registerAutofetch(
     timer = setTimeout(() => void tick(), ms);
   };
   const tick = async () => {
-    if (!document.hidden && !running) {
+    if ((typeof document === "undefined" || !document.hidden) && !running) {
       running = true;
       try {
         for (const git of repositories.peek()) {

@@ -105,7 +105,10 @@ export function terminalThemeFromTokens(theme: ThemeApi): TerminalTheme {
 let build: Promise<number | null> | undefined;
 /** The Windows build (ConPTY behavior differs by build), asked once; null elsewhere. */
 function windowsBuild(): Promise<number | null> {
-  if (!navigator.userAgent.includes("Windows") || !hasBackend()) return Promise.resolve(null);
+  // A runtime with no page (a run with no window) has no browser user agent: the backend says.
+  const agent = typeof navigator === "undefined" ? undefined : navigator.userAgent;
+  const page = typeof agent === "string" && !agent.startsWith("Node.js");
+  if ((page && !agent.includes("Windows")) || !hasBackend()) return Promise.resolve(null);
   build ??= appIpc
     .info()
     .then((i) => i.osBuild)

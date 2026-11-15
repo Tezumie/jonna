@@ -341,6 +341,11 @@ export class StreamTransport implements Transport {
     this.close();
   }
 
+  /** Calls sent and not answered yet (a program ending in order waits for none). */
+  get pendingCalls(): number {
+    return this.pending.size;
+  }
+
   /** Closes the connection from this side: pending calls fail, channels end. */
   close(): void {
     this.end({ code: "Io", message: "The host connection was closed." }, undefined);

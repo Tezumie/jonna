@@ -13,6 +13,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { hasBackend } from "../../core/ipc/invoke";
 import { dialogIpc } from "../../core/ipc/system";
 import { isAbsolute, joinPath, resolveInRoot } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { effect, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -212,7 +213,7 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
     const folderCaller = (caller: Caller, folder: string | undefined, what: string) => {
       if (caller.kind === "ext" || caller.kind === "mcp")
         throw new Error(`Only the user or the agent can ${what}.`);
-      if (caller.kind !== "user" && caller.kind !== "test" && folder === undefined)
+      if (!isUserCaller(caller) && folder === undefined)
         throw new Error("Give the extension's folder.");
     };
     /** The folder from input (relative to the workspace's folders, or absolute), else picked. */

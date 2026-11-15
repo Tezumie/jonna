@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The brain without a window, for Node (node build.mjs --headless)
+dist-headless/
 .test-build/
 src-tauri/target/
 # The remote server's own build folder, and its binaries (scripts/build-server.mjs)

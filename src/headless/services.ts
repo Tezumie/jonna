@@ -418,6 +418,46 @@ export function policyTrustPrompts(policy: TrustPolicy = {}): TrustPrompts {
   };
 }
 
+// ---- Saved state -----------------------------------------------------------------------------
+
+/**
+ * The keys of the global state that are the window's own: which folder the next start reopens,
+ * the recent and pinned folders of its welcome page, the palette's recent commands, notices it
+ * hid, its saved look. A session without a screen never changes them: opening a folder to work
+ * in it is not the person opening it in the app. Every other key (trust decisions, the external
+ * agents' remembered settings, hand-offs between agents…) is saved as the window saves it.
+ */
+export const WINDOW_GLOBAL_KEYS: readonly string[] = [
+  "lastFolder",
+  "recentFolders",
+  "pinnedFolders",
+  "recentCommands",
+  "hiddenNotices",
+  "hideImportLink",
+  "ui",
+];
+
+/**
+ * `json` (the global state about to be written) with the window's own keys as the stored file
+ * has them (`stored`: its text, or null when there is none): kept when there, left out when not.
+ */
+export function keepWindowKeys(json: string, stored: string | null): string {
+  let next: Record<string, unknown>;
+  let before: Record<string, unknown> = {};
+  try {
+    next = JSON.parse(json) as Record<string, unknown>;
+    if (stored) before = (JSON.parse(stored) as Record<string, unknown> | null) ?? {};
+  } catch {
+    return json;
+  }
+  if (!next || typeof next !== "object") return json;
+  for (const key of WINDOW_GLOBAL_KEYS) {
+    if (key in before) next[key] = before[key];
+    else delete next[key];
+  }
+  return JSON.stringify(next);
+}
+
 // ---- The set ---------------------------------------------------------------------------------
 
 type PermissionAnswer = "once" | "session" | "deny";
@@ -495,8 +535,15 @@ export function screenlessImplementations(options: ScreenlessOptions): {
     // between sessions (trust, recent folders) is saved as the window saves it.
     stateBackend: {
       load: (scope) => storeIpc.load(scope),
-      save: (scope, json) =>
-        scope === "workspace" ? Promise.resolve() : storeIpc.save(scope, json),
+      save: async (scope, json) => {
+        if (scope === "workspace") return;
+        await storeIpc.save(
+          scope,
+          scope === "global"
+            ? keepWindowKeys(json, await storeIpc.load(scope).catch(() => null))
+            : json,
+        );
+      },
     },
     audit: (entry) => options.audit?.(entry),
     validateOutput: __DEV__,

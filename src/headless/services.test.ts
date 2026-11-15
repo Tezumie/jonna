@@ -7,9 +7,11 @@ import {
   HeadlessQuickInput,
   HeadlessStatusBar,
   HeadlessTheme,
+  keepWindowKeys,
   noAuxWindows,
   noIframes,
   policyTrustPrompts,
+  WINDOW_GLOBAL_KEYS,
 } from "./services";
 
 /** Lets the microtasks the services queue (a notice's close, a session's hide) run. */
@@ -227,4 +229,42 @@ test("what only a window has is refused clearly", async () => {
     () => noIframes.attach({} as HTMLElement, {} as HTMLIFrameElement),
     NeedsScreenError,
   );
+});
+
+test("saved state: the window's own keys of the global state stay as the file has them", () => {
+  const stored = JSON.stringify({
+    version: 3,
+    lastFolder: "/app/project",
+    recentFolders: ["/app/project", "/other"],
+    recentCommands: ["a.b"],
+    trusted: ["/app/project"],
+  });
+  const next = JSON.stringify({
+    version: 3,
+    // What this session's workspace service would write for the folder it opened.
+    lastFolder: "/scratch/run",
+    recentFolders: ["/scratch/run", "/app/project", "/other"],
+    pinnedFolders: ["/scratch/run"],
+    trusted: ["/app/project", "/scratch/run"],
+    acpSettings: { agent: { model: "fast" } },
+  });
+  assert.deepEqual(JSON.parse(keepWindowKeys(next, stored)), {
+    version: 3,
+    lastFolder: "/app/project",
+    recentFolders: ["/app/project", "/other"],
+    recentCommands: ["a.b"],
+    // Shared decisions are saved as the window saves them.
+    trusted: ["/app/project", "/scratch/run"],
+    acpSettings: { agent: { model: "fast" } },
+  });
+  // No file yet: the window's keys are left out rather than invented.
+  assert.deepEqual(JSON.parse(keepWindowKeys(next, null)), {
+    version: 3,
+    trusted: ["/app/project", "/scratch/run"],
+    acpSettings: { agent: { model: "fast" } },
+  });
+  // Every key named is one the window owns.
+  assert.ok(WINDOW_GLOBAL_KEYS.includes("lastFolder"));
+  // Text that isn't JSON goes through untouched (the store's own problem to report).
+  assert.equal(keepWindowKeys("not json", stored), "not json");
 });

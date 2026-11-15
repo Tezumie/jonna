@@ -166,3 +166,32 @@ test("model: resetting a value that equals the default is still reported (the ed
   model.setText("user", "{}");
   assert.deepEqual(changes.pop(), ["editor.fontSize"]);
 });
+
+test("values set for this run only win over every file and are never a file's", () => {
+  const registry = new SettingsRegistry();
+  registry.register({
+    "agent.runCommands": {
+      type: "string",
+      enum: ["ask", "auto", "full"],
+      default: "ask",
+      description: "",
+    },
+  });
+  const model = new SettingsModel(registry);
+  const changes: string[][] = [];
+  model.onDidChange((keys) => changes.push([...keys]));
+  model.setText("user", '{ "agent.runCommands": "auto" }');
+  model.setOverrides({ "agent.runCommands": "full", "unknown.key": 1 });
+  assert.equal(model.get("agent.runCommands"), "full");
+  assert.equal(model.get("unknown.key"), 1);
+  assert.equal(model.getAt("agent.runCommands", "some/folder"), "full");
+  // The file's value is what a settings editor would write back: untouched.
+  assert.equal(model.inspect("agent.runCommands", "user"), "auto");
+  assert.deepEqual(changes.at(-1)?.sort(), ["agent.runCommands", "unknown.key"]);
+  // An invalid value doesn't apply; taking the overrides back restores the file's.
+  model.setOverrides({ "agent.runCommands": "never" });
+  assert.equal(model.get("agent.runCommands"), "auto");
+  model.setOverrides({});
+  assert.equal(model.get("agent.runCommands"), "auto");
+  assert.equal(model.get("unknown.key"), undefined);
+});

@@ -265,7 +265,9 @@ export class GitController implements GitRepo {
     const next = () => {
       poll = setTimeout(
         () => {
-          if (document.hasFocus() && !document.hidden) this.schedule(0);
+          // With no window nobody is "away": the poll just runs.
+          if (typeof document === "undefined" || (document.hasFocus() && !document.hidden))
+            this.schedule(0);
           next();
         },
         statusPollMs(this.watched?.peek() === true),
@@ -372,6 +374,7 @@ export class GitController implements GitRepo {
   }
 
   dispose(): void {
+    this.openGeneration++; // an open() still awaiting gives up instead of adding to what ended
     this.store.dispose();
   }
 }
