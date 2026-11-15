@@ -37,6 +37,9 @@ struct Local {
     /// The keyring is held (approved, or joined by recovery key).
     joined: bool,
     key_version: u64,
+    /// The newest version of the sealed list of trusted devices this computer has seen: an
+    /// older list handed back by the service is refused.
+    trusted_n: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,8 +52,9 @@ pub struct DeviceInfo {
     pub status: String,
     pub created_at: Option<u64>,
     pub last_seen_at: Option<u64>,
-    /// What both computers show while one approves the other.
-    pub code: String,
+    /// What both computers show while one approves the other: set once this computer has
+    /// started checking the waiting one (`review`).
+    pub code: Option<String>,
     pub current: bool,
 }
 
@@ -87,16 +91,33 @@ struct Prepared {
 
 static PREPARED: Mutex<Option<Prepared>> = Mutex::new(None);
 
+/// Waiting devices this computer is checking: device id to the public key it saw and the
+/// random part of the code it chose. Approval seals to that key, whatever the service says later.
+static REVIEWS: Mutex<Vec<(String, String, String)>> = Mutex::new(Vec::new());
+
+/// The sealed list of devices the account's own devices approved, the recovery key they
+/// wrap to, and a counter that only goes up.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Trusted {
+    devices: Vec<(String, String)>,
+    /// The recovery key's public half and its auth key.
+    recovery: Option<(String, String)>,
+    n: u64,
+}
+
 pub struct Vault {
     pub api: Api,
     data: PathBuf,
 }
 
-fn default_name() -> String {
+/// This computer's own name (what the system calls it), to tell devices apart in a list.
+pub fn default_name() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .ok()
-        .filter(|n| !n.trim().is_empty())
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|n| n.trim().chars().take(80).collect::<String>())
+        .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "Computer".to_string())
 }
 
@@ -202,6 +223,20 @@ impl Vault {
         }})
     }
 
+    /// Proof for the service that `key`'s private half is held here (its challenge, answered).
+    async fn proof(&self, key: &PrivateKey) -> Result<Value> {
+        let challenge = self
+            .api
+            .post("challenge", &json!({ "publicKey": key.public() }))
+            .await?
+            .into_ok()?;
+        let answer = key.prove(
+            challenge["publicKey"].as_str().unwrap_or(""),
+            challenge["nonce"].as_str().unwrap_or(""),
+        )?;
+        Ok(json!({ "id": challenge["id"], "proof": answer }))
+    }
+
     // ------------------------------------------------------------ where things stand
 
     /// Where sync stands for this device, catching up with what happened elsewhere: handed
@@ -260,11 +295,10 @@ impl Vault {
             // A new sign-in is a new session: tell the server which device it is again.
             let mut mine = mine.clone();
             if server["self"].as_str() != Some(local.device_id.as_str()) {
-                let public = self.device_key()?.public();
-                self.api
-                    .post("devices", &self.device_body(&local, &public))
-                    .await?
-                    .into_ok()?;
+                let key = self.device_key()?;
+                let mut body = self.device_body(&local, &key.public());
+                body["proof"] = self.proof(&key).await?;
+                self.api.post("devices", &body).await?.into_ok()?;
                 let again = self.api.get("state").await?;
                 if let Some(d) = again["devices"].as_array().and_then(|l| {
                     l.iter()
@@ -295,14 +329,28 @@ impl Vault {
             }
         }
 
+        let reviews = REVIEWS.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let list = devices
             .iter()
             .map(|d| {
                 let text = |name: &str| d[name].as_str().unwrap_or("").to_string();
+                let current = !local.device_id.is_empty()
+                    && d["id"].as_str() == Some(local.device_id.as_str());
+                // This computer waiting: the code from the nonce an approving computer chose.
+                // A waiting computer this one is checking: from the key and nonce it fixed.
+                let code = if current {
+                    d["codeNonce"]
+                        .as_str()
+                        .map(|nonce| crypto::verification_code(&text("publicKey"), nonce))
+                } else {
+                    reviews
+                        .iter()
+                        .find(|(id, _, _)| *id == text("id"))
+                        .map(|(_, public, nonce)| crypto::verification_code(public, nonce))
+                };
                 DeviceInfo {
-                    current: !local.device_id.is_empty()
-                        && d["id"].as_str() == Some(local.device_id.as_str()),
-                    code: crypto::verification_code(&text("publicKey")),
+                    current,
+                    code,
                     id: text("id"),
                     name: text("name"),
                     platform: text("platform"),
@@ -312,7 +360,7 @@ impl Vault {
                 }
             })
             .collect::<Vec<_>>();
-        let code = list.iter().find(|d| d.current).map(|d| d.code.clone());
+        let code = list.iter().find(|d| d.current).and_then(|d| d.code.clone());
         Ok(Status {
             state: state.into(),
             notice,
@@ -374,14 +422,20 @@ impl Vault {
             device_name: prepared.name.clone(),
             joined: true,
             key_version: 1,
+            trusted_n: 0,
         };
         let public = prepared.device.public();
         let bytes = prepared.ring.to_bytes()?;
         let mut body = self.device_body(&local, &public);
+        body["proof"] = self.proof(&prepared.device).await?;
         body["wrap"] = json!(crypto::seal_to(&public, &bytes)?);
         body["recovery"] = json!({
             "publicKey": prepared.recovery.public(),
-            "wrap": crypto::seal_to(&prepared.recovery.public(), &bytes)?,
+            "wrap": crypto::recovery_wrap(
+                &prepared.recovery.public(),
+                &prepared.recovery.auth_key()?,
+                &bytes,
+            )?,
         });
         let reply = self.api.post("setup", &body).await?.into_ok()?;
         local.epoch = reply["epoch"].as_u64().unwrap_or(1);
@@ -393,15 +447,21 @@ impl Vault {
         )?;
         self.store_keyring(&prepared.ring)?;
         self.save_local(&local)?;
-        self.trust(&prepared.ring, &[(local.device_id.clone(), public)], &[])
-            .await
+        self.trust(
+            &prepared.ring,
+            &[(local.device_id.clone(), public)],
+            &[],
+            Some((&prepared.recovery.public(), &prepared.recovery.auth_key()?)),
+        )
+        .await
     }
 
     // ------------------------------------------------------------ joining
 
     /// Registers this device with an account that already syncs, to wait for approval (or
-    /// for the recovery key). Returns the code to compare.
-    pub async fn join(&self, name: &str) -> Result<String> {
+    /// for the recovery key). The code to compare shows once an approving computer starts
+    /// checking this one.
+    pub async fn join(&self, name: &str) -> Result<()> {
         let uid = self
             .uid()
             .ok_or_else(|| Error::Sync("SyncSignedOut", "Sign in to sync.".into()))?;
@@ -417,6 +477,7 @@ impl Vault {
                 device_name: clean_name(name),
                 joined: false,
                 key_version: 0,
+                trusted_n: 0,
             };
             secrets::set(&self.secrets_file(), DEVICE_SECRET, Some(&key.to_text()))?;
             self.save_local(&local)?;
@@ -424,12 +485,39 @@ impl Vault {
         } else {
             self.device_key()?
         };
-        let public = key.public();
+        let mut body = self.device_body(&local, &key.public());
+        body["proof"] = self.proof(&key).await?;
+        self.api.post("devices", &body).await?.into_ok()?;
+        Ok(())
+    }
+
+    /// Starts checking a waiting device: fixes the key this computer would approve, chooses
+    /// the random part of the code and publishes it. Returns the code both computers now show.
+    pub async fn review(&self, device_id: &str) -> Result<String> {
+        self.keyring()?;
+        let server = self.api.get("state").await?;
+        let device = server["devices"]
+            .as_array()
+            .and_then(|l| {
+                l.iter().find(|d| {
+                    d["id"].as_str() == Some(device_id) && d["status"].as_str() == Some("pending")
+                })
+            })
+            .ok_or_else(|| Error::Sync("Sync", "That device is no longer waiting.".into()))?;
+        let public = device["publicKey"].as_str().unwrap_or("").to_string();
+        let nonce = crypto::b64(&crypto::random::<16>()?);
         self.api
-            .post("devices", &self.device_body(&local, &public))
+            .post(
+                &format!("devices/{device_id}/code"),
+                &json!({ "nonce": nonce, "publicKey": public }),
+            )
             .await?
             .into_ok()?;
-        Ok(crypto::verification_code(&public))
+        let code = crypto::verification_code(&public, &nonce);
+        let mut reviews = REVIEWS.lock().unwrap_or_else(|e| e.into_inner());
+        reviews.retain(|(id, _, _)| id != device_id);
+        reviews.push((device_id.to_string(), public, nonce));
+        Ok(code)
     }
 
     /// Joins with the recovery key instead of another device's approval.
@@ -439,38 +527,54 @@ impl Vault {
         let mut local = self.local();
         let stored = self.api.get("recovery").await?;
         let wrap = stored["wrap"].as_str().unwrap_or("");
-        let ring = recovery.open(wrap).map_err(|_| {
-            Error::Sync(
-                "SyncRecoveryKey",
-                "That recovery key isn't this account's current one.".into(),
-            )
-        })?;
-        let ring = Keyring::from_bytes(&ring)?;
+        // Opens only when one of the account's devices wrapped it: keys made up by whoever
+        // stores the wrap carry no valid tag.
+        let ring = Keyring::from_bytes(&recovery.open_recovery(wrap)?)?;
         let version = stored["keyVersion"].as_u64().unwrap_or(0);
         let public = self.device_key()?.public();
         let body = json!({
             "self": true,
             "wrap": crypto::seal_to(&public, &ring.to_bytes()?)?,
             "keyVersion": version,
+            "proof": self.proof(&recovery).await?,
         });
         self.api.post("keyring", &body).await?.into_ok()?;
         self.store_keyring(&ring)?;
         local.joined = true;
         local.key_version = version;
         self.save_local(&local)?;
-        self.trust(&ring, &[(local.device_id.clone(), public)], &[])
+        // The account's sealed list must open with these keys and name this recovery key.
+        let genuine = self
+            .trusted(&ring)
+            .await
+            .is_ok_and(|t| t.recovery.is_some_and(|(pin, _)| pin == recovery.public()));
+        if !genuine {
+            let _ = self
+                .api
+                .delete(&format!("devices/{}", local.device_id))
+                .await;
+            self.forget()?;
+            return Err(Error::Sync(
+                "SyncRecoveryKey",
+                "That recovery key isn't this account's current one.".into(),
+            ));
+        }
+        self.trust(&ring, &[(local.device_id.clone(), public)], &[], None)
             .await
     }
 
-    /// Hands the keys to a waiting device. The caller showed its code and the user agreed.
+    /// Hands the keys to a waiting device this computer checked (`review`): to the key it
+    /// fixed then, which is the one the code the user compared was made from.
     pub async fn approve(&self, device_id: &str) -> Result<()> {
         let ring = self.keyring()?;
+        let public = REVIEWS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .find(|(id, _, _)| id == device_id)
+            .map(|(_, public, _)| public.clone())
+            .ok_or_else(|| Error::Sync("Sync", "Check that device's code first.".into()))?;
         let server = self.api.get("state").await?;
-        let device = server["devices"]
-            .as_array()
-            .and_then(|l| l.iter().find(|d| d["id"].as_str() == Some(device_id)))
-            .ok_or_else(|| Error::Sync("Sync", "That device is no longer waiting.".into()))?;
-        let public = device["publicKey"].as_str().unwrap_or("").to_string();
         let body = json!({
             "wrap": crypto::seal_to(&public, &ring.to_bytes()?)?,
             "keyVersion": server["keyVersion"],
@@ -480,7 +584,11 @@ impl Vault {
             .post(&format!("devices/{device_id}/approve"), &body)
             .await?
             .into_ok()?;
-        self.trust(&ring, &[(device_id.to_string(), public)], &[])
+        REVIEWS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(id, _, _)| id != device_id);
+        self.trust(&ring, &[(device_id.to_string(), public)], &[], None)
             .await
     }
 
@@ -490,7 +598,7 @@ impl Vault {
         let own = self.local().device_id == device_id;
         if let Ok(ring) = self.keyring() {
             // Out of the trusted list first, so a rotation never wraps keys for it again.
-            let _ = self.trust(&ring, &[], &[device_id.to_string()]).await;
+            let _ = self.trust(&ring, &[], &[device_id.to_string()], None).await;
         }
         self.api.delete(&format!("devices/{device_id}")).await?;
         if own {
@@ -508,41 +616,88 @@ impl Vault {
         let server = self.api.get("state").await?;
         let body = json!({
             "publicKey": recovery.public(),
-            "wrap": crypto::seal_to(&recovery.public(), &ring.to_bytes()?)?,
+            "wrap": crypto::recovery_wrap(&recovery.public(), &recovery.auth_key()?, &ring.to_bytes()?)?,
             "keyVersion": server["keyVersion"],
         });
         self.api.put("recovery", &body).await?.into_ok()?;
+        // The account's devices wrap to this key from now on, whatever the service lists.
+        self.trust(
+            &ring,
+            &[],
+            &[],
+            Some((&recovery.public(), &recovery.auth_key()?)),
+        )
+        .await?;
         Ok(crypto::recovery_text(&recovery))
     }
 
     // ------------------------------------------------------------ the trusted list and new keys
 
-    async fn trusted(&self, ring: &Keyring) -> Result<Vec<(String, String)>> {
-        let record = records::get(&self.api, ring, TRUSTED.0, TRUSTED.1).await?;
-        Ok(parse_trusted(
-            record.as_ref().and_then(|r| r.text.as_deref()),
-        ))
+    /// The sealed list as the account has it. Refused when it is missing, can't be opened,
+    /// or is older than one this computer has seen: nothing is decided from such a list.
+    async fn trusted(&self, ring: &Keyring) -> Result<Trusted> {
+        let untrusted = || {
+            Error::Sync(
+                "SyncKeys",
+                "The account's list of trusted devices couldn't be read; nothing was changed."
+                    .into(),
+            )
+        };
+        let record = records::get(&self.api, ring, TRUSTED.0, TRUSTED.1)
+            .await?
+            .filter(|r| !r.deleted && !r.unreadable)
+            .ok_or_else(untrusted)?;
+        let list = parse_trusted(record.text.as_deref()).ok_or_else(untrusted)?;
+        if list.n < self.local().trusted_n {
+            return Err(untrusted());
+        }
+        Ok(list)
     }
 
     /// Adds devices to (and removes ids from) the sealed list of devices this account's own
-    /// devices approved.
+    /// devices approved; `pin` sets the recovery key they wrap to.
     async fn trust(
         &self,
         ring: &Keyring,
         add: &[(String, String)],
         remove: &[String],
+        pin: Option<(&str, &str)>,
     ) -> Result<()> {
+        let floor = self.local().trusted_n;
+        let mut written = None;
         records::update(&self.api, ring, TRUSTED.0, TRUSTED.1, |now| {
-            let mut list = parse_trusted(now);
-            let before = list.clone();
-            list.retain(|(id, _)| !remove.contains(id) && !add.iter().any(|(a, _)| a == id));
-            list.extend(add.iter().cloned());
-            (list != before).then(|| {
-                json!({ "devices": list.iter().map(|(id, key)| json!({ "id": id, "publicKey": key })).collect::<Vec<_>>() })
-                    .to_string()
-            })
+            let before = parse_trusted(now).unwrap_or_default();
+            let mut next = before.clone();
+            next.devices
+                .retain(|(id, _)| !remove.contains(id) && !add.iter().any(|(a, _)| a == id));
+            next.devices.extend(add.iter().cloned());
+            if let Some((public, auth)) = pin {
+                next.recovery = Some((public.to_string(), auth.to_string()));
+            }
+            if next == before {
+                return None;
+            }
+            next.n = before.n.max(floor) + 1;
+            written = Some(next.n);
+            Some(
+                json!({
+                    "devices": next.devices.iter().map(|(id, key)| json!({ "id": id, "publicKey": key })).collect::<Vec<_>>(),
+                    "recovery": next.recovery.as_ref().map(|r| &r.0),
+                    "recoveryAuth": next.recovery.as_ref().map(|r| &r.1),
+                    "n": next.n,
+                })
+                .to_string(),
+            )
         })
-        .await
+        .await?;
+        if let Some(n) = written {
+            let mut local = self.local();
+            if n > local.trusted_n {
+                local.trusted_n = n;
+                self.save_local(&local)?;
+            }
+        }
+        Ok(())
     }
 
     /// A new key generation, wrapped for every device the account's own devices approved and
@@ -554,7 +709,22 @@ impl Vault {
         if !server["rotationNeeded"].as_bool().unwrap_or(false) {
             return Ok(());
         }
+        // Nothing is decided from a list that is missing, unreadable or old.
         let trusted = self.trusted(&ring).await?;
+        let own = self.local().device_id;
+        if !trusted.devices.iter().any(|(id, _)| *id == own) {
+            return Err(Error::Sync(
+                "SyncKeys",
+                "This computer isn't on the account's list of trusted devices; nothing was changed.".into(),
+            ));
+        }
+        // The recovery key the account's devices pinned, never one the service names.
+        let (recovery, recovery_auth) = trusted.recovery.clone().ok_or_else(|| {
+            Error::Sync(
+                "SyncKeys",
+                "This account's recovery key needs replacing: make a new recovery key.".into(),
+            )
+        })?;
         let next = ring.rotated()?;
         let bytes = next.to_bytes()?;
         let mut wraps = serde_json::Map::new();
@@ -564,17 +734,18 @@ impl Vault {
             }
             let id = d["id"].as_str().unwrap_or("");
             let public = d["publicKey"].as_str().unwrap_or("");
-            if trusted.iter().any(|(t, k)| t == id && k == public) {
+            if trusted.devices.iter().any(|(t, k)| t == id && k == public) {
                 wraps.insert(id.to_string(), json!(crypto::seal_to(public, &bytes)?));
             } else {
+                // Listed as approved by the service, approved by none of the account's devices.
                 self.api.delete(&format!("devices/{id}")).await?;
             }
         }
-        let recovery = server["recovery"]["publicKey"].as_str().unwrap_or("");
         let body = json!({
             "expectKeyVersion": server["keyVersion"],
             "wraps": wraps,
-            "recoveryWrap": crypto::seal_to(recovery, &bytes)?,
+            "recoveryWrap": crypto::recovery_wrap(&recovery, &recovery_auth, &bytes)?,
+            "recoveryPublicKey": recovery,
         });
         let reply = self.api.post("keyring", &body).await?.into_ok()?;
         self.store_keyring(&next)?;
@@ -586,21 +757,25 @@ impl Vault {
     }
 }
 
-fn parse_trusted(text: Option<&str>) -> Vec<(String, String)> {
-    let Some(v) = text.and_then(|t| serde_json::from_str::<Value>(t).ok()) else {
-        return Vec::new();
-    };
-    v["devices"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|d| {
-            Some((
-                d["id"].as_str()?.to_string(),
-                d["publicKey"].as_str()?.to_string(),
-            ))
-        })
-        .collect()
+fn parse_trusted(text: Option<&str>) -> Option<Trusted> {
+    let v = serde_json::from_str::<Value>(text?).ok()?;
+    Some(Trusted {
+        devices: v["devices"]
+            .as_array()?
+            .iter()
+            .filter_map(|d| {
+                Some((
+                    d["id"].as_str()?.to_string(),
+                    d["publicKey"].as_str()?.to_string(),
+                ))
+            })
+            .collect(),
+        recovery: v["recovery"]
+            .as_str()
+            .zip(v["recoveryAuth"].as_str())
+            .map(|(public, auth)| (public.to_string(), auth.to_string())),
+        n: v["n"].as_u64().unwrap_or(0),
+    })
 }
 
 /// Whether what was typed back proves the recovery key was kept: the whole key, or its last
@@ -640,11 +815,19 @@ mod tests {
     fn the_trusted_list_reads_what_it_wrote() {
         let text =
             json!({ "devices": [{ "id": "a", "publicKey": "k" }, { "bad": 1 }] }).to_string();
+        let list = parse_trusted(Some(&text)).unwrap();
+        assert_eq!(list.devices, vec![("a".to_string(), "k".to_string())]);
+        assert_eq!((list.recovery, list.n), (None, 0));
+        let pinned =
+            json!({ "devices": [], "recovery": "r", "recoveryAuth": "a", "n": 7 }).to_string();
+        let list = parse_trusted(Some(&pinned)).unwrap();
         assert_eq!(
-            parse_trusted(Some(&text)),
-            vec![("a".to_string(), "k".to_string())]
+            (list.recovery, list.n),
+            (Some(("r".to_string(), "a".to_string())), 7)
         );
-        assert!(parse_trusted(None).is_empty());
-        assert!(parse_trusted(Some("not json")).is_empty());
+        // Nothing to read is "no list", which callers refuse to decide from.
+        assert!(parse_trusted(None).is_none());
+        assert!(parse_trusted(Some("not json")).is_none());
+        assert!(parse_trusted(Some("{}")).is_none());
     }
 }

@@ -108,7 +108,8 @@ export class SyncController implements Disposable {
   constructor(private readonly services: WorkbenchServices) {
     const backend: SyncBackend = {
       changes: (since) => syncIpc.changes(this.base(), since),
-      put: (collection, id, expect, text) => syncIpc.put(this.base(), collection, id, expect, text),
+      put: (collection, id, expect, text, info) =>
+        syncIpc.put(this.base(), collection, id, expect, text, info ?? null),
     };
     const led = (layer: SyncLayer): SyncLayer => ({
       name: layer.name,
@@ -259,6 +260,7 @@ export class SyncController implements Disposable {
       stamp: async (id) => (await agentStoreIpc.stamps([id]))[0] ?? null,
       newId: () => `s-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
       busy: (id) => this.busyChats().has(id),
+      same: (collection, id) => syncIpc.chatSame(this.base(), collection, id).catch(() => false),
     };
   }
 
@@ -387,6 +389,8 @@ export class SyncController implements Disposable {
           identity.id,
           now ? now.version : null,
           JSON.stringify({ name, kind: identity.kind }),
+          // The name is readable by the service, so the account page can list projects.
+          { name },
         )
         .catch(() => {});
       if (identity.kind === "file") {
@@ -552,6 +556,8 @@ export class SyncController implements Disposable {
 
   dispose(): void {
     this.disposed = true;
+    // Another window takes the loop over at once instead of waiting the claim out.
+    if (this.leader) void syncIpc.leaseRelease(this.owner).catch(() => {});
     this.store.dispose();
   }
 }

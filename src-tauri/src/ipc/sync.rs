@@ -50,9 +50,21 @@ pub async fn sync_setup(state: State<'_, AppState>, base: String, typed: String)
     vault(&state, &base).setup(&typed).await
 }
 
-/// Asks to join an account that already syncs; returns the code both computers show.
+/// Starts checking a waiting device; returns the code both computers now show.
 #[tauri::command]
-pub async fn sync_join(state: State<'_, AppState>, base: String, name: String) -> Result<String> {
+pub async fn sync_review_device(
+    state: State<'_, AppState>,
+    base: String,
+    device: String,
+) -> Result<String> {
+    let _step = STEP.lock().await;
+    vault(&state, &base).review(&device).await
+}
+
+/// Asks to join an account that already syncs. The code to compare shows (in the status)
+/// once a computer that syncs starts checking this one.
+#[tauri::command]
+pub async fn sync_join(state: State<'_, AppState>, base: String, name: String) -> Result<()> {
     let _step = STEP.lock().await;
     vault(&state, &base).join(&name).await
 }
@@ -113,7 +125,7 @@ pub async fn sync_record_get(
 }
 
 /// Writes a record over the version it was made from (`expect`; null: it must be new).
-/// `text` null deletes it.
+/// `text` null deletes it. `info` is a label the service can read (never content).
 #[tauri::command]
 pub async fn sync_record_put(
     state: State<'_, AppState>,
@@ -122,10 +134,11 @@ pub async fn sync_record_put(
     id: String,
     expect: Option<u64>,
     text: Option<String>,
+    info: Option<serde_json::Value>,
 ) -> Result<Put> {
     writable(&collection)?;
     let v = vault(&state, &base);
-    records::put(
+    records::put_labeled(
         &v.api,
         &v.keyring()?,
         &collection,
@@ -133,6 +146,7 @@ pub async fn sync_record_put(
         expect,
         text.as_deref(),
         None,
+        info.as_ref(),
     )
     .await
 }
@@ -526,7 +540,7 @@ pub async fn sync_state_save(state: State<'_, AppState>, text: String) -> Result
 }
 
 /// How long a window's claim on the sync loop holds without being renewed.
-const LEASE_MS: u64 = 120_000;
+const LEASE_MS: u64 = 90_000;
 
 /// Claims the sync loop for `owner` (a window): true when it has it. One window of a profile
 /// syncs at a time; the claim is renewed by asking again, and passes on when its holder stops.
@@ -631,4 +645,104 @@ pub async fn sync_project(
         .as_bytes(),
     )?;
     Ok(Some(ProjectIdentity { id, kind: "file" }))
+}
+
+/// This computer's name, to offer when it joins sync.
+#[tauri::command]
+pub async fn sync_device_name() -> Result<String> {
+    Ok(crate::sync::vault::default_name())
+}
+
+/// Gives up this window's claim on the sync loop (it is closing), so another takes over at once.
+#[tauri::command]
+pub async fn sync_lease_release(state: State<'_, AppState>, owner: String) -> Result<()> {
+    let file = state.dirs.data.join("sync").join("lease.json");
+    let held = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    if held.is_some_and(|h| h["owner"].as_str() == Some(owner.as_str())) {
+        let _ = std::fs::remove_file(&file);
+    }
+    Ok(())
+}
+
+/// Whether the chat saved here is, byte for byte, the one in the record `collection`/`id`:
+/// a computer that lost what it had synced can tell "the same chat" from "changed on both".
+#[tauri::command]
+pub async fn sync_chat_same(
+    state: State<'_, AppState>,
+    base: String,
+    collection: String,
+    id: String,
+) -> Result<bool> {
+    let v = vault(&state, &base);
+    crate::sync::chats::same(&v.api, &v.keyring()?, &state.dirs.data, &collection, &id).await
+}
+
+/// Makes the open folder `root` the project `id` (one of the account's): writes the id file,
+/// so this folder and that project are the same from now on. Refused when the folder already
+/// has an id file.
+#[tauri::command]
+pub async fn sync_project_link(
+    state: State<'_, AppState>,
+    root: String,
+    folder_name: String,
+    id: String,
+    replace: bool,
+) -> Result<()> {
+    let root = snapshot_root(&state, &root)?;
+    if id.len() != 22
+        || !id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(Error::Invalid("not a project id".into()));
+    }
+    let file = root
+        .join(project_folder_name(&folder_name)?)
+        .join(PROJECT_FILE);
+    if file.exists() && !replace {
+        return Err(Error::Sync(
+            "Sync",
+            "This folder already has a project identity.".into(),
+        ));
+    }
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    crate::store::atomic_write(
+        &file,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({ "id": id }))?
+        )
+        .as_bytes(),
+    )
+}
+
+/// Gives the open folder a new identity of its own (a copy of a project that should be a
+/// project of its own): a new id file, replacing the one that came with the copy.
+#[tauri::command]
+pub async fn sync_project_separate(
+    state: State<'_, AppState>,
+    root: String,
+    folder_name: String,
+) -> Result<String> {
+    let root = snapshot_root(&state, &root)?;
+    let file = root
+        .join(project_folder_name(&folder_name)?)
+        .join(PROJECT_FILE);
+    let id = crate::sync::crypto::new_id()?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    crate::store::atomic_write(
+        &file,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({ "id": id }))?
+        )
+        .as_bytes(),
+    )?;
+    Ok(id)
 }

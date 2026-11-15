@@ -154,10 +154,16 @@ pub fn parse_callback(
 /// Starts a sign-in against `base`: a loopback listener and the authorize URL to open.
 pub fn begin(base: &str) -> Result<Pending> {
     let base = base.trim_end_matches('/').to_string();
-    if !(base.starts_with("https://")
-        || base.starts_with("http://127.0.0.1")
-        || base.starts_with("http://localhost"))
-    {
+    // Plain http only for this computer itself: the host exactly, not a name that starts
+    // like it ("127.0.0.1.example.com").
+    let local = ["http://127.0.0.1", "http://localhost"]
+        .iter()
+        .any(|prefix| {
+            base.strip_prefix(prefix).is_some_and(|rest| {
+                rest.is_empty() || rest.starts_with(':') || rest.starts_with('/')
+            })
+        });
+    if !(base.starts_with("https://") || local) {
         return Err(Error::Invalid("the accounts URL must be https".into()));
     }
     CANCELLED.store(false, std::sync::atomic::Ordering::SeqCst);

@@ -9,8 +9,11 @@ export interface SyncDevice {
   status: "approved" | "pending";
   createdAt: number | null;
   lastSeenAt: number | null;
-  /** Six digits both computers show while one approves the other. */
-  code: string;
+  /**
+   * Six digits both computers show while one approves the other. Null until a computer that
+   * syncs has started checking the waiting one (`reviewDevice`).
+   */
+  code: string | null;
   current: boolean;
 }
 
@@ -44,7 +47,12 @@ export interface SyncRecord {
   refs: number;
   device: string | null;
   updatedAt: number | null;
+  /** The record's label, readable by the service (names, counts, sizes, dates). Not sealed. */
+  info?: SyncInfo | null;
 }
+
+/** A label the service can read: a flat object of text, numbers and yes/no. Never content. */
+export type SyncInfo = Record<string, string | number | boolean>;
 
 export interface SyncChanges {
   epoch: number;
@@ -114,8 +122,11 @@ export const syncIpc = {
     call<string>("sync_prepare", { base, name }),
   /** Turns sync on for the account, once the recovery key (or its last group) is typed back. */
   setup: (base: string, typed: string): Promise<void> => call<void>("sync_setup", { base, typed }),
-  /** Asks to join; returns the code to compare on a device that approves. */
-  join: (base: string, name: string): Promise<string> => call<string>("sync_join", { base, name }),
+  /** Asks to join. The code to compare shows in the status once a computer checks this one. */
+  join: (base: string, name: string): Promise<void> => call<void>("sync_join", { base, name }),
+  /** Starts checking a waiting device; the code both computers now show. */
+  reviewDevice: (base: string, device: string): Promise<string> =>
+    call<string>("sync_review_device", { base, device }),
   joinRecovery: (base: string, name: string, key: string): Promise<void> =>
     call<void>("sync_join_recovery", { base, name, key }),
   approve: (base: string, device: string): Promise<void> =>
@@ -135,7 +146,9 @@ export const syncIpc = {
     id: string,
     expect: number | null,
     text: string | null,
-  ): Promise<SyncPut> => call<SyncPut>("sync_record_put", { base, collection, id, expect, text }),
+    info: SyncInfo | null = null,
+  ): Promise<SyncPut> =>
+    call<SyncPut>("sync_record_put", { base, collection, id, expect, text, info }),
   /** Uploads a saved chat as a record; null when the chat has no file. */
   chatPush: (
     base: string,
@@ -229,6 +242,19 @@ export const syncIpc = {
       folderName,
       create,
     }),
+  /** This computer's own name, to offer when it joins. */
+  deviceName: (): Promise<string> => call<string>("sync_device_name"),
+  /** Gives up this window's claim on the sync loop (it is closing). */
+  leaseRelease: (owner: string): Promise<void> => call<void>("sync_lease_release", { owner }),
+  /** Whether the chat saved here is exactly the one in the record. */
+  chatSame: (base: string, collection: string, id: string): Promise<boolean> =>
+    call<boolean>("sync_chat_same", { base, collection, id }),
+  /** Makes the open folder the account's project `id` (writes its id file). */
+  projectLink: (root: string, folderName: string, id: string, replace: boolean): Promise<void> =>
+    call<void>("sync_project_link", { root, folderName, id, replace }),
+  /** Gives the open folder a new identity of its own; the new id. */
+  projectSeparate: (root: string, folderName: string): Promise<string> =>
+    call<string>("sync_project_separate", { root, folderName }),
   /** Claims the sync loop for this window; false while another window of the profile has it. */
   lease: (owner: string): Promise<boolean> => call<boolean>("sync_lease", { owner }),
 };

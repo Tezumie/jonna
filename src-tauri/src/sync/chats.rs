@@ -79,7 +79,12 @@ pub async fn push(
             file,
             media,
         })?;
-        match records::put(
+        // Readable by the service: when it changed and how large it is. Not its title.
+        let info = serde_json::json!({
+            "updated": meta.get("updated").and_then(Value::as_u64).unwrap_or(0),
+            "bytes": text.len(),
+        });
+        match records::put_labeled(
             api,
             ring,
             collection,
@@ -87,6 +92,7 @@ pub async fn push(
             expect,
             Some(&entry),
             Some((&refs, gc_epoch)),
+            Some(&info),
         )
         .await?
         {
@@ -98,6 +104,35 @@ pub async fn push(
         "SyncRetry",
         "The chat couldn't be uploaded just now; trying again later.".into(),
     ))
+}
+
+/// Whether the chat saved here has exactly the content the record `collection`/`id` names.
+pub async fn same(
+    api: &Api,
+    ring: &Keyring,
+    data: &Path,
+    collection: &str,
+    id: &str,
+) -> Result<bool> {
+    let Some(text) = agent::load_session(data, id)? else {
+        return Ok(false);
+    };
+    let Some(record) = records::get(api, ring, collection, id).await? else {
+        return Ok(false);
+    };
+    let Some(entry) = record
+        .text
+        .as_deref()
+        .filter(|_| !record.deleted)
+        .and_then(|t| serde_json::from_str::<Entry>(t).ok())
+    else {
+        return Ok(false);
+    };
+    let mut ids = Vec::new();
+    for piece in text.as_bytes().chunks(chunks::CHUNK_BYTES) {
+        ids.push(ring.chunk_id(piece)?);
+    }
+    Ok(ids == entry.file.chunks)
 }
 
 /// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`

@@ -47,7 +47,11 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
       });
       if (result.apply.length > 0) await port.apply(result.apply);
       if (result.recordChanged) {
-        const version = await ctx.put("settings", "user", JSON.stringify(result.record));
+        // Readable by the service: how many settings, not which.
+        const count = Object.values(result.record.keys).filter((k) => !k.d).length;
+        const version = await ctx.put("settings", "user", JSON.stringify(result.record), {
+          settings: count,
+        });
         // Someone wrote first: merged again at the next pass, against theirs.
         if (version === null) return;
       }
@@ -115,7 +119,11 @@ export function filesLayer(port: FilesPort): SyncLayer {
         const here = local.get(path);
         if (text === null || !here) return;
         const record: FileRecord = { path, text, hash: here.hash, mtimeMs: here.mtimeMs };
-        const version = await ctx.put(FILES, fileRecordId(path), JSON.stringify(record));
+        // Readable by the service: the file's name and size, not its text.
+        const version = await ctx.put(FILES, fileRecordId(path), JSON.stringify(record), {
+          path,
+          bytes: text.length,
+        });
         if (version !== null) base.files[path] = { hash: here.hash, version };
       };
       const download = async (path: string): Promise<void> => {
@@ -137,7 +145,10 @@ export function filesLayer(port: FilesPort): SyncLayer {
             break;
           case "deleteRemote": {
             const record: FileRecord = { path, deleted: true, mtimeMs: port.now() };
-            const version = await ctx.put(FILES, fileRecordId(path), JSON.stringify(record));
+            const version = await ctx.put(FILES, fileRecordId(path), JSON.stringify(record), {
+              path,
+              deleted: true,
+            });
             if (version !== null) base.files[path] = { version };
             break;
           }
@@ -204,6 +215,8 @@ export interface ChatsPort {
   newId(): string;
   /** A chat being written right now (an answer streaming): left for the next pass. */
   busy(id: string): boolean;
+  /** Whether the chat saved here is exactly the one the account has (when the port can tell). */
+  same?(collection: string, id: string): Promise<boolean>;
 }
 
 interface ChatBase extends FileBase {
@@ -284,7 +297,9 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
           case "deleteRemote": {
             const collection = where.get(id);
             if (!collection) break;
-            const version = await ctx.put(collection, id, JSON.stringify({ deleted: true }));
+            const version = await ctx.put(collection, id, JSON.stringify({ deleted: true }), {
+              deleted: true,
+            });
             if (version !== null) {
               base.chats[id] = { version, collection };
               ctx.changed();
@@ -307,11 +322,24 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
             };
             ctx.changed();
             break;
-          case "conflict":
+          case "conflict": {
+            // No record here of ever syncing it (this computer lost what it kept): the same
+            // content on both sides is the same chat, not two.
+            const collection = where.get(id);
+            if (!base.chats[id] && collection && (await port.same?.(collection, id))) {
+              base.chats[id] = {
+                hash: local.get(id)?.hash,
+                version: remote.get(id)?.version ?? 0,
+                collection,
+              };
+              ctx.changed();
+              break;
+            }
             // Changed on two computers: the other one's version becomes a chat of its own
             // here (and syncs as one); this computer's keeps the chat.
             if (await download(id, port.newId())) await upload(id, action.expect);
             break;
+          }
         }
       }
     },

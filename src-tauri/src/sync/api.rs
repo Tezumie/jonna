@@ -71,6 +71,13 @@ fn refusal(status: u16, json: &Value) -> Error {
         (403, "sync_unavailable") => Error::Sync("SyncUnavailable", text),
         (403, "not_approved" | "not_a_device") => Error::Sync("SyncNotApproved", text),
         (409, "no_vault") => Error::Sync("SyncReset", text),
+        // Stored data is being cleaned up: the same request works a moment later.
+        (409, "gc") => Error::Sync("SyncRetry", text),
+        (403, "proof_failed") => Error::Sync("SyncKeys", text),
+        (429, _) => Error::Sync(
+            "SyncOffline",
+            "Sync is pausing for a moment (too many requests).".into(),
+        ),
         (507, _) => Error::Sync("SyncFull", text),
         (413, _) => Error::Sync("SyncTooLarge", text),
         (s, _) if s >= 500 => Error::Sync(

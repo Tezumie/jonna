@@ -27,6 +27,9 @@ pub struct Record {
     pub refs: u64,
     pub device: Option<String>,
     pub updated_at: Option<u64>,
+    /// The record's label, readable by the service (a project's name, a snapshot's date and
+    /// size): what the account page lists. Not sealed, so never trusted for anything here.
+    pub info: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +92,7 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
         refs: v.get("refs").and_then(Value::as_u64).unwrap_or(0),
         device: v.get("device").and_then(Value::as_str).map(str::to_string),
         updated_at: v.get("updatedAt").and_then(Value::as_u64),
+        info: v.get("info").filter(|i| i.is_object()).cloned(),
     })
 }
 
@@ -152,7 +156,25 @@ pub async fn put(
     text: Option<&str>,
     refs: Option<(&[String], u64)>,
 ) -> Result<Put> {
+    put_labeled(api, ring, collection, id, expect, text, refs, None).await
+}
+
+/// `put`, with a label the service can read (`info`: a flat object of text, numbers, yes/no).
+#[allow(clippy::too_many_arguments)]
+pub async fn put_labeled(
+    api: &Api,
+    ring: &Keyring,
+    collection: &str,
+    id: &str,
+    expect: Option<u64>,
+    text: Option<&str>,
+    refs: Option<(&[String], u64)>,
+    info: Option<&Value>,
+) -> Result<Put> {
     let mut body = json!({ "expect": expect });
+    if let (Some(info), Some(_)) = (info, text) {
+        body["info"] = info.clone();
+    }
     match text {
         Some(t) => {
             body["blob"] = json!(b64(&ring.seal(

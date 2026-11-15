@@ -150,9 +150,18 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
     for part in path.components() {
         match part {
             Component::Normal(name) => {
-                if first && name.eq_ignore_ascii_case(".git") {
+                let text = name.to_string_lossy();
+                // Windows drops trailing dots and spaces and reads short names and streams:
+                // ".git.", ".git ", "GIT~1" and ".git::$INDEX_ALLOCATION" are all .git there.
+                // No repository's own folder at any depth, either.
+                let plain = text.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+                if plain == ".git"
+                    || plain.starts_with("git~")
+                    || text.contains(':')
+                    || text.ends_with(['.', ' '])
+                {
                     return Err(sync_error(format!(
-                        "a snapshot may not write into .git: {relative}"
+                        "a snapshot may not write there: {relative}"
                     )));
                 }
                 out.push(name);
@@ -634,7 +643,7 @@ async fn create_once(
             .take(6)
             .collect::<String>()
     );
-    match records::put(
+    match records::put_labeled(
         api,
         ring,
         options.collection,
@@ -642,6 +651,7 @@ async fn create_once(
         None,
         Some(&serde_json::to_string(&summary)?),
         Some((&refs, gc_epoch)),
+        Some(&label(&summary)),
     )
     .await?
     {
@@ -705,6 +715,20 @@ async fn write_file(api: &Api, ring: &Keyring, root: &Path, entry: &FileEntry) -
     let bytes = chunks::read(api, ring, &entry.s).await?;
     if let Some(dir) = target.parent() {
         std::fs::create_dir_all(dir)?;
+        // A folder on the way that is a link (checked out from a commit, say) could lead
+        // anywhere: the real place must still be inside the project.
+        let real = std::fs::canonicalize(dir)?;
+        let real_root = std::fs::canonicalize(root)?;
+        if !real.starts_with(&real_root) {
+            return Err(sync_error(format!(
+                "a snapshot's path leaves the project through a link: {}",
+                entry.p
+            )));
+        }
+    }
+    // Never through a link at the file itself.
+    if std::fs::symlink_metadata(&target).is_ok_and(|m| m.file_type().is_symlink()) {
+        std::fs::remove_file(&target)?;
     }
     atomic_write(&target, &bytes)?;
     #[cfg(unix)]
@@ -984,7 +1008,7 @@ pub async fn rewrite(
         .await?
         .into_ok()?;
     let gc_epoch = reply["gcEpoch"].as_u64().unwrap_or(0);
-    records::put(
+    records::put_labeled(
         api,
         ring,
         collection,
@@ -992,8 +1016,27 @@ pub async fn rewrite(
         Some(expect),
         Some(text),
         Some((&refs, gc_epoch)),
+        Some(&label(&summary)),
     )
     .await
+}
+
+/// What the service may read of a snapshot: when, from which computer, how much. No paths.
+fn label(summary: &Summary) -> serde_json::Value {
+    let mut label = serde_json::json!({
+        "time": summary.time,
+        "computer": summary.device_name,
+        "kind": summary.kind,
+        "files": summary.files,
+        "bytes": summary.bytes,
+    });
+    if let Some(branch) = &summary.branch {
+        label["branch"] = serde_json::json!(branch);
+    }
+    if let Some(name) = &summary.pinned {
+        label["pinned"] = serde_json::json!(name);
+    }
+    label
 }
 
 /// The record's text with a pin set or cleared.
@@ -1023,10 +1066,19 @@ mod tests {
         assert!(safe_join(root, ".git/config").is_err());
         assert!(safe_join(root, ".GIT/hooks/pre-commit").is_err());
         assert!(safe_join(root, "").is_err());
-        assert!(
-            safe_join(root, "sub/.git/x").is_ok(),
-            "only the project's own"
-        );
+        for bad in [
+            "sub/.git/hooks/x",
+            ".git./config",
+            ".git /config",
+            "GIT~1/config",
+            "a/.GIT/x",
+            "a:b",
+            "name./x",
+        ] {
+            assert!(safe_join(root, bad).is_err(), "{bad}");
+        }
+        assert!(safe_join(root, "docs/.gitignore").is_ok());
+        assert!(safe_join(root, ".github/workflows/ci.yml").is_ok());
         #[cfg(windows)]
         assert!(safe_join(root, "C:\\Windows\\x").is_err());
     }

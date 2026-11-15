@@ -2,12 +2,18 @@
 // pass, then let each layer (settings, files, chats...) compare three things and act: what this
 // computer has, what it had when it last synced (its base, kept on disk), and what the account
 // has (a mirror of the records, kept in memory and rebuilt from the account at each start).
-import type { SyncChanges, SyncPut, SyncRecord } from "../ipc/sync";
+import type { SyncChanges, SyncInfo, SyncPut, SyncRecord } from "../ipc/sync";
 
 /** What the engine needs of the backend (the IPC wrapper in the app; a fake in tests). */
 export interface SyncBackend {
   changes(since: number): Promise<SyncChanges>;
-  put(collection: string, id: string, expect: number | null, text: string | null): Promise<SyncPut>;
+  put(
+    collection: string,
+    id: string,
+    expect: number | null,
+    text: string | null,
+    info?: SyncInfo | null,
+  ): Promise<SyncPut>;
 }
 
 /** Where the bases are kept between runs (one JSON text). */
@@ -27,7 +33,12 @@ export interface LayerContext {
    * version, or null when someone else wrote first: the mirror then has theirs, and the layer
    * sees it at its next run.
    */
-  put(collection: string, id: string, text: string | null): Promise<number | null>;
+  put(
+    collection: string,
+    id: string,
+    text: string | null,
+    info?: SyncInfo | null,
+  ): Promise<number | null>;
   /** Tells the mirror about a record written another way (a chat upload). */
   wrote(collection: string, id: string, version: number, text: string | null): void;
   /** A conflict another call reported: the record as the account has it. */
@@ -73,6 +84,11 @@ export class SyncEngine {
   /** The account's records as last read (for views: snapshots, the account's projects). */
   records(collection: string): SyncRecord[] {
     return [...this.mirror.values()].filter((r) => r.collection === collection);
+  }
+
+  /** Every record of the account as last read (for views of what the account holds). */
+  allRecords(): SyncRecord[] {
+    return [...this.mirror.values()];
   }
 
   /** Forgets everything read so far (sync went off, or another account signed in). */
@@ -130,9 +146,15 @@ export class SyncEngine {
         ),
       ],
       record: (collection, id) => this.mirror.get(key(collection, id)),
-      put: async (collection, id, text) => {
+      put: async (collection, id, text, info) => {
         const now = this.mirror.get(key(collection, id));
-        const result = await this.backend.put(collection, id, now ? now.version : null, text);
+        const result = await this.backend.put(
+          collection,
+          id,
+          now ? now.version : null,
+          text,
+          info ?? null,
+        );
         if (result.outcome === "done") {
           ctx.wrote(collection, id, result.version, text);
           return result.version;

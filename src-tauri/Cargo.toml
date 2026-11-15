@@ -100,6 +100,9 @@ sha2 = "0.11.1"
 # libsodium does it), content sealed with XChaCha20-Poly1305, keys derived with HKDF, chunk ids
 # from HMAC. All RustCrypto, MIT/Apache-2.0, pure Rust.
 crypto_box = { version = "0.9.1", features = ["seal"] }
+# The X25519 function itself, to prove to the sync service that a key's private half is held
+# (already built: crypto_box is made of it). BSD-3-Clause.
+curve25519-dalek = "4"
 chacha20poly1305 = "0.10.1"
 hkdf = "0.12.4"
 hmac = "0.12.1"

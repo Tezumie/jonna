@@ -87,6 +87,53 @@ impl PrivateKey {
         b64(self.0.public_key().as_bytes())
     }
 
+    /// Answers the service's challenge: proof that this key's private half is held, without
+    /// showing it. X25519 with the service's one-time public key gives a secret only the two
+    /// share; the answer is HMAC-SHA256 of the challenge's nonce under it.
+    pub fn prove(&self, their_public: &str, nonce: &str) -> Result<String> {
+        let theirs: [u8; 32] = unb64(their_public)?
+            .try_into()
+            .map_err(|_| keys_error("the service's challenge isn't valid"))?;
+        let shared =
+            curve25519_dalek::montgomery::MontgomeryPoint(theirs).mul_clamped(self.0.to_bytes());
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(shared.as_bytes())
+            .map_err(|_| keys_error("a key isn't valid"))?;
+        mac.update(format!("sync-proof:{nonce}").as_bytes());
+        Ok(b64(&mac.finalize().into_bytes()))
+    }
+
+    /// The recovery key's second half: a key for checking that a keyring wrapped to the
+    /// recovery key was wrapped by one of the account's devices (which keep this in their
+    /// sealed list), not made up by whoever stores it.
+    pub fn auth_key(&self) -> Result<String> {
+        let mut out = [0u8; 32];
+        Hkdf::<Sha256>::new(None, &self.0.to_bytes())
+            .expand(b"sync-recovery-auth", &mut out)
+            .map_err(|_| keys_error("a key couldn't be derived"))?;
+        Ok(b64(&out))
+    }
+
+    /// Opens the keyring wrapped to this recovery key, and checks it is the account's own.
+    pub fn open_recovery(&self, sealed: &str) -> Result<Vec<u8>> {
+        let wrong = || {
+            Error::Sync(
+                "SyncRecoveryKey",
+                "That recovery key isn't this account's current one.".to_string(),
+            )
+        };
+        let plain = self.open(sealed).map_err(|_| wrong())?;
+        if plain.len() <= 32 {
+            return Err(wrong());
+        }
+        let (bytes, tag) = plain.split_at(plain.len() - 32);
+        let key = unb64(&self.auth_key()?)?;
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&key).map_err(|_| wrong())?;
+        mac.update(bytes);
+        // Constant time: the comparison is the library's.
+        mac.verify_slice(tag).map_err(|_| wrong())?;
+        Ok(bytes.to_vec())
+    }
+
     /// Opens what was sealed to this key's public half.
     pub fn open(&self, sealed: &str) -> Result<Vec<u8>> {
         self.0
@@ -107,10 +154,23 @@ pub fn seal_to(public: &str, plain: &[u8]) -> Result<String> {
     Ok(b64(&sealed))
 }
 
+/// Wraps the keyring for the recovery key: sealed to its public half, with a tag under its
+/// auth key, so the computer that later opens it knows one of the account's devices made it.
+pub fn recovery_wrap(public: &str, auth: &str, keyring: &[u8]) -> Result<String> {
+    let key = unb64(auth)?;
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(&key).map_err(|_| keys_error("a key isn't valid"))?;
+    mac.update(keyring);
+    let mut plain = keyring.to_vec();
+    plain.extend_from_slice(&mac.finalize().into_bytes());
+    seal_to(public, &plain)
+}
+
 /// Six digits both computers show, so the person approving sees it is the same device (and
-/// that nobody in between swapped its key).
-pub fn verification_code(public: &str) -> String {
-    let digest = Sha256::digest(public.as_bytes());
+/// that nobody in between swapped its key). `nonce` is chosen by the approving computer after
+/// it has fixed which key it would approve, so a key can't be picked to fit a code.
+pub fn verification_code(public: &str, nonce: &str) -> String {
+    let digest = Sha256::digest(format!("{public}:{nonce}").as_bytes());
     let n = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
     format!("{:03} {:03}", n / 1000, n % 1000)
 }
@@ -477,11 +537,57 @@ mod tests {
     }
 
     #[test]
+    fn a_recovery_wrap_opens_only_when_a_device_made_it() {
+        let recovery = PrivateKey::generate().unwrap();
+        let ring = Keyring::generate().unwrap().to_bytes().unwrap();
+        let wrap = recovery_wrap(&recovery.public(), &recovery.auth_key().unwrap(), &ring).unwrap();
+        assert_eq!(recovery.open_recovery(&wrap).unwrap(), ring);
+        // Whoever stores it can seal anything to the public key, but can't make the tag.
+        let forged = seal_to(
+            &recovery.public(),
+            &Keyring::generate().unwrap().to_bytes().unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            recovery.open_recovery(&forged),
+            Err(Error::Sync("SyncRecoveryKey", _))
+        ));
+        let other = PrivateKey::generate().unwrap();
+        let wrong_tag =
+            recovery_wrap(&recovery.public(), &other.auth_key().unwrap(), &ring).unwrap();
+        assert!(recovery.open_recovery(&wrong_tag).is_err());
+        assert!(other.open_recovery(&wrap).is_err());
+    }
+
+    #[test]
+    fn a_proof_is_what_the_other_side_computes() {
+        // Two key pairs agree on the secret, so each can check the other's answer.
+        let device = PrivateKey::generate().unwrap();
+        let service = PrivateKey::generate().unwrap();
+        let from_device = device.prove(&service.public(), "nonce").unwrap();
+        let from_service = service.prove(&device.public(), "nonce").unwrap();
+        assert_eq!(from_device, from_service);
+        assert_ne!(
+            from_device,
+            device.prove(&service.public(), "other").unwrap()
+        );
+        let stranger = PrivateKey::generate().unwrap();
+        assert_ne!(
+            from_device,
+            stranger.prove(&service.public(), "nonce").unwrap()
+        );
+    }
+
+    #[test]
     fn the_verification_code_is_six_digits() {
         let key = PrivateKey::generate().unwrap();
-        let code = verification_code(&key.public());
+        let code = verification_code(&key.public(), "n1");
         assert_eq!(code.len(), 7);
-        assert_eq!(code, verification_code(&key.public()));
+        assert_eq!(code, verification_code(&key.public(), "n1"));
+        assert_ne!(
+            code,
+            verification_code(&key.public(), "another nonce, another code")
+        );
         assert!(code.chars().all(|c| c.is_ascii_digit() || c == ' '));
     }
 }
