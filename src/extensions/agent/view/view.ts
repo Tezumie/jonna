@@ -27,7 +27,7 @@ import type { DetailsHost } from "../chatDetails";
 import { customModes } from "../customModes";
 import { knownAgents, memberInfo, showGroupFaces } from "../groupChat";
 import { mainAgent } from "../mainAgent";
-import { rooms, roomTitle } from "../roomService";
+import { rooms, roomTitle } from "../roomState";
 import type { AgentSession, PermissionRequest, QueuedMessage } from "../session";
 import { liveRow, threads } from "../threadList";
 import { messageReveal } from "../threadTabs";

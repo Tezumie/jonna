@@ -37,7 +37,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 import { customModes } from "./customModes";
 import { newId } from "./ids";
 import { mainAgent } from "./mainAgent";
-import { isRoomContext } from "./roomService";
+import { isRoomContext } from "./roomState";
 import type { AgentSession } from "./session";
 import type { SessionManager } from "./sessions";
 import { sendNow } from "./sessionTurn";

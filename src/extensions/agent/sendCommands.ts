@@ -22,7 +22,7 @@ import { agentIgnored } from "./ignore";
 import { mentionContext, mentionLabel } from "./mentionContext";
 import { planEditContext } from "./planDocs";
 import type { ProviderRegistry } from "./providers";
-import { conversationRoom } from "./roomService";
+import { conversationRoom } from "./roomState";
 import type { SessionManager } from "./sessions";
 import { actionSlashFor, BUILTIN_COMMANDS, promptSlash, sessionSlashFor } from "./slashCommands";
 import { showThreadTab } from "./threadTabs";

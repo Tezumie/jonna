@@ -60,7 +60,7 @@ import { savePlanDoc } from "./planDocs";
 import { detectCheck } from "./projectCheck";
 import type { ModelChoice } from "./providers";
 import { RepetitionWatch } from "./repetition";
-import { conversationRoom, isRoomContext, roomContext } from "./roomService";
+import { conversationRoom, isRoomContext, roomContext } from "./roomState";
 import type { AgentSession } from "./session";
 import { sendExternal } from "./sessionExternal";
 import { autoReview, flushReports, runSubagent, startBackground } from "./sessionSubagents";
