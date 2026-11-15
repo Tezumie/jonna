@@ -273,6 +273,11 @@ export interface ToolHost {
   setTurnModel?(model: string, by: string): void;
   /** The rest of the turn works in the chat's mode as it is now (enter_plan_mode, D304). */
   followChatMode?(): void;
+  /**
+   * Switches how the chat works, on the chat itself and saved (enter_plan_mode where the
+   * `agent.setChatMode` command isn't registered: a run with no window).
+   */
+  setWork?(work: "agent" | "plan" | "ask"): void;
 }
 
 /** What a subagent run gets (explore, delegate, D127 / D195). */

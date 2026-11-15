@@ -744,6 +744,10 @@ async function sendTurn(
             followChatMode: () => {
               if (session.inTurn) session.turnMode = session.chatMode.peek();
             },
+            setWork: (work) => {
+              session.setWork(work);
+              void session.save();
+            },
             background: (spec) =>
               startBackground(session, spec, { ...deps, execute: hookedTool }, budgetChars, {
                 choice,

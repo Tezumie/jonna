@@ -24,11 +24,13 @@ import {
   type TurnTools,
 } from "../../core/agent/slash";
 import type { RuleContext } from "../../core/agent/toolRules";
+import { WIDGET_GUIDE_TOOL, WIDGET_TOOL } from "../../core/agent/widgets";
 import { aiIpc } from "../../core/ipc/agent";
 import { execIpc } from "../../core/ipc/process";
 import { effect, type Signal, signal } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { AcpBackend } from "./acp";
+import { agentHost } from "./agentHost";
 import { browserTools } from "./browserTools";
 import { Changeset } from "./changeset";
 import { soloAgentOf } from "./chatAgentModel";
@@ -342,16 +344,14 @@ export class AgentSession {
       if (status === "running" && before === "idle") startedAt = Date.now();
       // The saved chat says how it's doing (the worktree agents' overview reads it, D204).
       if (status !== before) this.scheduleSave();
-      const away = document.visibilityState === "hidden" || !document.hasFocus();
-      if (!away || services.settings.peek<boolean>("agent.notifyWhenDone") === false)
+      // Who is watching comes from the agent's host (the window's document; nobody, with none).
+      const presence = agentHost(services).presence;
+      if (!presence.away() || services.settings.peek<boolean>("agent.notifyWhenDone") === false)
         return undefined;
       const title = this.title.peek();
       if (status === "waiting" && before === "running") {
         // Its chat on screen already shows the question: no toast for it.
-        const view = document.querySelector<HTMLElement>(
-          `.agent-view[data-session="${CSS.escape(this.id)}"]`,
-        );
-        if (!view?.offsetParent)
+        if (!presence.showing(this.id))
           services.notifications.show("info", `The agent needs your answer: ${title}`, {
             title: "Agent",
           });
@@ -1307,6 +1307,9 @@ export function chatTools(
   const s = services.settings;
   // With no folder open, what needs a repository can't run (D390): not even named.
   const noFolder = !services.workspace.root.peek();
+  // With no screen (a run without a window), what only makes sense on one is left out the same
+  // way: never offered and then failing. The builders below read the dock, so they aren't called.
+  const screen = agentHost(services).screen;
   const tools = [
     ...CORE_TOOLS,
     PLAN_TOOL,
@@ -1322,16 +1325,42 @@ export function chatTools(
     ...(small || readSandboxSetting(s.peek<unknown>("agent.sandbox")) === "off"
       ? []
       : SANDBOX_TOOLS),
-    ...(small
-      ? browserTools(services).filter((t) => t.spec.name === "screenshot")
-      : browserTools(services)),
+    ...(!screen
+      ? []
+      : small
+        ? browserTools(services).filter((t) => t.spec.name === "screenshot")
+        : browserTools(services)),
     // Desktop control (D353): only when turned on, on Windows, and not for a small model.
-    ...(small ? [] : computerTools(services)),
+    ...(small || !screen ? [] : computerTools(services)),
     // Subagents too are left out for a small model (like explore): it handles fewer tools.
     ...extra.filter((t) => !small || t.spec.name !== "delegate"),
   ];
-  return noFolder ? tools.filter((t) => !NEEDS_FOLDER.has(t.spec.name)) : tools;
+  return tools.filter(
+    (t) =>
+      !(noFolder && NEEDS_FOLDER.has(t.spec.name)) && !(!screen && NEEDS_SCREEN.has(t.spec.name)),
+  );
 }
 
 /** Tools that work on the open folder's repository (D390): left out while none is open. */
 const NEEDS_FOLDER: ReadonlySet<string> = new Set(["enter_worktree", "exit_worktree", "watch_pr"]);
+
+/**
+ * Tools that only make sense with a screen, left out of a chat's tools when the agent's host has
+ * none (agentHost.ts): a picture of the window or of a page in the browser pane, acting in that
+ * pane, the person's desktop, and what is only a card to look at or click (a widget, an
+ * extension to install). Tools whose output is a card that also reads as text (links, findings,
+ * the wrap-up) stay; so does notify, which reaches the notifications service and a phone.
+ */
+export const NEEDS_SCREEN: ReadonlySet<string> = new Set([
+  "screenshot",
+  "browser_snapshot",
+  "browser_act",
+  "browser_inspect",
+  "browser_console",
+  "browser_eval",
+  "browser_batch",
+  "computer",
+  WIDGET_TOOL,
+  WIDGET_GUIDE_TOOL,
+  "suggest_extension",
+]);

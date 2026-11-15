@@ -20,6 +20,7 @@ import { fromBase64, toBase64 } from "../../core/extensions/rpcAuthFs";
 import { agentStoreIpc, aiIpc, type ProviderRef } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import type { ProviderRegistry } from "./providers";
 import { type AgentTool, toolWriteTarget } from "./tools";
 
@@ -141,6 +142,9 @@ async function writeImage(
   const same = want === img.mime || (want === "image/jpeg" && img.mime === "image/jpg");
   if (!same) {
     try {
+      // Redrawing goes through a canvas: only where there is a screen.
+      if (!agentHost(host.services).screen)
+        throw new Error("another format needs the app's window to convert it");
       data = await convertImage(img, want);
     } catch (err) {
       return {

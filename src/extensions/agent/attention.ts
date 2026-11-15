@@ -4,10 +4,10 @@
 // the window. A group round's members taking turns count as one turn (QUIET_MS). Off with
 // agent.notifyWhenAway.
 
-import { windowIpc } from "../../core/ipc/system";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, untracked } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import type { AgentSession } from "./session";
 
 /** A turn that ends and stays ended this long is over (the next member doesn't take over). */
@@ -19,10 +19,12 @@ export function watchAttention(services: WorkbenchServices, session: AgentSessio
   let timer: ReturnType<typeof setTimeout> | undefined;
   store.add({ dispose: () => clearTimeout(timer) });
 
-  const away = () => document.visibilityState === "hidden" || !document.hasFocus();
   const tell = (kind: "info" | "success" | "error", text: string) => {
-    if (!away() || services.settings.peek<boolean>("agent.notifyWhenAway") === false) return;
-    void windowIpc.requestAttention().catch(() => {});
+    // Who is watching comes from the agent's host (the window's document; nobody, with none).
+    const presence = agentHost(services).presence;
+    if (!presence.away() || services.settings.peek<boolean>("agent.notifyWhenAway") === false)
+      return;
+    presence.requestAttention();
     services.notifications.show(kind, text, {
       title: session.title.peek(),
       actions: [

@@ -24,6 +24,9 @@ import {
 import type { ToolOutcome } from "../../core/agent/loop";
 import { fsIpc, indexIpc, type SearchEvent, searchIpc } from "../../core/ipc/fs";
 import { resolveInRoot } from "../../core/paths/index";
+import { indexItemFile } from "../quickOpen/goto";
+import { chainSearches, planSearch, type SearchRun } from "../search/folders";
+import { effectiveOptions, type SearchQuery, type SearchSettings } from "../search/model";
 import { readDiskForAgent } from "./changeset";
 import { agentFolders, agentIgnoredRel } from "./ignore";
 import { hiddenInDownloads } from "./riskyGuard";
@@ -55,6 +58,80 @@ async function findInWorkspace(host: ToolHost, options: Record<string, unknown>)
     kind: "agent",
     session: host.session,
   });
+}
+
+/**
+ * The same search where the search extension isn't running (no window): what its `search.find`
+ * does, without it. The search settings apply (files.exclude, search.exclude, ignore files, smart
+ * case), each folder of a multi-root workspace with its own, and a file is named by its workspace
+ * path (the folder's name first with several).
+ */
+async function findInBackend(
+  host: ToolHost,
+  o: { query: string; isRegex: boolean; matchCase: boolean; include: string[]; multiLine: boolean },
+): Promise<Found> {
+  const { settings, workspace } = host.services;
+  const query: SearchQuery = {
+    query: o.query,
+    isRegex: o.isRegex,
+    matchCase: o.matchCase,
+    wholeWord: false,
+    include: o.include,
+    exclude: [],
+    ...(o.multiLine && { multiLine: true }),
+    maxResults: ENGINE_MAX,
+  };
+  const searchSettings = (at?: string): SearchSettings => {
+    const get = <T>(key: string, fallback: T): T =>
+      (at ? settings.peekAt<T | undefined>(key, at) : settings.peek<T | undefined>(key)) ??
+      fallback;
+    return {
+      filesExclude: get<Record<string, unknown>>("files.exclude", {}),
+      searchExclude: get<Record<string, unknown>>("search.exclude", {}),
+      useIgnoreFiles: get("search.useIgnoreFiles", true),
+      followSymlinks: get("search.followSymlinks", true),
+      smartCase: get("search.smartCase", false),
+      maxResults: get("search.maxResults", 20000),
+    };
+  };
+  const folders = workspace.folders.peek();
+  const several = folders.length > 1;
+  const runs: SearchRun[] = several
+    ? planSearch(folders, (f) => effectiveOptions(query, searchSettings(f.path), []))
+    : [{ options: effectiveOptions(query, searchSettings(), []) }];
+  const files: GrepFile[] = [];
+  let matches = 0;
+  let truncated = false;
+  let failure = null as string | null;
+  await new Promise<void>((resolve) => {
+    const failed = (err: unknown) => {
+      failure = err instanceof Error ? err.message : String(err);
+      resolve();
+    };
+    const sink = (e: SearchEvent) => {
+      if (e.kind === "file") {
+        const rel = several ? workspace.relative(e.path) : e.rel;
+        files.push({ path: several && rel !== e.path ? rel : e.rel, matches: e.matches });
+      } else {
+        matches = e.matches;
+        truncated = e.truncated;
+        resolve();
+      }
+    };
+    const only = runs[0];
+    const started =
+      runs.length === 1 && only && !only.roots
+        ? searchIpc.start(only.options, sink, true)
+        : chainSearches(
+            runs,
+            sink,
+            (options, onEvent, roots) => searchIpc.start(options, onEvent, true, undefined, roots),
+            { isCurrent: () => true, onError: failed },
+          );
+    started.catch(failed);
+  });
+  if (failure) throw new Error(failure);
+  return { files, matches, truncated };
 }
 
 /** The same search in a headless helper's worktree (not a workspace folder), straight to Rust. */
@@ -170,9 +247,11 @@ async function runSearch(host: ToolHost, h: SearchToolHelpers, a: GrepArgs): Pro
       include,
       multiLine: a.multiline && regex,
     };
-    return worktree
-      ? findInFolder(worktree, o)
-      : findInWorkspace(host, { ...o, maxResults: ENGINE_MAX });
+    if (worktree) return findInFolder(worktree, o);
+    // The search extension when it runs (the window); else the same search straight to Rust.
+    return host.services.dispatcher.has("search.find")
+      ? findInWorkspace(host, { ...o, maxResults: ENGINE_MAX })
+      : findInBackend(host, o);
   };
   const notes: string[] = [];
   let found: Found;
@@ -355,6 +434,19 @@ async function globFiles(
   return { files: byNewest(timed), more: false, notes };
 }
 
+/**
+ * Fuzzy names from the file index where quick open isn't running (no window): what its
+ * `quickOpen.search` returns, without the recently opened files it puts first (a window's list).
+ */
+async function indexedFiles(host: ToolHost, query: string, limit: number): Promise<string[]> {
+  const { workspace } = host.services;
+  const root = workspace.root.peek();
+  if (!root) return [];
+  const folders = workspace.folders.peek();
+  const result = await indexIpc.query(query, limit);
+  return result.items.map((i) => indexItemFile(i, folders, root).rel).slice(0, limit);
+}
+
 async function fuzzyFiles(
   host: ToolHost,
   query: string,
@@ -367,13 +459,15 @@ async function fuzzyFiles(
   // A headless helper's worktree isn't indexed: Rust walks it for the query.
   const files = worktree
     ? (await indexIpc.query(query, ask, worktree)).items.map((i) => i.path)
-    : (
-        await host.services.dispatcher.execute<{ files: string[] }>(
-          "quickOpen.search",
-          { query, limit: ask },
-          { kind: "agent", session: host.session },
-        )
-      ).files;
+    : host.services.dispatcher.has("quickOpen.search")
+      ? (
+          await host.services.dispatcher.execute<{ files: string[] }>(
+            "quickOpen.search",
+            { query, limit: ask },
+            { kind: "agent", session: host.session },
+          )
+        ).files
+      : await indexedFiles(host, query, ask);
   const inBase = base ? files.filter((f) => f.startsWith(`${base}/`)) : files;
   return { files: inBase, more: files.length >= ask, notes: [] };
 }

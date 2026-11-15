@@ -29,6 +29,8 @@ import { registerAgentSlashCommands, registerIdeToolsState } from "./acp";
 import { registerAcpRegistry } from "./acpRegistry";
 import { registerAgentConfig } from "./agentConfig";
 import { registerAgentEditor } from "./agentEditorCommands";
+import { setAgentHost } from "./agentHost";
+import { desktopAgentHost } from "./agentHostDesktop";
 import { registerAiFeatures } from "./aiFeatures";
 import {
   browserDecision,
@@ -155,6 +157,8 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
   manifest,
   activate({ subscriptions: sub, services }) {
     const { dock, dispatcher, state, settings, notifications, workspace } = services;
+    // The window is the agent's host (agentHost.ts): before any chat or MCP server exists.
+    setAgentHost(services, desktopAgentHost(services));
     const providers = new ProviderRegistry(services);
     Object.assign(services.languageModel, createLanguageModel(services, providers));
     const sessions = sub.add(new SessionManager(services, providers));
