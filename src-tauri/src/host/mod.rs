@@ -454,7 +454,8 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let host = std::thread::spawn(move || {
             let app = tauri::AppHandle::new("dev.example.app", "Example", "9.9.9");
-            let server = Server::new(app, &[], "9.9.9").with_waits(Duration::from_millis(300));
+            let server = Server::new(app, &[], "9.9.9")
+                .with_waits(Duration::from_millis(300), Duration::from_secs(5));
             tauri::async_runtime::block_on(serve(
                 &server,
                 None,

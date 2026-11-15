@@ -65,6 +65,11 @@ Every message, both directions:
   handle to that channel (nothing more will ever be sent on it), so the client can forget the id.
   Not sent for a channel the client closed with `$/channelClose`.
 - Requests are answered in any order; many may be in flight.
+- A client must keep reading. The host keeps at most about 64 MiB of frames the client hasn't
+  read (one larger frame goes alone); past that, commands wait where they send (a channel
+  message, an answer) and the host stops reading requests, until the client reads again.
+  Nothing is dropped. When the connection is over, the host gives its last frames (the answer
+  to `$/shutdown`) 5 seconds to be read, then hangs up.
 
 ## Semantics that must match the desktop
 

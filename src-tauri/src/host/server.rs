@@ -40,6 +40,23 @@ const MAX_RUNNING: usize = 1024;
 /// hold the host's one place for a client.
 const HELLO_WITHIN: Duration = Duration::from_secs(5);
 
+/// How long the host's last frames (the answer to `$/shutdown`, an error) wait for the client
+/// to read them once the connection is over.
+const FLUSH_WITHIN: Duration = Duration::from_secs(5);
+
+/// What the host keeps of frames the client hasn't read yet, in bytes. Past it whoever sends
+/// waits (a channel message where the command sends it, an answer in its task, the next
+/// request unread on the stream): a client that reads slowly slows its commands down instead of
+/// growing the host, and nothing it asked for is dropped. A frame larger than this goes alone.
+const OUT_BUDGET: u32 = 64 * 1024 * 1024;
+
+/// The room a frame takes of the budget.
+fn room_for(header: &str, body: &[u8]) -> u32 {
+    u32::try_from(header.len().saturating_add(body.len()))
+        .unwrap_or(u32::MAX)
+        .min(OUT_BUDGET)
+}
+
 /// The two ends of a client's byte stream.
 pub struct Carrier {
     pub reader: Box<dyn Read + Send>,
@@ -69,6 +86,8 @@ enum Outgoing {
     Frame {
         header: String,
         body: Vec<u8>,
+        /// The room it holds, given back once it is written.
+        held: u32,
     },
     /// Flush and stop writing: the connection is over.
     Close,
@@ -80,20 +99,83 @@ struct Connection {
     alive: AtomicBool,
     /// Channels the client no longer reads (`$/channelClose`).
     closed_channels: Mutex<HashSet<u32>>,
+    /// The room left for frames the client hasn't read yet, in bytes; closed with the
+    /// connection, so whoever waits for room stops waiting.
+    room: tokio::sync::Semaphore,
+    /// The runtime, for a sender that waits for room on a thread that isn't the runtime's.
+    runtime: tokio::runtime::Handle,
 }
 
 impl Connection {
-    fn send(&self, header: String, body: Vec<u8>) -> bool {
-        self.alive.load(Ordering::SeqCst) && self.out.send(Outgoing::Frame { header, body }).is_ok()
+    fn queue(&self, header: String, body: Vec<u8>, held: u32) -> bool {
+        self.alive.load(Ordering::SeqCst)
+            && self
+                .out
+                .send(Outgoing::Frame { header, body, held })
+                .is_ok()
     }
 
-    fn reply(&self, id: u64, reply: Reply) {
+    /// Queues a frame once there is room for it. False when the client is gone.
+    async fn send(&self, header: String, body: Vec<u8>) -> bool {
+        let held = room_for(&header, &body);
+        match self.room.acquire_many(held).await {
+            Ok(room) => room.forget(),
+            Err(_) => return false,
+        }
+        self.queue(header, body, held)
+    }
+
+    /// The same from a command's own code, which isn't async (a channel's send): the calling
+    /// thread waits for room.
+    fn send_waiting(&self, header: String, body: Vec<u8>) -> bool {
+        let held = room_for(&header, &body);
+        self.wait_for_room(held) && self.queue(header, body, held)
+    }
+
+    fn wait_for_room(&self, held: u32) -> bool {
+        use tokio::runtime::{Handle, RuntimeFlavor};
+        use tokio::sync::TryAcquireError;
+        match self.room.try_acquire_many(held) {
+            Ok(room) => {
+                room.forget();
+                return true;
+            }
+            Err(TryAcquireError::Closed) => return false,
+            Err(TryAcquireError::NoPermits) => {}
+        }
+        let wait = || match self.runtime.block_on(self.room.acquire_many(held)) {
+            Ok(room) => {
+                room.forget();
+                true
+            }
+            Err(_) => false,
+        };
+        match Handle::try_current() {
+            // A thread of the command's own (a terminal's reader, a watcher).
+            Err(_) => wait(),
+            // One of the runtime's: it hands its other tasks over while this one waits.
+            Ok(current) if current.runtime_flavor() == RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(wait)
+            }
+            // A single-threaded runtime of a service's own can't be waited in: on a thread
+            // beside it.
+            Ok(_) => std::thread::scope(|scope| scope.spawn(wait).join().unwrap_or(false)),
+        }
+    }
+
+    /// The connection is over: sends fail, and whoever waits for room stops waiting.
+    fn close(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+        self.room.close();
+    }
+
+    async fn reply(&self, id: u64, reply: Reply) {
         let (header, body) = match reply {
             Reply::Json(text) => (format!("{{\"id\":{id},\"result\":{text}}}"), Vec::new()),
             Reply::Raw(bytes) => (format!("{{\"id\":{id},\"raw\":true}}"), bytes),
             Reply::Error(text) => (format!("{{\"id\":{id},\"error\":{text}}}"), Vec::new()),
         };
-        self.send(header, body);
+        self.send(header, body).await;
     }
 
     /// Whether the client said it no longer reads `channel`.
@@ -121,7 +203,7 @@ impl ChannelSink for Connection {
                 (format!("{{\"channel\":{channel},\"raw\":true}}"), bytes)
             }
         };
-        if Connection::send(self, header, body) {
+        if self.send_waiting(header, body) {
             Ok(())
         } else {
             Err(tauri::Error::ChannelClosed)
@@ -138,10 +220,12 @@ impl ChannelSink for Connection {
             }
             return;
         }
-        Connection::send(
-            self,
+        // A few bytes, once per channel, from wherever the last handle was dropped: not waited
+        // for.
+        self.queue(
             format!("{{\"channel\":{channel},\"end\":true}}"),
             Vec::new(),
+            0,
         );
     }
 }
@@ -193,6 +277,7 @@ pub struct Server {
     names: Vec<&'static str>,
     version: String,
     hello_within: Duration,
+    flush_within: Duration,
 }
 
 impl Server {
@@ -203,13 +288,15 @@ impl Server {
             names: table.iter().map(|entry| entry.name).collect(),
             version: version.to_string(),
             hello_within: HELLO_WITHIN,
+            flush_within: FLUSH_WITHIN,
         }
     }
 
-    /// A shorter wait, for tests of what happens when it passes.
+    /// Shorter waits, for tests of what happens when they pass.
     #[cfg(test)]
-    pub fn with_waits(mut self, hello_within: Duration) -> Self {
+    pub fn with_waits(mut self, hello_within: Duration, flush_within: Duration) -> Self {
         self.hello_within = hello_within;
+        self.flush_within = flush_within;
         self
     }
 
@@ -227,12 +314,19 @@ impl Server {
             out,
             alive: AtomicBool::new(true),
             closed_channels: Mutex::new(HashSet::new()),
+            room: tokio::sync::Semaphore::new(OUT_BUDGET as usize),
+            runtime: tokio::runtime::Handle::current(),
         });
+        // Dropped when the writer's thread ends, which is how its end is heard.
+        let (writer_ends, mut writer_ended) = tokio::sync::oneshot::channel::<()>();
         let writing = {
             let connection = connection.clone();
             std::thread::Builder::new()
                 .name("host-writer".into())
-                .spawn(move || write_loop(writer, queued, &connection))
+                .spawn(move || {
+                    let _writer_ends = writer_ends;
+                    write_loop(writer, queued, &connection)
+                })
         };
         let (frames, mut incoming) = tokio::sync::mpsc::channel(FRAMES_AHEAD);
         let running = Arc::new(tokio::sync::Semaphore::new(MAX_RUNNING));
@@ -271,7 +365,10 @@ impl Server {
                             break Ended::Closed;
                         }
                     };
-                    match self.handle(&connection, &ordered, frame, &mut greeted, token, place) {
+                    match self
+                        .handle(&connection, &ordered, frame, &mut greeted, token, place)
+                        .await
+                    {
                         Next::Continue => {}
                         Next::End(ended) => break ended,
                     }
@@ -287,18 +384,19 @@ impl Server {
                 Ended::Closed
             }
         };
-        // What is queued (the answer to `$/shutdown`, an error) still goes out; then nothing.
+        // What is queued (the answer to `$/shutdown`, an error) still goes out, to a client
+        // that reads it in time; then nothing. The writer isn't waited for beyond that: stuck
+        // in a write to a client that stopped reading, it only returns once the stream is hung
+        // up (and on the process's own pipes, not before the other end goes).
         let _ = connection.out.send(Outgoing::Close);
-        if let Ok(writing) = writing {
-            let _ = tokio::task::spawn_blocking(move || writing.join()).await;
-        }
-        connection.alive.store(false, Ordering::SeqCst);
+        let _ = tokio::time::timeout(self.flush_within, &mut writer_ended).await;
+        connection.close();
         hang_up();
         Served { ended, greeted }
     }
 
     /// One frame from the client.
-    fn handle(
+    async fn handle(
         &self,
         connection: &Arc<Connection>,
         ordered: &SyncQueue,
@@ -332,41 +430,47 @@ impl Server {
             // `$/hello` first, before anything else.
             let Some(id) = id.filter(|_| method == "$/hello") else {
                 if let Some(id) = id {
-                    connection.reply(id, Reply::invalid("expected $/hello first"));
+                    connection
+                        .reply(id, Reply::invalid("expected $/hello first"))
+                        .await;
                 }
                 return Next::End(Ended::Closed);
             };
             let params = message.params.unwrap_or(Value::Null);
             if params.get("protocol").and_then(Value::as_u64) != Some(PROTOCOL) {
-                connection.reply(
-                    id,
-                    Reply::invalid(&format!(
-                        "unsupported protocol (this host speaks {PROTOCOL})"
-                    )),
-                );
+                connection
+                    .reply(
+                        id,
+                        Reply::invalid(&format!(
+                            "unsupported protocol (this host speaks {PROTOCOL})"
+                        )),
+                    )
+                    .await;
                 return Next::End(Ended::Closed);
             }
             if let Some(expected) = token {
                 let given = params.get("token").and_then(Value::as_str).unwrap_or("");
                 if !same_token(given, expected) {
-                    connection.reply(id, Reply::invalid("wrong token"));
+                    connection.reply(id, Reply::invalid("wrong token")).await;
                     return Next::End(Ended::Closed);
                 }
             }
             *greeted = true;
-            connection.reply(
-                id,
-                Reply::Json(
-                    serde_json::json!({
-                        "protocol": PROTOCOL,
-                        "version": self.version,
-                        "os": std::env::consts::OS,
-                        "pid": std::process::id(),
-                        "commands": self.names,
-                    })
-                    .to_string(),
-                ),
-            );
+            connection
+                .reply(
+                    id,
+                    Reply::Json(
+                        serde_json::json!({
+                            "protocol": PROTOCOL,
+                            "version": self.version,
+                            "os": std::env::consts::OS,
+                            "pid": std::process::id(),
+                            "commands": self.names,
+                        })
+                        .to_string(),
+                    ),
+                )
+                .await;
             return Next::Continue;
         }
         let Some(id) = id else {
@@ -388,24 +492,28 @@ impl Server {
         };
         match method.as_str() {
             "$/shutdown" => {
-                connection.reply(id, Reply::Json("null".into()));
+                connection.reply(id, Reply::Json("null".into())).await;
                 return Next::End(Ended::Shutdown);
             }
             "$/hello" => {
-                connection.reply(id, Reply::invalid("$/hello was already answered"));
+                connection
+                    .reply(id, Reply::invalid("$/hello was already answered"))
+                    .await;
                 return Next::Continue;
             }
             _ => {}
         }
         let Some(run) = self.commands.get(method.as_str()).copied() else {
-            connection.reply(id, Reply::invalid(&format!("unknown command: {method}")));
+            connection
+                .reply(id, Reply::invalid(&format!("unknown command: {method}")))
+                .await;
             return Next::Continue;
         };
         let (params, body, headers) = if message.raw {
             match header_map(message.headers) {
                 Ok(headers) => (Value::Null, InvokeBody::Raw(frame.body), headers),
                 Err(e) => {
-                    connection.reply(id, Reply::invalid(&e));
+                    connection.reply(id, Reply::invalid(&e)).await;
                     return Next::Continue;
                 }
             }
@@ -414,7 +522,9 @@ impl Server {
                 None | Some(Value::Null) => Value::Object(serde_json::Map::new()),
                 Some(params @ Value::Object(_)) => params,
                 Some(_) => {
-                    connection.reply(id, Reply::invalid("params must be an object"));
+                    connection
+                        .reply(id, Reply::invalid("params must be an object"))
+                        .await;
                     return Next::Continue;
                 }
             };
@@ -442,7 +552,7 @@ impl Server {
                 Ok(reply) => reply,
                 Err(e) => tauri::host::reply_panic(&e.to_string()),
             };
-            connection.reply(id, reply);
+            connection.reply(id, reply).await;
             drop(place);
         });
         Next::Continue
@@ -485,10 +595,12 @@ fn write_loop(
 ) {
     let mut writer = BufWriter::with_capacity(64 * 1024, writer);
     let mut next = queued.recv().ok();
-    while let Some(Outgoing::Frame { header, body }) = next {
+    while let Some(Outgoing::Frame { header, body, held }) = next {
         if write_frame(&mut writer, header.as_bytes(), &body).is_err() {
             break;
         }
+        drop((header, body));
+        connection.room.add_permits(held as usize);
         // Flushed whenever nothing more is waiting, so a burst goes out in few writes.
         next = match queued.try_recv() {
             Ok(message) => Some(message),
@@ -503,7 +615,7 @@ fn write_loop(
     }
     let _ = writer.flush();
     // The client is gone, or the connection is over: later sends fail.
-    connection.alive.store(false, Ordering::SeqCst);
+    connection.close();
 }
 
 #[cfg(test)]

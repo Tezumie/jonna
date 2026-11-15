@@ -69,6 +69,51 @@ mod commands {
         panic!("on purpose (a test)")
     }
 
+    /// How many of `flood`'s messages the connection has taken.
+    pub static FLOODED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    /// Sends `count` messages of a mebibyte each from `from`: the command's "task", a "thread"
+    /// of its own, or a single-threaded "runtime" of its own (as some services keep); answers
+    /// how many were taken.
+    #[tauri::command]
+    pub async fn flood(
+        count: u32,
+        from: String,
+        on_data: Channel<tauri::ipc::InvokeResponseBody>,
+    ) -> u32 {
+        let send = move || {
+            let mut taken = 0;
+            for n in 0..count {
+                let chunk = vec![n as u8; 1024 * 1024];
+                if on_data
+                    .send(tauri::ipc::InvokeResponseBody::Raw(chunk))
+                    .is_err()
+                {
+                    break;
+                }
+                taken += 1;
+                FLOODED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            taken
+        };
+        if from == "task" {
+            return send();
+        }
+        let (done, taken) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let taken = if from == "runtime" {
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(async move { send() })
+            } else {
+                send()
+            };
+            let _ = done.send(taken);
+        });
+        taken.await.unwrap_or(0)
+    }
+
     /// What `note` was called with, in the order the calls ran.
     pub static NOTES: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
 
@@ -95,6 +140,7 @@ fn table() -> &'static [CommandEntry] {
         commands::panics,
         commands::note,
         commands::noted,
+        commands::flood,
     ]
 }
 
@@ -108,8 +154,8 @@ fn connect(token: Option<&'static str>) -> Client {
     connect_with(token, None)
 }
 
-/// `waits`: how long the host waits for `$/hello`.
-fn connect_with(token: Option<&'static str>, waits: Option<Duration>) -> Client {
+/// `waits`: how long the host waits for `$/hello`, and for its last frames to be read.
+fn connect_with(token: Option<&'static str>, waits: Option<(Duration, Duration)>) -> Client {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     stream
@@ -129,7 +175,7 @@ fn connect_with(token: Option<&'static str>, waits: Option<Duration>) -> Client 
             }),
         };
         let server = match waits {
-            Some(hello) => server.with_waits(hello),
+            Some((hello, flush)) => server.with_waits(hello, flush),
             None => server,
         };
         tauri::async_runtime::block_on(server.serve(carrier, token)).ended
@@ -205,7 +251,7 @@ fn hello_lists_the_commands() {
     assert_eq!(result["pid"], std::process::id());
     assert_eq!(
         result["commands"],
-        json!(["echo", "fails", "upper", "count", "slow", "panics", "note", "noted"])
+        json!(["echo", "fails", "upper", "count", "slow", "panics", "note", "noted", "flood"])
     );
 }
 
@@ -471,7 +517,7 @@ fn a_broken_frame_closes_the_connection() {
 
 #[test]
 fn a_client_that_says_nothing_is_dropped() {
-    let waits = Some(Duration::from_millis(300));
+    let waits = Some((Duration::from_millis(300), Duration::from_secs(5)));
     // Nothing at all.
     let client = connect_with(Some("secret"), waits);
     assert_eq!(
@@ -539,7 +585,76 @@ fn frames_sent_behind_the_hello_are_read_once_it_is_accepted() {
 #[test]
 fn the_processs_own_pipes_have_no_deadline() {
     // No token: the stream is the host's own stdin, whose other end started the host.
-    let mut client = connect_with(None, Some(Duration::from_millis(100)));
+    let waits = Some((Duration::from_millis(100), Duration::from_secs(5)));
+    let mut client = connect_with(None, waits);
     std::thread::sleep(Duration::from_millis(400));
     assert_eq!(client.hello()["result"]["protocol"], 1);
+}
+
+#[test]
+fn a_client_that_stops_reading_does_not_keep_the_connection_open() {
+    let waits = Some((Duration::from_secs(5), Duration::from_millis(300)));
+    let mut client = connect_with(None, waits);
+    client.hello();
+    // Answers nobody reads: more than the socket holds, so the writer is stuck in a write.
+    let text = "x".repeat(1024 * 1024);
+    for id in 2..34u64 {
+        client.send(
+            json!({ "id": id, "method": "echo", "params": { "text": text } }),
+            b"",
+        );
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    client.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+}
+
+#[test]
+fn messages_wait_for_a_client_that_reads_slowly() {
+    use std::sync::atomic::Ordering;
+    let mut client = connect(None);
+    client.hello();
+    let mut next_id = 2;
+    for from in ["task", "thread", "runtime"] {
+        commands::FLOODED.store(0, Ordering::SeqCst);
+        let id = next_id;
+        next_id += 1;
+        client.send(
+            json!({ "id": id, "method": "flood", "params": { "count": 200, "from": from, "onData": { "__channel": id } } }),
+            b"",
+        );
+        // Nothing is read: the host takes what fits its budget (64 MiB, and what the socket
+        // holds), and the command waits with the rest.
+        std::thread::sleep(Duration::from_millis(1500));
+        let taken = commands::FLOODED.load(Ordering::SeqCst);
+        assert!(
+            (1..140).contains(&taken),
+            "{taken} of 200 MiB queued (sent from its {from})"
+        );
+        // Read: everything arrives, in order, and the command answers.
+        let mut seen = 0u32;
+        loop {
+            let (header, body) = client.next();
+            if header.get("id").and_then(Value::as_u64) == Some(id) {
+                assert_eq!(header["result"], 200);
+                break;
+            }
+            if header.get("end").is_some() {
+                continue;
+            }
+            assert_eq!(header["channel"], id);
+            assert_eq!(body.len(), 1024 * 1024);
+            assert_eq!(body[0], seen as u8);
+            seen += 1;
+        }
+        assert_eq!(seen, 200);
+    }
+    // The connection still answers.
+    assert_eq!(
+        client.call(next_id, "echo", json!({ "text": "after" }))["result"],
+        "after"
+    );
 }

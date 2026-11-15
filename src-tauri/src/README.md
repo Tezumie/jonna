@@ -48,7 +48,9 @@ of commands; the first frame is at most 64 KiB with no body, nothing behind it i
 it is accepted, and a TCP client has 5 s to send it), requests run as tasks (at most 1024 at once, 16 frames read ahead: beyond that the
 host stops reading and the stream pushes back; sync commands one at a time on the connection's
 own thread, in the order their requests arrived, as the desktop runs them: the shim's
-`SyncQueue`), answers in any order through one writer thread,
+`SyncQueue`), answers in any order through one writer thread (at most 64 MiB queued for a
+client that reads slowly: past it senders wait, nothing is dropped; at the end the writer gets
+5 s to flush, then the stream is hung up whether it returned or not),
 channel messages (`{channel, data}` or raw), `{channel, end}` once the host dropped a channel,
 `$/channelClose` (later sends on it fail, as on the desktop when the page is gone), a panic in a
 command answers `Unknown`. Commands see the client as the window label `main`. `stdio.rs`: the
