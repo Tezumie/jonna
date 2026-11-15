@@ -10,7 +10,6 @@ import "./colorCustomizations.css";
 import { type MenuAnchor, type MenuItem, showMenu } from "../../ui/Menu";
 import type { ColorThemeEntry } from "../../workbench/contributions";
 import type { WorkbenchServices } from "../../workbench/services";
-import { SettingsService } from "../../workbench/settings";
 import {
   DENSITIES,
   type Density,
@@ -325,7 +324,7 @@ export function registerAppearance(sub: DisposableStore, services: WorkbenchServ
   let migrating = false;
   // What the first paint used (the last start's theme): kept while the settings load and while
   // an extension's theme isn't registered yet, so nothing flashes the default (D136).
-  const cached = SettingsService.cachedFirstPaint();
+  const cached = settings.cachedFirstPaint();
   const grace = signal(false);
   const graceTimer = setTimeout(() => (grace.value = true), 5000);
   sub.add({ dispose: () => clearTimeout(graceTimer) });

@@ -51,6 +51,8 @@ export class StatusBar implements Disposable {
   private readonly store = new DisposableStore();
   private readonly left: HTMLElement;
   private readonly right: HTMLElement;
+  /** Whether the whole bar shows (workbench.statusBar.visible, set by the workbench extension). */
+  readonly visible = signal(true);
   /** Ids of the items the user hid (workbench.statusBar.hidden, set by the workbench). */
   readonly hidden = signal<ReadonlySet<string>>(new Set());
   private readonly itemList = signal<readonly StatusItem[]>([]);
@@ -71,6 +73,14 @@ export class StatusBar implements Disposable {
     );
     host.appendChild(this.element);
     this.store.add(toDisposable(() => this.element.remove()));
+    this.store.add(
+      effect(() => {
+        const hidden = !this.visible.value;
+        this.element.hidden = hidden;
+        this.element.parentElement?.classList.toggle("is-statusbar-hidden", hidden);
+        return undefined;
+      }),
+    );
     this.store.add(
       on(this.element, "contextmenu", (e) => {
         e.preventDefault();

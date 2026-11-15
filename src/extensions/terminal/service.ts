@@ -17,7 +17,7 @@ import { type Disposable, DisposableStore, toDisposable } from "../../core/lifec
 import { batch, type Signal, signal } from "../../core/reactive/index";
 import { toHex, withAlpha } from "../../core/themes/color";
 import { terminalSelection } from "../../core/themes/vscodeColors";
-import type { ThemeService } from "../../workbench/theme";
+import type { ThemeApi } from "../../workbench/services";
 import type { ClipboardHandlers, SyntaxColors } from "./features";
 import type { SavedOutput } from "./persist";
 import { msysToWindows } from "./profiles";
@@ -81,7 +81,7 @@ export interface TerminalInstance {
 }
 
 /** Terminal colors and font from the design tokens (DESIGN.md §15.4). */
-export function terminalThemeFromTokens(theme: ThemeService): TerminalTheme {
+export function terminalThemeFromTokens(theme: ThemeApi): TerminalTheme {
   const hex = (name: string, alpha?: number) => {
     const c = theme.color(name);
     // A missing token (broken imported theme) falls back to opaque black rather than failing.
