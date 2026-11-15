@@ -22,6 +22,8 @@ import { type HostBackend, hostBackend } from "./node/hostBackend";
 import { nodeWorkers } from "./node/workers";
 
 export type { Caller } from "../core/dispatcher/types";
+/** Hears every backend call that failed (one listener; null stops): a command line's `--verbose`. */
+export { type IpcError, onFailedCall } from "../core/ipc/invoke";
 export type { HostInfo } from "../core/ipc/streamTransport";
 export type {
   HeadlessPrompts,

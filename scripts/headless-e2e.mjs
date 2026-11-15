@@ -497,6 +497,43 @@ async function main() {
       },
     },
     {
+      name: "a step limit pauses the turn with work left",
+      spec: {
+        kind: "run",
+        options: {
+          ...base,
+          prompt: "headless e2e: write and run",
+          model: MODEL,
+          permissions: { mode: "full-access" },
+          limits: { maxSteps: 1 },
+        },
+      },
+      check: (r) => {
+        equal(r.result.reason, "max_steps");
+        equal(r.result.steps, 1);
+        ok(
+          r.events.some((e) => e.type === "notice" && /Paused after 1 step/.test(e.text)),
+          "the chat says it paused",
+        );
+      },
+    },
+    {
+      name: "no folder: an answer-only chat",
+      spec: {
+        kind: "run",
+        options: {
+          settings,
+          prompt: "which model answers?",
+          model: MODEL,
+          permissions: { otherwise: "deny" },
+        },
+      },
+      check: (r) => {
+        equal(r.result.reason, "end");
+        match(r.result.text, /^Answered by /);
+      },
+    },
+    {
       name: "an API key in the app's store reaches the provider (Anthropic's API)",
       spec: {
         kind: "brain",

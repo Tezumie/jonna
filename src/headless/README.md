@@ -155,3 +155,6 @@ process must end by itself.
 installed with `setTransport`, so no `window` or `document` exists and a test asserts the logic
 layer never touched the screen by their absence. `memoryHost(options)` is a small backend kept in maps (app info, saved state, settings
 files, a file tree) with the commands a session needs to start and open a folder.
+
+`run.ts` also re-exports the types a command line needs (`SessionEvent`, `UnattendedPolicy`,
+`AccessMode`, `RunResult`…) and `onFailedCall` (every backend call that failed: a `--verbose`).
