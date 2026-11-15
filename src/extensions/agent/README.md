@@ -1658,6 +1658,8 @@ backend, the services a turn needs, no `document` or `window`), and
     `mcp.samplingReview`, `mcp.argument`, `confirm`). These are the questions that aren't a
     chat's own; a chat's permissions and questions wait on the session and are answered by
     commands (`agent.respondPermission`, `agent.answer`).
+    A text or a choice may carry a `signal`: aborting it takes that one question away (who
+    asked is gone), where `cancel` takes whichever is on top.
   - `workers` (`WorkerFactory` → `ScriptWorker`): where a workflow's script runs, or null.
 - **In the window** (`agentHostDesktop.ts`, view code): `desktopAgentHost(services)`, set first
   thing in `activate`. Presence is the document's focus and visibility and whether the chat's

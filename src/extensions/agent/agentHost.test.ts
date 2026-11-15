@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { effect } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import {
   agentHost,
@@ -141,4 +142,59 @@ test("a waiting review closes when its answer comes another way", async () => {
   closed.abort();
   assert.deepEqual(await review, { choice: "closed", text: "the answer" });
   assert.deepEqual(prompts.pending.peek(), []);
+});
+
+test("a question whose asker goes away is dismissed, and no other", async () => {
+  const prompts = headlessPrompts({ decide: () => "wait" });
+  const firstGone = new AbortController();
+  const secondGone = new AbortController();
+  // Two servers ask at once; the first one stops.
+  const first = prompts.choose({ ...stepUp, server: "first", signal: firstGone.signal });
+  const second = prompts.choose({ ...stepUp, server: "second", signal: secondGone.signal });
+  const typed = prompts.text({ ...input, server: "third", signal: firstGone.signal });
+  assert.equal(prompts.pending.peek().length, 3);
+  firstGone.abort();
+  // The newest question isn't the one that goes: each goes with its own asker.
+  assert.deepEqual(
+    prompts.pending.peek().map((p) => p.prompt.reason !== "confirm" && p.prompt.server),
+    ["second"],
+  );
+  assert.equal(await first, undefined);
+  assert.equal(await typed, undefined);
+  const waiting = prompts.pending.peek()[0];
+  if (waiting?.kind === "choice") waiting.answer("signIn");
+  assert.equal(await second, "signIn");
+  assert.deepEqual(prompts.pending.peek(), []);
+  // Gone after the answer: nothing left to dismiss, nothing told.
+  let told = 0;
+  const watching = effect(() => {
+    void prompts.pending.value;
+    told++;
+  });
+  secondGone.abort();
+  assert.equal(told, 1);
+  watching.dispose();
+  // Gone before asking: nothing is asked.
+  assert.equal(await prompts.choose({ ...stepUp, signal: firstGone.signal }), undefined);
+  assert.deepEqual(prompts.pending.peek(), []);
+});
+
+test("a question the policy answers at once doesn't stay tied to its asker", async () => {
+  const prompts = headlessPrompts(DISMISS_ALL);
+  const gone = new AbortController();
+  let listening = 0;
+  const add = gone.signal.addEventListener.bind(gone.signal);
+  const remove = gone.signal.removeEventListener.bind(gone.signal);
+  gone.signal.addEventListener = ((...args: Parameters<typeof add>) => {
+    listening++;
+    add(...args);
+  }) as typeof add;
+  gone.signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+    listening--;
+    remove(...args);
+  }) as typeof remove;
+  assert.equal(await prompts.choose({ ...stepUp, signal: gone.signal }), undefined);
+  assert.equal(await prompts.text({ ...input, signal: gone.signal }), undefined);
+  // A server that asks often would otherwise gather a listener per question.
+  assert.equal(listening, 0);
 });

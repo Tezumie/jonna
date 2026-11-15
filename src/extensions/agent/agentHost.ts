@@ -67,6 +67,8 @@ export interface TextPrompt extends PromptBase {
   password?: boolean;
   /** Returns what is wrong with a value, or undefined. */
   validate?: (value: string) => string | undefined;
+  /** Aborted when who asked is gone: this question goes away, answered as dismissed. */
+  signal?: AbortSignal;
 }
 
 export interface PromptChoice {
@@ -79,6 +81,8 @@ export interface PromptChoice {
 export interface ChoicePrompt extends PromptBase {
   placeholder: string;
   choices: readonly PromptChoice[];
+  /** Aborted when who asked is gone: this question goes away, answered as dismissed. */
+  signal?: AbortSignal;
 }
 
 /** A text to check, change, then send or reject (the window's dialog). */
@@ -120,7 +124,10 @@ export interface HostPrompts {
   review(prompt: ReviewPrompt): Promise<ReviewAnswer>;
   /** False when turned down or dismissed. */
   confirm(prompt: ConfirmPrompt): Promise<boolean>;
-  /** Takes the question on screen away (who asked is gone). */
+  /**
+   * Takes the question on screen away, whoever asked it. Who wants only its own question gone
+   * gives that question a `signal` instead: with several waiting, this takes another's.
+   */
   cancel(): void;
 }
 
@@ -163,27 +170,45 @@ export function headlessPrompts(policy: PromptPolicy = DISMISS_ALL): HeadlessPro
     else given(decision.answer);
   };
   const done = (id: string) => {
-    pending.value = pending.peek().filter((p) => p.id !== id);
+    // One the policy answered at once was never in the list: readers aren't told of no change.
+    if (pending.peek().some((p) => p.id === id))
+      pending.value = pending.peek().filter((p) => p.id !== id);
+  };
+  /**
+   * A text or a choice whose asker may go away: aborting its signal dismisses that one question,
+   * and no other. `dismiss` is its answer for "nothing"; it returns what to call once answered.
+   */
+  const untilGone = (asker: AbortSignal | undefined, dismiss: () => void): (() => void) => {
+    if (!asker) return () => {};
+    asker.addEventListener("abort", dismiss, { once: true });
+    return () => asker.removeEventListener("abort", dismiss);
   };
   return {
     pending,
     text: (prompt) =>
       new Promise((resolve) => {
+        // Who asked is already gone: nothing is asked.
+        if (prompt.signal?.aborted) return resolve(undefined);
         const id = `hp${next++}`;
         const answer = (value: string | undefined) => {
+          answered();
           done(id);
           resolve(value);
         };
-        settle({ id, kind: "text", prompt, answer }, () => resolve(undefined), resolve);
+        const answered = untilGone(prompt.signal, () => answer(undefined));
+        settle({ id, kind: "text", prompt, answer }, () => answer(undefined), answer);
       }),
     choose: (prompt) =>
       new Promise((resolve) => {
+        if (prompt.signal?.aborted) return resolve(undefined);
         const id = `hp${next++}`;
         const answer = (value: string | undefined) => {
+          answered();
           done(id);
           resolve(value);
         };
-        settle({ id, kind: "choice", prompt, answer }, () => resolve(undefined), resolve);
+        const answered = untilGone(prompt.signal, () => answer(undefined));
+        settle({ id, kind: "choice", prompt, answer }, () => answer(undefined), answer);
       }),
     review: (prompt) =>
       new Promise((resolve) => {
@@ -218,7 +243,8 @@ export function headlessPrompts(policy: PromptPolicy = DISMISS_ALL): HeadlessPro
         );
       }),
     cancel: () => {
-      // The newest waiting question goes, as the window's one open quick input would.
+      // The newest waiting question goes, as the window's one open quick input would. Whose it
+      // is isn't known here: a caller with a question of its own to take back aborts its signal.
       const last = pending.peek().findLast((p) => p.kind === "text" || p.kind === "choice");
       if (last?.kind === "text" || last?.kind === "choice") last.answer(undefined);
     },
