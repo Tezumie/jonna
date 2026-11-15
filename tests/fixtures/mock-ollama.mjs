@@ -2075,7 +2075,7 @@ function headlessE2eScripted(messages, user) {
   if (user.includes("headless e2e: recall")) {
     const earlier = messages
       .slice(0, from)
-      .some((m) => m.role === "assistant" && String(m.content).includes("Headless: wrote="));
+      .some((m) => m.role === "assistant" && String(m.content).startsWith("Headless"));
     return { text: `Headless recall: ${earlier ? "remembers" : "nothing"}` };
   }
   return null;

@@ -1696,3 +1696,54 @@ backend, the services a turn needs, no `document` or `window`), and
   `roomService.ts`), `view/groupFaces.ts` (faces as elements, out of `groupChat.ts`),
   `approveDecisions.ts` (auto-approve's decisions and `registerApproveGate`, out of
   `autoApprove.ts`). The skills page is registered by `index.ts` beside `registerSkills`.
+
+## Setup and views apart; a front end that isn't the window
+
+- **`core.ts` and `screen.ts`** (`index.ts` puts them together): `activateAgentCore(context,
+  makeScreen)` is the whole setup (sessions, providers, hooks, MCP, subagents, skills, workflows,
+  the permission handler, every command and `ide://agent` state path) and needs no screen.
+  `agentScreen(parts)` (`screen.ts`, view code) gives the steps only a window has
+  (`AgentScreenSteps`: model faces, the Providers page, the Chats view, the channel and chat
+  tabs, attachment actions, the focus check, the status bar item); the setup calls each at the
+  point of the activation where the window has always done it, so registration order is as it
+  was. `agentExtension` (`index.ts`) sets the window's host and passes the screen when
+  `services.hasScreen`, else runs the setup alone; `agentCoreExtension` (`core.ts`) is the
+  setup alone, for an entry that must not import the views.
+- **`runtime.ts`**: `agentRuntime(services)` gives a host the live `sessions` and `providers`
+  (to observe a chat; what a person does still goes through commands).
+- **The caller** `{ kind: "frontend", name }` (`core/dispatcher/types.ts`): a terminal or an
+  attached client acting for the person. It has the user's rights (the commands hidden from
+  agents, the same confirmations) and no window: where a command would show a picker it takes
+  the path any caller that can't be shown one takes. `isUserCaller` covers it.
+- **A run's permission policy** (`unattended.ts`, tested; `AgentHost.permissions`):
+  `UnattendedPolicy { mode?, allow?, deny?, otherwise? }`. `mode` is one of the app's four
+  (`ask`, `accept-edits`, `auto`, `full-access`; `modeSettings` gives the settings the window's
+  menu writes and whether edits apply, which a host applies for the run only). `deny` refuses a
+  tool call before it runs (`sessionTurn.ts`: by the tool's name, or a command line by its
+  words) and a question before it is shown; `allow` answers a question (a tool's name, a
+  command pattern as in `agent.allowedCommands`, an IDE command's id; `tool:` / `cmd:` say
+  which), also one that asks whatever the mode. Order in `AgentSession.askBeforeSend`: deny
+  list, allow list, full access, then `otherwise`: `deny` (the default: refused at once) or
+  `wait` (the card waits on the chat for `agent.respondPermission`). Host prompts follow it
+  (`promptPolicyOf`). Every outcome is told (`AgentSession.onDidDecide`: `PermissionDecision`
+  with `by` policy, mode or user, and the entry that decided).
+- **A chat as events** (`sessionEvents.ts`, tested in `headlessTurn.test.ts`):
+  `observeSession(services, session, listener)` tells everything that happens from then on as a
+  `SessionEvent` (plain JSON): `session`, `status`, `turn.start`, `message`, `text` and
+  `thinking` (deltas), `tool.start` / `tool.update` / `tool.output` / `tool.end`, `notice`,
+  `summary`, `permission.request`, `permission.decision`, `question`, `question.answered`,
+  `edit` (proposed or applied), `usage`, `error`, `turn.end` (`reason`: end, stopped,
+  max_steps, error; the answer's text; usage). Built on the chat's signals, its decisions and
+  `agent.didEdit`; nothing polls.
+- **Waiting host prompts** (`hostPromptCommands.ts`, tested; only where the host keeps a list):
+  `ide://agent/hostPrompts` and `agent.answerHostPrompt { id?, text?, choice?, confirm?,
+  reject?, dismiss? }`.
+- **`agent.selectModel`** takes `remember: false`: the model is this chat's only (the default
+  for new chats and the recent picks stay), which is what a run's `--model` means.
+- **Chat tabs with no chat view** (`threadTabs.ts`): `showThreadTab` / `showRoomTab` do nothing
+  where the view isn't registered, so commands that show a chat after their work (send, new,
+  open, /clear) work with no window.
+- **With no screen at activation:** other windows' unload isn't listened for
+  (`chatWindows.ts`), widgets aren't themed (`widgets.ts`), edits aren't followed in an editor
+  (`follow.ts`); the idle sweep's timer is the plain one.
+- **The whole thing with no window** is `src/headless` (the brain, the runner, the build).

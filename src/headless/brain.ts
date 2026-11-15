@@ -16,6 +16,7 @@ import {
   setAgentHost,
   type WorkerFactory,
 } from "../extensions/agent/agentHost";
+import { backgroundProcesses } from "../extensions/agent/backgroundProcesses";
 import { isThisWorkspace } from "../extensions/agent/chatWorkspace";
 import { type AgentRuntime, agentRuntime } from "../extensions/agent/runtime";
 import type { AgentSession } from "../extensions/agent/session";
@@ -199,6 +200,8 @@ export async function startBrain(options: BrainOptions): Promise<Brain> {
   let overrides: Record<string, unknown> = {
     // The IDE's own MCP server and its Claude Code integration: the app's, unless asked for.
     ...(options.ideServer !== true && { "mcp.enabled": false, "mcp.claudeCode.enabled": false }),
+    // Fetching in the background is for a window somebody keeps open; a run fetches when asked.
+    "git.autofetch": false,
     ...mode?.settings,
     ...options.settings,
   };
@@ -320,6 +323,20 @@ export async function startBrain(options: BrainOptions): Promise<Brain> {
   };
 }
 
+/**
+ * The chat has work under way: a turn, helpers or a workflow in the background, their reports
+ * waiting for a turn, queued messages, or a background command whose end it asked to hear.
+ */
+function atWork(session: AgentSession): boolean {
+  return (
+    session.busyNow() ||
+    session.background.size > 0 ||
+    session.reports.length > 0 ||
+    session.queued.peek().length > 0 ||
+    backgroundProcesses.list(session.id).some((p) => p.notify && p.status === "running")
+  );
+}
+
 /** One prompt sent to `session`, with the run's limits, until the work it started has ended. */
 async function runPrompt(
   services: WorkbenchServices,
@@ -384,22 +401,11 @@ async function runPrompt(
       // their reports. The run ends when the chat is at rest.
       for (;;) {
         await session.settle();
-        const busy =
-          session.busyNow() ||
-          session.background.size > 0 ||
-          session.reports.length > 0 ||
-          session.queued.peek().length > 0;
-        if (!busy) {
+        if (!atWork(session)) {
           // Follow-ups start a moment after a turn ends: still at rest after one?
           await wait(30);
           await session.settle();
-          if (
-            !session.busyNow() &&
-            session.background.size === 0 &&
-            session.reports.length === 0 &&
-            session.queued.peek().length === 0
-          )
-            break;
+          if (!atWork(session)) break;
         } else if (end.limit && !session.busyNow()) break;
         else await wait(25);
       }
