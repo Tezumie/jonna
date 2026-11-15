@@ -143,7 +143,8 @@ class AgentConfigView implements DockView {
       chat?.model.peek() === key && chat.agentSettings.peek()?.agent === name
         ? chat.agentSettings.peek()?.settings.find((x) => x.category === "model")
         : undefined;
-    const offered = live ?? cachedSettings(name)?.find((x) => x.category === "model");
+    const offered =
+      live ?? cachedSettings(this.services, name)?.find((x) => x.category === "model");
     const id =
       live?.current ??
       this.services.settings.peek<Record<string, Record<string, string>>>(
@@ -660,7 +661,9 @@ export function registerAgentConfig(
         if (value === undefined) {
           await providers.refreshIfStale(5000, 3000);
           const offer =
-            kind === "external" ? cachedSettings(name)?.find((x) => x.category === "model") : null;
+            kind === "external"
+              ? cachedSettings(services, name)?.find((x) => x.category === "model")
+              : null;
           if (kind === "external" && !offer)
             throw new Error(
               `${name}'s models are known once it has started: pick it in the chat's model menu first.`,

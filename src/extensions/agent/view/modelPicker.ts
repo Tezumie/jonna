@@ -427,7 +427,7 @@ class ModelPicker implements Disposable {
       const program = AGENT_SETUP[a.name]?.program;
       if (!program) return true; // an extension's, the registry's or the user's own
       const has = installed?.get(program);
-      return has ?? !!cachedSettings(a.name);
+      return has ?? !!cachedSettings(services, a.name);
     });
   }
 
@@ -437,7 +437,7 @@ class ModelPicker implements Disposable {
     const isCurrent = current === `acp/${name}`;
     const live = session?.agentSettings.peek();
     const offer: readonly AcpSetting[] | null =
-      live?.agent === name ? live.settings : cachedSettings(name);
+      live?.agent === name ? live.settings : cachedSettings(services, name);
     const remembered =
       services.settings.peek<Record<string, Record<string, string>>>(
         "agent.externalAgentChoices",
