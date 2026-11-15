@@ -15062,3 +15062,20 @@ More small changes from the owner's use; added to until it's committed.
   page) carries `app-logo`, whose filter is the theme's `--logo-filter` token: none on dark
   themes, `invert(0.9)` on light ones, as the website does it. It follows `data-theme`, so
   extension themes of either kind get the right one. `tests/scripts/logo-theme-m7-127.jsonc`.
+- **The details panel's sizes are the Chats list's.** Its text was a step smaller than the
+  list on the other side of the conversation (12 px, 14 px icons, 20 px rows). Now 13 px text,
+  16 px leading icons and rows as tall as a chat's row (`--size-control-md`), with the card
+  headers the same height; the context card's rows of numbers stay a step tighter
+  (`--size-control-sm`). The panel's width and the Chats list are unchanged. Also: D425 listed
+  two things as known and unchecked, a second press on a terminal's tab followed by a drag
+  asking for a new name, and the Agent and Code layouts on a folder's first open. The owner
+  tried both: the layouts work, and the rename could not be reproduced.
+- **A second click on a button closes the menu it opened, also for menus opened at a point.**
+  A menu anchored to an element already did (D180). One opened by a command given `x` / `y`
+  (a tab action's menu, a sidebar view's ⋯, the terminal's profiles) had no anchor, so the
+  press closed it and the click opened it again. The menu code now notes the button last
+  pressed with the main mouse button (`lastPress`, `ui/Menu.ts`); a menu opening at a point
+  within 1.5 s takes that button as what opened it, and a press on it closes the menu without
+  the click reopening it. A right-click is left out, so a context menu still opens anew where
+  asked. Presses are followed from startup, not from the first menu shown.
+  `tests/scripts/menu-toggle-m7-128.jsonc`.

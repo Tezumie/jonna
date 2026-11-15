@@ -1,0 +1,83 @@
+// A menu opened from a button closes on a second click of that button (D426), also when the
+// button's command opens it at a point: the chat's ⋯ beside its tabs, a sidebar view's ⋯.
+{
+  "name": "menu-toggle-m7-128",
+  "steps": [
+    { "run": "agent.newSession", "expect": { "session": { "$exists": true } } },
+    // ---- The chat's actions, beside its tabs ----
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".dock-view-actions button[aria-label='Chat actions']" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 8000
+    },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dock-view-actions button[aria-label='Chat actions']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dock-view-actions button[aria-label='Chat actions']" }
+    },
+    { "wait": 300 },
+    { "run": "dev.inspectDom", "input": { "selector": ".menu" }, "expect": { "$length": 0 } },
+    // A third click opens it again.
+    { "wait": 700 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".dock-view-actions button[aria-label='Chat actions']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } },
+    // ---- A sidebar view's ⋯ (the explorer) ----
+    { "run": "view.show", "input": { "id": "explorer.view" } },
+    { "wait": 700 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".view-actions button[aria-label='More actions…']" }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "wait": 300 },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".view-actions button[aria-label='More actions…']" }
+    },
+    { "wait": 300 },
+    { "run": "dev.inspectDom", "input": { "selector": ".menu" }, "expect": { "$length": 0 } },
+    // A right-click still opens a context menu anew on a second right-click.
+    { "wait": 700 },
+    { "run": "dev.click", "input": { "selector": ".explorer-tree .vlist-row", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "wait": 300 },
+    { "run": "dev.click", "input": { "selector": ".explorer-tree .vlist-row", "right": true } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".menu" },
+      "expect": { "$length": 1 },
+      "timeoutMs": 3000
+    },
+    { "run": "dev.type", "input": { "selector": ".menu", "key": "Escape" } }
+  ]
+}

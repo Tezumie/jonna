@@ -66,6 +66,20 @@ const OPEN_DELAY_MS = 120;
  * again, so a second click on a menu button closes the menu (D180).
  */
 let pressedAnchor: { element: HTMLElement; until: number } | null = null;
+/**
+ * The button last pressed with the main mouse button, and when. A menu opened at a point (a
+ * command given `x` / `y`: a view's ⋯, a tab action's menu) has no anchor element, so this
+ * is how it knows which button opened it, and so that a second click there closes it (D426).
+ */
+let lastPress: { button: HTMLElement; at: number } | null = null;
+/** How long after a press a menu opening at a point is taken to come from that press. */
+const PRESS_OPENS_MS = 1500;
+
+/** The button a menu opening now at a point was opened from, if a press just happened. */
+function pressedButton(): HTMLElement | null {
+  if (!lastPress || performance.now() - lastPress.at > PRESS_OPENS_MS) return null;
+  return lastPress.button.isConnected ? lastPress.button : null;
+}
 const CLOSE_DELAY_MS = 250;
 
 interface Panel {
@@ -102,6 +116,11 @@ export function registerMenuDocument(doc: Document): Disposable {
     pointerDocument = doc;
     const target = e.target as Element | null;
     if (target?.closest?.(".menu")) return;
+    // A left press on a button (not a right-click: a context menu opens again where asked).
+    if (e.type === "pointerdown") {
+      const button = (e as PointerEvent).button === 0 ? target?.closest?.("button") : null;
+      lastPress = button ? { button: button as HTMLElement, at: performance.now() } : null;
+    }
     if (openMenus.size === 0)
       for (const el of Array.from(doc.querySelectorAll(".menu"))) el.remove();
   };
@@ -132,11 +151,13 @@ export function showMenu(
   labelOrOptions: string | MenuOptions = "Menu",
 ): Disposable {
   registerMenuDocument(document);
+  // What it opens from: its anchor, or for a menu at a point the button just pressed.
+  const opener = isElement(anchor) ? anchor : pressedButton();
   if (
-    isElement(anchor) &&
+    opener &&
     pressedAnchor &&
     performance.now() < pressedAnchor.until &&
-    (pressedAnchor.element === anchor || pressedAnchor.element.contains(anchor))
+    (pressedAnchor.element === opener || pressedAnchor.element.contains(opener))
   ) {
     pressedAnchor = null;
     return toDisposable(() => {});
@@ -466,8 +487,13 @@ export function showMenu(
         (e) => {
           if (inside(e.target)) return;
           // A press on the menu's own button closes it; its click then mustn't reopen it.
-          if (isElement(anchor) && anchor.contains(e.target as Node))
-            pressedAnchor = { element: anchor, until: performance.now() + 600 };
+          // For a menu at a point that is the button it was opened from, pressed with the main
+          // button (a right-click opens a context menu anew).
+          if (
+            opener?.contains(e.target as Node) &&
+            (isElement(anchor) || (e as PointerEvent).button === 0)
+          )
+            pressedAnchor = { element: opener, until: performance.now() + 600 };
           close();
         },
         { capture: true },
@@ -557,3 +583,7 @@ function place(el: HTMLElement, x: number, y: number, rect: DOMRect, win: Window
 export function showContextMenu(x: number, y: number, items: readonly MenuItem[]): Disposable {
   return showMenu({ x, y }, items, "Context menu");
 }
+
+// Presses are followed from the start, not from the first menu shown: the first menu opened at a
+// point needs to know the button that opened it too (see `lastPress`).
+if (typeof document !== "undefined") registerMenuDocument(document);

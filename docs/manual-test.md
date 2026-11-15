@@ -4141,3 +4141,6 @@ Images in the chat (D381):
    its title and +.
 3. Switch to a light theme (Light+): the logo in the title bar, on the Welcome tab and on the
    Welcome page is dark. Back on a dark theme it is light again.
+4. Click a chat's ⋯ (Chat actions) beside its tabs: the menu opens. Click the same button
+   again: it closes. The same for the ⋯ of the Chats list and of the Explorer. Right-click a
+   file twice: the context menu opens both times.
