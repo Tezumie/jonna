@@ -36,11 +36,11 @@ if (args.has("--headless")) {
  * registered and never made without a screen. Stylesheets, fonts and images are left out.
  */
 async function buildHeadless() {
-  // The command line's name: the product's short name in lower case, or `--cli-name=<name>`.
+  // The command line's name: the product's short name in lower case plus `-agent`, or `--cli-name=<name>`.
   const productJson = JSON.parse(await readFile(join(root, "product.json"), "utf8"));
   const cliName =
     process.argv.find((a) => a.startsWith("--cli-name="))?.slice("--cli-name=".length) ||
-    String(productJson.nameShort).toLowerCase();
+    `${String(productJson.nameShort).toLowerCase()}-agent`;
   await rm(headlessOutdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await mkdir(headlessOutdir, { recursive: true });
   /** @type {import("esbuild").BuildOptions} */

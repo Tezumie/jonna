@@ -92,6 +92,30 @@ code-signed yet, so your system warns you the first time:
 
 Updates after that arrive inside the app.
 
+### The agent at the command line (build it yourself)
+
+The same agent also runs in a terminal with no window: a session you type into, one-shot runs
+for scripts and CI, and a mode other editors can drive. It isn't in the installers yet; you
+build it from this repository. You need Node.js 20 or newer and Rust.
+
+```sh
+npm ci
+node build.mjs --headless
+cd src-tauri && cargo build --release --no-default-features --features host --bin ide-host
+```
+
+That gives the launcher `dist-headless/bin/jonna-agent` (`jonna-agent.cmd` on Windows) and the
+backend program `src-tauri/target/release/ide-host`. Then, in a project's folder:
+
+```sh
+jonna-agent --host <path to ide-host>            # a session
+jonna-agent -p "what does this project do?" --host <path to ide-host>
+```
+
+Set `IDE_HOST_PATH` instead of passing `--host` each time. It uses the same settings, keys and
+chats as the app. [The guide page](docs/guide/22-command-line-agent.md) has the rest. Built and
+tested on Windows so far.
+
 ---
 
 ## Build from source

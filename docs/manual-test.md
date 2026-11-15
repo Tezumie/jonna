@@ -4204,3 +4204,9 @@ Images in the chat (D381):
    child process (a terminal's shell) is left behind.
 7. `--max-turns 1` on a prompt that needs several steps: the run stops with a limit's message
    and exit code 1.
+
+## D434 — The command-line agent's name
+1. `node build.mjs --headless`: `dist-headless/bin` holds the launcher named with `-agent`, and
+   its `--help` and `--version` use that name.
+2. In the app, "Install shell command in PATH" still installs the plain name, and it still
+   opens the window.

@@ -28,7 +28,7 @@ unless noted.
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
 | · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
-| · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit | D427–D433 |
+| · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit, its name and CI job | D427–D434 |
 
 ## Seeded from PLAN §19
 
@@ -15335,3 +15335,20 @@ and fixed with tests, plus what four further review areas turned up.
   race of milliseconds between two processes); helpers in their own worktree aren't counted
   toward a cost limit; a stored global file that stays corrupt blocks every screenless write;
   three of the command-line agent's error paths aren't redacted.
+
+## D434 — The command-line agent's name, how it ships, and CI's host job
+
+The owner's answers to what D432 left open.
+
+- **The launcher is the product's short name in lower case plus `-agent`** (`--cli-name=` still
+  overrides): the plain name stays the desktop's "Install shell command in PATH" command, which
+  opens the window. Two commands, as other editors with a terminal agent have, so neither
+  changes meaning with its arguments.
+- **Not in the installers yet.** The app ships as before; the command-line agent is built from
+  the repository, and the root `README.md` says how. Its guide page
+  (`docs/guide/22-command-line-agent.md`) therefore stays out of the app's help until the
+  installers carry it: help for something an installed copy doesn't have would mislead.
+- **CI has a `host` job** (Ubuntu): the lint, the Rust tests and the build with the `host`
+  feature, the host's smoke test, the headless bundle and the windowless agent's end-to-end
+  script. The desktop job never compiles that configuration, and this is the first place the
+  host is linked and run on Linux.

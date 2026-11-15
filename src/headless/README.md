@@ -174,7 +174,7 @@ process must end by itself.
 Excluded from `tsconfig.json` and checked by `tsconfig.test.json`, like `run.ts`. No terminal
 library: Node's `readline`, ANSI escapes and the modules below. The product's name is never
 written: the command is called what the build names its launcher (product.json's short name in
-lower case, or `node build.mjs --headless --cli-name=<name>`), read through `name.ts`.
+lower case plus `-agent`, or `node build.mjs --headless --cli-name=<name>`), read through `name.ts`.
 
 | File | What |
 |---|---|

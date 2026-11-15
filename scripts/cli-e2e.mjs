@@ -26,7 +26,7 @@ const self = fileURLToPath(import.meta.url);
 const root = resolve(dirname(self), "..");
 const windows = process.platform === "win32";
 const product = JSON.parse(readFileSync(join(root, "product.json"), "utf8"));
-const cliName = String(product.nameShort).toLowerCase();
+const cliName = `${String(product.nameShort).toLowerCase()}-agent`;
 
 const argv = process.argv.slice(2);
 const option = (name) => {
