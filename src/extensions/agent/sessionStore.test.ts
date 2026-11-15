@@ -151,6 +151,24 @@ test("saveSessionNow: a chat opened by an id nobody had saved doesn't replace on
   }
 });
 
+test("saveSessionNow: two saves of one chat started together aren't a conflict with itself", async () => {
+  const store = fakeStore();
+  try {
+    // A title's save and the turn's save, started in the same moment by one process.
+    const chat = savingSession("one");
+    assert.equal(await loadSaved(chat as unknown as AgentSession), false);
+    chat.items.push({ type: "user", id: "u1", text: "hello", turn: 1 } as Item);
+    const first = saveSessionNow(chat as unknown as AgentSession);
+    chat.items.push({ type: "user", id: "u2", text: "and the title", turn: 1 } as Item);
+    const second = saveSessionNow(chat as unknown as AgentSession);
+    await Promise.all([first, second]);
+    assert.equal(chat.conflict.peek(), false);
+    assert.match(store.files.get("s-test")?.json ?? "", /and the title/);
+  } finally {
+    store.restore();
+  }
+});
+
 test("updateSavedMeta: a rename doesn't put an older transcript back over a turn saved meanwhile", async () => {
   const store = fakeStore();
   try {

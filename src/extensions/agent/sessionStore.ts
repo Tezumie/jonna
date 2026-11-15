@@ -120,7 +120,22 @@ export function sessionJSON(session: AgentSession): unknown {
  * Writes the chat (D221): only over the version this window last read or wrote. When another
  * window saved it since, nothing is written and the chat asks which version to keep.
  */
-export async function saveSessionNow(session: AgentSession): Promise<void> {
+export function saveSessionNow(session: AgentSession): Promise<void> {
+  // One save of a chat at a time: two in flight both carry the version from before either
+  // landed, and the second then reads as another window's write (a false conflict).
+  const before = savesInFlight.get(session) ?? Promise.resolve();
+  const mine = before.then(() => writeSession(session));
+  const settled = mine.catch(() => undefined);
+  savesInFlight.set(session, settled);
+  void settled.then(() => {
+    if (savesInFlight.get(session) === settled) savesInFlight.delete(session);
+  });
+  return mine;
+}
+
+const savesInFlight = new WeakMap<AgentSession, Promise<void>>();
+
+async function writeSession(session: AgentSession): Promise<void> {
   if (session.items.length === 0 || session.deleted || session.conflict.peek()) return;
   // New images get their compressed previews first (only those still missing); the chat's own
   // images go whole to its media folder (D381).
