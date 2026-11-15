@@ -29,6 +29,7 @@ import type {
 } from "../ui/QuickInput";
 import { askAgentPermission } from "../workbench/agentPermission";
 import type { ServiceImplementations } from "../workbench/createServices";
+import type { StateBackend } from "../workbench/persistence";
 import type {
   AuxWindows,
   IframeHost,
@@ -439,23 +440,84 @@ export const WINDOW_GLOBAL_KEYS: readonly string[] = [
 
 /**
  * `json` (the global state about to be written) with the window's own keys as the stored file
- * has them (`stored`: its text, or null when there is none): kept when there, left out when not.
+ * has them (`stored`: its text, or null or empty when there is none): kept when there, left out
+ * when not. Null when the stored text can't be read as a state file: what the window's keys are
+ * isn't known then, and writing without them would delete them.
  */
-export function keepWindowKeys(json: string, stored: string | null): string {
-  let next: Record<string, unknown>;
+export function keepWindowKeys(json: string, stored: string | null): string | null {
   let before: Record<string, unknown> = {};
+  if (stored) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stored);
+    } catch {
+      return null;
+    }
+    if (parsed !== null) {
+      if (typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      before = parsed as Record<string, unknown>;
+    }
+  }
+  let next: unknown;
   try {
-    next = JSON.parse(json) as Record<string, unknown>;
-    if (stored) before = (JSON.parse(stored) as Record<string, unknown> | null) ?? {};
+    next = JSON.parse(json);
   } catch {
     return json;
   }
-  if (!next || typeof next !== "object") return json;
+  if (!next || typeof next !== "object" || Array.isArray(next)) return json;
+  const state = next as Record<string, unknown>;
   for (const key of WINDOW_GLOBAL_KEYS) {
-    if (key in before) next[key] = before[key];
-    else delete next[key];
+    if (key in before) state[key] = before[key];
+    else delete state[key];
   }
-  return JSON.stringify(next);
+  return JSON.stringify(state);
+}
+
+/** How often the stored global state is read before a write gives up, and the pause between. */
+const STORED_READS = 3;
+const STORED_READ_PAUSE_MS = 40;
+
+/**
+ * The saved state of a session without a screen, over `store` (the backend's).
+ *
+ * The open workspace's state is read and never written: it holds the window's layout (the dock's
+ * tabs, scroll positions), and this session's would replace it. What is shared between sessions
+ * (trust, the external agents' settings) is saved as the window saves it, with the window's own
+ * keys as the file has them.
+ *
+ * A global write needs the file as it is now. A read that fails is not "no file" (on Windows
+ * the file is briefly locked while the app replaces it): it is tried again, and when it still
+ * fails, or the text isn't a state file, the write is refused with an error instead of written
+ * without the window's keys. The persistence service warns about a refused write and goes on. A
+ * file that isn't there (the read gives nothing) is written.
+ */
+export function screenlessStateBackend(
+  store: StateBackend,
+  pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): StateBackend {
+  const storedGlobal = async (): Promise<string | null> => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await store.load("global");
+      } catch (err) {
+        if (attempt >= STORED_READS)
+          throw new Error(
+            `The global state was not saved: the stored one could not be read (${err instanceof Error ? err.message : String(err)}).`,
+          );
+        await pause(STORED_READ_PAUSE_MS);
+      }
+    }
+  };
+  return {
+    load: (scope) => store.load(scope),
+    save: async (scope, json) => {
+      if (scope === "workspace") return;
+      const kept = keepWindowKeys(json, await storedGlobal());
+      if (kept === null)
+        throw new Error("The global state was not saved: the stored one is not readable JSON.");
+      await store.save(scope, kept);
+    },
+  };
 }
 
 // ---- The set ---------------------------------------------------------------------------------
@@ -530,21 +592,7 @@ export function screenlessImplementations(options: ScreenlessOptions): {
       askAgent: (request) => policy.askAgent?.(request) ?? askAgentPermission(request),
       testMode: () => policy.testMode?.() === true,
     },
-    // The open workspace's saved state is read and never written: it holds the window's layout
-    // (the dock's tabs, scroll positions), and this session's would replace it. What is shared
-    // between sessions (trust, recent folders) is saved as the window saves it.
-    stateBackend: {
-      load: (scope) => storeIpc.load(scope),
-      save: async (scope, json) => {
-        if (scope === "workspace") return;
-        await storeIpc.save(
-          scope,
-          scope === "global"
-            ? keepWindowKeys(json, await storeIpc.load(scope).catch(() => null))
-            : json,
-        );
-      },
-    },
+    stateBackend: screenlessStateBackend(storeIpc),
     audit: (entry) => options.audit?.(entry),
     validateOutput: __DEV__,
     notifications: () => notifications,

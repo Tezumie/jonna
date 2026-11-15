@@ -74,6 +74,9 @@ and never made; a command that needs one fails with a message that says a screen
   a run that opens a folder doesn't put it in the app's recent folders or make the app reopen
   it. Trust decisions, the external agents' remembered settings, hand-offs between agents and
   the like are shared with the app.
+  Each write reads the file first (`screenlessStateBackend`); when it can't be read (locked
+  while the app replaces it: tried three times) or isn't a state file, that write is refused and
+  warned about instead of written without the window's keys. A file that isn't there is written.
 - **Chats**: saved where the app saves them (the backend's session store, per profile), so the
   app lists a run's chats and a run continues the app's.
 - **Settings files**: only by commands that write settings (`settings.set`, an "always allow").
