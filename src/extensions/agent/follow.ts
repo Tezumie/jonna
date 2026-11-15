@@ -36,6 +36,8 @@ export function registerFollowAgent(
   activeSession: () => string | null,
 ): void {
   const { events, settings, dispatcher } = services;
+  // Following is showing the edit in an editor: there is none with no screen.
+  if (!services.hasScreen) return;
   let pending: { path: string; line: number } | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let typedAt = 0;

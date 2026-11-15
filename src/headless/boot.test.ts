@@ -6,18 +6,15 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { CommandError } from "../core/dispatcher/index";
-import { AGENT_EXTENSION_ID, builtinExtensions } from "../extensions/builtins";
+import { builtinExtensions } from "../extensions/builtins";
 import { createWorkbenchExtension } from "../extensions/workbench/index";
 import { bootHeadless, type HeadlessSession } from "./boot";
 import { type FakeBackend, fakeBackend } from "./fakeBackend";
 import { type MemoryHost, memoryHost } from "./memoryHost";
 import type { HeadlessPolicy } from "./services";
 
-/** Every built-in except the agent's (its setup isn't split from its views yet). */
-const extensions = () =>
-  builtinExtensions(createWorkbenchExtension(null)).filter(
-    (e) => e.manifest.id !== AGENT_EXTENSION_ID,
-  );
+/** Every built-in, the agent's too (its setup runs without its views). */
+const extensions = () => builtinExtensions(createWorkbenchExtension(null));
 
 const wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
@@ -85,7 +82,7 @@ async function start(policy?: HeadlessPolicy): Promise<Started> {
   };
 }
 
-test("every built-in extension but the agent's activates with no screen", async () => {
+test("every built-in extension, the agent's too, activates with no screen", async () => {
   // The proof this runs without a page: there is none in this realm, and none is made.
   assert.equal(typeof document, "undefined");
   assert.equal(typeof window, "undefined");
@@ -96,7 +93,7 @@ test("every built-in extension but the agent's activates with no screen", async 
       [],
     );
     assert.equal(session.extensions.length, extensions().length);
-    assert.ok(session.extensions.length >= 25);
+    assert.ok(session.extensions.length >= 26);
     // Nothing made a window, and nothing failed for want of a page where the failure was only
     // logged.
     assert.equal(typeof window, "undefined");

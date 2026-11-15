@@ -150,14 +150,16 @@ export function registerWidgets(
     } satisfies DockViewDescriptor),
   );
 
-  // Widgets take the IDE's colors, now and when the theme changes.
-  sub.add(
-    effect(() => {
-      const kind = services.theme.theme.value;
-      queueMicrotask(() => refreshWidgetThemes(kind));
-      return undefined;
-    }),
-  );
+  // Widgets take the IDE's colors, now and when the theme changes (there are none to restyle
+  // with no screen).
+  if (services.hasScreen)
+    sub.add(
+      effect(() => {
+        const kind = services.theme.theme.value;
+        queueMicrotask(() => refreshWidgetThemes(kind));
+        return undefined;
+      }),
+    );
 
   register({
     id: "agent.openWidget",

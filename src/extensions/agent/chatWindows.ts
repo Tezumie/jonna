@@ -210,9 +210,12 @@ export function registerChatWindows(
     },
   });
   // A window closing (or reloading) takes its chats out at once rather than when it's found gone.
-  const unload = () => windows.dispose();
-  window.addEventListener("beforeunload", unload);
-  sub.add({ dispose: () => window.removeEventListener("beforeunload", unload) });
+  // With no window, the extension's own end does it (`windows` is disposed with `sub`).
+  if (services.hasScreen) {
+    const unload = () => windows.dispose();
+    window.addEventListener("beforeunload", unload);
+    sub.add({ dispose: () => window.removeEventListener("beforeunload", unload) });
+  }
   void windows.publish();
   return windows;
 }
