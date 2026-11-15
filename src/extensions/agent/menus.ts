@@ -35,7 +35,7 @@ export function modelLabel(registry: ProviderRegistry, session: AgentSession): s
     const name = key.slice(4);
     const live = session.agentSettings.value;
     const isLive = live?.agent === name;
-    const model = (isLive ? live.settings : cachedSettings(name))?.find(
+    const model = (isLive ? live.settings : cachedSettings(session.services, name))?.find(
       (s) => s.category === "model",
     );
     const remembered = isLive

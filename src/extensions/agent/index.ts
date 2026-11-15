@@ -29,6 +29,8 @@ import { registerAgentSlashCommands, registerIdeToolsState } from "./acp";
 import { registerAcpRegistry } from "./acpRegistry";
 import { registerAgentConfig } from "./agentConfig";
 import { registerAgentEditor } from "./agentEditorCommands";
+import { setAgentHost } from "./agentHost";
+import { desktopAgentHost } from "./agentHostDesktop";
 import { registerAiFeatures } from "./aiFeatures";
 import {
   browserDecision,
@@ -67,7 +69,7 @@ import { registerDocsPage } from "./docsPage";
 import manifest from "./extension.json";
 import { registerFollowAgent } from "./follow";
 import { freeStartCard, registerFreeStart } from "./freeStart";
-import { chatFaceElement, memberInfo, registerGroupChat, soloSpeaker } from "./groupChat";
+import { memberInfo, registerGroupChat, soloSpeaker } from "./groupChat";
 import { registerHooks } from "./hooks";
 import { registerAgentIgnore } from "./ignore";
 import { InboxView } from "./inboxView";
@@ -111,6 +113,7 @@ import { SessionManager } from "./sessions";
 import { registerSetupCommands, SetupState } from "./setupCommands";
 import { registerSkillCatalog } from "./skillCatalog";
 import { registerSkills } from "./skills";
+import { registerSkillsPage } from "./skillsPage";
 import { registerSlashBuiltins } from "./slashBuiltins";
 import { registerStatusLine } from "./statusLine";
 import { registerSubagents } from "./subagents";
@@ -124,6 +127,7 @@ import { registerUsageState } from "./usage";
 import { registerUsageLog } from "./usageLog";
 import { registerUsagePage } from "./usagePage";
 import { agentMark, providerMark, setRegistryIcons } from "./view/brandMark";
+import { chatFaceElement } from "./view/groupFaces";
 import { chooserContext, showModelPicker } from "./view/modelPicker";
 import { setupPrompt } from "./view/setup";
 import { setupPageDescriptor } from "./view/setupPage";
@@ -155,6 +159,8 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
   manifest,
   activate({ subscriptions: sub, services }) {
     const { dock, dispatcher, state, settings, notifications, workspace } = services;
+    // The window is the agent's host (agentHost.ts): before any chat or MCP server exists.
+    setAgentHost(services, desktopAgentHost(services));
     const providers = new ProviderRegistry(services);
     Object.assign(services.languageModel, createLanguageModel(services, providers));
     const sessions = sub.add(new SessionManager(services, providers));
@@ -603,7 +609,7 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
     sessions.prepare = async (session) => {
       await Promise.all([mcpPrepare(session), subagents.refresh()]);
     };
-    registerSkills(sub, services, sessions, subagents);
+    registerSkillsPage(sub, services, registerSkills(sub, services, sessions, subagents));
     // D358, D360: Claude Code plugins; the notify message to the user's phone.
     registerPluginsPage(sub, services, registerPlugins(sub, services, subagents, mcpClients));
     registerPhoneNotify(sub, services);

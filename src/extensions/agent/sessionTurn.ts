@@ -60,7 +60,7 @@ import { savePlanDoc } from "./planDocs";
 import { detectCheck } from "./projectCheck";
 import type { ModelChoice } from "./providers";
 import { RepetitionWatch } from "./repetition";
-import { conversationRoom, isRoomContext, roomContext } from "./roomService";
+import { conversationRoom, isRoomContext, roomContext } from "./roomState";
 import type { AgentSession } from "./session";
 import { sendExternal } from "./sessionExternal";
 import { autoReview, flushReports, runSubagent, startBackground } from "./sessionSubagents";
@@ -743,6 +743,10 @@ async function sendTurn(
             },
             followChatMode: () => {
               if (session.inTurn) session.turnMode = session.chatMode.peek();
+            },
+            setWork: (work) => {
+              session.setWork(work);
+              void session.save();
             },
             background: (spec) =>
               startBackground(session, spec, { ...deps, execute: hookedTool }, budgetChars, {

@@ -41,9 +41,9 @@ import type { DisposableStore } from "../../core/lifecycle/index";
 import { basename, dirname, joinPath, samePath } from "../../core/paths/index";
 import { batch, effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
-import { confirmAction } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderPaths } from "../../workbench/workspaceFolder";
+import { agentHost } from "./agentHost";
 import { agentModes } from "./customModes";
 import type { IsolatedHelpers } from "./isolatedHelpers";
 import { mainAgent } from "./mainAgent";
@@ -1062,12 +1062,13 @@ export function registerSubagents(
           throw new Error(`${name} is built in: turn it off instead.`);
         if (
           ctx.caller.kind === "user" &&
-          !(await confirmAction(
-            `Delete ${agentLabel(def)}?`,
-            `${def.path} goes to the trash (Restore from trash brings it back).`,
-            "Delete",
-            true,
-          ))
+          !(await agentHost(services).prompts.confirm({
+            reason: "confirm",
+            title: `Delete ${agentLabel(def)}?`,
+            message: `${def.path} goes to the trash (Restore from trash brings it back).`,
+            confirmLabel: "Delete",
+            destructive: true,
+          }))
         )
           return { deleted: false };
         // Into the app trash, so it can come back (D232); a file outside the folder's and the

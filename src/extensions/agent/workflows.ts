@@ -29,6 +29,7 @@ import type { DisposableStore } from "../../core/lifecycle/index";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost, type ScriptWorker } from "./agentHost";
 import { agentFolders } from "./ignore";
 import { cleanPathArg } from "./pathArg";
 import { rulesFor } from "./rules";
@@ -333,7 +334,7 @@ function startRun(o: {
   const changed = () => {
     workflowRuns.changed();
   };
-  let worker: Worker | null = null;
+  let worker: ScriptWorker | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   /** D351: an editing agent runs as a helper in a worktree of its own; this waits for its end. */
@@ -518,7 +519,10 @@ function startRun(o: {
     limits.timeoutMs,
   );
   try {
-    worker = new Worker("./workers/workflow.worker.js", { name: `workflow:${id}` });
+    // Where a script runs comes from the agent's host (a web worker in the window).
+    const workers = agentHost(services).workers;
+    if (!workers) throw new Error("workflow scripts can't run here");
+    worker = workers("workflow", `workflow:${id}`);
   } catch (err) {
     finish(
       "failed",
@@ -527,8 +531,8 @@ function startRun(o: {
     return run;
   }
   const post = (m: ToWorkflowWorker) => worker?.postMessage(m);
-  worker.addEventListener("message", (e: MessageEvent) => {
-    const m = e.data as FromWorkflowWorker;
+  worker.onMessage((data) => {
+    const m = data as FromWorkflowWorker;
     if (run.status !== "running") return;
     if (m.t === "agent") {
       let opts: unknown = {};
@@ -555,9 +559,8 @@ function startRun(o: {
     } else if (m.t === "done") finish("done", m.result);
     else if (m.t === "error") finish("failed", `The script failed: ${m.error}`);
   });
-  worker.addEventListener("error", (e: ErrorEvent) => {
-    e.preventDefault();
-    finish("failed", `The script failed: ${e.message || "its worker stopped"}`);
+  worker.onError((message) => {
+    finish("failed", `The script failed: ${message || "its worker stopped"}`);
   });
   post({ t: "start", body: o.body, args: o.argsJson });
   return run;
@@ -579,7 +582,9 @@ export function registerWorkflows(
   const previous = sessions.extraTools;
   sessions.extraTools = (session) =>
     services.settings.peek<boolean>("agent.workflows.enabled") === false ||
-    services.settings.peek<boolean>("agent.delegate") === false
+    services.settings.peek<boolean>("agent.delegate") === false ||
+    // Nowhere to run a script (no window, and no worker given to the agent's host): left out.
+    !agentHost(services).workers
       ? previous(session)
       : [...previous(session), tool];
   sub.add(

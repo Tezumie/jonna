@@ -37,15 +37,14 @@ import {
 } from "../../core/mcp/sampling";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
-import { showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import { newId } from "./ids";
 import type { McpClients } from "./mcp";
 import type { ModelChoice, ProviderRegistry } from "./providers";
 import type { SessionManager } from "./sessions";
 import { priceOf } from "./usage";
 import { recordUsage } from "./usageLog";
-import { textArea } from "./view/pageKit";
 
 interface PendingReview {
   id: string;
@@ -182,28 +181,27 @@ export function registerMcpSampling(
       stopped.addEventListener("abort", () => finishReview(pending.id, { action: "reject" }), {
         once: true,
       });
-      const box = textArea("The answer to send", text, 10);
-      void showDialog<"send" | "reject" | "closed">({
-        title: `Send this answer to ${server}?`,
-        message: `MCP server ${server} asked your model (${model}). Check the answer, change it if you like, then send it or reject it (the server is told you said no).`,
-        content: box,
-        size: "md",
-        actions: [
-          { label: "Reject", value: "reject", variant: "danger" },
-          { label: "Send", value: "send", variant: "primary" },
-        ],
-        cancelValue: "closed",
-        signal: pending.close.signal,
-      }).then((choice) => {
-        if (!reviews.peek().includes(pending)) return; // answered by the command
-        void services.dispatcher
-          .execute("agent.reviewMcpSampling", {
-            id: pending.id,
-            action: choice === "send" ? "send" : "reject",
-            ...(choice === "send" && { text: box.value }),
-          })
-          .catch(() => finishReview(pending.id, { action: "reject" }));
-      });
+      // Through the agent's host: the window's dialog; with no screen, a policy's answer.
+      void agentHost(services)
+        .prompts.review({
+          reason: "mcp.samplingReview",
+          server,
+          title: `Send this answer to ${server}?`,
+          message: `MCP server ${server} asked your model (${model}). Check the answer, change it if you like, then send it or reject it (the server is told you said no).`,
+          label: "The answer to send",
+          text,
+          signal: pending.close.signal,
+        })
+        .then((answer) => {
+          if (!reviews.peek().includes(pending)) return; // answered by the command
+          void services.dispatcher
+            .execute("agent.reviewMcpSampling", {
+              id: pending.id,
+              action: answer.choice === "send" ? "send" : "reject",
+              ...(answer.choice === "send" && { text: answer.text }),
+            })
+            .catch(() => finishReview(pending.id, { action: "reject" }));
+        });
     });
 
   /** Each request's "its server stopped" signal (D223), for the question and the run. */
@@ -220,11 +218,14 @@ export function registerMcpSampling(
       // The server stopped while asked: the question goes away (its answer would reach nobody).
       let asking = true;
       const close = () => {
-        if (asking) services.quickInput.cancel();
+        if (asking) agentHost(services).prompts.cancel();
       };
       stopped?.addEventListener("abort", close, { once: true });
-      const picked = await services.quickInput.pick(
-        [
+      const picked = await agentHost(services).prompts.choose({
+        reason: "mcp.sampling",
+        server,
+        placeholder: `MCP server ${server} wants to use your model: ${preview.slice(0, 160)}${preview.length > 160 ? "…" : ""}`,
+        choices: [
           {
             id: "once",
             label: "Allow once",
@@ -238,14 +239,11 @@ export function registerMcpSampling(
           { id: "deny", label: "Deny", description: "The server is told you said no" },
           { id: "show", label: "Show the whole prompt…" },
         ],
-        {
-          placeholder: `MCP server ${server} wants to use your model: ${preview.slice(0, 160)}${preview.length > 160 ? "…" : ""}`,
-        },
-      );
+      });
       asking = false;
       stopped?.removeEventListener("abort", close);
-      if (!picked || picked.id === "deny" || stopped?.aborted) return "deny";
-      if (picked.id === "show") {
+      if (!picked || picked === "deny" || stopped?.aborted) return "deny";
+      if (picked === "show") {
         await services.dispatcher
           .execute("editor.openReadOnly", {
             title: `${server} sampling request.txt`,
@@ -254,7 +252,7 @@ export function registerMcpSampling(
           .catch(() => {});
         continue;
       }
-      return picked.id === "always" ? "always" : "once";
+      return picked === "always" ? "always" : "once";
     }
   };
 

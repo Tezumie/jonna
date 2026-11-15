@@ -14,15 +14,9 @@ import { agentFace } from "../../../ui/AgentFace";
 import { icon, knownIcon } from "../../../ui/Icon";
 import { showMenu } from "../../../ui/Menu";
 import { setTooltip } from "../../../ui/Tooltip";
-import {
-  groupFaces,
-  knownAgents,
-  memberInfo,
-  memberNames,
-  membersOf,
-  soloSpeaker,
-} from "../groupChat";
+import { knownAgents, memberInfo, memberNames, membersOf, soloSpeaker } from "../groupChat";
 import type { AgentSession } from "../session";
+import { groupFaces } from "./groupFaces";
 
 export const GROUP_PLACEHOLDER = "Message the group, @ to call on an agent";
 

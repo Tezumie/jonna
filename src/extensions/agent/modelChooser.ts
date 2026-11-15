@@ -83,7 +83,7 @@ export function modelChipLabel(
 ): string {
   if (!key.startsWith("acp/")) return key.slice(key.indexOf("/") + 1);
   const name = key.slice(4);
-  const offered = cachedSettings(name)?.find((x) => x.category === "model");
+  const offered = cachedSettings(services, name)?.find((x) => x.category === "model");
   const id =
     own ??
     services.settings.peek<Record<string, Record<string, string>>>("agent.externalAgentChoices")?.[

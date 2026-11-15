@@ -10,7 +10,7 @@ import { agentFace } from "../../ui/AgentFace";
 import { type MenuItem, showContextMenu } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
 import { knownAgents } from "./groupChat";
-import { rooms } from "./roomService";
+import { rooms } from "./roomState";
 import type { SessionManager } from "./sessions";
 
 export function registerNewChatMenu(

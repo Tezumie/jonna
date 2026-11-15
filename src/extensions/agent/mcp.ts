@@ -47,6 +47,7 @@ import { parseJsonc } from "../../core/settings/jsonc";
 import { type McpServerConfig, parseMcpConfig } from "../../core/settings/vscodeImport";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderName } from "../../workbench/workspaceFolder";
+import { agentHost, type HostPrompts } from "./agentHost";
 import {
   disabledServers,
   disabledTools,
@@ -294,6 +295,15 @@ export class McpClients {
     return value;
   }
 
+  /**
+   * The questions a server's start or call asks the person (inputs, signing in again): through
+   * the agent's host, so they're the window's quick inputs there and a policy's answer with no
+   * screen.
+   */
+  private get prompts(): HostPrompts {
+    return agentHost(this.services).prompts;
+  }
+
   private async askInput(server: ResolvedServer, id: string): Promise<string | null> {
     const declared = server.source.inputs.find((i) => i.id === id);
     // Undeclared inputs are treated as passwords (the safe guess).
@@ -313,7 +323,9 @@ export class McpClients {
       )
         return `\${secret:${legacy}}`;
       if (!(await aiIpc.hasKey(key).catch(() => false))) {
-        const value = await this.services.quickInput.prompt({
+        const value = await this.prompts.text({
+          reason: "mcp.input",
+          server: server.name,
           prompt: `${prompt} (stored on this computer, never shown to the agent)`,
           password: true,
         });
@@ -328,19 +340,23 @@ export class McpClients {
     if (declared?.options?.length) {
       const options = declared.options;
       const first = declared.default && options.includes(declared.default) ? declared.default : "";
-      const picked = await this.services.quickInput.pick(
-        [...(first ? [first] : []), ...options.filter((o) => o !== first)].map((o) => ({
+      const picked = await this.prompts.choose({
+        reason: "mcp.input",
+        server: server.name,
+        placeholder: prompt,
+        choices: [...(first ? [first] : []), ...options.filter((o) => o !== first)].map((o) => ({
           id: o,
           label: o,
           ...(o === first && { description: "default" }),
         })),
-        { placeholder: prompt },
-      );
+      });
       if (!picked) return null;
-      this.inputValues.set(`${server.name}\0${id}`, picked.id);
-      return picked.id;
+      this.inputValues.set(`${server.name}\0${id}`, picked);
+      return picked;
     }
-    const value = await this.services.quickInput.prompt({
+    const value = await this.prompts.text({
+      reason: "mcp.input",
+      server: server.name,
       prompt,
       ...(declared?.default && { value: declared.default }),
     });
@@ -726,8 +742,11 @@ export class McpClients {
   }
 
   private async askStepUp(name: string, scope: string): Promise<boolean> {
-    const picked = await this.services.quickInput.pick(
-      [
+    const picked = await this.prompts.choose({
+      reason: "mcp.stepUp",
+      server: name,
+      placeholder: `MCP server ${name} needs more access${scope ? ` (${scope})` : ""}`,
+      choices: [
         {
           id: "signIn",
           label: "Sign in again",
@@ -735,9 +754,8 @@ export class McpClients {
         },
         { id: "no", label: "Not now", description: "The call fails" },
       ],
-      { placeholder: `MCP server ${name} needs more access${scope ? ` (${scope})` : ""}` },
-    );
-    if (picked?.id !== "signIn") return false;
+    });
+    if (picked !== "signIn") return false;
     try {
       await this.services.dispatcher.execute("agent.mcpSignIn", { server: name, restart: false });
       return true;

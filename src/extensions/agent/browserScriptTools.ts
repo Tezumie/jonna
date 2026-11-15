@@ -9,7 +9,7 @@
 import { parseBatch, runBatch } from "../../core/agent/browserBatch";
 import { isLocalPage, siteOf } from "../../core/agent/browserInput";
 import type { WorkbenchServices } from "../../workbench/services";
-import { browserDecision } from "./autoApprove";
+import { browserDecision } from "./approveDecisions";
 import type { AgentTool, ToolHost } from "./tools";
 
 const LIMIT = 16000;

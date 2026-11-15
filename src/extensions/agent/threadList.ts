@@ -8,6 +8,7 @@ import { agentStoreIpc } from "../../core/ipc/agent";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { effect, signal } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import { isThisWorkspace } from "./chatWorkspace";
 import { soloSpeaker } from "./groupChat";
 import type { AgentSession } from "./session";
@@ -225,7 +226,7 @@ export function registerThreadList(
   // Saved chats finish in other windows too. The list reads every chat's file (D244): only
   // while this window is in front, and not often.
   const timer = setInterval(() => {
-    if (document.visibilityState === "visible" && document.hasFocus()) void refresh();
+    if (!agentHost(services).presence.away()) void refresh();
   }, 30_000);
   sub.add({ dispose: () => clearInterval(timer) });
   return { refresh };

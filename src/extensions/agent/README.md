@@ -1120,7 +1120,7 @@ With them on, each message carries the IDE state (`ideState`: editor, problems, 
   `knownAgents`: labels, faces, the room brief, "@Name") and the Chat with picker. Its member id
   stays `agent`, so saved chats, mentions and handoffs keep working after a rename.
   `ide://agent/mainAgent`: `{ id, name, icon }`.
-- **A chat's tab shows its agents' faces** (`groupChat.ts` `chatFaceElement`; the view type's
+- **A chat's tab shows its agents' faces** (`view/groupFaces.ts` `chatFaceElement`; the view type's
   `iconElement`): a group chat's faces, else its agent's face in its state (working, waiting).
 - **A group chat is busy as the member whose turn it is** in the chats bar (`session.speaking`,
   the signal under `turnSpeaker`), not as the main agent (its mode).
@@ -1152,7 +1152,7 @@ With them on, each message carries the IDE state (`ideState`: editor, problems, 
 ## m7.15 (D237, D238): channels, direct messages and threads (Slack's model)
 - **Model** (`core/agent/rooms.ts`, DOM-free, tested): a channel is a `Room` (id, name, members,
   purpose, `session` its conversation, `memory`, `task`); a direct message is `dm:<agent>` (its
-  conversation in `roomService.ts` `dmSessions`). A conversation is a chat with `session.room`; a
+  conversation in `roomState.ts` `dmSessions`). A conversation is a chat with `session.room`; a
   thread is a chat with `session.parent` (the message it answers: session, item, author, text).
   Both are saved in the chat's meta, with `first` / `last` / `lastBy` / `replies` for the lists
   (`sessionStore.ts` `threadPreview`). Also `threadRoom` (chats from before channels),
@@ -1164,7 +1164,7 @@ With them on, each message carries the IDE state (`ideState`: editor, problems, 
   templates (the Reviewer keeps the built-in reviewer subagent's instructions), loaded as source
   `team` after the files, so a file with the same name replaces one, and after the user's own chat
   modes (`customModes.ts`). The main agent's default name is the product's (`mainAgent.ts`).
-- **Channels** (`roomService.ts`): `rooms` and `dmSessions` (workspace state `agent.channels`,
+- **Channels** (`roomState.ts`; commands in `roomService.ts`): `rooms` and `dmSessions` (workspace state `agent.channels`,
   `{ rooms, dms }`; a folder without starts with `#general`). `roomSession(room)` makes a room's
   conversation the first time. Commands: `agent.openChannel`, `agent.showInbox`,
   `agent.newConversation`, `agent.postToChannel`, `agent.replyInThread { session, item }`,
@@ -1205,7 +1205,7 @@ With them on, each message carries the IDE state (`ideState`: editor, problems, 
   `agent.build` hands a read-only agent's plan to Builder. `ide://agent/session` has `work`.
 - **Start modes:** `core/agent/subagents.ts` `startMode` (`mode:`), `agentFile.ts`,
   `agentTemplates.ts` (planner: plan, chat: ask), `builtInAgents.ts` `TEAM_START_MODES`,
-  `chatModes.ts` `CustomMode.startMode`; the editor's **Starts in**; `roomService.ts` `joinRoom`
+  `chatModes.ts` `CustomMode.startMode`; the editor's **Starts in**; `roomState.ts` `joinRoom`
   applies it when a direct message's agent changes.
 - **Composer** (`view/composer.ts`): the pill (face, name, "· Plan"), the menu (Agent / Mode
   headings, `ui/Menu.ts` `heading`), Shift+Tab over the modes.
@@ -1641,3 +1641,58 @@ Claude Code's Workflow tool: a script that runs subagents deterministically, in 
   `agent_message_chunk`.
 - State: `ide://agent/session` items' `images` (id, mime, name, source). Test:
   `tests/scripts/agent-images-m7-110.jsonc` (mock provider in `tests/fixtures/mock-images.mjs`).
+
+## The agent without a window: its host, and what it leaves out
+A chat's logic runs with no document: `headlessTurn.test.ts` runs full turns in Node (a fake
+backend, the services a turn needs, no `document` or `window`), and
+`node scripts/check-headless-imports.mjs` fails when the session's import graph reaches
+`src/ui`, `core/dom`, a `view/` folder or a stylesheet.
+- **The agent's host** (`agentHost.ts`, DOM-free; tested): what the agent needs from whoever is
+  in front of it, per services (`agentHost(services)`, `setAgentHost(services, host)`).
+  - `screen`: whether there is one.
+  - `presence` (`Presence`): `away()`, `showing(session)`, `requestAttention()`,
+    `onDidChange(listener)`. `NOBODY` is the one with no front end.
+  - `prompts` (`HostPrompts`): `text`, `choose`, `review`, `confirm`, `cancel`, each with a
+    `reason` (`mcp.input`, `mcp.stepUp`, `mcp.elicitation`, `mcp.sampling`,
+    `mcp.samplingReview`, `mcp.argument`, `confirm`). These are the questions that aren't a
+    chat's own; a chat's permissions and questions wait on the session and are answered by
+    commands (`agent.respondPermission`, `agent.answer`).
+  - `workers` (`WorkerFactory` → `ScriptWorker`): where a workflow's script runs, or null.
+- **In the window** (`agentHostDesktop.ts`, view code): `desktopAgentHost(services)`, set first
+  thing in `activate`. Presence is the document's focus and visibility and whether the chat's
+  view is laid out; the prompts are the quick inputs, `confirmAction` and the sampling review
+  dialog, with the words they always had; workers are web workers.
+- **With nothing set** (`headlessAgentHost(options)`): no screen, nobody watching (so the
+  "needs your answer" and "finished" notifications are shown, and `notify` sends), prompts
+  answered by a `PromptPolicy` (`DISMISS_ALL` by default: no input, no more access, declined,
+  denied, rejected, not confirmed; `wait` leaves a prompt in `HeadlessPrompts.pending` for a
+  front end to answer; `{ answer }` answers it), and no workers.
+- **Who uses presence:** the session's own notifier (`session.ts`), `attention.ts`, `notify`
+  (`turnTools.ts`), the Chats list's periodic refresh (`threadList.ts`), the skills watch
+  (`skills.ts`: read again when the person comes back).
+- **Tools with no screen** (`session.ts` `NEEDS_SCREEN`, beside `NEEDS_FOLDER`): screenshot,
+  browser_snapshot, browser_act, browser_inspect, browser_console, browser_eval, browser_batch,
+  computer, show_widget, widget_guide and suggest_extension are left out of `chatTools`, and
+  the builders that read the dock aren't called. run_workflow is left out where the host has
+  no workers. Kept: notify (the notifications service and the phone webhook), show_links,
+  report_findings, wrap_up and the other cards that read as text.
+- **Tools that work either way:** `search` goes through `search.find` when the search
+  extension registered it, else straight to Rust with the same settings and folder plan
+  (`searchTools.ts` `findInBackend`; `search/model.ts` `effectiveOptions`, `search/folders.ts`
+  `planSearch`); the fuzzy `find_files` through `quickOpen.search`, else the file index
+  (`indexedFiles`, without the recently opened files). `enter_plan_mode` runs
+  `agent.setChatMode` where it's registered, else `ToolHost.setWork` (the chat's own state,
+  saved). `save_image` saves an image in its own format; another format needs a canvas and is
+  refused with no screen. `read_file` on a PNG returns it as it is where there is no canvas
+  (`uploads.ts` `pngBase64`); other image formats can't be read there yet.
+- **MCP's prompts** (`mcp.ts` inputs and signing in again, `mcpFeatures.ts` elicitation and
+  missing prompt arguments or template variables, `mcpSampling.ts` the question and the
+  review) ask `agentHost(services).prompts`.
+- **External agents' remembered settings** (`acpSettingsCache.ts`, tested): `cachedSettings(
+  services, agent)` and `rememberSettings` keep them in the global state
+  (`GlobalState.acpSettings`). They were in the web view's storage (`ide.acpSettings.<agent>`);
+  those are taken over once (saved ones win), then removed.
+- **Modules split so logic doesn't import views:** `roomState.ts` (the channels' state, out of
+  `roomService.ts`), `view/groupFaces.ts` (faces as elements, out of `groupChat.ts`),
+  `approveDecisions.ts` (auto-approve's decisions and `registerApproveGate`, out of
+  `autoApprove.ts`). The skills page is registered by `index.ts` beside `registerSkills`.

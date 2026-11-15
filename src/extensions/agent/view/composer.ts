@@ -884,7 +884,7 @@ export class Composer implements Disposable {
     const name = pending.agent;
     if (session.model.value !== `acp/${name}`) return null;
     const live = session.agentSettings.value;
-    const settings = live?.agent === name ? live.settings : cachedSettings(name);
+    const settings = live?.agent === name ? live.settings : cachedSettings(session.services, name);
     const offered = settings?.find((s) => s.category === category);
     return offered?.options.find((o) => o.id === pending.value)?.name || pending.value || "Default";
   }
@@ -896,7 +896,7 @@ export class Composer implements Disposable {
     if (!key?.startsWith("acp/")) return null;
     const name = key.slice(4);
     const live = session.agentSettings.value;
-    const settings = live?.agent === name ? live.settings : cachedSettings(name);
+    const settings = live?.agent === name ? live.settings : cachedSettings(session.services, name);
     const level = settings?.find((s) => s.category === "thought_level");
     if (!level || live?.agent === name) return level ?? null;
     const remembered = this.host.setting("agent.externalAgentChoices") as

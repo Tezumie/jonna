@@ -47,6 +47,7 @@ import { expandArgs } from "../lsp/servers";
 import { type ExternalAgentConfig, helpChoices, helpCommandLine, shellArg } from "./acpAgents";
 import { TurnWatch } from "./acpChanges";
 import { AgentReviews } from "./acpReviews";
+import { rememberSettings } from "./acpSettingsCache";
 import { registerSlashSource } from "./composerExtras";
 import { newId } from "./ids";
 import { mayDeleteFiles } from "./permissions";
@@ -57,18 +58,7 @@ import { recordAgentUsage } from "./usageLog";
 /** A model chosen by launch flag (not an ACP setting): changing it restarts the agent. */
 export const LAUNCH_SETTING = "#launch";
 
-const cacheKey = (agent: string) => `ide.acpSettings.${agent}`;
-
-/** The settings an agent reported last time (for the model menu before it starts). */
-export function cachedSettings(agent: string): AcpSetting[] | null {
-  try {
-    const raw = localStorage.getItem(cacheKey(agent));
-    const v = raw ? (JSON.parse(raw) as unknown) : null;
-    return Array.isArray(v) ? (v as AcpSetting[]) : null;
-  } catch {
-    return null;
-  }
-}
+export { cachedSettings } from "./acpSettingsCache";
 
 /** Each chat's external agent's own slash commands (`available_commands_update`, D200). */
 const agentCommands = new Map<string, { agent: string; commands: AcpCommand[] }>();
@@ -1081,9 +1071,7 @@ export class AcpBackend {
   private publish(settings: AcpSetting[]): void {
     this.shown = settings;
     this.session.agentSettings.value = { agent: this.config.name, settings };
-    try {
-      localStorage.setItem(cacheKey(this.config.name), JSON.stringify(settings));
-    } catch {}
+    rememberSettings(this.session.services, this.config.name, settings);
   }
 
   /** With `modelFlag` and no ACP model choice: the models its `--help` lists. */

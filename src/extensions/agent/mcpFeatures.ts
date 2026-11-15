@@ -26,6 +26,7 @@ import {
 } from "../../core/mcp/prompts";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import { registerMentionSource, registerSlashSource } from "./composerExtras";
 import type { McpClients } from "./mcp";
 import { fillTemplate, isTemplate, registerResourceWatch } from "./mcpResources";
@@ -40,7 +41,7 @@ async function askElicitation(
   server: string,
   request: ElicitRequest,
 ): Promise<ElicitResult> {
-  const { quickInput } = services;
+  const prompts = agentHost(services).prompts;
   // Only forms: the URL mode of later revisions (sign in on a page) isn't supported yet.
   if (request.mode && request.mode !== "form") return { action: "decline" };
   let fields: ElicitField[];
@@ -54,8 +55,11 @@ async function askElicitation(
     return { action: "decline" };
   }
   const message = request.message.replace(/\s+/g, " ").trim().slice(0, 300);
-  const first = await quickInput.pick(
-    [
+  const first = await prompts.choose({
+    reason: "mcp.elicitation",
+    server,
+    placeholder: `MCP server ${server} asks: ${message || "a question"}`,
+    choices: [
       {
         id: "accept",
         label: fields.length ? "Answer…" : "Accept",
@@ -63,10 +67,9 @@ async function askElicitation(
       },
       { id: "decline", label: "Decline", description: "The server is told you said no" },
     ],
-    { placeholder: `MCP server ${server} asks: ${message || "a question"}` },
-  );
+  });
   if (!first) return { action: "cancel" };
-  if (first.id === "decline") return { action: "decline" };
+  if (first === "decline") return { action: "decline" };
   const values: Record<string, string | number | boolean | undefined> = {};
   for (const field of fields) {
     const title = `${server}: ${fieldPrompt(field)}`;
@@ -81,16 +84,20 @@ async function askElicitation(
       // The default first, so Enter takes it.
       const preferred = field.default === undefined ? undefined : String(field.default);
       options.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
-      const picked = await quickInput.pick(
-        [...options, ...(field.required ? [] : [{ id: SKIP, label: "Leave empty" }])],
-        { placeholder: title },
-      );
+      const picked = await prompts.choose({
+        reason: "mcp.elicitation",
+        server,
+        placeholder: title,
+        choices: [...options, ...(field.required ? [] : [{ id: SKIP, label: "Leave empty" }])],
+      });
       if (!picked) return { action: "cancel" };
-      if (picked.id === SKIP) continue;
-      values[field.name] = field.kind === "boolean" ? picked.id === "true" : picked.id;
+      if (picked === SKIP) continue;
+      values[field.name] = field.kind === "boolean" ? picked === "true" : picked;
       continue;
     }
-    const typed = await quickInput.prompt({
+    const typed = await prompts.text({
+      reason: "mcp.elicitation",
+      server,
       prompt: `${title} (don't enter passwords or keys here)`,
       ...(field.default !== undefined && { value: String(field.default) }),
       validate: (v) => parseFieldValue(field, v).error,
@@ -169,7 +176,9 @@ export function registerMcpFeatures(
         const { values, missing } = parsePromptArgs(found.prompt, args);
         for (const name of missing) {
           const arg = found.prompt.arguments?.find((a) => a.name === name);
-          const typed = await services.quickInput.prompt({
+          const typed = await agentHost(services).prompts.text({
+            reason: "mcp.argument",
+            server: found.server,
             prompt: `/${command}: ${arg?.description ?? name}`,
             placeholder: name,
           });
@@ -185,7 +194,9 @@ export function registerMcpFeatures(
   // Resource templates and subscriptions (D204).
   const watch = registerResourceWatch(sub, services, clients, sessions);
   const askVariable = (server: string, template: string) => async (name: string) => {
-    const typed = await services.quickInput.prompt({
+    const typed = await agentHost(services).prompts.text({
+      reason: "mcp.argument",
+      server,
       prompt: `${server}: ${template} — ${name}`,
       placeholder: name,
     });

@@ -18,8 +18,8 @@ import {
   WRAP_UP_ACTIONS,
   type WrapUpAction,
 } from "../../core/agent/turnTools";
-import { windowIpc } from "../../core/ipc/system";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import type { Changeset } from "./changeset";
 import { sendToPhone } from "./phoneNotify";
 import type { AgentTool } from "./tools";
@@ -266,10 +266,15 @@ const PLAN_MODE: AgentTool = {
             : `The user answered instead: ${answer}`,
         summary: answer === PLAN_NO ? PLAN_NO : "answered",
       };
-    await host.services.dispatcher.execute("agent.setChatMode", {
-      session: host.session,
-      mode: "plan",
-    });
+    // Through the command where it exists (the window); else the chat's own state, which is all
+    // the command changes.
+    if (host.services.dispatcher.has("agent.setChatMode"))
+      await host.services.dispatcher.execute("agent.setChatMode", {
+        session: host.session,
+        mode: "plan",
+      });
+    else if (host.setWork) host.setWork("plan");
+    else return { result: "Error: Plan mode isn't available here.", isError: true };
     host.followChatMode?.();
     return {
       result:
@@ -278,11 +283,6 @@ const PLAN_MODE: AgentTool = {
     };
   },
 };
-
-/** Whether the user is at the window now (notify skips a message they'd see anyway). */
-function atWindow(): boolean {
-  return document.visibilityState === "visible" && document.hasFocus();
-}
 
 export function notifyTool(items: () => readonly Item[]): AgentTool {
   return {
@@ -312,7 +312,9 @@ export function notifyTool(items: () => readonly Item[]): AgentTool {
       );
       if (sent)
         return { result: "Not sent: one notification a turn is enough.", summary: "not sent" };
-      if (atWindow())
+      // Who is watching comes from the agent's host: with no window, nobody is.
+      const presence = agentHost(host.services).presence;
+      if (!presence.away())
         return {
           result: "Not sent: the user is at the window and sees the chat.",
           summary: "not sent",
@@ -322,7 +324,7 @@ export function notifyTool(items: () => readonly Item[]): AgentTool {
           result: "Not sent: the user turned off notifications (agent.notifyWhenAway).",
           summary: "not sent",
         };
-      void windowIpc.requestAttention().catch(() => {});
+      presence.requestAttention();
       host.services.notifications.show("info", r.message, {
         actions: [
           {

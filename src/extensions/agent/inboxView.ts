@@ -28,7 +28,7 @@ import type { DockView, DockViewContext } from "../../workbench/dock/views";
 import { customModes } from "./customModes";
 import { memberInfo } from "./groupChat";
 import { mainAgent } from "./mainAgent";
-import { INBOX, rooms, roomTitle } from "./roomService";
+import { INBOX, rooms, roomTitle } from "./roomState";
 import { threads } from "./threadList";
 
 export interface InboxViewHost {

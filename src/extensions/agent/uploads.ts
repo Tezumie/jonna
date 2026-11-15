@@ -14,6 +14,7 @@ import {
   uploadFileName,
 } from "../../core/agent/attachments";
 import { isZipName, looksLikeZip, zipAsText } from "../../core/agent/zip";
+import { toBase64 } from "../../core/extensions/rpcAuthFs";
 import { attachIpc, type OutsideFile } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import { openerIpc } from "../../core/ipc/system";
@@ -29,6 +30,12 @@ import type { SessionManager } from "./sessions";
  */
 export async function pngBase64(file: Blob): Promise<string | null> {
   try {
+    // No canvas to redraw it on (a run without a window): a PNG goes as it is, at its own size;
+    // other formats can't be turned into one here.
+    if (typeof document === "undefined") {
+      if (file.type !== "image/png") return null;
+      return toBase64(new Uint8Array(await file.arrayBuffer())) || null;
+    }
     const image = await decodeImage(file);
     if (!image) return null;
     const scale = Math.min(1, 1568 / Math.max(image.width, image.height));

@@ -40,7 +40,7 @@ import { modelLabel } from "./menus";
 import { outputStyleLabel } from "./outputStyles";
 import type { ProviderRegistry } from "./providers";
 import { type PrWatchInfo, prWatches, prWatchOf } from "./prWatches";
-import { conversationRoom } from "./roomService";
+import { conversationRoom } from "./roomState";
 import { rulesFor } from "./rules";
 import { scheduledMessages, schedulesOf } from "./schedules";
 import type { AgentSession } from "./session";

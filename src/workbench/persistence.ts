@@ -56,6 +56,12 @@ export interface GlobalState {
   riskyFolderDismissed?: string[];
   /** External agents installed from the ACP agent registry, by registry id (D215). */
   acpAgents?: Record<string, InstalledAgent>;
+  /**
+   * The models and reasoning levels each external agent reported last time, by agent name: the
+   * model menu shows them before the agent has started. (They were in the web view's own
+   * storage until the agent could run without one.)
+   */
+  acpSettings?: Record<string, unknown[]>;
   /** The agent preset last applied or saved (D230), so the Agents page can say "· changed". */
   lastPreset?: string;
   /** The chat's details panel (D231): its folded cards, and whether the user hid it. */
@@ -299,6 +305,14 @@ function sanitizeGlobal(data: Record<string, unknown>): GlobalState {
       }),
     ...(typeof data.acpAgents === "object" &&
       data.acpAgents !== null && { acpAgents: sanitizeInstalledMap(data.acpAgents) }),
+    ...(typeof data.acpSettings === "object" &&
+      data.acpSettings !== null && {
+        acpSettings: Object.fromEntries(
+          Object.entries(data.acpSettings).filter((entry): entry is [string, unknown[]] =>
+            Array.isArray(entry[1]),
+          ),
+        ),
+      }),
     ...(Array.isArray(data.riskyFolderDismissed) && {
       riskyFolderDismissed: data.riskyFolderDismissed.filter(
         (p): p is string => typeof p === "string",
