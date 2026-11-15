@@ -1,0 +1,63 @@
+// D435: Sync as people see it, with nobody signed in (there is no sync service in UI tests; the
+// signed-in flows are covered by scripts/sync-e2e.mjs): the Sync tab opens and asks to sign in,
+// ide://sync says sync isn't available, and the commands fail with a sentence that says why.
+{
+  "name": "sync-m7-129",
+  "steps": [
+    {
+      "state": "ide://accounts",
+      "expect": { "ide": { "available": true, "signedIn": false } }
+    },
+
+    // The tab: a singleton in the main area.
+    { "run": "sync.show", "expect": { "tabId": { "$exists": true } }, "save": "tab" },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sync-view .ai-title", "html": 400 },
+      "expect": [{ "html": { "$contains": "Sync" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sync-view .sync-text", "html": 600 },
+      "expect": [{ "html": { "$contains": "Sign in to your account" } }],
+      "timeoutMs": 5000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sync-view .sync-actions button", "html": 600 },
+      "expect": [{ "html": { "$contains": "Sign in" } }]
+    },
+    { "run": "sync.show", "expect": { "tabId": "${tab.tabId}" } },
+
+    // State: not available, nothing of the account's, no key material.
+    {
+      "state": "ide://sync",
+      "expect": {
+        "available": false,
+        "state": "signedOut",
+        "device": null,
+        "devices": { "$length": 0 },
+        "recoveryKeySet": false,
+        "project": null,
+        "snapshots": { "$length": 0 }
+      },
+      "timeoutMs": 10000
+    },
+
+    // The commands say why they can't run.
+    { "run": "sync.turnOn", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.join", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.syncNow", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.snapshot.create", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.project.enable", "expectError": "Sign in to your account to use sync." },
+
+    // Its settings are known ones (a value that fits the schema is taken).
+    { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },
+    { "run": "settings.set", "input": { "key": "sync.chats", "value": false } },
+
+    // Holds in a narrow window.
+    { "run": "dev.setWindowSize", "input": { "width": 420, "height": 600 } },
+    { "run": "workbench.screenshot", "input": { "save": true } }
+  ]
+}

@@ -1,0 +1,237 @@
+{
+  "id": "builtin.sync",
+  "version": "0.1.0",
+  "displayName": "Sync",
+  "description": "Settings, your own files, a project's chats and snapshots of unfinished work on every computer of the account, encrypted on this one.",
+  "activation": ["*"],
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      {
+        "id": "sync.show",
+        "title": "Sync",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.turnOn",
+        "title": "Turn on sync…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.join",
+        "title": "Join sync…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.useRecoveryKey",
+        "title": "Join sync with the recovery key…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.closeStep",
+        "title": "Close the sync step",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.approveDevice",
+        "title": "Approve a computer…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.removeDevice",
+        "title": "Remove a computer from sync…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.turnOff",
+        "title": "Turn off sync on this computer…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.newRecoveryKey",
+        "title": "Make a new recovery key…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.syncNow",
+        "title": "Sync now",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.enable",
+        "title": "Sync this project",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.disable",
+        "title": "Stop syncing this project",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.create",
+        "title": "Snapshot now",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.continue",
+        "title": "Continue from another computer",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.restore",
+        "title": "Restore a snapshot…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.restoreFile",
+        "title": "Restore a file from a snapshot…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.pin",
+        "title": "Pin a snapshot…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.delete",
+        "title": "Delete a snapshot…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.openAccountPage",
+        "title": "Open the account page",
+        "category": "Sync"
+      }
+    ],
+    "settings": {
+      "sync.settings": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync your settings between your computers.",
+        "order": 1,
+        "section": "What syncs",
+        "title": "Settings"
+      },
+      "sync.keybindings": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync your keyboard shortcuts.",
+        "order": 2,
+        "section": "What syncs",
+        "title": "Keyboard shortcuts"
+      },
+      "sync.snippets": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync your snippets.",
+        "order": 3,
+        "section": "What syncs",
+        "title": "Snippets"
+      },
+      "sync.rules": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync your own rules file (the one that applies in every folder).",
+        "order": 4,
+        "section": "What syncs",
+        "title": "Rules"
+      },
+      "sync.agents": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync the agents you made for every folder.",
+        "order": 5,
+        "section": "What syncs",
+        "title": "Agents"
+      },
+      "sync.commands": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync the commands you made for every folder.",
+        "order": 6,
+        "section": "What syncs",
+        "title": "Commands"
+      },
+      "sync.outputStyles": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync your output styles.",
+        "order": 7,
+        "section": "What syncs",
+        "title": "Output styles"
+      },
+      "sync.skills": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync the skills you made for every folder.",
+        "order": 8,
+        "section": "What syncs",
+        "title": "Skills"
+      },
+      "sync.chats": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Sync chats: those of no folder, and those of the projects that sync.",
+        "order": 9,
+        "section": "What syncs",
+        "title": "Chats"
+      },
+      "sync.snapshots": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Take snapshots of unfinished work in the projects that sync.",
+        "order": 10,
+        "section": "What syncs",
+        "title": "Snapshots"
+      },
+      "sync.ignoredSettings": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Settings that stay on this computer: their keys, for example \"window.zoomLevel\".",
+        "order": 11,
+        "items": {
+          "type": "string"
+        },
+        "title": "Settings that stay here"
+      },
+      "sync.historyDays": {
+        "type": "number",
+        "default": 30,
+        "scope": "user",
+        "description": "How long a project's snapshots are kept, counted in days the project was worked on. 0 keeps everything. Pinned snapshots are always kept.",
+        "order": 12,
+        "minimum": 0,
+        "title": "Snapshot history"
+      },
+      "sync.snapshotScope": {
+        "type": "string",
+        "default": "remote",
+        "scope": "user",
+        "description": "What a snapshot of a project with a git remote holds: \"remote\" only what the remote doesn't have (uncommitted and unpushed work), \"everything\" the whole history too.",
+        "order": 13,
+        "enum": ["remote", "everything"],
+        "enumDescriptions": ["Only what the git remote doesn't have", "The whole history too"],
+        "title": "Snapshot scope"
+      },
+      "sync.projects": {
+        "type": "object",
+        "default": {},
+        "scope": "user",
+        "description": "Managed by the IDE: which folders on this computer sync, and as which project. Turn a project's sync on or off in the Sync tab.",
+        "order": 14,
+        "title": "Synced projects"
+      }
+    }
+  }
+}

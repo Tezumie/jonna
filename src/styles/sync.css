@@ -1,0 +1,235 @@
+/* The Sync tab (D435), on the AI pages' layout (ai-setup.css: .ai-page, .ai-setup, .ai-header,
+   .ai-section, .ai-field, .ai-link, .ai-tag). Quiet: one column, rows on --bg-surface-raised,
+   color only where it means something (an error, storage nearly full). Holds at 320 px. */
+@layer extensions {
+  .sync-view {
+    container-type: inline-size;
+  }
+  .sync-page {
+    gap: var(--space-7);
+  }
+  .sync-text {
+    margin: 0;
+    max-width: 60ch;
+    color: var(--fg-default);
+    line-height: var(--text-md-lh);
+  }
+  .sync-text.is-quiet {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-points {
+    margin: 0;
+    padding-left: var(--space-7);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    color: var(--fg-default);
+  }
+
+  /* Buttons in a row that wraps. */
+  .sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .sync-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    max-width: 100%;
+  }
+  .sync-button .icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Fields */
+  .sync-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 420px;
+  }
+  .sync-field .input {
+    height: var(--size-control-md);
+  }
+  .sync-field textarea.input {
+    height: auto;
+    padding: var(--space-3) var(--space-4);
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--text-md-lh);
+  }
+
+  /* The recovery key and the code two computers compare. */
+  .sync-key {
+    margin: 0;
+    padding: var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    line-height: var(--text-lg-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .sync-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-3xl);
+    line-height: var(--text-3xl-lh);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--fg-default);
+    user-select: text;
+  }
+  .sync-code-inline {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--fg-default);
+    user-select: text;
+  }
+
+  /* The status line */
+  .sync-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+  .sync-status-text {
+    min-width: 0;
+    color: var(--fg-default);
+    overflow-wrap: anywhere;
+  }
+  .sync-status-text.is-error {
+    color: var(--status-danger-fg);
+  }
+
+  /* Storage: a thin meter. */
+  .sync-meter {
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    overflow: hidden;
+  }
+  .sync-meter-fill {
+    height: 100%;
+    min-width: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--fg-muted);
+    transition: width var(--motion-base) var(--ease-standard);
+  }
+  .sync-meter.is-full .sync-meter-fill {
+    background: var(--status-warning-fg);
+  }
+
+  /* Computers and snapshots */
+  .sync-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .sync-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .sync-row-main {
+    flex: 1 1 160px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .sync-row-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+  }
+  .sync-row-name {
+    font-weight: 500;
+    color: var(--fg-default);
+    overflow-wrap: anywhere;
+  }
+  .sync-row-from {
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+  }
+  .sync-row-detail,
+  .sync-row-code {
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+  .sync-row-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .sync-pin {
+    color: var(--fg-subtle);
+  }
+  .sync-pin.is-on {
+    color: var(--fg-default);
+  }
+  .sync-pin-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* What syncs */
+  .sync-checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-3) var(--space-6);
+  }
+  .sync-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-height: var(--size-control-sm);
+    color: var(--fg-default);
+    cursor: pointer;
+  }
+
+  .sync-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .sync-footer .ai-link {
+    text-align: left;
+  }
+
+  /* A narrow tab: less air around the column, the code a size smaller. */
+  @container (max-width: 420px) {
+    .ai-page .sync-page {
+      padding: var(--space-7) var(--space-6) var(--space-9);
+    }
+    .sync-code {
+      font-size: var(--text-2xl);
+      line-height: var(--text-2xl-lh);
+    }
+  }
+}

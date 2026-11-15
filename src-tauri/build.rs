@@ -130,6 +130,7 @@ const COMMANDS: &[&str] = &[
     "sync_state_load",
     "sync_state_save",
     "sync_lease",
+    "sync_project",
     "state_load",
     "state_save",
     "audit_append",

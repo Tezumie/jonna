@@ -210,6 +210,23 @@ export const syncIpc = {
   /** What the sync loop keeps between runs. */
   stateLoad: (): Promise<string | null> => call<string | null>("sync_state_load"),
   stateSave: (text: string): Promise<void> => call<void>("sync_state_save", { text }),
+  /**
+   * Which project the open folder `root` is: its id file when it has one, else its git
+   * remote's address; with `create`, a new id file when it has neither. `folderName` is
+   * the product's workspace folder name. Null: no identity yet.
+   */
+  project: (
+    base: string,
+    root: string,
+    folderName: string,
+    create: boolean,
+  ): Promise<{ id: string; kind: "file" | "remote" } | null> =>
+    call<{ id: string; kind: "file" | "remote" } | null>("sync_project", {
+      base,
+      root,
+      folderName,
+      create,
+    }),
   /** Claims the sync loop for this window; false while another window of the profile has it. */
   lease: (owner: string): Promise<boolean> => call<boolean>("sync_lease", { owner }),
 };

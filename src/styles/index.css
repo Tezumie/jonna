@@ -45,6 +45,7 @@
 @import "./devtools-performance.css";
 @import "./reference.css";
 @import "./help.css";
+@import "./sync.css";
 @import "./thirdparty.css";
 /* Unlayered on purpose (see the files). */
 @import "@xterm/xterm/css/xterm.css";

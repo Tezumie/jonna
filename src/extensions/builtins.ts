@@ -22,6 +22,7 @@ import { quickOpenExtension } from "./quickOpen/index";
 import { remoteExtension } from "./remote/index";
 import { searchExtension } from "./search/index";
 import { settingsExtension } from "./settings/index";
+import { syncExtension } from "./sync/index";
 import { tasksExtension } from "./tasks/index";
 import { terminalExtension } from "./terminal/index";
 import { testingExtension } from "./testing/index";
@@ -61,6 +62,7 @@ export function builtinExtensions(
     remoteExtension,
     testingExtension,
     accountsExtension,
+    syncExtension,
     extensionsExtension,
     languageServersExtension,
     lspExtension,

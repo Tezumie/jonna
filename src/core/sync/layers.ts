@@ -226,13 +226,16 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
       const where = new Map<string, string>();
       for (const collection of ctx.collections(CHATS)) {
         for (const r of ctx.records(collection)) {
-          if (r.unreadable) continue;
-          let updated = 0;
-          if (r.text) {
-            const meta = (JSON.parse(r.text) as { meta?: { updated?: unknown } }).meta;
-            if (typeof meta?.updated === "number") updated = meta.updated;
-          }
-          remote.set(r.id, { version: r.version, deleted: r.deleted, mtimeMs: updated });
+          // A record the service marks deleted, or one that can't be read, says nothing here:
+          // a deletion counts only as sealed content, which takes the account's keys to make.
+          if (r.unreadable || r.deleted || !r.text) continue;
+          const entry = JSON.parse(r.text) as { deleted?: unknown; meta?: { updated?: unknown } };
+          const updated = typeof entry.meta?.updated === "number" ? entry.meta.updated : 0;
+          remote.set(r.id, {
+            version: r.version,
+            deleted: entry.deleted === true,
+            mtimeMs: updated,
+          });
           where.set(r.id, collection);
         }
       }
@@ -281,7 +284,7 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
           case "deleteRemote": {
             const collection = where.get(id);
             if (!collection) break;
-            const version = await ctx.put(collection, id, null);
+            const version = await ctx.put(collection, id, JSON.stringify({ deleted: true }));
             if (version !== null) {
               base.chats[id] = { version, collection };
               ctx.changed();

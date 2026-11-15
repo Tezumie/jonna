@@ -29,6 +29,7 @@ unless noted.
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
 | · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
 | · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit, its name and CI job | D427–D434 |
+| · Sync: devices and keys, encrypted records and chunks, snapshots | D435 |
 
 ## Seeded from PLAN §19
 
@@ -15352,3 +15353,56 @@ The owner's answers to what D432 left open.
   feature, the host's smoke test, the headless bundle and the windowless agent's end-to-end
   script. The desktop job never compiles that configuration, and this is the first place the
   host is linked and run on Linux.
+
+## D435 — Sync: settings, chats and unfinished work between computers, encrypted on the device
+
+The first paid-for service's ground work: an account's own settings and files, a project's
+chats, and snapshots of its files travel between the account's computers. `docs/sync.md` has
+the design and the contract; the service is in the website's repository. Open only to accounts
+the service lists (the owner's, until it is on sale), so nothing shows for anyone else.
+
+- **The service can't read what it stores.** End-to-end encryption is the only mode. The cost
+  is stated at setup: without one of the account's computers or the recovery key, the synced
+  copy can't be read by anyone. Email recovery restores the account and offers a reset: the
+  synced copy is deleted and a computer that still has the data uploads again (snapshot history
+  is lost). A mode where the service holds a key, and recovery through a passkey, are left for
+  later: each is a second code path.
+- **No invented cryptography.** A device has an X25519 key pair; the account's keyring is
+  sealed to each device and to the recovery key with a sealed box; content is sealed with
+  XChaCha20-Poly1305 under keys derived with HKDF-SHA256; chunks are named by HMAC-SHA256.
+- **New dependencies** (rule 3), all RustCrypto, pure Rust, MIT or Apache-2.0: `crypto_box`
+  0.9 (the sealed box), `chacha20poly1305` 0.10, `hkdf` 0.12, `hmac` 0.12, and `sha2` 0.10
+  beside the 0.11 already used (`hkdf` and `hmac` 0.12 need that line; it was already built for
+  the Linux keychain). Why not what is there: `ring`, built for TLS, can't load a stored X25519
+  private key, which a device key is. The size in a release build isn't measured yet.
+- **A new device is approved by comparing six digits** on both computers, derived from the new
+  device's public key, or joins with the recovery key. The service can list devices but can't
+  add one that gets the keys: a sealed list of the devices the account's own devices approved
+  decides who new keys are wrapped for.
+- **Removing a device makes new keys** for the others. Content sealed before stays readable
+  (each item names its key generation).
+- **The recovery key is hard to skip:** sync sends nothing until the key, or its last group,
+  is typed back.
+- **Records and chunks.** Small sealed records with versions (a write names the version it was
+  made from, and a conflict hands back the other one); content too large for a record is
+  chunks named by their content, so nothing uploads or is stored twice. The service removes
+  chunks nothing names; a counter keeps that from overlapping a record being written.
+- **Merging is the front end's, and pure** (`src/core/sync`): settings by key (the later
+  change wins for one key), files whole (the loser kept beside as `name.conflict.ext`), chats
+  forked when changed on two computers. One window of a profile runs the loop at a time.
+- **A project's identity** is its git remote's address, normalised and keyed (nothing
+  written), or an id file in the project's settings folder written only when sync is turned on
+  for it; the file wins over a remote added later. `.gitignore` is the user's.
+- **Snapshots ask git and write nothing inside `.git` to make one:** the commit, bundles of
+  what no remote has (each only what the ones before lack), the staged patch, the changed
+  files. A restore never overwrites local work without asking, and replaces without asking
+  what an earlier restore put there.
+- **History is counted in days worked,** not calendar days (the owner's call in the plan).
+- **Left for later:** the list of installed extensions, a project's layout, syncing keys, the
+  "also include" list for ignored files, older stashes, links and submodules, linking a folder
+  to a project by hand, the question for a copied folder, a snapshot on closing the window, a
+  persistent record of which chunks are known to be stored (each snapshot asks the service),
+  storage blocks and billing. A chat whose base was lost on a computer forks once instead of
+  being recognised as the same.
+- **The guide page and release notes wait** until sync is open to more than the owner's
+  account, as the command-line agent's page does (D434).

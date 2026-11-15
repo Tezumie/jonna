@@ -544,6 +544,7 @@ macro_rules! all_commands {
                 ipc::sync::sync_state_load,
                 ipc::sync::sync_state_save,
                 ipc::sync::sync_lease,
+                ipc::sync::sync_project,
                 ipc::app::state_load,
                 ipc::app::state_save,
                 ipc::app::audit_append,

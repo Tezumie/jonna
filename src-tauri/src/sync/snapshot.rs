@@ -890,6 +890,51 @@ pub async fn restore(
             }
         }
     }
+    if manifest.git.is_none() && !options.as_restored {
+        // No git to ask or to stash into: files here that differ from the snapshot's are this
+        // computer's own. They are replaced only when asked, and kept in a folder of their own.
+        let mut differing = Vec::new();
+        for entry in &manifest.files {
+            let target = safe_join(root, &entry.p)?;
+            let Ok(bytes) = std::fs::read(&target) else {
+                continue;
+            };
+            let mut ids = Vec::new();
+            for piece in bytes.chunks(chunks::CHUNK_BYTES) {
+                ids.push(ring.chunk_id(piece)?);
+            }
+            if ids != entry.s.chunks {
+                differing.push((entry.p.clone(), bytes));
+            }
+        }
+        if !differing.is_empty() {
+            if !options.stash {
+                return Err(Error::Sync(
+                    "SyncDirty",
+                    format!(
+                        "This folder has {} file(s) that differ from the snapshot.",
+                        differing.len()
+                    ),
+                ));
+            }
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let keep = data.join("sync-replaced").join(stamp.to_string());
+            for (path, bytes) in &differing {
+                let target = safe_join(&keep, path)?;
+                if let Some(dir) = target.parent() {
+                    std::fs::create_dir_all(dir)?;
+                }
+                atomic_write(&target, bytes)?;
+            }
+            done.notes.push(format!(
+                "{} file(s) of this folder were replaced; their earlier versions are in {}.",
+                differing.len(),
+                keep.display()
+            ));
+        }
+    }
     for entry in &manifest.files {
         write_file(api, ring, root, entry).await?;
         done.files += 1;

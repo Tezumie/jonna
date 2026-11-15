@@ -84,6 +84,7 @@
     "allow-sync-state-load",
     "allow-sync-state-save",
     "allow-sync-lease",
+    "allow-sync-project",
     "allow-state-load",
     "allow-state-save",
     "allow-audit-append",

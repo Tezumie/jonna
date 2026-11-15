@@ -595,6 +595,21 @@ Tests only: `canvas.test.ts` checks the model of the bundled Canvas extension
 (`src-tauri/bundled-extensions/canvas/main.js`, D181): parsing JSON Canvas, `canvas.edit`'s ops,
 placement and layout. It loads the worker script the way the extension host does.
 
+## sync/
+
+Sync's rules and loop (D435, `docs/sync.md`), with no backend calls of their own: the app
+gives them ports.
+
+- `merge.ts` — `mergeSettings` (by key; the later change wins for one key), `planFiles`
+  (whole files: upload, download, delete, adopt, conflict), `conflictPath`, `fileRecordId`,
+  `canonical`.
+- `engine.ts` — `SyncEngine`: one pass reads the account's changes into a mirror, runs each
+  `SyncLayer` with a `LayerContext` (records, `put`, a base kept on disk), and saves the
+  bases. A reset account (a new epoch) starts every layer afresh.
+- `layers.ts` — `settingsLayer`, `filesLayer`, `chatsLayer`, each over a port
+  (`SettingsPort`, `FilesPort`, `ChatsPort`).
+- `history.ts` — `planPrune`: which snapshots history keeps, counted in days worked.
+
 ## perf.ts, product.ts
 
 `perf.ts`: startup and load marks (`ide://perf`, `workbench.startupTimings`); `whenMarked(name)`

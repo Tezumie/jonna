@@ -638,6 +638,37 @@ the panic hook writes Rust panics with a backtrace (never waiting for the log's 
 `--disable-extensions`) and `last-version` (for What's new). Commands in `ipc/diagnostics.rs`:
 `session_info`, `log_write`, `log_recent`, `report_save_zip`, `app_relaunch`.
 
+## sync/
+
+Sync (D435, `docs/sync.md`): an account's settings, chats and unfinished work between its
+computers, sealed here before anything leaves. Commands in `ipc/sync.rs` (`sync_*`), each
+taking the accounts server as `base`.
+
+- `crypto.rs` — device key pairs, the keyring and its generations, sealing to a device (a
+  sealed box) and sealing content (XChaCha20-Poly1305, HKDF), chunk ids (HMAC), the recovery
+  key as text, the six digits two computers compare. Unit tested.
+- `api.rs` — requests to the sync service with the account's token (a 401 refreshes it once);
+  refusals as `Error::Sync(code, message)`: `SyncOffline`, `SyncSignedOut`,
+  `SyncUnavailable`, `SyncNotApproved`, `SyncReset`, `SyncFull`, `SyncOff`,
+  `SyncRecoveryKey`, `SyncDirty`.
+- `vault.rs` — this computer as a device: `status` (which also catches up: handed the keys,
+  given new ones, removed, reset), `prepare` / `setup`, `join`, `join_with_recovery`,
+  `approve`, `remove`, `new_recovery_key`, the sealed list of trusted devices, new keys
+  after a removal. State in `<data>/sync/local.json`; the device key and the keyring are
+  secrets (`sync-device-key`, `sync-keyring`).
+- `records.rs` — sealed records with versions: `get`, `put` (done, conflict, or "check the
+  chunks again"), `changes`, `update`.
+- `chunks.rs` — content as chunks of at most 4 MB named by their content: `Uploader` (asks
+  what is missing, sends that, remembers what a record must name), `fetch`, `read`.
+- `chats.rs` — a chat's file and images as chunks under one record; `pull` saves it into this
+  computer's folder for the project.
+- `project.rs` — a git remote's address in one form, whatever form it was written in.
+- `snapshot.rs` — a project's files as a snapshot (`create`, `fingerprint`, `manifest`,
+  `list`, `restore`, `restore_file`, `rewrite` for a pin). Asks git; writes nothing inside
+  `.git` to make one; a manifest's paths can't leave the project or enter `.git`.
+- `user_files.rs` — the user's own files that sync, under names that are the same on every
+  computer (`scan`, `read`, `write`); only those names resolve.
+
 ## update/
 
 Updates (D192): tauri-plugin-updater, registered only when the build has an update endpoint and

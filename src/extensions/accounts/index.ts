@@ -246,10 +246,19 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               icon: "agent",
               run: run("agent.showSetup"),
             });
+          // Sync (D435), once it is open to the account.
+          const syncOpen = p?.sync === true && dispatcher.has("sync.show");
+          if (syncOpen)
+            items.push({
+              label: "Sync…",
+              icon: "refresh-cw",
+              separatorBefore: true,
+              run: run("sync.show"),
+            });
           items.push({
             label: "Backup and sync settings…",
-            icon: "refresh-cw",
-            separatorBefore: true,
+            icon: syncOpen ? "file-output" : "refresh-cw",
+            separatorBefore: !syncOpen,
             run: run("accounts.syncSettings"),
           });
           const anchor = document.querySelector<HTMLElement>(".activitybar-accounts");
@@ -356,23 +365,28 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
         title: "Backup and sync settings…",
         category: "Accounts",
         description:
-          "Settings backup: export or import a profile (settings, keybindings, snippets). Sync through the IDE account comes with the accounts service.",
+          "Settings backup: export or import a profile (settings, keybindings, snippets) as a file. Syncing between computers is the Sync tab (sync.show), for accounts it is open to.",
         input: s.empty(),
         effects: [],
         agent: "hidden",
         run: async () => {
-          const choice = await showDialog<"export" | "import" | "cancel">({
+          const syncOpen = profile.peek()?.sync === true && dispatcher.has("sync.show");
+          const choice = await showDialog<"export" | "import" | "sync" | "cancel">({
             title: "Backup and sync settings",
-            message: profile.peek()
-              ? "Syncing with your account is coming soon. Until then, export your settings, keybindings and snippets to a file, or import one."
-              : "Syncing needs an account (coming soon). Until then, export your settings, keybindings and snippets to a file, or import one.",
+            message: syncOpen
+              ? "To keep your settings the same on every computer, use Sync. For a copy in a file, export your settings, keybindings and snippets, or import one."
+              : profile.peek()
+                ? "Syncing with your account is coming soon. Until then, export your settings, keybindings and snippets to a file, or import one."
+                : "Syncing needs an account (coming soon). Until then, export your settings, keybindings and snippets to a file, or import one.",
             actions: [
               { label: "Cancel", value: "cancel" },
               { label: "Import…", value: "import" },
               { label: "Export…", value: "export", variant: "primary" },
             ],
+            ...(syncOpen && { leftActions: [{ label: "Open Sync", value: "sync" as const }] }),
             cancelValue: "cancel",
           });
+          if (choice === "sync") return dispatcher.execute("sync.show", {});
           if (choice === "export") return dispatcher.execute("settings.exportProfile", {});
           if (choice === "import") return dispatcher.execute("settings.importProfile", {});
           return { cancelled: true };

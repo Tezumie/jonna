@@ -8,6 +8,9 @@ export interface AccountProfile {
   email?: string | null;
   avatarUrl?: string | null;
   plan?: string | null;
+  /** Whether sync is open to this account (D435), and the storage it has. */
+  sync?: boolean;
+  storageLimit?: number;
 }
 
 export const accountsIpc = {

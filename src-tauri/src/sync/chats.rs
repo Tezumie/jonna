@@ -119,6 +119,10 @@ pub async fn pull(
     let Some(text) = record.text.as_deref().filter(|_| !record.deleted) else {
         return Ok(None);
     };
+    // A chat deleted on another computer: its record says so, and holds nothing to fetch.
+    if serde_json::from_str::<Value>(text)?["deleted"] == Value::Bool(true) {
+        return Ok(None);
+    }
     let entry: Entry = serde_json::from_str(text)?;
     let bytes = chunks::read(api, ring, &entry.file).await?;
     let mut chat: Value = serde_json::from_slice(&bytes)?;

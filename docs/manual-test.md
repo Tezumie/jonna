@@ -4210,3 +4210,35 @@ Images in the chat (D381):
    its `--help` and `--version` use that name.
 2. In the app, "Install shell command in PATH" still installs the plain name, and it still
    opens the window.
+
+## D435 — Sync
+Needs an account sync is open to, and two computers (or two profiles: a second copy started
+with `--user-data-dir <folder>`), both signed in.
+1. First computer, Accounts menu, Sync…: the tab says what sync does. Turn on sync: a recovery
+   key is shown. Typing something else than its last four characters is refused and the key
+   stays; typing them turns sync on, and this computer is listed.
+2. Second computer, Sync…: Join shows six digits. The first computer lists the waiting
+   computer with the same digits; Approve. The second computer turns to on within a few
+   seconds.
+3. Change a setting on one (the font size): within about a minute, or after Sync now, the other
+   has it. Change two different settings, one on each, then sync both: each has both.
+4. Add a snippet or a skill on one: it appears on the other. Change the same file on both
+   before syncing: one version is the file, the other is beside it as `name.conflict.ext`.
+5. Open the same git project on both (cloned from the same remote), Sync this project on both.
+   A chat made on one appears in the other's Chats list for that project.
+6. On the first: commit without pushing, stage a change, edit another file, add a new file.
+   Snapshot now. On the second: Continue from the first computer: the same commit and branch,
+   the same staged and unstaged changes, the new file. Ignored files (`node_modules`) didn't
+   travel.
+7. On the second, change a file of its own, then continue again from a newer snapshot: it asks
+   before touching the folder; Stash them and continue leaves the change in `git stash list`.
+8. In the history list: pin a snapshot with a name, show its files, restore one file, delete
+   one (asks first).
+9. Remove the second computer from the first: the second says it was removed and sync is off
+   there; its files and chats are untouched. Joining again needs approval or the recovery key.
+10. Make a new recovery key: the old one no longer joins a computer; the new one does.
+11. The account page on the website: the devices and the storage in use are listed; Reset sync
+    asks to sign in again and for the email address; afterwards both computers say sync was
+    reset and are off; turning it on again on one uploads its data afresh.
+12. An account sync isn't open to: no Sync item in the Accounts menu, and the account page
+    shows no Sync section.

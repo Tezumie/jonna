@@ -538,3 +538,78 @@ pub async fn sync_lease(state: State<'_, AppState>, owner: String) -> Result<boo
     Ok(serde_json::from_str::<serde_json::Value>(&after)
         .is_ok_and(|v| v["owner"].as_str() == Some(owner.as_str())))
 }
+
+/// Which project a folder is (D435).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectIdentity {
+    pub id: String,
+    /// "file": an id kept in the project's own settings folder. "remote": from its git
+    /// remote's address, nothing written.
+    pub kind: &'static str,
+}
+
+/// The id file's name in the project's settings folder.
+const PROJECT_FILE: &str = "project.json";
+
+fn project_folder_name(name: &str) -> Result<&str> {
+    crate::fs::validate_name(name)?;
+    Ok(name)
+}
+
+/// The open folder's project identity: the id file when there is one (it wins, so a remote
+/// added later doesn't split the project), else its git remote's address, else (only with
+/// `create`, when sync is turned on for the project) a new id file. `folder_name` is
+/// product.json's `workspaceFolderName`. Null: no identity yet.
+#[tauri::command]
+pub async fn sync_project(
+    state: State<'_, AppState>,
+    base: String,
+    root: String,
+    folder_name: String,
+    create: bool,
+) -> Result<Option<ProjectIdentity>> {
+    let root = snapshot_root(&state, &root)?;
+    let file = root
+        .join(project_folder_name(&folder_name)?)
+        .join(PROJECT_FILE);
+    let stored = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["id"].as_str().map(str::to_string))
+        .filter(|id| {
+            id.len() == 22
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        });
+    if let Some(id) = stored {
+        return Ok(Some(ProjectIdentity { id, kind: "file" }));
+    }
+    let remotes = crate::git::ops::remote_urls(&root).unwrap_or_default();
+    let mut named: Vec<&crate::git::ops::RemoteUrl> = remotes.iter().collect();
+    // `origin` first, then by name.
+    named.sort_by(|a, b| (a.name != "origin", &a.name).cmp(&(b.name != "origin", &b.name)));
+    for remote in named {
+        if let Some(address) = crate::sync::project::normalize_remote(&remote.url) {
+            let id = vault(&state, &base).keyring()?.name_of(&address)?;
+            return Ok(Some(ProjectIdentity { id, kind: "remote" }));
+        }
+    }
+    if !create {
+        return Ok(None);
+    }
+    let id = crate::sync::crypto::new_id()?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    crate::store::atomic_write(
+        &file,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({ "id": id }))?
+        )
+        .as_bytes(),
+    )?;
+    Ok(Some(ProjectIdentity { id, kind: "file" }))
+}

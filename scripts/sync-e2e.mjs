@@ -9,7 +9,7 @@
 // (IDE_NO_KEYCHAIN=1), in each profile's own files.
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,9 +26,12 @@ if (!existsSync(binary)) {
 }
 const BASE = process.env.SYNC_E2E_BASE ?? "http://127.0.0.1:5000";
 const AUTH = process.env.SYNC_E2E_AUTH ?? "http://127.0.0.1:9099";
+// The emulators' project: "demo-" and the product's short name, as the website's tests run it.
+const product = JSON.parse(readFileSync(join(root, "product.json"), "utf8"));
+const PROJECT = process.env.SYNC_E2E_PROJECT ?? `demo-${product.nameShort.toLowerCase()}`;
 const FIRESTORE =
   process.env.SYNC_E2E_FIRESTORE ??
-  "http://127.0.0.1:8080/v1/projects/demo-jonna/databases/(default)/documents";
+  `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
 const scratch = resolve(root, "..", `.sync-e2e-${process.pid}`);
 const TIMEOUT_MS = 120_000;
 const gitConfig = join(scratch, "gitconfig");
@@ -755,6 +758,35 @@ try {
         JSON.stringify({ "readme.md": "# hello\n", "src/deep/main.py": "print('hi')\n" }),
       JSON.stringify(await tree(target)),
     );
+    // The laptop edits a file; the desk makes a newer snapshot: restoring it asks first.
+    const snap = (host, root) =>
+      host.sync("snapshot_create", {
+        root,
+        collection: "snap.folder",
+        everything: false,
+        force: false,
+      });
+    const bring = (id, stash) =>
+      laptop.sync("snapshot_restore", { collection: "snap.folder", id, root: target, stash });
+    await writeFile(join(target, "readme.md"), "# the laptop's own words\n");
+    await writeFile(join(source, "readme.md"), "# hello again\n");
+    const newer = await snap(desk, source);
+    await fails(bring(newer.id, false), "SyncDirty", "a folder's own edit");
+    check((await readFile(join(target, "readme.md"), "utf8")).includes("laptop"), "left alone");
+    const forced = await bring(newer.id, true);
+    check((await readFile(join(target, "readme.md"), "utf8")) === "# hello again\n", "replaced");
+    check(
+      forced.notes.some((n) => n.includes("earlier versions")),
+      JSON.stringify(forced.notes),
+    );
+    // A third snapshot replaces what the second put there without asking.
+    await writeFile(join(source, "readme.md"), "# hello a third time\n");
+    const third = await snap(desk, source);
+    await bring(third.id, false);
+    check(
+      (await readFile(join(target, "readme.md"), "utf8")) === "# hello a third time\n",
+      "a restored folder follows",
+    );
     await fails(
       desk.sync("snapshot_create", {
         root: scratch,
@@ -813,6 +845,21 @@ try {
         2,
       "the others still open",
     );
+    // A chat deleted on one computer is a sealed marker: the other can't fetch it as a chat.
+    const marker = await desk.sync("record_put", {
+      collection: "chats.p1",
+      id: "gone",
+      expect: null,
+      text: JSON.stringify({ deleted: true }),
+    });
+    check(marker.outcome === "done", JSON.stringify(marker));
+    const fetched = await laptop.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "gone",
+      saveAs: "gone",
+      workspace: null,
+    });
+    check(fetched === null, "a deleted chat isn't fetched");
   });
 
   await step("a third computer joins with the recovery key", async () => {
