@@ -54,6 +54,7 @@ import { registerFollowAgent } from "./follow";
 import { registerFreeStart } from "./freeStart";
 import { registerGroupChat, soloSpeaker } from "./groupChat";
 import { registerHooks } from "./hooks";
+import { registerHostPromptCommands } from "./hostPromptCommands";
 import { registerAgentIgnore } from "./ignore";
 import { registerInlineReview } from "./inlineReview";
 import { registerIsolatedHelpers, sendToHelper } from "./isolatedHelpers";
@@ -733,6 +734,9 @@ export function activateAgentCore(
         },
       }),
     );
+    // With no window: the host's waiting questions, readable and answerable (last, so nothing
+    // the window registers moves).
+    registerHostPromptCommands(sub, services);
   }
 }
 
