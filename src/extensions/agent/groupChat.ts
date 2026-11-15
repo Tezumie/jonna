@@ -30,9 +30,7 @@ import {
 } from "../../core/agent/groupChat";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
-import { type FaceState, agentFace as faceElement, faceGroup } from "../../ui/AgentFace";
 import type { IconName } from "../../ui/Icon";
-import { setTooltip } from "../../ui/Tooltip";
 import type { WorkbenchServices } from "../../workbench/services";
 import { customModes } from "./customModes";
 import { newId } from "./ids";
@@ -145,37 +143,6 @@ export function memberMode(name: string): ChatMode {
 export function soloSpeaker(mode: ChatMode): string {
   const custom = findCustomMode(customModes.peek(), mode);
   return custom?.agent ? custom.name : MAIN_MEMBER;
-}
-
-/** The faces of a group's members, stacked (the chat's header, its row, the composer). */
-export function groupFaces(names: readonly string[], size: number): HTMLElement {
-  return names.length === 1
-    ? faceElement(memberInfo(names[0] ?? MAIN_MEMBER).face, { size })
-    : faceGroup(
-        names.map((n) => memberInfo(n).face),
-        size,
-      );
-}
-
-/**
- * A chat's face (D234): its agents' faces in a group chat, else the agent it's with, in
- * `state` (the chat's tab, so open chats tell apart at a glance).
- */
-export function chatFaceElement(
-  session: AgentSession,
-  size: number,
-  state?: FaceState,
-): HTMLElement {
-  const members = session.members.peek();
-  if (members.length) return groupFaces(members, size);
-  const info = memberInfo(soloSpeaker(session.chatMode.peek()));
-  return faceElement(info.face, { size, ...(state && { state }) });
-}
-
-/** A group chat's header: its agents' faces, their names in the tooltip. */
-export function showGroupFaces(slot: HTMLElement, names: readonly string[]): void {
-  slot.replaceChildren(groupFaces(names, 20));
-  setTooltip(slot, `Group chat: ${memberNames(names)}`);
 }
 
 /** "Scout, Forge and Agent". */
