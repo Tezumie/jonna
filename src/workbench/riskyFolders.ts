@@ -1,10 +1,10 @@
 // Risky folders (D213, the model in core/security/riskyFolders.ts): the user's Downloads (and
 // folders in it), the home folder, the Desktop, temp and drive roots. `RiskyFolders` knows where they are
-// (from Rust's app info, a test override and `security.riskyFolders`); `askRiskyOpen` is the
-// caution shown before one opens as the workspace. The workspace trust service owns one
-// (`services.trust.risky`); the agent asks before working in them (extensions/agent/riskyGuard.ts).
+// (from Rust's app info, a test override and `security.riskyFolders`); `askRiskyOpen`
+// (riskyOpenDialog.ts) is the caution shown before one opens as the workspace. The workspace trust
+// service owns one (`services.trust.risky`); the agent asks before working in them
+// (extensions/agent/riskyGuard.ts). DOM-free.
 import { appIpc } from "../core/ipc/system";
-import { basename } from "../core/paths/index";
 import { signal } from "../core/reactive/index";
 import {
   downloadsFolderOf,
@@ -12,11 +12,8 @@ import {
   folderKey,
   type RiskyMatch,
   riskyFolderOf,
-  riskyLabel,
-  riskyReason,
   type UserFolders,
 } from "../core/security/riskyFolders";
-import { showDialog } from "../ui/Dialog";
 
 export type { RiskyKind, RiskyMatch } from "../core/security/riskyFolders";
 
@@ -94,41 +91,4 @@ export class RiskyFolders {
   private extraFolders(): string[] {
     return this.extra().filter((p) => typeof p === "string" && p.trim() !== "");
   }
-}
-
-export type RiskyOpenChoice = "restricted" | "trusted" | "cancel";
-
-/**
- * The caution before a risky folder opens: what's risky about it, in plain words, and three
- * choices — open in restricted mode (the default), open and trust, cancel — with "Don't ask
- * again for this folder".
- */
-export async function askRiskyOpen(
-  path: string,
-  match: RiskyMatch,
-  /** `path` is inside the risky folder rather than the folder itself. */
-  nested: boolean,
-): Promise<{ choice: RiskyOpenChoice; dontAsk: boolean }> {
-  let dontAsk = false;
-  const label = riskyLabel(match.kind);
-  const name = basename(path) || path;
-  const title = nested ? `“${name}” is in ${label}` : `Open ${label}?`;
-  const choice = await showDialog<RiskyOpenChoice>({
-    title,
-    message: `${riskyReason(match.kind)}\n\nIn restricted mode, agents don't load this folder's instruction files (AGENTS.md, CLAUDE.md, rules, skills), its tasks, debugging, tests and git don't run, and an agent asks before it works here. You can still browse and edit every file, and trust the folder later with "Manage workspace trust".`,
-    actions: [
-      { label: "Cancel", value: "cancel", variant: "secondary" },
-      { label: "Open and trust", value: "trusted", variant: "secondary" },
-      { label: "Open in restricted mode", value: "restricted", variant: "primary" },
-    ],
-    cancelValue: "cancel",
-    defaultValue: "restricted",
-    size: "md",
-    checkbox: {
-      label: "Don't ask again for this folder",
-      detail: path,
-      onCheck: (checked) => (dontAsk = checked),
-    },
-  });
-  return { choice, dontAsk };
 }
