@@ -202,24 +202,56 @@ async function trusted(
     placed = steps;
   }
   let sent = 0;
-  try {
-    for (const step of placed) {
-      if ("waitMs" in step) await new Promise((res) => setTimeout(res, step.waitMs));
-      else {
-        await sink.send(step);
-        sent++;
+  const sendAll = async () => {
+    try {
+      for (const step of placed) {
+        if ("waitMs" in step) await new Promise((res) => setTimeout(res, step.waitMs));
+        else {
+          await sink.send(step);
+          sent++;
+        }
       }
+    } finally {
+      sink.release();
     }
+  };
+  try {
+    await sendAll();
+    await settle();
+    if (r.op === "hover") return result;
+    let after = await report(page);
+    // The engine drops input sent to a document in its first moments (just loaded, or its frame
+    // just moved to another window): the page says no press came, so the click is sent again
+    // (input.js `presses`). Nothing happened in the page before, so nothing happens twice.
+    for (let again = 0; again < CLICK_RETRIES && shouldResend(r.op, after); again++) {
+      await new Promise((res) => setTimeout(res, CLICK_RETRY_MS));
+      await sendAll();
+      await settle();
+      after = await report(page);
+    }
+    const { pressed, ...shown } = after;
+    return {
+      ...result,
+      ...shown,
+      ...(pressed === false && {
+        note: "The page didn't take the click (it may still be loading): look again, then click again.",
+      }),
+    };
   } catch (err) {
     // Nothing reached the page yet: the bridge does it instead. Part of it did: say so.
     const message = err instanceof Error ? err.message : String(err);
     if (sent === 0) return `the protocol refused (${message})`;
     throw new Error(`Input stopped after ${sent} events: ${message}`);
-  } finally {
-    sink.release();
   }
-  await settle();
-  return { ...result, ...(r.op === "hover" ? {} : await report(page)) };
+}
+
+/** How often a click the page didn't take is sent again, and how long after. */
+const CLICK_RETRIES = 2;
+const CLICK_RETRY_MS = 200;
+
+/** A click whose press the page says never came (`pressed: false` in its report; D346). */
+export function shouldResend(op: InputRequest["op"], report: Record<string, unknown>): boolean {
+  return op === "click" && report.pressed === false;
 }
 
 /** What the page looks like after (focus, a field's value, scroll, address); a navigation says so. */

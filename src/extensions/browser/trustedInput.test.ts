@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CdpCall } from "../../core/browser/trustedInput";
 import type { Page } from "./page";
-import { type InputSink, runInput, webviewSink } from "./trustedInput";
+import { type InputSink, runInput, shouldResend, webviewSink } from "./trustedInput";
 
 /** A page whose bridge answers prepare / report as the given functions say. */
 function fakePage(answers: Record<string, (p: Record<string, unknown>) => unknown>) {
@@ -188,4 +188,64 @@ test("D346: HTML drag and drop needs drag interception", async () => {
     { x: 105, y: 55 },
     { x: 150, y: 100 },
   ]);
+});
+
+test("a click the page didn't take is sent again until its press comes", async () => {
+  // The first report says no press came (a document in its first moments drops input).
+  const reports = [
+    { focused: "page", pressed: false },
+    { focused: 'button "Go" [ref=e1]', pressed: true },
+  ];
+  const { page, calls } = fakePage({
+    "input.prepare": () => ({ viewport, x: 10, y: 20, target: 'button "Go" [ref=e1]' }),
+    "input.report": () => reports.shift() ?? { pressed: true },
+  });
+  let released = 0;
+  const { sink, sent } = fakeSink({ release: () => released++ });
+  const r = (await runInput(
+    { page, inputSink: () => sink },
+    { op: "click", ref: "e1" },
+    async () => ({}),
+    true,
+  )) as Record<string, unknown>;
+  assert.equal(sent.length, 6);
+  assert.equal(calls.filter((c) => c === "input.report").length, 2);
+  assert.equal(released, 2);
+  assert.equal(r.focused, 'button "Go" [ref=e1]');
+  // What the page said about the press isn't part of the answer, and there's nothing to note.
+  assert.equal("pressed" in r, false);
+  assert.equal("note" in r, false);
+});
+
+test("a click never taken says so after its tries; one that isn't watched is sent once", async () => {
+  const never = fakePage({
+    "input.prepare": () => ({ viewport, x: 10, y: 20, target: "x" }),
+    "input.report": () => ({ focused: "page", pressed: false }),
+  });
+  const a = fakeSink();
+  const r = (await runInput(
+    { page: never.page, inputSink: () => a.sink },
+    { op: "click", x: 1, y: 1 },
+    async () => ({}),
+    true,
+  )) as Record<string, unknown>;
+  assert.equal(a.sent.length, 9);
+  assert.match(String(r.note), /didn't take the click/);
+  assert.equal(r.input, "trusted");
+  // No `pressed` in the report (a frame of the page, a disabled control, an older bridge).
+  const unwatched = fakePage({
+    "input.prepare": () => ({ viewport, x: 10, y: 20, target: "x" }),
+    "input.report": () => ({ focused: "page" }),
+  });
+  const b = fakeSink();
+  await runInput(
+    { page: unwatched.page, inputSink: () => b.sink },
+    { op: "click", x: 1, y: 1 },
+    async () => ({}),
+    true,
+  );
+  assert.equal(b.sent.length, 3);
+  assert.equal(shouldResend("scroll", { pressed: false }), false);
+  assert.equal(shouldResend("click", { pressed: false }), true);
+  assert.equal(shouldResend("click", {}), false);
 });
