@@ -365,28 +365,33 @@ fn tcp_carrier(stream: TcpStream) -> std::io::Result<Carrier> {
 
 /// Resolves when the process is asked to stop (Ctrl+C; SIGTERM on Unix).
 async fn stop_signal() {
+    // A signal that can't be listened for never resolves (the stream's end stops the host);
+    // resolving on the error would stop a host that was never asked to.
+    let interrupt = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
-        match signal(SignalKind::terminate()) {
-            Ok(mut terminate) => {
-                tokio::select! {
-                    _ = tokio::signal::ctrl_c() => {}
-                    _ = terminate.recv() => {}
+        let terminate = async {
+            match signal(SignalKind::terminate()) {
+                Ok(mut terminate) => {
+                    if terminate.recv().await.is_none() {
+                        std::future::pending::<()>().await;
+                    }
                 }
+                Err(_) => std::future::pending::<()>().await,
             }
-            Err(_) => {
-                let _ = tokio::signal::ctrl_c().await;
-            }
+        };
+        tokio::select! {
+            _ = interrupt => {}
+            _ = terminate => {}
         }
     }
     #[cfg(not(unix))]
-    {
-        if tokio::signal::ctrl_c().await.is_err() {
-            // No way to hear it: never resolve, the stream's end stops the host.
-            std::future::pending::<()>().await;
-        }
-    }
+    interrupt.await;
 }
 
 #[cfg(test)]
