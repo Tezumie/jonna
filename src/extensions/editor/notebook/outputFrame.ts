@@ -6,7 +6,7 @@
 // extension's output renderer (D204) runs in such a frame too, limited to the network its
 // extension was allowed (a content security policy), with messages to and from the extension.
 import { h } from "../../../core/dom/index";
-import { call } from "../../../core/ipc/invoke";
+import { notebookIpc } from "../../../core/ipc/process";
 import type { Disposable } from "../../../core/lifecycle/index";
 import { DisposableStore } from "../../../core/lifecycle/index";
 import { THEME_TOKENS } from "../../extensions/webview";
@@ -19,7 +19,7 @@ const WIDGET_VIEW = "application/vnd.jupyter.widget-view+json";
 let origin: Promise<string> | null = null;
 /** The output page's origin (its proxy starts on first use). */
 export function outputOrigin(): Promise<string> {
-  origin ??= call<string>("notebook_output_origin").catch((err: unknown) => {
+  origin ??= notebookIpc.outputOrigin().catch((err: unknown) => {
     origin = null;
     throw err;
   });

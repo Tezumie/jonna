@@ -420,7 +420,7 @@ export const agentStoreIpc = {
     const channel = new Channel<WatchBatch>(onBatch);
     await call<void>("agent_sessions_watch", { onBatch: channel });
     return toDisposable(() => {
-      channel.onmessage = () => {};
+      channel.close();
       void call<void>("agent_sessions_unwatch").catch(() => {});
     });
   },
@@ -470,7 +470,7 @@ export const skillsIpc = {
     const channel = new Channel<WatchBatch>(onBatch);
     await call<void>("skills_watch_start", { onBatch: channel });
     return toDisposable(() => {
-      channel.onmessage = () => {};
+      channel.close();
     });
   },
   /** The skills folders to watch (others are left out by Rust). */

@@ -1,15 +1,10 @@
 // The app and the OS: app info, audit log, state store, settings files, window controls, native
 // dialogs, clipboard, opening links, and the IDE's own MCP server.
 
-import { LogicalSize } from "@tauri-apps/api/dpi";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { readImage, readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ask, confirm, message, open, save } from "@tauri-apps/plugin-dialog";
-import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { type Disposable, toDisposable } from "../lifecycle/index";
 import type { WatchBatch } from "./fs";
-import { Channel, call, isTauri } from "./invoke";
+import { Channel, call, hasBackend, isDesktopShell } from "./invoke";
+import { currentShell, type FileFilter, type PickPathsOptions } from "./shell";
 
 export interface AppInfo {
   dataDir: string;
@@ -128,185 +123,94 @@ export const settingsIpc = {
     const channel = new Channel<WatchBatch>(onBatch);
     await call<void>("settings_watch_start", { onBatch: channel });
     return toDisposable(() => {
-      channel.onmessage = () => {};
+      channel.close();
     });
   },
   setDirs: (dirs: string[]): Promise<void> => call<void>("settings_watch_set_dirs", { dirs }),
 };
 
-// Window controls for the custom title bar.
-const win = () => getCurrentWindow();
-/** Full screen began from a maximized window: maximize it again on the way out. */
-let fullscreenFromMaximized = false;
-
+// Window controls for the custom title bar. These, the dialogs, the clipboard and the opener
+// below have no backend command behind them: they go through the shell in use (`shell.ts`: the
+// desktop framework's in the app's window; where there is no window, a registered one or the
+// windowless default, which does nothing, answers "nothing chosen", or refuses with a typed error).
 export const windowIpc = {
   /** Flashes the taskbar button (bounces the Dock icon) without taking focus (D254). */
-  requestAttention: (): Promise<void> =>
-    isTauri() ? call<void>("app_request_attention") : Promise.resolve(),
+  requestAttention: (): Promise<void> => currentShell().window.requestAttention(),
   /** Brings the window to the front with keyboard focus (the OS may refuse a background app). */
-  focus: (): Promise<void> => win().setFocus(),
-  minimize: (): Promise<void> => win().minimize(),
-  toggleMaximize: (): Promise<void> => win().toggleMaximize(),
-  isMaximized: (): Promise<boolean> => win().isMaximized(),
+  focus: (): Promise<void> => currentShell().window.focus(),
+  minimize: (): Promise<void> => currentShell().window.minimize(),
+  toggleMaximize: (): Promise<void> => currentShell().window.toggleMaximize(),
+  isMaximized: (): Promise<boolean> => currentShell().window.isMaximized(),
   /** Closes without running close-requested handlers (use after the user confirmed). */
-  destroy: (): Promise<void> => win().destroy(),
+  destroy: (): Promise<void> => currentShell().window.destroy(),
   /** Inner size in logical (CSS) pixels. */
-  innerSize: async (): Promise<{ width: number; height: number }> => {
-    const size = await win().innerSize();
-    const scale = await win().scaleFactor();
-    return { width: Math.round(size.width / scale), height: Math.round(size.height / scale) };
-  },
+  innerSize: (): Promise<{ width: number; height: number }> => currentShell().window.innerSize(),
   setSize: (width: number, height: number): Promise<void> =>
-    win().setSize(new LogicalSize(width, height)),
-  unmaximize: (): Promise<void> => win().unmaximize(),
-  isFullscreen: (): Promise<boolean> => win().isFullscreen(),
+    currentShell().window.setSize(width, height),
+  unmaximize: (): Promise<void> => currentShell().window.unmaximize(),
+  isFullscreen: (): Promise<boolean> => currentShell().window.isFullscreen(),
   /** Zooms the whole UI (1 = 100 %). */
-  setZoom: (scale: number): Promise<void> => getCurrentWebview().setZoom(scale),
+  setZoom: (scale: number): Promise<void> => currentShell().window.setZoom(scale),
   /**
    * Full screen on or off (D387). A maximized window is restored first and maximized again
    * afterwards: on Windows, going full screen from maximized left the page at its maximized
    * height (a taskbar-high gap at the bottom).
    */
-  toggleFullscreen: async (): Promise<boolean> => {
-    const w = win();
-    const next = !(await w.isFullscreen());
-    if (next) {
-      fullscreenFromMaximized = await w.isMaximized();
-      if (fullscreenFromMaximized) await w.unmaximize();
-      await w.setFullscreen(true);
-    } else {
-      await w.setFullscreen(false);
-      if (fullscreenFromMaximized && !(await w.isMaximized())) await w.toggleMaximize();
-      fullscreenFromMaximized = false;
-    }
-    return next;
-  },
+  toggleFullscreen: (): Promise<boolean> => currentShell().window.toggleFullscreen(),
   /** Calls `handler` whenever the window is resized (maximize/restore included). */
-  onResized: async (handler: () => void): Promise<Disposable> =>
-    toDisposable(await win().onResized(handler)),
+  onResized: (handler: () => void): Promise<Disposable> => currentShell().window.onResized(handler),
   /**
    * Intercepts OS-initiated closes (Alt+F4, Cmd+Q, dock). `handler` returns true to allow closing.
    */
-  onCloseRequested: async (handler: () => Promise<boolean>): Promise<Disposable> => {
-    const unlisten = await win().onCloseRequested(async (event) => {
-      if (!(await handler())) event.preventDefault();
-    });
-    return toDisposable(unlisten);
-  },
+  onCloseRequested: (handler: () => Promise<boolean>): Promise<Disposable> =>
+    currentShell().window.onCloseRequested(handler),
+  /**
+   * The native label of the window the page just opened with `window.open` (an auxiliary
+   * window), or null: outside the app's window, or when the native side doesn't know it.
+   */
+  auxLabel: (): Promise<string | null> =>
+    isDesktopShell()
+      ? call<string | null>("aux_window_label").catch(() => null)
+      : Promise.resolve(null),
+  /** Closes the auxiliary window with that native label (the page's own `close()` isn't enough). */
+  closeAux: (label: string): Promise<void> => call<void>("aux_window_close", { label }),
 };
 
-// Native dialogs (official tauri-plugin-dialog), behind one typed wrapper.
-/**
- * Before a native file dialog (D210): Clone repository opened the folder picker straight from
- * the Enter that confirmed the URL, and on Windows the pointer stayed hidden over the dialog
- * ("hide pointer while typing" hides it in the webview, which then never sees the mouse move
- * that shows it again). So: leave the text field, let the key's events finish, and have the
- * native side show the arrow pointer. Nothing in the page sets a busy cursor or an overlay here.
- */
-async function beforeNativeDialog(): Promise<void> {
-  const active = document.activeElement;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
-  // A timer, not a frame: a window in the background may not paint.
-  await new Promise<void>((resolve) => setTimeout(resolve, 16));
-  if (isTauri()) await call<void>("app_show_cursor").catch(() => {});
-}
-
+// Native dialogs, behind one typed wrapper. Without a window the pickers answer null (nothing
+// chosen) and `confirm` / `ask` reject with an `IpcError` (`Invalid`).
 export const dialogIpc = {
-  pickFolder: async (title: string, defaultPath?: string): Promise<string | null> => {
-    await beforeNativeDialog();
-    const picked = await open({ directory: true, multiple: false, title, defaultPath });
-    return typeof picked === "string" ? picked : null;
-  },
+  pickFolder: (title: string, defaultPath?: string): Promise<string | null> =>
+    currentShell().dialog.pickFolder(title, defaultPath),
   /** `filters`: e.g. [{ name: "Extension packages", extensions: ["vsix"] }]. */
-  pickFile: async (
-    title: string,
-    defaultPath?: string,
-    filters?: { name: string; extensions: string[] }[],
-  ): Promise<string | null> => {
-    await beforeNativeDialog();
-    const picked = await open({
-      directory: false,
-      multiple: false,
-      title,
-      defaultPath,
-      ...(filters && { filters }),
-    });
-    return typeof picked === "string" ? picked : null;
-  },
+  pickFile: (title: string, defaultPath?: string, filters?: FileFilter[]): Promise<string | null> =>
+    currentShell().dialog.pickFile(title, defaultPath, filters),
   /** Files or folders (several with `multiple`); null when cancelled (D257: extensions' dialogs). */
-  pickPaths: async (options: {
-    title?: string;
-    defaultPath?: string;
-    directory: boolean;
-    multiple: boolean;
-    filters?: { name: string; extensions: string[] }[];
-  }): Promise<string[] | null> => {
-    await beforeNativeDialog();
-    const picked = await open({
-      directory: options.directory,
-      multiple: options.multiple,
-      ...(options.title && { title: options.title }),
-      ...(options.defaultPath && { defaultPath: options.defaultPath }),
-      ...(options.filters?.length && { filters: options.filters }),
-    });
-    if (picked === null) return null;
-    return Array.isArray(picked) ? picked : [picked];
-  },
-  pickSavePath: async (title: string, defaultPath?: string): Promise<string | null> => {
-    await beforeNativeDialog();
-    return (await save({ title, defaultPath })) ?? null;
-  },
+  pickPaths: (options: PickPathsOptions): Promise<string[] | null> =>
+    currentShell().dialog.pickPaths(options),
+  pickSavePath: (title: string, defaultPath?: string): Promise<string | null> =>
+    currentShell().dialog.pickSavePath(title, defaultPath),
   confirm: (text: string, title: string, okLabel = "OK"): Promise<boolean> =>
-    confirm(text, { title, kind: "warning", okLabel, cancelLabel: "Cancel" }),
-  ask: (text: string, title: string): Promise<boolean> => ask(text, { title, kind: "info" }),
-  error: async (text: string, title: string): Promise<void> => {
-    await message(text, { title, kind: "error" });
-  },
+    currentShell().dialog.confirm(text, title, okLabel),
+  ask: (text: string, title: string): Promise<boolean> => currentShell().dialog.ask(text, title),
+  error: (text: string, title: string): Promise<void> => currentShell().dialog.error(text, title),
 };
 
-// System clipboard through the Tauri clipboard plugin. Works from any code path (menus, async
-// commands) — unlike `navigator.clipboard`/`execCommand`, which WebView2 and WebKitGTK only allow
-// inside a fresh user gesture and sometimes block with a permission prompt.
+// The system clipboard (the desktop's clipboard plugin in the app's window; the browser's own in
+// a plain tab; a text buffer of the program's own where there is neither).
 export const clipboardIpc = {
-  writeText: async (text: string): Promise<void> => {
-    if (isTauri()) await writeText(text);
-    else await navigator.clipboard.writeText(text);
-  },
-  readText: async (): Promise<string> => {
-    if (isTauri()) return (await readText()) ?? "";
-    return navigator.clipboard.readText();
-  },
+  writeText: (text: string): Promise<void> => currentShell().clipboard.writeText(text),
+  readText: (): Promise<string> => currentShell().clipboard.readText(),
   /** A picture on the clipboard (a screenshot) as PNG bytes, or null when there's none. */
-  readImagePng: async (): Promise<Uint8Array | null> => {
-    if (!isTauri()) return null;
-    try {
-      const image = await readImage();
-      const { width, height } = await image.size();
-      // RGBA bytes (looked up by name: the color checker would read the call as a CSS color).
-      const pixels: Uint8Array = await image["rgba" as "rgba"]();
-      if (!width || !height || pixels.length < width * height * 4) return null;
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
-      const blob = await canvas.convertToBlob({ type: "image/png" });
-      return new Uint8Array(await blob.arrayBuffer());
-    } catch {
-      return null; // no picture (text, nothing)
-    }
-  },
+  readImagePng: (): Promise<Uint8Array | null> => currentShell().clipboard.readImagePng(),
 };
 
-// Opens web links in the system browser (Tauri opener plugin; http, https and mailto only).
+// Opens web links in the system browser (http, https and mailto only).
 export const openerIpc = {
   /** Shows a file or folder in the OS file manager (Explorer, Finder, …), selected. */
-  revealInOs: async (path: string): Promise<void> => {
-    if (isTauri()) await revealItemInDir(path);
-  },
+  revealInOs: (path: string): Promise<void> => currentShell().opener.revealInOs(path),
   openUrl: async (url: string): Promise<void> => {
     if (!/^(https?:|mailto:)/i.test(url)) throw new Error(`Not a web link: ${url}`);
-    if (isTauri()) await openUrl(url);
-    else window.open(url, "_blank", "noopener");
+    await currentShell().opener.openUrl(url);
   },
 };
 
@@ -522,7 +426,7 @@ export const updateIpc = {
 // WSL folders (D192, Rust: src-tauri/src/wsl.rs). Windows only; empty elsewhere.
 export const wslIpc = {
   distros: (): Promise<{ name: string }[]> =>
-    isTauri() ? call<{ name: string }[]>("wsl_distros") : Promise.resolve([]),
+    hasBackend() ? call<{ name: string }[]>("wsl_distros") : Promise.resolve([]),
   /** The distribution's home folder as a Windows path (\\wsl.localhost\<distro>\home\me). */
   home: (distro: string): Promise<string> => call<string>("wsl_home", { distro }),
 };

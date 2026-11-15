@@ -3,7 +3,7 @@
 // window controls stay fully on-screen. `dev.checkLayoutOverflow` runs it in the real app; the
 // command-script runner uses the same command.
 
-import { isTauri } from "../../core/ipc/invoke";
+import { isDesktopShell } from "../../core/ipc/invoke";
 import { windowIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
@@ -67,7 +67,7 @@ export function registerLayoutCheck(sub: DisposableStore, services: WorkbenchSer
         }
         await frames();
         const probes = [probe("many tabs")];
-        if (isTauri()) {
+        if (isDesktopShell()) {
           const before = await windowIpc.innerSize();
           await windowIpc.unmaximize().catch(() => {});
           await windowIpc.setSize(640, 480);

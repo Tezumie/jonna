@@ -8,7 +8,7 @@
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { fsIpc } from "../../core/ipc/fs";
 import { instancesIpc, type OpenRequest } from "../../core/ipc/instances";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend, isDesktopShell } from "../../core/ipc/invoke";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { confirmAction } from "../../ui/Dialog";
@@ -89,7 +89,7 @@ export const windowsExtension: BuiltinExtension<WorkbenchServices> = {
       if (errors.length) notifications.show("error", errors.join("\n"), { title: "Command line" });
       return { tabs, errors };
     };
-    if (isTauri())
+    if (hasBackend())
       void instancesIpc
         .listen((request) => {
           void (async () => {
@@ -223,7 +223,7 @@ export const windowsExtension: BuiltinExtension<WorkbenchServices> = {
       applied: false,
       error: null,
     };
-    if (isTauri() && (services.platform === "windows" || services.platform === "mac")) {
+    if (isDesktopShell() && (services.platform === "windows" || services.platform === "mac")) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       sub.add({ dispose: () => clearTimeout(timer) });
       const write = async () => {

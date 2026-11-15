@@ -1,10 +1,10 @@
 // Files and the workspace: read/write/list (fs), watching (watch), the file index (quick open),
 // search/replace, and files dropped onto the window from the OS.
 
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Emitter } from "../events/index";
 import { type Disposable, toDisposable } from "../lifecycle/index";
-import { Channel, call, isTauri } from "./invoke";
+import { Channel, call } from "./invoke";
+import { currentShell } from "./shell";
 
 export type EntryKind = "file" | "dir";
 
@@ -168,7 +168,7 @@ export const watchIpc = {
     const channel = new Channel<WatchBatch>(onBatch);
     await call<void>("watch_start", { onBatch: channel });
     return toDisposable(() => {
-      channel.onmessage = () => {};
+      channel.close();
       void call<void>("watch_stop").catch(() => {});
     });
   },
@@ -182,7 +182,7 @@ export const docsWatchIpc = {
     const channel = new Channel<WatchBatch>(onBatch);
     await call<void>("docs_watch_start", { onBatch: channel });
     return toDisposable(() => {
-      channel.onmessage = () => {};
+      channel.close();
     });
   },
   setDirs: (dirs: string[]): Promise<void> => call<void>("docs_watch_set_dirs", { dirs }),
@@ -233,7 +233,7 @@ export const indexIpc = {
     return {
       watching,
       listener: toDisposable(() => {
-        channel.onmessage = () => {};
+        channel.close();
       }),
     };
   },
@@ -349,35 +349,17 @@ export const searchIpc = {
     call<ReplaceResult>("search_replace", { options, replacement, paths }),
 };
 
-// Files dragged onto the window from the OS (Tauri drag-drop events) and importing them into a
-// workspace folder. Positions arrive in physical pixels; these are CSS pixels.
+// Files dragged onto the window from the OS (the shell's drag-drop events, `shell.ts`) and
+// importing them into a workspace folder. Positions are CSS pixels.
 export type DropEvent =
   | { kind: "over"; x: number; y: number; paths: string[] }
   | { kind: "drop"; x: number; y: number; paths: string[] }
   | { kind: "leave" };
 
 export const dragDropIpc = {
-  listen: async (handler: (e: DropEvent) => void): Promise<Disposable> => {
-    if (!isTauri()) return toDisposable(() => {});
-    let paths: string[] = [];
-    const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
-      const p = event.payload;
-      const scale = window.devicePixelRatio || 1;
-      if (p.type === "enter") paths = p.paths;
-      if (p.type === "leave") handler({ kind: "leave" });
-      else if (p.type === "over" || p.type === "enter" || p.type === "drop") {
-        const x = p.position.x / scale;
-        const y = p.position.y / scale;
-        handler({
-          kind: p.type === "drop" ? "drop" : "over",
-          x,
-          y,
-          paths: p.type === "drop" ? p.paths : paths,
-        });
-      }
-    });
-    return toDisposable(unlisten);
-  },
+  /** Hears the drags (the shell's: nothing is ever heard where there is no window). */
+  listen: (handler: (e: DropEvent) => void): Promise<Disposable> =>
+    currentShell().dragDrop.listen(handler),
   /** The last dropped OS paths, each with whether it's a folder (D281). */
   droppedEntries: (): Promise<{ path: string; dir: boolean }[]> =>
     call<{ path: string; dir: boolean }[]>("fs_dropped_entries"),

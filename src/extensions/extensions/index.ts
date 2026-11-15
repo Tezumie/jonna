@@ -10,7 +10,7 @@ import { channelsOf } from "../../core/extensions/rpcOutput";
 import { commandPrefix } from "../../core/extensions/thirdParty";
 import { extIpc } from "../../core/ipc/extensions";
 import { fsIpc } from "../../core/ipc/fs";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import { dialogIpc } from "../../core/ipc/system";
 import { isAbsolute, joinPath, resolveInRoot } from "../../core/paths/index";
 import { effect, untracked } from "../../core/reactive/index";
@@ -635,7 +635,7 @@ export const extensionsExtension: BuiltinExtension<WorkbenchServices> = {
       }),
     );
 
-    if (isTauri()) {
+    if (hasBackend()) {
       void manager.refresh().catch((err: unknown) => {
         console.warn("extensions unavailable", err);
       });

@@ -6,7 +6,7 @@
 import type { CommandInfo } from "../../core/dispatcher/index";
 import type { Caller } from "../../core/dispatcher/types";
 import type { BuiltinExtension } from "../../core/extensions/index";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import { clipboardIpc, type McpInfo, type McpRequest, mcpIpc } from "../../core/ipc/system";
 import { chatToken, type LentTo, mcpAgentAccess, newChatKey } from "../../core/mcp/agentAccess";
 import { effect, signal } from "../../core/reactive/index";
@@ -84,7 +84,7 @@ export const mcpExtension: BuiltinExtension<WorkbenchServices> = {
      */
     let starting: Promise<void> | null = null;
     const start = (): Promise<void> => {
-      if (!isTauri() || running.peek()) return Promise.resolve();
+      if (!hasBackend() || running.peek()) return Promise.resolve();
       if (starting) return starting;
       const attempt = (async () => {
         try {

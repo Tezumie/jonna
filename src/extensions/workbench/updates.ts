@@ -3,7 +3,7 @@
 // nothing is downloaded until the user says so. Builds without an update endpoint (development,
 // forks) say so and never connect.
 
-import { isTauri } from "../../core/ipc/invoke";
+import { isDesktopShell } from "../../core/ipc/invoke";
 import { type UpdateChannel, type UpdateInfo, updateIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { signal } from "../../core/reactive/index";
@@ -154,7 +154,7 @@ export function registerUpdates(sub: DisposableStore, services: WorkbenchService
   );
 
   // The quiet checks: a minute after start, then daily (update.mode "default").
-  if (!isTauri()) return;
+  if (!isDesktopShell()) return;
   const auto = () =>
     settings.peek<string>("update.mode") === "default" || !settings.peek("update.mode");
   const quiet = () => {

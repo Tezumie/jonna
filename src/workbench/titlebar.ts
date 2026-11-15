@@ -6,7 +6,7 @@
 import type { ContextKeyService } from "../core/context/index";
 import type { Dispatcher } from "../core/dispatcher/index";
 import { h, on } from "../core/dom/index";
-import { isTauri } from "../core/ipc/invoke";
+import { isDesktopShell } from "../core/ipc/invoke";
 import { windowIpc } from "../core/ipc/system";
 import type { Platform } from "../core/keybindings/index";
 import type { LayoutModel } from "../core/layout/index";
@@ -266,7 +266,7 @@ export class TitleBar implements Disposable {
   /** Maximize ↔ restore glyph follows the window state (Windows/Linux caption convention). */
   private maximizeButton(): HTMLElement {
     const button = this.iconButton("square", "Maximize", "window.toggleMaximize", "window-control");
-    if (!isTauri()) return button;
+    if (!isDesktopShell()) return button;
     const sync = () =>
       void Promise.all([windowIpc.isMaximized(), windowIpc.isFullscreen()])
         .then(([max, full]) => {

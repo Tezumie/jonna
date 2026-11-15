@@ -4,7 +4,7 @@
 // service, menus and tooltips work there. A view moved into one keeps running in the main
 // window's JavaScript, so commands, agents and state paths reach it exactly as before.
 import { Emitter, type Event } from "../core/events/index";
-import { call, isTauri } from "../core/ipc/invoke";
+import { windowIpc } from "../core/ipc/system";
 import { type Disposable, DisposableStore, toDisposable } from "../core/lifecycle/index";
 import { installIconSprite } from "../ui/Icon";
 import { registerMenuDocument } from "../ui/Menu";
@@ -54,9 +54,7 @@ export class AuxWindowService implements Disposable {
     for (let i = 0; i < 50 && !win.document?.body; i++) await new Promise((r) => setTimeout(r, 20));
     const doc = win.document;
     if (!doc?.body) throw new Error("The new window didn't open.");
-    const label = isTauri()
-      ? await call<string | null>("aux_window_label").catch(() => null)
-      : null;
+    const label = await windowIpc.auxLabel();
 
     const store = new DisposableStore();
     const closed = store.add(new Emitter<void>());
@@ -155,7 +153,7 @@ export class AuxWindowService implements Disposable {
         finish();
         store.dispose();
         if (!win.closed) win.close();
-        if (label) void call("aux_window_close", { label }).catch(() => {});
+        if (label) void windowIpc.closeAux(label).catch(() => {});
       },
     };
     this.open.add(aux);

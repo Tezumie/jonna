@@ -7,7 +7,7 @@
 // files (`getAt` / `peekAt` with a file's path). With one folder, nothing changes.
 import { Emitter } from "../core/events/index";
 import { fsIpc } from "../core/ipc/fs";
-import { isTauri } from "../core/ipc/invoke";
+import { hasBackend } from "../core/ipc/invoke";
 import { type SettingsPaths, settingsIpc } from "../core/ipc/system";
 import {
   type Disposable,
@@ -401,7 +401,7 @@ export class SettingsService implements Disposable {
   }
 
   private async loadFiles(): Promise<void> {
-    if (!isTauri()) return;
+    if (!hasBackend()) return;
     const first = this.paths === null;
     this.paths = await settingsIpc.paths(workspaceFolderName());
     if (first) this.keybindingsChanged.fire();
