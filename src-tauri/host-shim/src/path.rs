@@ -157,9 +157,30 @@ impl PathResolver {
     /// `../lib/<name>` or `/usr/lib/<name>` on Linux.
     pub fn resource_dir(&self) -> Result<PathBuf> {
         let exe = std::env::current_exe()?;
-        let dir = exe.parent().ok_or(Error::UnknownPath)?;
-        Ok(resource_dir_from(dir, &self.product_name))
+        resource_dir_of(&exe, &self.product_name).ok_or(Error::UnknownPath)
     }
+}
+
+/// The program's own file, behind any link it was started through (a launcher's link into the
+/// app's bundle on macOS): the resources are beside the file, not beside the link, and the
+/// framework resolves the program's path the same way.
+#[cfg(unix)]
+fn real_program(exe: &Path) -> PathBuf {
+    exe.canonicalize().unwrap_or_else(|_| exe.to_path_buf())
+}
+
+/// On Windows the path stays as the OS gave it: the resources are in the program's folder, and
+/// resolving the path would make it a `\\?\` one, which not every program the services start
+/// with a resource's path takes.
+#[cfg(not(unix))]
+fn real_program(exe: &Path) -> PathBuf {
+    exe.to_path_buf()
+}
+
+/// [`PathResolver::resource_dir`] for the program at `exe`. `None` when it has no folder.
+pub fn resource_dir_of(exe: &Path, product_name: &str) -> Option<PathBuf> {
+    let exe = real_program(exe);
+    Some(resource_dir_from(exe.parent()?, product_name))
 }
 
 #[cfg_attr(windows, allow(unused_variables))]
