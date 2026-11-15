@@ -68,6 +68,9 @@ pub struct Uploader<'a> {
     present: HashSet<String>,
     /// The sweep count the server's chunks were checked under; a change means start over.
     gc_epoch: Option<u64>,
+    /// Chunks named again without their content at hand (an unchanged file): they must still
+    /// be on the server, which `finish` checks.
+    kept: Vec<String>,
     pub uploaded_bytes: u64,
 }
 
@@ -81,6 +84,7 @@ impl<'a> Uploader<'a> {
             used: HashSet::new(),
             present: HashSet::new(),
             gc_epoch: None,
+            kept: Vec::new(),
             uploaded_bytes: 0,
         }
     }
@@ -104,6 +108,15 @@ impl<'a> Uploader<'a> {
             chunks,
             size: data.len() as u64,
         })
+    }
+
+    /// Names content stored before without reading it again.
+    pub fn keep(&mut self, stored: &Stored) {
+        for id in &stored.chunks {
+            if self.used.insert(id.clone()) && !self.present.contains(id) {
+                self.kept.push(id.clone());
+            }
+        }
     }
 
     fn note_epoch(&mut self, reply: &Value) -> Result<()> {
@@ -167,6 +180,21 @@ impl<'a> Uploader<'a> {
     /// count they were checked under.
     pub async fn finish(mut self) -> Result<(Vec<String>, u64)> {
         self.flush().await?;
+        let kept = std::mem::take(&mut self.kept);
+        for group in kept.chunks(HAVE_MAX) {
+            let reply = self
+                .api
+                .post("blobs/have", &json!({ "ids": group }))
+                .await?
+                .into_ok()?;
+            self.note_epoch(&reply)?;
+            if reply["missing"].as_array().is_some_and(|m| !m.is_empty()) {
+                return Err(Error::Sync(
+                    "SyncStale",
+                    "Content an earlier snapshot stored is gone; reading the files again.".into(),
+                ));
+            }
+        }
         let epoch = match self.gc_epoch {
             Some(e) => e,
             // Nothing was sent or asked (no content): the count as it is now.

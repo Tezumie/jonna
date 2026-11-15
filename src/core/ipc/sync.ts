@@ -59,6 +59,53 @@ export type SyncPut =
   | { outcome: "conflict"; current: SyncRecord | null }
   | { outcome: "gc"; gcEpoch: number };
 
+/** A snapshot as its record describes it (what a list shows without opening it). */
+export interface SnapshotSummary {
+  v: number;
+  device: string;
+  deviceName: string;
+  /** When, in ms. */
+  time: number;
+  kind: "git" | "folder";
+  head: string | null;
+  branch: string | null;
+  files: number;
+  deleted: number;
+  bytes: number;
+  skipped: number;
+  fingerprint: string;
+  /** Kept whatever its age, under this name. */
+  pinned?: string;
+}
+
+export interface SnapshotCreated {
+  id: string;
+  summary: SnapshotSummary;
+  uploadedBytes: number;
+}
+
+export interface SnapshotFile {
+  path: string;
+  size: number;
+  deleted: boolean;
+}
+
+export interface SnapshotRestored {
+  files: number;
+  deleted: number;
+  branch: string | null;
+  detached: boolean;
+  notes: string[];
+  stashed: string | null;
+}
+
+/** One of the user's own files that sync, under its name on every computer. */
+export interface SyncUserFile {
+  path: string;
+  hash: string;
+  mtimeMs: number;
+}
+
 export const syncIpc = {
   /** Where sync stands here, catching up with what other devices did. */
   status: (base: string): Promise<SyncStatus> => call<SyncStatus>("sync_status", { base }),
@@ -109,4 +156,60 @@ export const syncIpc = {
   /** A project's name from its git remote's address; null for a local-only address. */
   projectName: (base: string, remote: string): Promise<string | null> =>
     call<string | null>("sync_project_name", { base, remote }),
+  /**
+   * Captures the open folder `root` as a snapshot in `collection`; null when nothing changed
+   * since this computer's last one (unless `force`). `everything`: the whole history too.
+   */
+  snapshotCreate: (
+    base: string,
+    root: string,
+    collection: string,
+    everything: boolean,
+    force: boolean,
+  ): Promise<SnapshotCreated | null> =>
+    call<SnapshotCreated | null>("sync_snapshot_create", {
+      base,
+      root,
+      collection,
+      everything,
+      force,
+    }),
+  snapshotFiles: (base: string, collection: string, id: string): Promise<SnapshotFile[]> =>
+    call<SnapshotFile[]>("sync_snapshot_files", { base, collection, id }),
+  /** The open folder's own changed files (none while it is as a restore left it). */
+  snapshotLocalChanges: (root: string): Promise<string[]> =>
+    call<string[]>("sync_snapshot_local_changes", { root }),
+  /** Brings `root` to a snapshot; local changes refuse it (`SyncDirty`) unless `stash`. */
+  snapshotRestore: (
+    base: string,
+    collection: string,
+    id: string,
+    root: string,
+    stash: boolean,
+  ): Promise<SnapshotRestored> =>
+    call<SnapshotRestored>("sync_snapshot_restore", { base, collection, id, root, stash }),
+  snapshotRestoreFile: (
+    base: string,
+    collection: string,
+    id: string,
+    root: string,
+    path: string,
+  ): Promise<void> =>
+    call<void>("sync_snapshot_restore_file", { base, collection, id, root, path }),
+  /** Pins a snapshot under a name, or unpins it (`name` null). */
+  snapshotPin: (base: string, collection: string, id: string, name: string | null): Promise<void> =>
+    call<void>("sync_snapshot_pin", { base, collection, id, name }),
+  /** Removes stored content nothing refers to any more; the bytes in use afterwards. */
+  gc: (base: string): Promise<number | null> => call<number | null>("sync_gc", { base }),
+  userFiles: (): Promise<SyncUserFile[]> => call<SyncUserFile[]>("sync_user_files"),
+  userFileRead: (path: string): Promise<string | null> =>
+    call<string | null>("sync_user_file_read", { path }),
+  /** Writes one of the user's synced files (`text` null removes it). */
+  userFileWrite: (path: string, text: string | null): Promise<SyncUserFile | null> =>
+    call<SyncUserFile | null>("sync_user_file_write", { path, text }),
+  /** What the sync loop keeps between runs. */
+  stateLoad: (): Promise<string | null> => call<string | null>("sync_state_load"),
+  stateSave: (text: string): Promise<void> => call<void>("sync_state_save", { text }),
+  /** Claims the sync loop for this window; false while another window of the profile has it. */
+  lease: (owner: string): Promise<boolean> => call<boolean>("sync_lease", { owner }),
 };

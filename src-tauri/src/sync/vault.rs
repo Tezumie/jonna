@@ -144,7 +144,8 @@ impl Vault {
     fn forget(&self) -> Result<()> {
         secrets::set(&self.secrets_file(), DEVICE_SECRET, None)?;
         secrets::set(&self.secrets_file(), KEYRING_SECRET, None)?;
-        match std::fs::remove_file(self.local_file()) {
+        // The whole folder: the state, and the caches that only made sense with these keys.
+        match std::fs::remove_dir_all(self.data.join("sync")) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e.into()),
@@ -174,6 +175,18 @@ impl Vault {
             KEYRING_SECRET,
             Some(&crypto::b64(&ring.to_bytes()?)),
         )
+    }
+
+    /// This device's id and name while sync is on here.
+    pub fn device(&self) -> Option<(String, String)> {
+        let local = self.local();
+        (local.joined && local.base == self.api.base())
+            .then_some((local.device_id, local.device_name))
+    }
+
+    /// A file under this profile's sync folder (caches; removed when sync goes off here).
+    pub fn sync_file(&self, name: &str) -> PathBuf {
+        self.data.join("sync").join(name)
     }
 
     fn uid(&self) -> Option<String> {
