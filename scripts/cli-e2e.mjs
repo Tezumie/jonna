@@ -1236,7 +1236,7 @@ const scenarios = [
     },
   },
   {
-    name: "Ctrl+C on a one-shot run in a real terminal: the turn stops, exit 130; a permission is asked there too",
+    name: "a real terminal, through the launcher: Ctrl+C on a one-shot run (exit 130), the trust question asked once, a permission asked in a one shot",
     run: async () => {
       const cli = ["--cwd", workspace, "--user-data-dir", profile];
       const vars = { IDE_NO_KEYCHAIN: "1", IDE_HOST_PATH: host };
@@ -1252,6 +1252,32 @@ const scenarios = [
           match(pty.text, /Interrupted/);
         } finally {
           await pty.close();
+        }
+      }
+      // A session at a terminal asks once about a folder nobody decided about, and remembers.
+      for (const expected of ["asks", "remembers"]) {
+        const session = await hostPty(
+          process.execPath,
+          [join(bundle, "cli.mjs"), "--cwd", plain, "--user-data-dir", profile],
+          vars,
+        );
+        try {
+          if (expected === "asks") {
+            await session.expect(/Trust this folder\?[\s\S]*\[y\] yes {2}\[n\] no/);
+            session.write("y\r");
+          }
+          await session.expect(/\/help lists the commands/);
+          ok(
+            expected === "asks" || !/Trust this folder/.test(session.text),
+            "the trust question was asked again",
+          );
+          await session.expect(/\n> $/);
+          session.write("/status\r");
+          await session.expect(/Folder: .*\(trusted\)/);
+          session.write("/exit\r");
+          equal(await Promise.race([session.exited, sleep(20_000).then(() => "still running")]), 0);
+        } finally {
+          await session.close();
         }
       }
       // At a terminal a one shot asks, as a session does.

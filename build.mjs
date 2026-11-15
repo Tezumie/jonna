@@ -140,16 +140,17 @@ async function writeLaunchers(name) {
   await mkdir(bin, { recursive: true });
   const missing =
     'Node.js 20 or newer is needed, and "node" was not found on PATH. Install it from https://nodejs.org and try again.';
-  // 9009 is cmd.exe's own code for a program it couldn't find. The exit code is passed on by
-  // name: a script that ends on an `if` leaves 0 behind when it ran through `cmd /c`.
+  // `where /q` looks for node without printing. The exit code is passed on by name: a script
+  // that ends on an `if` leaves 0 behind when it ran through `cmd /c`.
   const cmd = [
     "@echo off",
     "setlocal",
-    'node "%~dp0..\\cli.mjs" %*',
-    "if %errorlevel% equ 9009 (",
+    "where /q node",
+    "if errorlevel 1 (",
     `  echo ${missing.replaceAll('"', "")} 1>&2`,
     "  exit /b 2",
     ")",
+    'node "%~dp0..\\cli.mjs" %*',
     "exit /b %errorlevel%",
     "",
   ].join("\r\n");
