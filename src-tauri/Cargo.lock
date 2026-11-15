@@ -2368,6 +2368,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "host-shim"
+version = "0.0.0"
+dependencies = [
+ "dirs",
+ "host-shim-macros",
+ "http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "host-shim-macros"
+version = "0.0.0"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2630,6 +2653,7 @@ dependencies = [
  "grep-matcher",
  "grep-regex",
  "grep-searcher",
+ "host-shim",
  "http-body-util",
  "hyper",
  "hyper-util",

@@ -63,6 +63,7 @@ pub enum BrowserEvent {
         label: String,
     },
     /// A download started, moved on or ended (`downloads.rs`).
+    #[cfg(feature = "desktop")]
     Download(super::downloads::Download),
 }
 

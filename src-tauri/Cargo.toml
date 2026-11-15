@@ -4,13 +4,47 @@ version = "0.1.6"
 edition = "2021"
 publish = false
 license = "PolyForm-Shield-1.0.0"
+# The desktop app; the framework's command line builds and runs this one.
+default-run = "ide"
 
 [lib]
 name = "ide_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# The desktop app (a window, the web view).
+[[bin]]
+name = "ide"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+# The windowless host: the same services, answering the same commands over a byte stream
+# (src/host/). Built with `--no-default-features --features host`.
+[[bin]]
+name = "ide-host"
+path = "src/bin/host.rs"
+required-features = ["host"]
+
+# Exactly one of the two (lib.rs refuses anything else). `desktop` compiles the code against the
+# desktop framework; `host` compiles the same code against `host-shim`, a small stand-in with
+# the part of the framework's API the services use, and leaves out what needs a window.
+[features]
+default = ["desktop"]
+desktop = [
+  "dep:tauri",
+  "dep:tauri-build",
+  "dep:tauri-plugin-clipboard-manager",
+  "dep:tauri-plugin-dialog",
+  "dep:tauri-plugin-opener",
+  "dep:tauri-plugin-updater",
+  "dep:drag",
+  "dep:webkit2gtk",
+  "dep:cairo-rs",
+  "dep:webview2-com",
+]
+host = ["dep:host-shim", "tokio/rt-multi-thread", "tokio/io-std"]
+
 [build-dependencies]
-tauri-build = { version = "2.7.3", features = [] }
+tauri-build = { version = "2.7.3", features = [], optional = true }
 
 [dependencies]
 # The remote protocol's file contents and stream bytes (D252). MIT/Apache-2.0; already built for
@@ -38,7 +72,7 @@ candle-transformers = "0.11.1"
 chardetng = "1.0.0"
 # Dragging files out of the window into other apps (D200): MIT/Apache-2.0, CrabNebula (the
 # Tauri team); the OS drag APIs (OLE DoDragDrop, NSDraggingSession, GTK drag) behind one call.
-drag = "2.1.1"
+drag = { version = "2.1.1", optional = true }
 encoding_rs = "0.8"
 # Already built for png and the updater; unpacks .vsix files (extensions/vsix.rs).
 flate2 = "1"
@@ -73,11 +107,15 @@ tar = { version = "0.4.46", default-features = false }
 # browser tab (browser/embed.rs, `browser.embedSites`). A feature flag of the same crate: no new
 # dependency, nothing new compiled. It makes every window's webview a "child" webview (sized by
 # Tauri on resize), so code that looks "main" up uses `get_window` / `get_webview`.
-tauri = { version = "2.12.4", features = ["unstable"] }
-tauri-plugin-clipboard-manager = "2"
-tauri-plugin-dialog = "2.8.3"
-tauri-plugin-opener = "2"
-tauri-plugin-updater = "2"
+tauri = { version = "2.12.4", features = ["unstable"], optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2.8.3", optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
+# The windowless host build's stand-in for the framework (the `host` feature): a path crate of
+# this repository, with its proc-macro crate. Its own dependencies (dirs, http, url, syn, quote,
+# heck) are ones the framework already builds, all MIT/Apache-2.0.
+host-shim = { path = "host-shim", optional = true }
 thiserror = "2.0.21"
 tokio = { version = "1", features = ["net", "rt", "macros", "sync", "time", "io-util"] }
 tokio-util = "0.7"
@@ -89,11 +127,11 @@ libc = "0.2"
 # Webview screenshots (src/screenshot.rs). Same versions tauri/wry already use, so nothing new
 # is compiled: WebKitGTK + cairo (png) on Linux, WebView2 + windows on Windows.
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
-webkit2gtk = "=2.0.2"
-cairo-rs = { version = "0.18", features = ["png"] }
+webkit2gtk = { version = "=2.0.2", optional = true }
+cairo-rs = { version = "0.18", features = ["png"], optional = true }
 
 [target."cfg(windows)".dependencies]
-webview2-com = "0.39"
+webview2-com = { version = "0.39", optional = true }
 windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_Shell_PropertiesSystem", "Win32_Storage_EnhancedStorage", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Console", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_System_Pipes", "Win32_System_LibraryLoader", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse"] }
 
 # The command sandbox's tests (D348) check what the Windows Filtering Platform lets a normal user

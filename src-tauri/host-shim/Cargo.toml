@@ -1,0 +1,24 @@
+[package]
+name = "host-shim"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "PolyForm-Shield-1.0.0"
+description = "The part of the desktop framework's API the IDE's services use, for the windowless host build."
+
+[lib]
+name = "host_shim"
+
+# Nothing new is compiled for the app: every crate here is already built for the desktop
+# framework itself (dirs, http, url) or for the IDE (serde, tokio). MIT/Apache-2.0.
+[dependencies]
+dirs = "7"
+host-shim-macros = { path = "../host-shim-macros" }
+http = "1"
+serde = "1"
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+url = "2"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -12,6 +12,7 @@
 
 pub mod client;
 #[cfg(target_os = "macos")]
+#[cfg(feature = "desktop")]
 pub mod dock_menu;
 pub mod jump_list;
 pub mod server;

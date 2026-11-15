@@ -133,6 +133,7 @@ pub async fn report_save_zip(path: String, files: Vec<ReportFile>) -> Result<()>
 /// Sets how the next start runs (`extensionsOff`: true off, false on, null as usual) and, with
 /// `restart`, restarts now. Test runs only set the flag (they never restart); returns whether
 /// the app restarts.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn app_relaunch(
     app: tauri::AppHandle,

@@ -474,6 +474,7 @@ pub async fn agent_sessions_unwatch(state: State<'_, AppState>) -> Result<()> {
 
 /// A documentation page that needs JavaScript, loaded in a hidden window and read once it
 /// settles (D233, @docs with agent.docs.renderJavaScript). Null when it didn't answer in time.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn docs_render(
     app: tauri::AppHandle,
@@ -485,6 +486,7 @@ pub async fn docs_render(
 
 /// From the hidden window's script (the only command such windows may call): the page's text.
 /// Page data, untrusted.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn docs_render_post(
     webview: tauri::Webview,
@@ -612,6 +614,7 @@ fn outside_files(paths: &[std::path::PathBuf]) -> Vec<OutsideFile> {
 /// Picks files to attach with the system dialog (anywhere on disk: the user chose them). They
 /// become the "dropped" files, read with `dropped_read`. None if cancelled. Debug builds (UI
 /// tests) may pass `paths` instead.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn attach_pick(
     app: tauri::AppHandle,
@@ -648,6 +651,7 @@ pub async fn attach_pick(
 }
 
 /// The files last dropped onto the window from the OS (or picked with `attach_pick`).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn dropped_list(state: State<'_, AppState>) -> Result<Vec<OutsideFile>> {
     let paths = state
@@ -662,6 +666,7 @@ pub async fn dropped_list(state: State<'_, AppState>) -> Result<Vec<OutsideFile>
 const MAX_ATTACH_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Reads one of the dropped / picked files (index into `dropped_list`), raw bytes, capped.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn dropped_read(
     state: State<'_, AppState>,

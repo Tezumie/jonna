@@ -5,11 +5,14 @@
 //! `browser_bridge_post` and the IDE calls it with `send_to_window` (an `eval` of
 //! `__ideBridge.receive(<json>)`). `downloads.rs`: the IDE's downloads list.
 
+#[cfg(feature = "desktop")]
 pub mod downloads;
+#[cfg(feature = "desktop")]
 pub mod embed;
 pub mod netlog;
 pub mod proxy;
 mod stream;
+#[cfg(feature = "desktop")]
 pub mod trusted_input;
 
 use std::collections::HashMap;
@@ -17,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tokio_util::sync::CancellationToken;
 
@@ -44,6 +48,7 @@ struct Running {
 #[derive(Default)]
 pub struct BrowserService {
     proxies: std::sync::Arc<Mutex<HashMap<String, Running>>>,
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     windows: Mutex<u32>,
     /// Network log and live-preview overlays, shared by every proxy.
     pub shared: std::sync::Arc<proxy::Shared>,
@@ -157,6 +162,7 @@ impl BrowserService {
     }
 
     /// Whether `url` is served by one of the proxies (a popped-out local page).
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     fn is_proxy_url(proxies: &Mutex<HashMap<String, Running>>, url: &reqwest::Url) -> bool {
         let origin = url.origin().ascii_serialization();
         proxies
@@ -165,6 +171,7 @@ impl BrowserService {
     }
 
     /// A new label for a site's webview (its own window, or embedded in a tab).
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     fn next_label(&self) -> Result<String> {
         let mut n = lock(&self.windows)?;
         *n += 1;
@@ -180,6 +187,7 @@ impl BrowserService {
     /// to `http://localhost:5173/callback`) is cancelled here and handed to the tab, which shows
     /// it in its frame through the proxy; new windows (`target=_blank`, `window.open` the bridge
     /// didn't catch) become IDE browser tabs. Without these, WebView2 dropped them silently.
+    #[cfg(feature = "desktop")]
     pub fn open_window(
         &self,
         app: &AppHandle,
@@ -210,6 +218,7 @@ impl BrowserService {
     }
 
     /// What every site webview does with its navigations and new windows (see `open_window`).
+    #[cfg(feature = "desktop")]
     fn handlers(
         &self,
         label: &str,
@@ -260,6 +269,7 @@ impl BrowserService {
 }
 
 /// An http(s) address a site webview may show.
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 fn site_url(url: &str) -> Result<reqwest::Url> {
     let parsed = reqwest::Url::parse(url).map_err(|e| Error::Invalid(format!("{url}: {e}")))?;
     if !matches!(parsed.scheme(), "http" | "https") || is_app_origin(&parsed) {
@@ -272,6 +282,7 @@ fn site_url(url: &str) -> Result<reqwest::Url> {
 
 /// The IDE's own origins (its pages and IPC): a site's webview never goes there, so a page can't
 /// load the IDE's code under the IDE's origin next to it.
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 fn is_app_origin(url: &reqwest::Url) -> bool {
     matches!(url.scheme(), "tauri" | "ipc" | "asset")
         || url.host_str().is_some_and(|h| {
@@ -281,6 +292,7 @@ fn is_app_origin(url: &reqwest::Url) -> bool {
 }
 
 /// The bridge as a site webview's initialization script.
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 fn init_script(popup: bool, name: Option<&str>) -> String {
     let name = name
         .filter(|n| !n.is_empty() && n.len() <= 200)
@@ -304,6 +316,7 @@ fn init_script(popup: bool, name: Option<&str>) -> String {
 /// sign-in never stuck and even `document.cookie` stayed empty (D209). Accept them, as WebView2
 /// does by default (with SameSite=None, which the proxy sets). The policy belongs to the web
 /// context, which the main window shares with the IDE's other windows.
+#[cfg(feature = "desktop")]
 pub fn allow_frame_cookies<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     #[cfg(any(
         target_os = "linux",
@@ -335,6 +348,7 @@ pub fn allow_frame_cookies<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) 
 }
 
 /// Calls the bridge in an external window: `message` becomes JSON inside a fixed call.
+#[cfg(feature = "desktop")]
 pub fn send_to_window(app: &AppHandle, label: &str, message: &serde_json::Value) -> Result<()> {
     if !label.starts_with(WINDOW_PREFIX) {
         return Err(Error::Invalid("not a browser window".into()));

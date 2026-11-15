@@ -406,6 +406,7 @@ pub async fn page_loaded(
     state.ai.cancel_owner(webview.label());
     state.exec.cancel_owner(webview.label());
     // Sites shown inside the old page's tabs (browser.embedSites) would stay drawn over it.
+    #[cfg(feature = "desktop")]
     crate::browser::embed::close_embedded_in(
         &tauri::Manager::app_handle(&webview).clone(),
         webview.window().label(),
@@ -609,6 +610,7 @@ pub async fn debug_find_browser(kind: String) -> Result<Option<String>> {
 }
 
 /// The browser pane's debugging port for the next start (WebView2 only; 0 turns it off, D204).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn debug_set_pane_port(state: State<'_, AppState>, port: u16) -> Result<()> {
     crate::debug::pane_port::save(&state.dirs.data, port)
