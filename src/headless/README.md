@@ -177,7 +177,7 @@ lower case, or `node build.mjs --headless --cli-name=<name>`), read through `nam
 | `asks.ts` | A permission, the agent's questions, host prompts, the services' pickers: asked at the terminal, answered through the commands any front end uses. |
 | `render.ts`, `markdown.ts`, `style.ts`, `diffText.ts` | Events as text; Markdown styled as it streams; colour (`NO_COLOR`, `FORCE_COLOR`, `--color`) and glyphs; unified diffs. Pure. Text from the model is stripped of escape sequences before it is printed. |
 | `slash.ts` | The session's own slash commands and the line parser. Pure. |
-| `output.ts` | Exit codes, the `json` result record, `stream-json` lines. Pure. |
+| `output.ts` | Exit codes, the `json` result record, `stream-json` lines. Pure. A failure's text (the result's `error`, `error` / `notice` / `turn.end` events, a failed tool's reason, a provider's status, the host's log under `--verbose`) is printed with secrets taken out (`redactSecrets`): those are a provider's or a server's own words and may repeat the request. What the model wrote and what tools were given are printed as they are. |
 | `sessionsCommand.ts` | `sessions list` / `show`. |
 | `serve.ts`, `serveClient.ts` | `serve` and its client (bundled alone as `serve-client.mjs`). |
 | `acpAgent.ts` | `acp`: the Agent Client Protocol's agent side. |

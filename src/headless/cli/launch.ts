@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { redactSecrets } from "../../core/diagnostics/redact";
 import { product } from "../../core/product";
 import { parseJsoncOrThrow } from "../../core/settings/jsonc";
 import { externalAgents } from "../../extensions/agent/acpAgents";
@@ -166,6 +167,9 @@ export async function start(args: CliArgs, options: StartOptions): Promise<Start
     ...options.settings,
   };
   const { openBrain, onFailedCall } = await import("../run");
+  // --verbose shows the host's own log as it comes: whatever a program it starts or a library
+  // under it wrote there, without the keys such lines sometimes carry.
+  const hostLog = options.log && ((text: string) => options.log?.(redactSecrets(text)));
   if (options.log) {
     const log = options.log;
     onFailedCall((call) => log(`[call failed] ${JSON.stringify(call)}\n`));
@@ -175,7 +179,7 @@ export async function start(args: CliArgs, options: StartOptions): Promise<Start
     brain = await openBrain({
       hostBinary,
       ...(args.userDataDir && { userDataDir: resolve(args.userDataDir) }),
-      ...(options.log && { onHostLog: options.log }),
+      ...(hostLog && { onHostLog: hostLog }),
       folder,
       frontend: options.frontend,
       permissions: options.policy,
@@ -314,7 +318,8 @@ async function noModelMessage(brain: HostedBrain, first?: string): Promise<strin
   for (const p of agent?.providers ?? []) {
     if (p.state === "ok" && p.models) continue;
     lines.push(
-      `  ${p.name ?? p.id}: ${p.state === "unreachable" ? "not reachable" : (p.error ?? "no models")}`,
+      // The provider's own words: one that repeats the request it refused has the key in it.
+      `  ${p.name ?? p.id}: ${p.state === "unreachable" ? "not reachable" : redactSecrets(p.error ?? "no models")}`,
     );
   }
   const models = brain.agent.providers.models.peek().map((m) => m.key);

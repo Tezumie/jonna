@@ -1,6 +1,7 @@
 // How a one-shot run ends for whoever started it: the exit code, and the result as text, as one
 // JSON object (`--output-format json`) or as the last line of the event stream (`stream-json`).
 // Pure.
+import { redactSecrets } from "../../core/diagnostics/redact";
 import type { PermissionDecision, RunResult, SessionEvent, SessionUsage } from "../run";
 
 export const EXIT = {
@@ -58,7 +59,7 @@ export function endNote(result: Pick<RunResult, "reason" | "error" | "denied">):
         ? `Refused: ${result.denied.map(deniedLine).join("; ")}. Allow it with --allow or --permission-mode.`
         : null;
     case "error":
-      return `The run failed: ${result.error ?? "the model or the provider failed"}`;
+      return `The run failed: ${redactSecrets(result.error ?? "the model or the provider failed")}`;
     case "max_steps":
       return "Stopped at the step limit with work left (raise --max-steps, or --continue).";
     case "timeout":
@@ -108,7 +109,7 @@ export function resultRecord(result: RunResult, durationMs: number, unsaved = fa
     session: result.session,
     text: result.text,
     reason: result.reason,
-    ...(result.error && { error: result.error }),
+    ...(result.error && { error: redactSecrets(result.error) }),
     usage: result.usage,
     steps: result.steps,
     cost: result.cost,
@@ -133,7 +134,7 @@ export function failureRecord(
     session: null,
     text: "",
     reason,
-    error,
+    error: redactSecrets(error),
     usage: null,
     steps: 0,
     cost: null,
@@ -145,7 +146,30 @@ export function failureRecord(
 
 /** One line of `stream-json`: an event of the chat, or the result. Never contains a newline. */
 export function jsonLine(value: SessionEvent | ResultRecord): string {
-  return `${JSON.stringify(value)}\n`;
+  return `${JSON.stringify(value.type === "result" ? value : eventWithoutSecrets(value))}\n`;
+}
+
+/**
+ * An event as it is printed. The texts of a failure (the chat's error, a notice, a turn that
+ * failed) are a provider's, an MCP server's or another agent's own words, and some repeat the
+ * request they refused, key and all: secrets are taken out of those. What the model wrote and
+ * what tools were given and answered stay as they are.
+ */
+export function eventWithoutSecrets(event: SessionEvent): SessionEvent {
+  switch (event.type) {
+    case "error":
+      return { ...event, message: redactSecrets(event.message) };
+    case "notice":
+      return {
+        ...event,
+        text: redactSecrets(event.text),
+        ...(event.detail !== undefined && { detail: redactSecrets(event.detail) }),
+      };
+    case "turn.end":
+      return event.error ? { ...event, error: redactSecrets(event.error) } : event;
+    default:
+      return event;
+  }
 }
 
 /** `json`: the result alone, on one line. */

@@ -2,6 +2,7 @@
 // output (text, one JSON object, or a line of JSON per event); what the agent does on the way goes
 // to standard error when that is a terminal or with --verbose, so the output stays clean for
 // whatever reads it.
+import { redactSecrets } from "../../core/diagnostics/redact";
 import type { BrainChat, HostedBrain, RunResult } from "../run";
 import { type CliArgs, mayAsk, type Terminals, UsageError } from "./args";
 import { Asks } from "./asks";
@@ -57,7 +58,8 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
     reason: "usage" | "config" | "error" | "cancelled",
     error: string,
   ) => {
-    io.err(`${error}\n`);
+    // (The record takes secrets out of the error itself.)
+    io.err(`${redactSecrets(error)}\n`);
     if (format !== "text")
       io.out(jsonResult(failureRecord(reason, code, error, Date.now() - started)));
     return code;

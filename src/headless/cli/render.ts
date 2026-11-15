@@ -2,8 +2,10 @@
 // each tool call on one line with its outcome on the next, edits, notices and refusals. What
 // needs an answer (a permission, a question) is the front end's own business and not drawn
 // here. Pure: it writes through the function it is given.
+import { redactSecrets } from "../../core/diagnostics/redact";
 import type { SessionEvent } from "../run";
 import { MarkdownStream } from "./markdown";
+import { eventWithoutSecrets } from "./output";
 import { clip, type Style, sanitize } from "./style";
 
 export interface RenderOptions {
@@ -113,7 +115,9 @@ export class EventRenderer {
     this.out(`${paint(sanitize(text))}\n`);
   }
 
-  handle(event: SessionEvent): void {
+  handle(given: SessionEvent): void {
+    // A failure's text is somebody else's words (a provider, an MCP server): no key is shown.
+    const event = eventWithoutSecrets(given);
     const { style, verbose } = this.options;
     const corner = style.glyph("  ⎿ ", "  -> ");
     switch (event.type) {
@@ -182,7 +186,9 @@ export class EventRenderer {
           this.out(`${style.yellow(`${corner}refused`)}\n`);
         } else {
           const why = event.summary ?? (event.result ?? "failed").split("\n")[0] ?? "failed";
-          this.out(`${style.red(`${corner}${clip(sanitize(why), width, style.unicode)}`)}\n`);
+          this.out(
+            `${style.red(`${corner}${clip(sanitize(redactSecrets(why)), width, style.unicode)}`)}\n`,
+          );
         }
         this.block = "tool";
         return;

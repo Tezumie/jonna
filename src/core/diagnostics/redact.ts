@@ -50,6 +50,37 @@ export function redactText(text: string, home?: string | null): string {
     .replace(UNIX_USER, "$1<user>");
 }
 
+/** `?key=…` in an address (some services take the key there). */
+const QUERY_KEY = /([?&]key=)([^&\s"'<>]{6,})/gi;
+
+/** A value that reads as a secret and not as a word or a count: letters with digits, or long. */
+const looksSecret = (value: string): boolean =>
+  (/\d/.test(value) && /[A-Za-z]/.test(value)) || value.length >= 24;
+
+/**
+ * Secrets taken out of a message that is shown to the person as it is (an error printed in a
+ * terminal, a line of a log): keys, tokens, `name=value` secrets, credentials in addresses.
+ * Unlike `redactText` it leaves paths and user names alone, and only takes a value after a
+ * name when it reads as a secret, so "Basic authentication required" or "max_tokens: 100000"
+ * stay readable.
+ */
+export function redactSecrets(text: string): string {
+  return text
+    .replace(PEM_KEY, "-----BEGIN $1----- <redacted>")
+    .replace(JWT, "<redacted>")
+    .replace(KNOWN_KEYS, "<redacted>")
+    .replace(BEARER, (all: string, scheme: string) =>
+      looksSecret(all.slice(scheme.length).trim()) ? `${scheme} <redacted>` : all,
+    )
+    .replace(PAIRS, (all: string, name: string, sep: string, value: string) =>
+      looksSecret(value) ? `${name}${sep}<redacted>` : all,
+    )
+    .replace(QUERY_KEY, (all: string, name: string, value: string) =>
+      looksSecret(value) ? `${name}<redacted>` : all,
+    )
+    .replace(URL_CREDENTIALS, "$1<redacted>@");
+}
+
 export interface RedactOptions {
   home?: string | null;
   /** Strings longer than this are replaced by their size (default 400). */

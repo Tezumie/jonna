@@ -4,6 +4,7 @@ import type { RunResult, SessionEvent } from "../run";
 import {
   EXIT,
   endNote,
+  eventWithoutSecrets,
   exitCodeOf,
   failureRecord,
   jsonLine,
@@ -158,4 +159,31 @@ test("an answer that couldn't be saved to its chat fails the run, and the result
   assert.deepEqual([record.ok, record.exitCode, record.unsaved], [false, 1, true]);
   assert.equal("unsaved" in resultRecord(result(), 5), false);
   assert.match(unsavedNote("s1"), /s1 .*NOT in it/);
+});
+
+test("a failure that repeats the request it refused is printed without the key", () => {
+  const said = "401 Unauthorized: GET https://llm.example.com/v1/models?api_key=abc123def456ghi789";
+  const key = "abc123def456ghi789";
+  const failed = result({ reason: "error", error: said });
+  assert.ok(!(endNote(failed) ?? "").includes(key));
+  assert.match(endNote(failed) ?? "", /401 Unauthorized.*api_key=<redacted>/);
+  assert.ok(!jsonResult(resultRecord(failed, 1)).includes(key));
+  assert.ok(!jsonResult(failureRecord("config", 2, said, 1)).includes(key));
+  const events: SessionEvent[] = [
+    { session: "s1", type: "error", message: said },
+    { session: "s1", type: "notice", id: "n1", text: said, tone: "error", detail: said },
+    { session: "s1", type: "turn.end", reason: "error", text: "", error: said, usage },
+  ];
+  for (const event of events) {
+    assert.ok(!jsonLine(event).includes(key), event.type);
+    assert.match(jsonLine(event), /api_key=<redacted>/);
+  }
+  // What the model wrote and what tools were given are the chat's own: left as they are.
+  const text: SessionEvent = {
+    session: "s1",
+    type: "text",
+    id: "a1",
+    delta: "api_key=abc123def456ghi789",
+  };
+  assert.equal(eventWithoutSecrets(text), text);
 });
