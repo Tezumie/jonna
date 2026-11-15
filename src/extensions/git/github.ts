@@ -679,9 +679,12 @@ export function registerGitHub(
       return undefined;
     }),
   );
-  const onFocus = () => refreshPrItem();
-  window.addEventListener("focus", onFocus);
-  sub.add({ dispose: () => window.removeEventListener("focus", onFocus) });
+  // Coming back to the window (a pull request opened in the browser meanwhile).
+  if (services.hasScreen) {
+    const onFocus = () => refreshPrItem();
+    window.addEventListener("focus", onFocus);
+    sub.add({ dispose: () => window.removeEventListener("focus", onFocus) });
+  }
   sub.add(
     statusBar.add({
       id: "github.pullRequest",

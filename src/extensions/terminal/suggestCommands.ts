@@ -74,14 +74,15 @@ export function registerTerminalSuggest(
    */
   const shown = new Map<TerminalSuggest, boolean>();
   const syncKeys = () => {
-    const active = document.activeElement;
+    // Without a screen no terminal has a view, so none has the focus.
+    const active = services.hasScreen ? document.activeElement : null;
     const focused = [...views.values()].find((v) => v.element.contains(active));
     const widget = focused?.suggest;
     const navigated = widget ? shown.get(widget) : undefined;
     context.set("terminalSuggestWidgetVisible", navigated !== undefined);
     context.set("terminalSuggestNavigated", navigated === true);
   };
-  sub.add(on(document, "focusin", syncKeys));
+  if (services.hasScreen) sub.add(on(document, "focusin", syncKeys));
   sub.add({
     dispose: () => {
       shown.clear();
@@ -93,7 +94,8 @@ export function registerTerminalSuggest(
   /** The focused terminal's suggestions, else the most recent terminal's. */
   const target = () => {
     const all = [...views.values()];
-    const focused = all.find((v) => v.element.contains(document.activeElement));
+    const active = services.hasScreen ? document.activeElement : null;
+    const focused = all.find((v) => v.element.contains(active));
     const recent = services.dock.recentTab((t) => t.viewType === "terminal");
     const view = focused ?? (recent ? tabs.get(recent.id)?.active : undefined);
     if (!view?.suggest)

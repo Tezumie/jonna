@@ -303,7 +303,7 @@ export class DebugController implements SessionHost {
   // ---- Starting ----
 
   private tools(): AdapterTools {
-    const { settings, platform } = this.services;
+    const { settings, backendPlatform: platform } = this.services;
     return {
       python:
         settings.peek<string>("debug.pythonPath") ||
@@ -420,7 +420,7 @@ export class DebugController implements SessionHost {
   ): Promise<LaunchConfig | null> {
     const vars = (fill && (await this.hooks.variables?.(config.workspaceFolder))) || {
       workspaceFolder: config.workspaceFolder ?? this.services.workspace.root.peek() ?? "",
-      pathSeparator: this.services.platform === "windows" ? "\\" : "/",
+      pathSeparator: this.services.backendPlatform === "windows" ? "\\" : "/",
     };
     // Without filling in, `substitute` finds nothing to replace in strings without "${".
     const made = fill

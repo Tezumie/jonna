@@ -38,12 +38,7 @@ const BUILT_IN: IconThemeEntry[] = [
 ];
 
 export function registerIconThemes(sub: DisposableStore, services: WorkbenchServices): void {
-  const { contributions, settings, dispatcher, theme, notifications } = services;
-  const themes = sub.add(new FileIconThemes());
-  themes.languageOf = (name) => {
-    const id = languageForPath(name);
-    return id === "plaintext" ? undefined : id;
-  };
+  const { contributions, settings, dispatcher } = services;
   sub.add(contributions.addIconThemes(BUILT_IN));
   // Settings → File icon theme: a dropdown (D134).
   sub.add(
@@ -55,33 +50,8 @@ export function registerIconThemes(sub: DisposableStore, services: WorkbenchServ
       })),
     ),
   );
-
-  let failed = "";
-  sub.add(
-    effect(() => {
-      const wanted = settings.get<string | null>("workbench.iconTheme") || MINIMAL_ICON_THEME;
-      const entries = contributions.iconThemes.value;
-      const light = theme.theme.value === "light";
-      // An extension's theme that isn't loaded (yet): the default meanwhile.
-      const entry =
-        entries.find((e) => e.id === wanted) ??
-        (wanted === MINIMAL_ICON_THEME
-          ? undefined
-          : entries.find((e) => e.id === DEFAULT_ICON_THEME));
-      void themes
-        .apply(entry && entry.id !== MINIMAL_ICON_THEME ? entry : null, light)
-        .catch((err: unknown) => {
-          if (failed === wanted) return;
-          failed = wanted;
-          notifications.show(
-            "error",
-            `Couldn't load the file icon theme "${wanted}": ${err instanceof Error ? err.message : String(err)}`,
-          );
-          void themes.apply(null, light);
-        });
-      return undefined;
-    }),
-  );
+  // Icons are drawn: the chosen theme is loaded and applied only where there is a screen.
+  if (services.hasScreen) applyIconThemes(sub, services);
 
   sub.add(
     dispatcher.register({
@@ -117,6 +87,42 @@ export function registerIconThemes(sub: DisposableStore, services: WorkbenchServ
         );
         return { id: pick };
       },
+    }),
+  );
+}
+
+/** Loads the chosen file icon theme and applies it to the window's documents. */
+function applyIconThemes(sub: DisposableStore, services: WorkbenchServices): void {
+  const { contributions, settings, theme, notifications } = services;
+  const themes = sub.add(new FileIconThemes());
+  themes.languageOf = (name) => {
+    const id = languageForPath(name);
+    return id === "plaintext" ? undefined : id;
+  };
+  let failed = "";
+  sub.add(
+    effect(() => {
+      const wanted = settings.get<string | null>("workbench.iconTheme") || MINIMAL_ICON_THEME;
+      const entries = contributions.iconThemes.value;
+      const light = theme.theme.value === "light";
+      // An extension's theme that isn't loaded (yet): the default meanwhile.
+      const entry =
+        entries.find((e) => e.id === wanted) ??
+        (wanted === MINIMAL_ICON_THEME
+          ? undefined
+          : entries.find((e) => e.id === DEFAULT_ICON_THEME));
+      void themes
+        .apply(entry && entry.id !== MINIMAL_ICON_THEME ? entry : null, light)
+        .catch((err: unknown) => {
+          if (failed === wanted) return;
+          failed = wanted;
+          notifications.show(
+            "error",
+            `Couldn't load the file icon theme "${wanted}": ${err instanceof Error ? err.message : String(err)}`,
+          );
+          void themes.apply(null, light);
+        });
+      return undefined;
     }),
   );
 }

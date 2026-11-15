@@ -402,7 +402,11 @@ export class BrowserView implements DockView {
     const label =
       this.windowLabel ??
       (win && win !== window ? this.host.services.auxWindows.labelOf(win) : "main");
-    return webviewSink(this.host.services.platform, label, this.windowLabel ? null : this.frame);
+    return webviewSink(
+      this.host.services.screenPlatform,
+      label,
+      this.windowLabel ? null : this.frame,
+    );
   }
 
   /**

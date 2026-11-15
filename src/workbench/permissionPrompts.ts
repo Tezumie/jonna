@@ -23,18 +23,6 @@ export function askMcpPermission(
   });
 }
 
-type AgentAsk = (
-  request: AuthorizeRequest & { session: string },
-) => Promise<"once" | "session" | "deny">;
-let agentAsk: AgentAsk | undefined;
-
-/** The agent extension shows these requests inline in the session's conversation. */
-export function setAgentPermissionHandler(handler: AgentAsk | undefined): void {
-  agentAsk = handler;
-}
-
-export function askAgentPermission(
-  request: AuthorizeRequest & { session: string },
-): Promise<"once" | "session" | "deny"> {
-  return agentAsk ? agentAsk(request) : Promise.resolve("deny");
-}
+// An agent's requests are asked in its conversation (agentPermission.ts, no dialog); importers keep
+// this path.
+export { askAgentPermission, setAgentPermissionHandler } from "./agentPermission";

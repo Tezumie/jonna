@@ -1,7 +1,7 @@
 // Builds the Monaco theme from the computed design tokens (DESIGN.md §15.1): Shiki provides syntax
 // colors, these colors are merged on top. Re-run on every theme/accent/override change.
 import { type Rgba, toHex, withAlpha } from "../../core/themes/color";
-import type { ThemeService } from "../../workbench/theme";
+import type { ThemeApi } from "../../workbench/services";
 import type { EditorTheme } from "./engine";
 
 type Spec = [monacoKey: string, token: string, alpha?: number];
@@ -131,7 +131,7 @@ const MAP: Spec[] = [
   ["editorBracketHighlight.unexpectedBracket.foreground", "--status-danger-fg"],
 ];
 
-export function editorThemeFromTokens(theme: ThemeService): EditorTheme {
+export function editorThemeFromTokens(theme: ThemeApi): EditorTheme {
   const colors: Record<string, string> = {};
   const cache = new Map<string, Rgba | null>();
   for (const [key, token, alpha] of MAP) {

@@ -57,6 +57,12 @@ export interface CommandSpec<I, O> {
   examples?: { input: I; note?: string }[];
   /** Confirmation text for `destructive` commands run by the user ("Delete 'a.ts'?"). */
   confirm?(input: I): string;
+  /**
+   * The command only does something on a screen (it shows a view, a picker or a dialog and has
+   * no other result): where there is none it is refused with a message that says so, and callers
+   * that list commands can leave it out.
+   */
+  needsScreen?: boolean;
   run(input: I, ctx: CommandContext): Promise<O> | O;
 }
 
@@ -70,6 +76,8 @@ export interface CommandInfo {
   agent: "core" | "discoverable" | "hidden";
   palette: boolean;
   inputSchema: AnySchema["json"];
+  /** Present (true) on commands that only do something on a screen. */
+  needsScreen?: true;
   /** True if `when` currently holds. */
   enabled: boolean;
 }

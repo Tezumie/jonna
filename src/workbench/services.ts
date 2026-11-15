@@ -1,6 +1,11 @@
 // What extensions get (WorkbenchServices), and the small shared services that live only to connect
 // extensions without importing each other: file decorations (git colors and badges), quick diff
 // (base texts for gutter bars and diffs) and running language clients. DOM-free.
+//
+// The services a screen draws (notifications, quick input, the status bar, the theme, auxiliary
+// windows, the iframe layer) are named here by what extensions may use of them, not by their
+// classes: the window passes the classes, a screenless entry passes its own (headless/services.ts),
+// and createServices.ts builds the rest the same way for both.
 import type { ContextKeyService } from "../core/context/index";
 import type { Caller, Dispatcher, DispatcherEvents } from "../core/dispatcher/index";
 import { Emitter, type Event, type EventBus } from "../core/events/index";
@@ -32,7 +37,7 @@ import type { SettingsService } from "./settings";
 import type { StatusBar } from "./statusbar";
 import type { ThemeService } from "./theme";
 import type { WorkspaceTrust } from "./trust";
-import type { ViewRegistry } from "./views";
+import type { ViewRegistry } from "./viewRegistry";
 import type { WorkspaceService } from "./workspace";
 
 // The services built-in extensions receive. Built-ins are privileged (in-process, PLAN §9.1);
@@ -237,7 +242,82 @@ export interface ExtensionGate {
   readonly enabledIds: Signal<readonly string[]>;
 }
 
+/** Notices for the user: toasts in the window, a list read as state without a screen. */
+export type NotificationService = Pick<
+  Notifications,
+  | "history"
+  | "unread"
+  | "doNotDisturb"
+  | "markRead"
+  | "clearHistory"
+  | "dismissAll"
+  | "show"
+  | "progress"
+  | "dispose"
+>;
+
+/** Questions with a list or a text box: the window's picker; a policy answers without a screen. */
+export type QuickInputService = Pick<
+  QuickInput,
+  | "visible"
+  | "pick"
+  | "pickDynamic"
+  | "prompt"
+  | "openSession"
+  | "moveActive"
+  | "cancel"
+  | "dispose"
+>;
+
+/** The status bar's items (drawn by the window; only listed without a screen). */
+export type StatusBarService = Pick<StatusBar, "visible" | "hidden" | "items" | "add" | "dispose">;
+
+/** The look (theme kind, density…) and the colors a screen resolved for it. */
+export type ThemeApi = Pick<
+  ThemeService,
+  | "theme"
+  | "density"
+  | "panels"
+  | "sideBar"
+  | "tabs"
+  | "onDidChange"
+  | "preferences"
+  | "apply"
+  | "token"
+  | "color"
+  | "syntaxTheme"
+  | "setSyntaxTheme"
+  | "setOverrides"
+  | "dispose"
+>;
+
+/** Auxiliary windows (none without a screen). */
+export type AuxWindows = Pick<AuxWindowService, "labelOf" | "create" | "dispose">;
+
+/** Where iframes live outside the dock (nowhere without a screen). */
+export type IframeHost = Pick<IframeLayer, "attach" | "wake">;
+
 export interface WorkbenchServices {
+  /**
+   * Whether this session has a screen (a window to draw in). Without one, views are registered
+   * but never made, and what only a page can do (listen for its events, measure, paint) is left
+   * out: code that runs at activation checks this before it reaches for the page.
+   */
+  readonly hasScreen: boolean;
+  /**
+   * The machine the screen is on: keys and their labels, the modifier that opens links, what the
+   * browser underneath can do. Without a screen it equals `backendPlatform`.
+   */
+  readonly screenPlatform: Platform;
+  /**
+   * The machine the backend is on: path separators, shells and how to quote for them, line
+   * endings, which programs exist. The desktop app's backend is on the screen's machine.
+   */
+  readonly backendPlatform: Platform;
+  /**
+   * Both at once, from when they were one machine. New code reads `screenPlatform` or
+   * `backendPlatform`; what still reads this means the backend's (the screenless set gives that).
+   */
   readonly platform: Platform;
   readonly dispatcher: Dispatcher;
   readonly context: ContextKeyService;
@@ -245,15 +325,15 @@ export interface WorkbenchServices {
   readonly events: EventBus<IdeEvents>;
   readonly layout: LayoutModel;
   readonly views: ViewRegistry;
-  readonly statusBar: StatusBar;
-  readonly quickInput: QuickInput;
-  readonly notifications: Notifications;
+  readonly statusBar: StatusBarService;
+  readonly quickInput: QuickInputService;
+  readonly notifications: NotificationService;
   readonly keyboard: KeyboardService;
   readonly workspace: WorkspaceService;
   readonly persistence: PersistenceService;
   /** The dock: every tab (editors, terminals, agent…) and the split tree holding them. */
   readonly dock: DockService;
-  readonly theme: ThemeService;
+  readonly theme: ThemeApi;
   /** Effective settings (defaults < user < workspace) and the settings.json files. */
   readonly settings: SettingsService;
   /** Whether the open folder's own files (tasks) may run programs (D103). */
@@ -267,9 +347,9 @@ export interface WorkbenchServices {
   /** Languages, grammars, snippets and color themes from installed extensions (D102). */
   readonly contributions: Contributions;
   /** Auxiliary windows: tabs moved into windows of their own (D101). */
-  readonly auxWindows: AuxWindowService;
+  readonly auxWindows: AuxWindows;
   /** Hosts iframes outside the dock so they survive moves (docs/dock.md §6). */
-  readonly iframes: IframeLayer;
+  readonly iframes: IframeHost;
   /**
    * Starts a drag of files or folders onto the dock (explorer rows; `paths` when several are
    * selected): files open where they're dropped, a folder opens a folder browser (D190).
@@ -547,20 +627,33 @@ export class FileDecorationService {
     });
   }
 
-  private pending = 0;
+  private pending = false;
+
+  /**
+   * `nextFrame` runs its callback before the next paint (the window's animation frame); null:
+   * there are no frames (no screen), and each change counts at once.
+   */
+  constructor(
+    private readonly nextFrame:
+      | ((run: () => void) => void)
+      | null = typeof requestAnimationFrame === "function"
+      ? (run) => void requestAnimationFrame(run)
+      : null,
+  ) {}
 
   /**
    * At most once a frame (D379): a language server publishes per file, often per keystroke, and
    * each bump re-rendered every tab strip with a layout read per group.
    */
   changed(): void {
-    if (typeof requestAnimationFrame !== "function") {
+    if (!this.nextFrame) {
       this.rev.value = this.rev.peek() + 1;
       return;
     }
     if (this.pending) return;
-    this.pending = requestAnimationFrame(() => {
-      this.pending = 0;
+    this.pending = true;
+    this.nextFrame(() => {
+      this.pending = false;
       this.rev.value = this.rev.peek() + 1;
     });
   }

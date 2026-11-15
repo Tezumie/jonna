@@ -16,8 +16,7 @@ export function registerStatusBarCommands(sub: DisposableStore, services: Workbe
     effect(() => {
       settings.version.value;
       const hidden = settings.peek<boolean>(VISIBLE) === false;
-      statusBar.element.hidden = hidden;
-      statusBar.element.parentElement?.classList.toggle("is-statusbar-hidden", hidden);
+      statusBar.visible.value = !hidden;
       statusBar.hidden.value = readHiddenItems(settings.peek<unknown>(HIDDEN));
       return undefined;
     }),

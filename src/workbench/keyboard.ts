@@ -1,10 +1,11 @@
 // Global keyboard handling: one capture-phase keydown listener resolves chords against the
 // keybinding rules and runs matching commands through the dispatcher (so a keybinding is just
 // another way to call a command). Unbound keys pass through to Monaco / the terminal untouched.
+// Without a screen nothing is attached: the service then only holds the rules and their labels.
+// DOM-free at import (it listens only to a window it is handed).
 
 import type { ContextKeyService } from "../core/context/index";
 import type { Dispatcher } from "../core/dispatcher/index";
-import { on } from "../core/dom/index";
 import { builtinCommand } from "../core/extensions/vscode/builtinCommands";
 import {
   chordFromEvent,
@@ -18,8 +19,7 @@ import {
 } from "../core/keybindings/index";
 import { type Disposable, DisposableStore, toDisposable } from "../core/lifecycle/index";
 import { type Signal, signal } from "../core/reactive/index";
-import { isModalDialogOpen } from "../ui/Dialog";
-import type { Notifications } from "../ui/Notifications";
+import type { NotificationService } from "./services";
 
 /**
  * The editor engine's own keybindings (Monaco's Ctrl+D, Alt+Up, Ctrl+/…; D204). Monaco handles
@@ -88,7 +88,9 @@ export class KeyboardService implements Disposable {
     private readonly platform: Platform,
     private readonly dispatcher: Dispatcher,
     private readonly context: ContextKeyService,
-    private readonly notifications: Notifications,
+    private readonly notifications: Pick<NotificationService, "show">,
+    /** Whether a modal dialog has the keys now (the window's dialogs; nothing without a screen). */
+    private readonly modalDialogOpen: () => boolean = () => false,
   ) {
     this.resolver = new KeybindingResolver([], platform);
   }
@@ -251,7 +253,9 @@ export class KeyboardService implements Disposable {
 
   /** Keys in another window (an auxiliary window) go through the same bindings. */
   attachDisposable(target: Window): Disposable {
-    return on(target, "keydown", (e) => this.onKeyDown(e), { capture: true });
+    const listener = (e: KeyboardEvent): void => this.onKeyDown(e);
+    target.addEventListener("keydown", listener, { capture: true });
+    return toDisposable(() => target.removeEventListener("keydown", listener, { capture: true }));
   }
 
   /** Keys a focused terminal takes for the program in it (set by the terminal, D192). */
@@ -270,7 +274,7 @@ export class KeyboardService implements Disposable {
   private onKeyDown(e: KeyboardEvent): void {
     // This window capture listener runs before a modal dialog's own: under a dialog the keys are
     // its own (Esc, Tab, Enter), never a command behind it.
-    if (e.isComposing || this.suspended > 0 || isModalDialogOpen()) return;
+    if (e.isComposing || this.suspended > 0 || this.modalDialogOpen()) return;
     const chord = chordFromEvent(e);
     if (!chord) return;
     // A program in the terminal (Claude Code, nano, tmux) gets its own keys (Ctrl+K, Ctrl+B…),

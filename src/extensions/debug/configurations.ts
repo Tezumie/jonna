@@ -62,7 +62,7 @@ export function debugConfigurations(services: WorkbenchServices) {
       workspaceFolder: own,
       folders,
       ...(active ? { file: active.path, lineNumber: active.line } : {}),
-      pathSeparator: services.platform === "windows" ? "\\" : "/",
+      pathSeparator: services.backendPlatform === "windows" ? "\\" : "/",
       config: (key: string) => settings.peekAt(key, own),
     };
   };

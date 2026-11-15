@@ -7,13 +7,13 @@ import { s } from "../../core/schema/index";
 import { mergeOrder, moveInOrder, orderViews, parseOrder } from "../../workbench/activityOrder";
 import type { Region } from "../../workbench/dock/service";
 import type { WorkbenchServices } from "../../workbench/services";
-import type { Workbench } from "../../workbench/workbench";
+import type { WorkbenchShell } from "./index";
 import { layoutTree } from "./layoutState";
 
 export function registerRegionCommands(
   sub: DisposableStore,
   services: WorkbenchServices,
-  workbench: Workbench,
+  workbench: WorkbenchShell,
 ): void {
   const { dispatcher, dock, layout } = services;
   const register: typeof dispatcher.register = (command) =>

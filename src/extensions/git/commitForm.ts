@@ -197,7 +197,7 @@ export class CommitForm implements Disposable {
         const branch = git.status.value?.branch.head;
         const key =
           services.keyboard.labelFor("git.commit") ??
-          (services.platform === "mac" ? "⌘Enter" : "Ctrl+Enter");
+          (services.screenPlatform === "mac" ? "⌘Enter" : "Ctrl+Enter");
         this.message.placeholder = options.title
           ? `Message (${key} to commit on "${branch ?? options.title}")`
           : `Message (${key} to commit)`;

@@ -1,56 +1,26 @@
 // Boot sequence:
-//   1. build core services and paint the shell synchronously (no IPC before first paint),
+//   1. build the services (createServices, with the window's implementations) and paint the shell
+//      synchronously (no IPC before first paint),
 //   2. activate built-in extensions and keybindings,
 //   3. reopen the folder from the command line or the last session (restores its state),
 //   4. Monaco warms up in the background (editor extension).
 
-import { OperationHistory } from "./core/history/index";
-import { NotebookProviders } from "./core/notebook/providers";
-import { ExtensionFeatures, toolsOf } from "./workbench/extensionFeatures";
 import "./styles/index.css";
-import { ContextKeyService, type ContextValue } from "./core/context/index";
-import { Dispatcher } from "./core/dispatcher/index";
-import { EventBus } from "./core/events/index";
-import { type BuiltinExtension, ExtensionHost } from "./core/extensions/index";
+import { ExtensionHost } from "./core/extensions/index";
 import { instancesIpc } from "./core/ipc/instances";
 import { hasBackend } from "./core/ipc/invoke";
 import { execIpc } from "./core/ipc/process";
-import { appIpc, auditIpc } from "./core/ipc/system";
+import { appIpc, auditIpc, storeIpc } from "./core/ipc/system";
 import type { Platform } from "./core/keybindings/index";
-import { LayoutModel } from "./core/layout/index";
 import { basename } from "./core/paths/index";
 import { perf } from "./core/perf";
-import { createM2Policy } from "./core/permissions/index";
 import { product } from "./core/product";
-import { computed, effect, signal } from "./core/reactive/index";
-import { StateTree } from "./core/state/index";
-import { accountsExtension } from "./extensions/accounts/index";
-import { agentExtension } from "./extensions/agent/index";
-import { bookmarksExtension } from "./extensions/bookmarks/index";
-import { browserExtension } from "./extensions/browser/index";
-import { debugExtension } from "./extensions/debug/index";
-import { editorExtension } from "./extensions/editor/index";
-import { explorerExtension } from "./extensions/explorer/index";
-import { extensionsExtension } from "./extensions/extensions/index";
-import { gitExtension } from "./extensions/git/index";
-import { helpExtension } from "./extensions/help/index";
-import { historyExtension } from "./extensions/history/index";
-import { keybindingsExtension } from "./extensions/keybindings/index";
-import { languageServersExtension } from "./extensions/languageServers/index";
-import { lspExtension } from "./extensions/lsp/index";
-import { mcpExtension } from "./extensions/mcp/index";
-import { paletteExtension } from "./extensions/palette/index";
-import { quickOpenExtension } from "./extensions/quickOpen/index";
-import { connectAtStartup, remoteExtension } from "./extensions/remote/index";
-import { searchExtension } from "./extensions/search/index";
-import { settingsExtension } from "./extensions/settings/index";
-import { tasksExtension } from "./extensions/tasks/index";
-import { terminalExtension } from "./extensions/terminal/index";
-import { testingExtension } from "./extensions/testing/index";
-import { viewersExtension } from "./extensions/viewers/index";
-import { windowsExtension, windowsStartupDone } from "./extensions/windows/index";
+import { computed, effect } from "./core/reactive/index";
+import { builtinExtensions } from "./extensions/builtins";
+import { connectAtStartup } from "./extensions/remote/index";
+import { windowsStartupDone } from "./extensions/windows/index";
 import { createWorkbenchExtension } from "./extensions/workbench/index";
-import { confirmAction } from "./ui/Dialog";
+import { confirmAction, isModalDialogOpen } from "./ui/Dialog";
 import { installIconSprite } from "./ui/Icon";
 import { Notifications } from "./ui/Notifications";
 import { QuickInput } from "./ui/QuickInput";
@@ -59,34 +29,19 @@ import { Tooltips } from "./ui/Tooltip";
 import { AuxWindowService } from "./workbench/auxWindow";
 import { applyBaseLayout } from "./workbench/baseLayout";
 import { suppressBrowserDefaults } from "./workbench/browserDefaults";
-import { Contributions } from "./workbench/contributions";
-import { DebugMarks } from "./workbench/debugMarks";
-import { DockService } from "./workbench/dock/service";
-import { DockViewRegistry } from "./workbench/dock/views";
-import { GitAccess } from "./workbench/gitAccess";
-import { GutterMarks } from "./workbench/gutterMarks";
-import { KeyboardService } from "./workbench/keyboard";
+import { createServices } from "./workbench/createServices";
+import { toolsOf } from "./workbench/extensionFeatures";
 import { registerMovableViews } from "./workbench/movableViews";
 import { askAgentPermission, askMcpPermission } from "./workbench/permissionPrompts";
-import { PersistenceService } from "./workbench/persistence";
+import type { PersistenceService } from "./workbench/persistence";
 import { parseRestoreWindows, startupFolders } from "./workbench/restoreWindows";
-import type { ExtensionGate, IdeEvents, WorkbenchServices } from "./workbench/services";
-import {
-  DocumentTexts,
-  FileDecorationService,
-  LanguageClientRegistry,
-  ProblemCollections,
-  QuickDiffService,
-  ViewerRegistry,
-} from "./workbench/services";
-import { SettingsService } from "./workbench/settings";
+import { localStorageFirstPaintCache, SettingsService } from "./workbench/settings";
 import { runTestScriptFile } from "./workbench/testRun";
 import { ThemeService } from "./workbench/theme";
-import { WorkspaceTrust } from "./workbench/trust";
-import { ViewRegistry } from "./workbench/views";
+import { trustDialogs } from "./workbench/trustDialogs";
 import { Workbench } from "./workbench/workbench";
-import { WorkspaceService } from "./workbench/workspace";
 
+/** The OS of the machine this window is on (the desktop app's backend is on the same one). */
 function detectPlatform(): Platform {
   const ua = navigator.userAgent;
   if (/Mac|iPhone|iPad/.test(ua)) return "mac";
@@ -110,7 +65,7 @@ async function boot(): Promise<void> {
   document.documentElement.dataset.platform = platform;
   // Theme attributes before the first paint (cached copy of the global preference).
   const theme = new ThemeService();
-  const firstPaint = SettingsService.cachedFirstPaint();
+  const firstPaint = localStorageFirstPaintCache.read();
   theme.apply({
     theme: firstPaint["workbench.theme"],
     density: firstPaint["workbench.density"],
@@ -135,160 +90,88 @@ async function boot(): Promise<void> {
     | undefined;
   if (syntax && typeof syntax.name === "string")
     theme.setSyntaxTheme({ name: syntax.name, json: syntax.json });
-  const settings = new SettingsService();
+  const settings = new SettingsService(localStorageFirstPaintCache);
 
-  // ---- Core services --------------------------------------------------------
-  // `config.<setting>` in when clauses is the setting's value, as in VS Code (D262).
-  const context = new ContextKeyService((key) =>
-    key.startsWith("config.") ? (settings.peek<unknown>(key.slice(7)) as ContextValue) : undefined,
-  );
-  settings.model.onDidChange((keys) => context.changedOutside(keys.map((k) => `config.${k}`)));
-  context.setMany({
-    isMac: platform === "mac",
-    isWindows: platform === "windows",
-    isLinux: platform === "linux",
-    isDev: __DEV__,
-  });
-  const events = new EventBus<IdeEvents>();
-  const state = new StateTree();
-  const layout = new LayoutModel();
-  const views = new ViewRegistry();
-  const dock = new DockService(new DockViewRegistry());
-  const persistence = new PersistenceService();
-  const workspace = new WorkspaceService(context, persistence);
-
-  // Notifications/QuickInput need the overlay host, which the workbench creates; the dispatcher
-  // needs a confirm function for destructive commands. Create in dependency order.
-  const extensionGate: ExtensionGate = {
-    authorize: async () => "deny",
-    folders: () => [],
-    enabledIds: signal<readonly string[]>([]),
-  };
-  const dispatcher = new Dispatcher({
-    context,
-    events,
-    permissions: createM2Policy({
-      confirm: (message, title) => confirmAction(title, message, "Delete", true),
-      askMcp: askMcpPermission,
-      askAgent: askAgentPermission,
-      // Browser protection (D179): every page action asks, even ones declared without effects
-      // (back, reload, scroll) and ones granted for the chat before it was turned on.
-      agentAlwaysAsks: (request) =>
-        request.commandId.startsWith("browser.") &&
-        !(request.effects.length > 0 && request.effects.every((e) => e === "read")) &&
-        settings.peek<boolean>("agent.browserProtection") === true,
-      testMode: () => testRun,
-      authorizeExtension: (request) => extensionGate.authorize(request),
-    }),
-    audit: (entry) => (hasBackend() ? auditIpc.append(entry) : undefined),
-    validateOutput: __DEV__,
-  });
+  // ---- Services -------------------------------------------------------------
+  // The window's implementations; everything else is built by createServices, the same way a
+  // screenless entry builds it. Notifications/QuickInput need the overlay host, and the workbench
+  // needs the logic services, so those are made inside the callbacks, in dependency order.
   // Overlays (notifications, quick input) live outside the workbench grid.
   const overlay = document.createElement("div");
   overlay.className = "overlay-host";
-  document.body.appendChild(overlay);
-  const notifications = new Notifications(overlay);
-  const keyboard = new KeyboardService(platform, dispatcher, context, notifications);
-  new Tooltips((command) => keyboard.labelFor(command));
-  keyboard.attach(window);
-  suppressBrowserDefaults(window);
-
-  /** The active editor's name, shown in the window title (set by the editor extension). */
-  const titleDetail = signal<string | null>(null);
-  const decorations = new FileDecorationService();
-  const quickDiff = new QuickDiffService();
-  const languageClients = new LanguageClientRegistry();
-  const viewers = new ViewerRegistry();
-  const notebooks = new NotebookProviders();
-  const documents = new DocumentTexts();
-  const history = new OperationHistory();
-  const title = computed(() =>
-    [titleDetail.value, workspace.name.value, product.nameLong].filter(Boolean).join(" — "),
-  );
-  // Before the workbench: New tab lists extensions' tools (D181).
-  const extensionFeatures = new ExtensionFeatures();
-  const workbench = new Workbench(host, {
-    platform,
-    dispatcher,
-    context,
-    layout,
-    views,
-    keyboard,
-    dock,
-    title,
-    workspaceName: workspace.name,
-    regions: { bottom: dock.regionVisible("bottom"), right: dock.regionVisible("right") },
-    decorations,
-    tools: () => toolsOf(extensionFeatures, context),
-  });
-  const quickInput = new QuickInput(overlay);
-  quickInput.anchor = () => workbench.titleBar.commandField.getBoundingClientRect();
-  effect(() => {
-    context.set("quickInputVisible", quickInput.visible.value);
-    return undefined;
-  });
-  // User-run commands that fail surface as a toast (declined confirmations don't).
-  events.on("command.executed", (e) => {
-    if (e.caller.kind === "user" && e.error && e.status !== "denied")
-      notifications.show("error", e.error);
-  });
-
-  const services: WorkbenchServices = {
-    platform,
-    dispatcher,
-    context,
-    state,
-    events,
-    layout,
-    views,
-    statusBar: workbench.statusBar,
-    quickInput,
-    notifications,
-    keyboard,
-    workspace,
-    persistence,
-    dock,
-    theme,
+  const shell: { workbench: Workbench | null } = { workbench: null };
+  const services = createServices({
+    screenPlatform: platform,
+    backendPlatform: platform,
+    hasScreen: true,
     settings,
-    iframes: workbench.iframes,
-    auxWindows: new AuxWindowService(keyboard),
-    contributions: new Contributions(),
-    extensionGate,
-    codeCheck: { newErrors: async () => null },
-    languageModel: {
-      model: () => null,
-      generate: () => Promise.reject(new Error("No model is set up (see the agent panel).")),
+    theme,
+    permissions: {
+      confirm: (message, title) => confirmAction(title, message, "Delete", true),
+      askMcp: askMcpPermission,
+      askAgent: askAgentPermission,
+      testMode: () => testRun,
     },
-    trust: new WorkspaceTrust(workspace, persistence, context),
-    dragFile: (down, source, path, paths) =>
-      workbench.drag.arm(
-        { kind: "file", path, ...(paths && paths.length > 1 && { paths }) },
-        down,
-        source,
-        paths && paths.length > 1 ? `${paths.length} items` : basename(path),
-      ),
-    dragViews: (down, source, items, label) =>
-      workbench.drag.arm({ kind: "views", items }, down, source, label),
-    fileDropTarget: (element, drop) => workbench.drag.addFileTarget(element, drop),
-    tabDropTarget: (element, accepts, drop) => workbench.drag.addTabTarget(element, accepts, drop),
-    titleDetail,
-    decorations,
-    quickDiff,
-    languageClients,
-    viewers,
-    notebooks,
-    documents,
-    history,
-    problems: new ProblemCollections(),
-    extensionFeatures,
-    taskTerminals: {
-      run: () => Promise.reject(new Error("Terminals aren't available.")),
+    stateBackend: storeIpc,
+    audit: (entry) => (hasBackend() ? auditIpc.append(entry) : undefined),
+    validateOutput: __DEV__,
+    notifications: () => {
+      document.body.appendChild(overlay);
+      return new Notifications(overlay);
     },
-    debugMarks: new DebugMarks(),
-    gutterMarks: new GutterMarks(),
-    gitAccess: new GitAccess(),
-  };
-  registerShellStatus(services);
+    modalDialogOpen: isModalDialogOpen,
+    trustPrompts: trustDialogs,
+    nextFrame: (run) => void requestAnimationFrame(run),
+    screen: (logic) => {
+      const { dispatcher, context, keyboard, workspace, dock, extensionFeatures } = logic;
+      new Tooltips((command) => keyboard.labelFor(command));
+      keyboard.attach(window);
+      suppressBrowserDefaults(window);
+      const title = computed(() =>
+        [logic.titleDetail.value, workspace.name.value, product.nameLong]
+          .filter(Boolean)
+          .join(" — "),
+      );
+      const made = new Workbench(host, {
+        platform,
+        dispatcher,
+        context,
+        layout: logic.layout,
+        views: logic.views,
+        keyboard,
+        dock,
+        title,
+        workspaceName: workspace.name,
+        regions: { bottom: dock.regionVisible("bottom"), right: dock.regionVisible("right") },
+        decorations: logic.decorations,
+        tools: () => toolsOf(extensionFeatures, context),
+      });
+      shell.workbench = made;
+      const quickInput = new QuickInput(overlay);
+      quickInput.anchor = () => made.titleBar.commandField.getBoundingClientRect();
+      return {
+        statusBar: made.statusBar,
+        quickInput,
+        iframes: made.iframes,
+        auxWindows: new AuxWindowService(keyboard),
+        dragFile: (down, source, path, paths) =>
+          made.drag.arm(
+            { kind: "file", path, ...(paths && paths.length > 1 && { paths }) },
+            down,
+            source,
+            paths && paths.length > 1 ? `${paths.length} items` : basename(path),
+          ),
+        dragViews: (down, source, items, label) =>
+          made.drag.arm({ kind: "views", items }, down, source, label),
+        fileDropTarget: (element, drop) => made.drag.addFileTarget(element, drop),
+        tabDropTarget: (element, accepts, drop) => made.drag.addTabTarget(element, accepts, drop),
+      };
+    },
+  });
+  const workbench = shell.workbench;
+  if (!workbench) throw new Error("The workbench was not built.");
+  const { dispatcher, context, state, layout, dock, persistence, workspace } = services;
+  const { notifications, keyboard, languageClients } = services;
   // Sidebar views that move into the dock (D233); before extensions, so the dock restores them.
   registerMovableViews(services, workbench.sidebar);
   // Dev builds: a handle for automated UI tests (scripts/ui-smoke.mjs). Not present in production.
@@ -301,34 +184,7 @@ async function boot(): Promise<void> {
   perf.mark("shellPainted");
 
   // ---- 2. Extensions ----------------------------------------------------------
-  const builtins: BuiltinExtension<WorkbenchServices>[] = [
-    createWorkbenchExtension(workbench),
-    paletteExtension,
-    explorerExtension,
-    editorExtension,
-    viewersExtension,
-    historyExtension,
-    helpExtension,
-    browserExtension,
-    tasksExtension,
-    terminalExtension,
-    settingsExtension,
-    quickOpenExtension,
-    searchExtension,
-    keybindingsExtension,
-    mcpExtension,
-    gitExtension,
-    debugExtension,
-    bookmarksExtension,
-    windowsExtension,
-    remoteExtension,
-    testingExtension,
-    accountsExtension,
-    extensionsExtension,
-    languageServersExtension,
-    lspExtension,
-    agentExtension,
-  ];
+  const builtins = builtinExtensions(createWorkbenchExtension(workbench));
   if (__DEV__) builtins.push((await import("./extensions/dev/index")).devExtension);
   const extensionHost = new ExtensionHost(services, (id) => dispatcher.has(id));
   keyboard.setRules(extensionHost.keybindings(builtins));
@@ -439,37 +295,6 @@ async function migrateUiPreferences(
   )
     await settings.update("workbench.density", ui.density, "user").catch(() => {});
   await persistence.saveGlobal({ ui: undefined });
-}
-
-function registerShellStatus(services: WorkbenchServices): void {
-  const { statusBar, workspace, keyboard } = services;
-  statusBar.add({
-    id: "workspace.folder",
-    name: "Folder",
-    alignment: "left",
-    priority: 100,
-    text: () => (workspace.root.value ? (workspace.name.value ?? "") : "No folder open"),
-    // A multi-root workspace lists its folders (D251).
-    tooltip: () =>
-      workspace.file.value
-        ? [
-            workspace.file.value,
-            ...workspace.folders.value.map((f) => `${f.name}: ${f.path}`),
-          ].join("\n")
-        : (workspace.root.value ?? "Open a folder to start"),
-    command: "workspace.openFolder",
-  });
-  statusBar.add({
-    id: "keyboard.chord",
-    name: "Key chord",
-    hideable: false,
-    alignment: "left",
-    priority: 50,
-    text: () =>
-      keyboard.pendingChord.value
-        ? `(${keyboard.pendingChord.value}) was pressed. Waiting for second key of chord…`
-        : "",
-  });
 }
 
 boot().catch((err: unknown) => {

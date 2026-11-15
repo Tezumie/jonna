@@ -225,7 +225,7 @@ export function registerResults(deps: ResultsDeps): void {
         cwd,
         ...(nodeModules && { nodeModules }),
       },
-      services.platform === "windows",
+      services.backendPlatform === "windows",
     );
     if (!configuration) throw new Error(`Debugging ${one.framework} tests isn't supported.`);
     const started = (await execute("debug.start", { configuration })) as Record<string, unknown>;

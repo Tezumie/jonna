@@ -30,7 +30,6 @@ import { translateVscodeSettings } from "../core/settings/vscode";
 import type { WorkspaceService } from "./workspace";
 import { ensureWorkspaceFolder, workspaceFolderName, workspaceFolders } from "./workspaceFolder";
 
-/** Values cached in localStorage so the first paint already uses them (theme, density, panels). */
 /** A value a setting can take, for settings whose values are only known at runtime (themes). */
 /**
  * A string setting chosen in a popup of its own (D288: a model, in the chat's model picker): the
@@ -66,6 +65,35 @@ type FirstPaintKey =
   | "theme.overrides"
   | "theme.syntax";
 const FIRST_PAINT_CACHE = "settings-first-paint";
+
+/**
+ * Where the look is kept for the next start's first paint, read before the settings files are
+ * (theme, density, panels). The window keeps it in localStorage; without a screen there is none.
+ */
+export interface FirstPaintCache {
+  read(): Record<string, unknown>;
+  write(values: Record<string, unknown>): void;
+}
+
+/** The window's first-paint cache: localStorage (absent or damaged: no values, nothing kept). */
+export const localStorageFirstPaintCache: FirstPaintCache = {
+  read() {
+    try {
+      const raw = localStorage.getItem(FIRST_PAINT_CACHE);
+      const value: unknown = raw ? JSON.parse(raw) : null;
+      return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  },
+  write(values) {
+    try {
+      localStorage.setItem(FIRST_PAINT_CACHE, JSON.stringify(values));
+    } catch {
+      // Storage unavailable: the first paint uses defaults until the files are read.
+    }
+  },
+};
 
 export class SettingsService implements Disposable {
   readonly registry = new SettingsRegistry();
@@ -124,7 +152,8 @@ export class SettingsService implements Disposable {
     return this.choiceProviders.get(key)?.();
   }
 
-  constructor() {
+  /** `firstPaint`: where the look is cached for the next start (the window's); default: nowhere. */
+  constructor(private readonly firstPaint: FirstPaintCache | null = null) {
     this.store.add(
       this.model.onDidChange(() => {
         this.version.value = this.version.peek() + 1;
@@ -625,15 +654,9 @@ export class SettingsService implements Disposable {
     return joinPath(joinPath(folder, workspaceFolderName()), "settings.json");
   }
 
-  /** Values cached for the next start's first paint (before the files are read). */
-  static cachedFirstPaint(): Record<string, unknown> {
-    try {
-      const raw = localStorage.getItem(FIRST_PAINT_CACHE);
-      const value: unknown = raw ? JSON.parse(raw) : null;
-      return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-    } catch {
-      return {};
-    }
+  /** Values cached for the next start's first paint (before the files are read); none without a cache. */
+  cachedFirstPaint(): Record<string, unknown> {
+    return this.firstPaint?.read() ?? {};
   }
 
   /** Values the next start's first paint should use that aren't plain settings (the theme's kind). */
@@ -655,15 +678,11 @@ export class SettingsService implements Disposable {
   }
 
   private cacheFirstPaint(): void {
-    try {
-      const values = {
-        ...Object.fromEntries(FIRST_PAINT_KEYS.map((k) => [k, this.model.get(k)])),
-        ...this.firstPaintOverrides,
-      };
-      localStorage.setItem(FIRST_PAINT_CACHE, JSON.stringify(values));
-    } catch {
-      // Storage unavailable: the first paint uses defaults until the files are read.
-    }
+    if (!this.firstPaint) return;
+    this.firstPaint.write({
+      ...Object.fromEntries(FIRST_PAINT_KEYS.map((k) => [k, this.model.get(k)])),
+      ...this.firstPaintOverrides,
+    });
   }
 
   dispose(): void {

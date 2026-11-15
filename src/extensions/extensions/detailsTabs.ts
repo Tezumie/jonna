@@ -348,7 +348,7 @@ export function features(
     ["Key", "Command"],
     c.keybindings
       .filter((k) => !k.command.startsWith("-"))
-      .map((k) => [services.platform === "mac" ? (k.mac ?? k.key) : k.key, k.command]),
+      .map((k) => [services.screenPlatform === "mac" ? (k.mac ?? k.key) : k.key, k.command]),
   );
   table(
     "Snippets",

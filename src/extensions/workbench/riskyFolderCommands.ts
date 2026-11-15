@@ -8,7 +8,7 @@
 import { type DisposableStore, toDisposable } from "../../core/lifecycle/index";
 import { isAbsolute, pathKey } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
-import { askRiskyOpen } from "../../workbench/riskyFolders";
+import { askRiskyOpen } from "../../workbench/riskyOpenDialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import { withDecision } from "../../workbench/trustModel";
 

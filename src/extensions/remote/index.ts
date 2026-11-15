@@ -472,6 +472,7 @@ export const remoteExtension: BuiltinExtension<WorkbenchServices> = {
         input: s.object({ x: s.number().optional(), y: s.number().optional() }),
         effects: [],
         agent: "hidden",
+        needsScreen: true,
         palette: false,
         run: ({ x, y }) => {
           const r = remote.peek();

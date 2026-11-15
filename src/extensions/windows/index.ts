@@ -201,7 +201,7 @@ export const windowsExtension: BuiltinExtension<WorkbenchServices> = {
           if (dryRun) return plan;
           const ok = await confirmAction(
             `Remove the “${plan.name}” command?`,
-            `Removes ${plan.path}${services.platform === "windows" ? ` and ${plan.folder} from your user PATH` : ""}.`,
+            `Removes ${plan.path}${services.backendPlatform === "windows" ? ` and ${plan.folder} from your user PATH` : ""}.`,
             "Remove",
             true,
           );

@@ -272,7 +272,7 @@ export class TestController implements Disposable {
   }
 
   private get windows(): boolean {
-    return this.services.platform === "windows";
+    return this.services.backendPlatform === "windows";
   }
 
   private async readText(path: string, max = MAX_FILE_BYTES): Promise<string | null> {

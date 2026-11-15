@@ -158,7 +158,7 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
           },
         );
       },
-      isMac: services.platform === "mac",
+      isMac: services.screenPlatform === "mac",
       isLocalUrl,
       openUrl: (url) => {
         const local = isLocalUrl(url) && dispatcher.has("browser.open");
@@ -170,7 +170,7 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
         const root = workspace.root.peek() ?? "";
         // `~/…` (and `~\…` on Windows) is the user's home folder, as the shell read it; in a
         // WSL terminal it's the distribution's, and `/…` is a Linux path there (D229).
-        const wsl = services.platform === "windows" ? parseWslPath(cwd || root) : null;
+        const wsl = services.backendPlatform === "windows" ? parseWslPath(cwd || root) : null;
         const home = !path.startsWith("~")
           ? null
           : wsl
@@ -178,7 +178,7 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
             : await userHome();
         const expanded = wsl
           ? wslPathToWindows(path, wsl.distro, home)
-          : expandHomePath(path, home, services.platform === "windows");
+          : expandHomePath(path, home, services.backendPlatform === "windows");
         if (expanded.startsWith("~")) return null;
         const abs = isAbsolute(expanded) ? expanded : resolveInRoot(cwd || root, expanded);
         // Home is usually outside the folder, where the file scope can't look before a click:
@@ -210,8 +210,8 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
           ),
         ),
       clipboard: {
-        isMac: services.platform === "mac",
-        isWindows: services.platform === "windows",
+        isMac: services.screenPlatform === "mac",
+        isWindows: services.screenPlatform === "windows",
         read: () => clipboardIpc.readText().catch(() => ""),
         write: (text) => clipboardIpc.writeText(text).catch(() => {}),
         copyOnSelection: () => settings.peek<boolean>("terminal.copyOnSelection") === true,
@@ -344,7 +344,7 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
       keybinding: (command) => services.keyboard.labelFor(command),
       canFix: () =>
         dispatcher.has("agent.send") && settings.peek<boolean>("terminal.fixWithAgent") !== false,
-      isMac: services.platform === "mac",
+      isMac: services.screenPlatform === "mac",
       rightClickBehavior: () =>
         settings.peek<string>("terminal.rightClickBehavior") === "copyPaste" ? "copyPaste" : "menu",
       appearance: () => ({
@@ -387,28 +387,29 @@ export const terminalExtension: BuiltinExtension<WorkbenchServices> = {
 
     // Files dropped from the OS onto a terminal: their paths typed at the prompt, quoted for the
     // shell (VS Code and every terminal app do this). The view is marked `data-os-drop`, so the
-    // explorer leaves the drop alone.
-    void dragDropIpc
-      .listen((e) => {
-        if (e.kind !== "drop" || !e.paths.length) return;
-        const el = document.elementFromPoint(e.x, e.y)?.closest<HTMLElement>(".terminal-pane");
-        const view = [...views.values()].find(
-          (v) => v.element === el || v.element.contains(el ?? null),
-        );
-        const t = view?.instance;
-        if (!t || t.exitCode.peek() !== null) return;
-        void ptyIpc
-          .write(
-            t.id,
-            `${e.paths.map((p) => quotePathForShell(p, t.info.shell, t.info.msys)).join(" ")} `,
-          )
-          .catch(() => {});
-        t.renderer.focus();
-      })
-      .then((d) => {
-        if (sub.isDisposed) d.dispose();
-        else sub.add(d);
-      });
+    // explorer leaves the drop alone. Only a window is dragged onto.
+    if (services.hasScreen)
+      void dragDropIpc
+        .listen((e) => {
+          if (e.kind !== "drop" || !e.paths.length) return;
+          const el = document.elementFromPoint(e.x, e.y)?.closest<HTMLElement>(".terminal-pane");
+          const view = [...views.values()].find(
+            (v) => v.element === el || v.element.contains(el ?? null),
+          );
+          const t = view?.instance;
+          if (!t || t.exitCode.peek() !== null) return;
+          void ptyIpc
+            .write(
+              t.id,
+              `${e.paths.map((p) => quotePathForShell(p, t.info.shell, t.info.msys)).join(" ")} `,
+            )
+            .catch(() => {});
+          t.renderer.focus();
+        })
+        .then((d) => {
+          if (sub.isDisposed) d.dispose();
+          else sub.add(d);
+        });
 
     const tabOf = (id: number) => [...views.values()].find((v) => v.instance?.id === id);
     const recentTerminalTab = () => dock.recentTab((t) => t.viewType === "terminal");

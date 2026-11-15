@@ -544,7 +544,7 @@ export const lspExtension: BuiltinExtension<WorkbenchServices> = {
           }
           const config = configs.find((c) => c.name === name);
           if (!config) throw new Error(`No installable language server named ${name}.`);
-          const platform = services.platform;
+          const platform = services.backendPlatform;
           const methods = methodsFor(config.install, platform);
           const installed = await execIpc
             .installed(methods.map((m) => installProgram(m.tool, platform)))
@@ -705,7 +705,7 @@ export const lspExtension: BuiltinExtension<WorkbenchServices> = {
       const perFolder = await Promise.all(
         folders.map(async (folder) => {
           const found = await Promise.all(
-            venvCandidates(folder.path, services.platform).map((p) =>
+            venvCandidates(folder.path, services.backendPlatform).map((p) =>
               fsIpc.stat(p).then(
                 (st) => (st.kind === "file" ? p : null),
                 () => null,
@@ -807,7 +807,9 @@ export const lspExtension: BuiltinExtension<WorkbenchServices> = {
                 ? await services.quickInput.prompt({
                     prompt: "Path to a Python interpreter",
                     placeholder:
-                      services.platform === "windows" ? "C:\\…\\python.exe" : "/usr/bin/python3",
+                      services.backendPlatform === "windows"
+                        ? "C:\\…\\python.exe"
+                        : "/usr/bin/python3",
                   })
                 : picked.id;
             if (chosen === undefined) return { interpreter };

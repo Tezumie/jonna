@@ -108,6 +108,14 @@ look up → `when` → validate input → caller checks (`permissions/commandGua
 Command ids are `namespace.verb`; descriptions are written for models as well as humans.
 Nested `ctx.execute()` calls keep the caller. Audit entries go to Rust (`logs/audit.jsonl`).
 
+Without a screen (`screen.ts`): a command may be marked `needsScreen` (it only shows a view, a
+menu or the window itself; `CommandInfo.needsScreen` is present when set). Where the dispatcher is
+told there is no screen (`DispatcherDeps.hasScreen`, default: there is one), a marked command is
+refused as `Disabled` with a message that says so, and one that reaches for the page anyway
+fails with a readable message (`screenlessFailure`) instead of "document is not defined".
+`NeedsScreenError` is what services and commands throw where a screen is needed and there is
+none. With a screen none of this applies.
+
 ## diagnostics/
 
 Alpha support (D204), DOM-free and tested (`diagnostics.test.ts`): `redact.ts` (`redactText`:
@@ -165,6 +173,7 @@ by day, for the Timeline.
 `h(tag, props, ...children)` builds elements (no event props — use `on()` so listeners are owned),
 `on(target, type, handler) → Disposable`, `delegate(root, type, selector, handler)`,
 `replaceChildren`, `classNames`. Tests can route `h()` to a fake document (`setDocumentForTests`).
+Where there is no document at all (a screenless session), `h()` throws a `NeedsScreenError`.
 
 ## events/
 

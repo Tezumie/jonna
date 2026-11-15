@@ -10,7 +10,6 @@ import "./colorCustomizations.css";
 import { type MenuAnchor, type MenuItem, showMenu } from "../../ui/Menu";
 import type { ColorThemeEntry } from "../../workbench/contributions";
 import type { WorkbenchServices } from "../../workbench/services";
-import { SettingsService } from "../../workbench/settings";
 import {
   DENSITIES,
   type Density,
@@ -100,11 +99,16 @@ export function registerAppearance(sub: DisposableStore, services: WorkbenchServ
   sub.add(
     settings.registerChoices("workbench.preferredLightColorTheme", () => themeChoices("light")),
   );
-  const osScheme = window.matchMedia("(prefers-color-scheme: dark)");
-  const osDark = signal(osScheme.matches);
-  const onScheme = (e: MediaQueryListEvent) => (osDark.value = e.matches);
-  osScheme.addEventListener("change", onScheme);
-  sub.add({ dispose: () => osScheme.removeEventListener("change", onScheme) });
+  // The OS's color scheme as the window's page sees it; without a screen there is none to follow
+  // (dark, the default theme's kind).
+  const osDark = signal(true);
+  if (services.hasScreen) {
+    const osScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    osDark.value = osScheme.matches;
+    const onScheme = (e: MediaQueryListEvent) => (osDark.value = e.matches);
+    osScheme.addEventListener("change", onScheme);
+    sub.add({ dispose: () => osScheme.removeEventListener("change", onScheme) });
+  }
   /** The color theme to show: workbench.colorTheme, or the OS's preferred one (autoDetect). */
   const chosenTheme = () => {
     if (settings.get<boolean>("window.autoDetectColorScheme") === true)
@@ -314,18 +318,19 @@ export function registerAppearance(sub: DisposableStore, services: WorkbenchServ
     return p;
   };
   // workbench.scrollbarSize (D128): the width of every scrollbar outside the editor and terminal.
-  sub.add(
-    effect(() => {
-      const px = settings.get<number>("workbench.scrollbarSize") ?? 10;
-      document.documentElement.style.setProperty("--size-scrollbar", `${px}px`);
-      return undefined;
-    }),
-  );
+  if (services.hasScreen)
+    sub.add(
+      effect(() => {
+        const px = settings.get<number>("workbench.scrollbarSize") ?? 10;
+        document.documentElement.style.setProperty("--size-scrollbar", `${px}px`);
+        return undefined;
+      }),
+    );
   let applied = 0;
   let migrating = false;
   // What the first paint used (the last start's theme): kept while the settings load and while
   // an extension's theme isn't registered yet, so nothing flashes the default (D136).
-  const cached = SettingsService.cachedFirstPaint();
+  const cached = settings.cachedFirstPaint();
   const grace = signal(false);
   const graceTimer = setTimeout(() => (grace.value = true), 5000);
   sub.add({ dispose: () => clearTimeout(graceTimer) });

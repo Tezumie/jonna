@@ -63,15 +63,17 @@ export const debugExtension: BuiltinExtension<WorkbenchServices> = {
     );
     sub.add(dock.views.register(debugConsoleDescriptor(services, debug)));
     sub.add(dock.views.register(disassemblyDescriptor(services, debug)));
-    registerFloatingToolbar(
-      sub,
-      services,
-      debug,
-      (command) =>
-        void dispatcher.execute(command, {}).catch((err: unknown) => {
-          services.notifications.show("error", err instanceof Error ? err.message : String(err));
-        }),
-    );
+    // The toolbar floats over the window: only where there is one.
+    if (services.hasScreen)
+      registerFloatingToolbar(
+        sub,
+        services,
+        debug,
+        (command) =>
+          void dispatcher.execute(command, {}).catch((err: unknown) => {
+            services.notifications.show("error", err instanceof Error ? err.message : String(err));
+          }),
+      );
 
     // ---- Context keys, status bar, breakpoints in the editor ----
     sub.add(

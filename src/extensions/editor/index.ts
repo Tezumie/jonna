@@ -723,11 +723,12 @@ export const editorExtension: BuiltinExtension<WorkbenchServices> = {
         for (const t of autoSaveTimers.values()) clearTimeout(t);
       },
     });
-    sub.add(
-      on(window, "blur", () => {
-        autoSaveAll(["onWindowChange", "onFocusChange"]);
-      }),
-    );
+    if (services.hasScreen)
+      sub.add(
+        on(window, "blur", () => {
+          autoSaveAll(["onWindowChange", "onFocusChange"]);
+        }),
+      );
     let lastEditorTab: string | null = null;
     sub.add(
       effect(() => {
@@ -1181,9 +1182,15 @@ export const editorExtension: BuiltinExtension<WorkbenchServices> = {
     );
     Object.assign(services.codeCheck, createCodeCheck(editors));
 
-    // Warm Monaco up shortly after the shell has painted (not on the startup path).
-    const warm = setTimeout(() => void editors.ensureEngine().catch((e) => console.error(e)), 250);
-    sub.add({ dispose: () => clearTimeout(warm) });
+    // Warm Monaco up shortly after the shell has painted (not on the startup path). Only a
+    // screen has an engine to warm.
+    if (services.hasScreen) {
+      const warm = setTimeout(
+        () => void editors.ensureEngine().catch((e) => console.error(e)),
+        250,
+      );
+      sub.add({ dispose: () => clearTimeout(warm) });
+    }
   },
 };
 

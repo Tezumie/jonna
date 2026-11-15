@@ -144,9 +144,13 @@ export class GitController implements GitRepo {
       "files.didChange",
     ] as const)
       this.store.add(events.on(name, soon));
-    const onFocus = () => this.schedule(0);
-    window.addEventListener("focus", onFocus);
-    this.store.add(toDisposable(() => window.removeEventListener("focus", onFocus)));
+    // Coming back to the window refreshes at once (work done in another program); without a
+    // screen the file events and the watcher do.
+    if (services.hasScreen) {
+      const onFocus = () => this.schedule(0);
+      window.addEventListener("focus", onFocus);
+      this.store.add(toDisposable(() => window.removeEventListener("focus", onFocus)));
+    }
     this.store.add({
       dispose: () => {
         clearTimeout(this.timer);

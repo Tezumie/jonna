@@ -71,8 +71,8 @@ export function registerExtensionActions(
       return undefined;
     }),
   );
-  const timer = window.setTimeout(() => void checkAtStart(), AUTO_UPDATE_DELAY_MS);
-  sub.add(toDisposable(() => window.clearTimeout(timer)));
+  const timer = setTimeout(() => void checkAtStart(), AUTO_UPDATE_DELAY_MS);
+  sub.add(toDisposable(() => clearTimeout(timer)));
   sub.add(
     effect(() => {
       const n = storeUpdates.value.length;
