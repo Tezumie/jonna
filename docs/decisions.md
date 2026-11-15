@@ -15232,3 +15232,51 @@ to. `PLAN.md` had no such build.
   of a lockdown than a web worker, and the permission question still applies.
 - **Tests' fake backends are transports** (D429); a full turn runs in a realm with no
   document, on a keyed provider and on an external agent.
+
+## D432 — A command-line agent
+
+The agent as a terminal program, built from D428's host and D431's brain
+(`src/headless/cli/`, `docs/guide/22-command-line-agent.md`). Not yet installed with the app.
+
+- **What it is:** a Node bundle (`node build.mjs --headless` → `dist-headless/`) with two
+  launchers the build writes, a `.cmd` and a shell script, named after the product's short
+  name in lower case (`--cli-name=` for another). No `.ps1`: the default execution policy
+  refuses it. Node 20 is required, as for the extension host. The launcher finds the host
+  program by `--host`, `IDE_HOST_PATH`, beside the bundle, up to two folders up, then a
+  checkout's build folders.
+- **Modes:** a session at a terminal; one shot (`-p`, a positional prompt, `exec`, stdin,
+  `--prompt-file`); `sessions list` and `show`; `serve` (the brain kept running, commands,
+  state and a chat's events on a loopback socket with a token, newline-delimited JSON, one
+  client); `acp` (the Agent Client Protocol on its own pipes, so other editors can run it).
+- **No terminal UI library** (rule 3): Node's `readline`, ANSI escapes, a small Markdown
+  renderer. `NO_COLOR` / `FORCE_COLOR` are honoured. Text from the model is stripped of escape
+  sequences before it reaches a terminal.
+- **Output:** text, one JSON result, or a stream of JSON events (D431's union). In text mode
+  stdout carries the answer alone; progress goes to stderr.
+- **Exit codes:** 0 done; 1 failed or a limit reached; 2 bad usage or configuration; 3
+  something was refused during a run that otherwise answered; 130 interrupted.
+- **Precedence:** a flag, then `--settings`, then the user's settings, then the folder's.
+  Flags are run-only overrides (D431) and write no file.
+- **A one shot** keeps edits unless `--review` or ask mode, and refuses what would need an
+  answer when no terminal is there (`--non-interactive` forces it).
+- **Trust:** a folder nobody decided about stays undecided, as in the app before its question
+  is answered: its rules file is read; its hooks, MCP servers, tasks and restricted settings
+  are off, and the run says so. `--trust` remembers; a session at a terminal asks once.
+- **Keys** come from the app's store or the environment (D428); `/key` stores one from a
+  terminal, typed unseen. Never printed.
+- **Memory upkeep is held off in a headless run:** each run otherwise started a "Tidy up
+  agent memory" chat, with its own model work, and `--continue` picked that chat.
+- **The end of a run waits only for calls sent since the end began,** not for slow start-up
+  probes still in flight: a one shot went from about 4 s to about 1 s.
+- **`acp`:** its session modes are the four access modes plus plan; reviewed files and the
+  agent's questions reach the editor as permission requests; one process serves one folder.
+- **Sharing a profile** with a running window or another run is the sharing two windows
+  already do: chats are files written whole with a version check, the global state is read
+  again before each write.
+- **Tests:** unit tests for arguments, precedence, formats, exit codes, the renderer and slash
+  commands; `scripts/cli-e2e.mjs` runs the real launcher over the real host (36 scenarios,
+  the session in a real pseudo-terminal among them); `scripts/headless-e2e.mjs` the brain.
+- **Open, for the owner:** the launcher's name is also the name of the desktop's "Install
+  shell command in PATH" command, so the two collide on one PATH (another name, or the
+  desktop's command forwarding these modes); installing it with the app; the guide page is
+  not yet listed in the app's help; Linux and macOS have not run it.
