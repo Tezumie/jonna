@@ -114,6 +114,7 @@ export async function sendExternal(
     });
   session.status.value = "running";
   session.error.value = null;
+  session.endedBy = null;
   session.cancelled = false;
   opts.onStart?.();
   session.bump();

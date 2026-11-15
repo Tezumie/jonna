@@ -66,10 +66,16 @@ export function registerModelCommands(
         .describe("With acp/<agent>: that agent's own model (see agent.setAgentModel)")
         .optional(),
       agentLevel: s.string().describe("With acp/<agent>: its reasoning level").optional(),
+      remember: s
+        .boolean()
+        .describe("false: this chat only; the default for new chats stays as it is")
+        .optional(),
     }),
     effects: [],
     agent: "hidden",
-    run: async ({ model, session, provider, agentModel, agentLevel }) => {
+    run: async ({ model, session, provider, agentModel, agentLevel, remember: keep }) => {
+      // A choice for one chat (a run's `--model`): the settings and the recent picks stay.
+      const forNewChats = keep !== false;
       await providers.refreshIfStale(5000, 3000);
       let key = model;
       if (!key) {
@@ -98,8 +104,10 @@ export function registerModelCommands(
           void target.prepareExternal().catch(() => {});
         }
         // New chats start with it too: the main agent (D196).
-        await settings.update("agent.model", key, "user").catch(() => {});
-        await remember(agentPickKey(name, agentModel));
+        if (forNewChats) {
+          await settings.update("agent.model", key, "user").catch(() => {});
+          await remember(agentPickKey(name, agentModel));
+        }
         return { model: key };
       }
       const choice = providers.find(key) ?? providers.models.peek().find((m) => m.model === key);
@@ -110,8 +118,10 @@ export function registerModelCommands(
         sess.model.value = choice.key;
         void sess.save();
       }
-      await settings.update("agent.model", choice.key, "user").catch(() => {});
-      await remember(choice.key);
+      if (forNewChats) {
+        await settings.update("agent.model", choice.key, "user").catch(() => {});
+        await remember(choice.key);
+      }
       return { model: choice.key };
     },
   });

@@ -37,6 +37,7 @@ import { agentHost, headlessAgentHost, setAgentHost } from "./agentHost";
 import { registerAgentCommands } from "./commands";
 import { ProviderRegistry } from "./providers";
 import { NEEDS_SCREEN } from "./session";
+import { observeSession, type SessionEvent } from "./sessionEvents";
 import { SessionManager } from "./sessions";
 import { PLAN_YES } from "./turnTools";
 
@@ -592,5 +593,126 @@ test("an external agent's turn with no window: started, its permission answered,
   assert.equal(reply?.type === "assistant" ? reply.text : "", "You chose yes.");
   assert.ok(backend.calls.some((c) => c.command === "lsp_start"));
   assert.equal(noScreen(), true);
+  agent.dispose();
+});
+
+test("a run's policy: its deny list refuses, its allow list answers, the rest is refused; the chat tells it as events", async () => {
+  const agent = await startAgent(true);
+  const { services, session } = agent;
+  setAgentHost(
+    services,
+    headlessAgentHost({
+      permissions: { allow: ["echo"], deny: ["write_file"], otherwise: "deny" },
+    }),
+  );
+  const events: SessionEvent[] = [];
+  const watching = observeSession(services, session, (event) => events.push(event));
+  backend.script([
+    { tool: "write_file", args: { path: "refused.txt", content: "no\n" } },
+    { tool: "run_command", args: { command: "echo ok" } },
+    { tool: "run_command", args: { command: "curl http://example.invalid" } },
+    { text: "Did what was allowed." },
+  ]);
+  await inTime(session.send("try three things"), () => `status ${session.status.peek()}`);
+  watching.dispose();
+
+  assert.equal(session.error.peek(), null);
+  assert.deepEqual(toolRows(session.items), [
+    "write_file:denied",
+    "run_command:done",
+    "run_command:denied",
+  ]);
+  assert.equal(existsSync(join(root, "refused.txt")), false);
+  // Nothing waited on anybody: every question was decided as it came.
+  assert.equal(session.permissions.peek().length, 0);
+  assert.equal(
+    events.some((e) => e.type === "permission.request"),
+    false,
+  );
+  const decisions = events.flatMap((e) =>
+    e.type === "permission.decision" ? [`${e.answer}/${e.by}/${e.rule ?? "-"}/${e.tool}`] : [],
+  );
+  assert.deepEqual(decisions, [
+    "deny/policy/write_file/write_file",
+    "once/policy/echo/run_command",
+    "deny/policy/-/run_command",
+  ]);
+
+  // The stream: where the chat stood, the turn, each call and its end, the answer, the end.
+  assert.equal(events[0]?.type, "session");
+  const types = events.map((e) => e.type);
+  assert.ok(types.indexOf("turn.start") > 0);
+  assert.equal(types.filter((t) => t === "tool.start").length, 3);
+  assert.equal(types.filter((t) => t === "tool.end").length, 3);
+  const ends = events.flatMap((e) => (e.type === "tool.end" ? [`${e.name}:${e.status}`] : []));
+  assert.deepEqual(ends, ["write_file:denied", "run_command:done", "run_command:denied"]);
+  const text = events.flatMap((e) => (e.type === "text" ? [e.delta] : [])).join("");
+  assert.equal(text, "Did what was allowed.");
+  const end = events.at(-1);
+  assert.equal(end?.type, "turn.end");
+  assert.equal(end?.type === "turn.end" ? end.reason : "", "end");
+  assert.equal(end?.type === "turn.end" ? end.text : "", "Did what was allowed.");
+  assert.equal(end?.type === "turn.end" ? end.usage.totals.requests : 0, 4);
+  // Every event is plain data: what a front end reads off a wire is what was told here.
+  assert.deepEqual(JSON.parse(JSON.stringify(events)), events);
+  assert.equal(noScreen(), true);
+  agent.dispose();
+});
+
+test("a policy that waits: the question is an event, a front end answers it, the decision is told", async () => {
+  const agent = await startAgent(true);
+  const { services, dispatcher, session } = agent;
+  setAgentHost(services, headlessAgentHost({ permissions: { otherwise: "wait" } }));
+  const events: SessionEvent[] = [];
+  const watching = observeSession(services, session, (event) => {
+    events.push(event);
+    // The front end: it hears the question and answers it with the command, as the person.
+    if (event.type === "permission.request")
+      void dispatcher.execute(
+        "agent.respondPermission",
+        { session: session.id, id: event.id, answer: "once" },
+        { kind: "frontend", name: "test" },
+      );
+  });
+  backend.script([{ tool: "run_command", args: { command: "echo ok" } }, { text: "Ran it." }]);
+  await inTime(session.send("run it"), () => `status ${session.status.peek()}`);
+  watching.dispose();
+  assert.deepEqual(toolRows(session.items), ["run_command:done"]);
+  const asked = events.find((e) => e.type === "permission.request");
+  assert.equal(asked?.type === "permission.request" ? asked.code : "", "echo ok");
+  assert.equal(asked?.type === "permission.request" ? asked.kind : "", "command");
+  const decided = events.find((e) => e.type === "permission.decision");
+  assert.equal(decided?.type === "permission.decision" ? decided.by : "", "user");
+  assert.equal(decided?.type === "permission.decision" ? decided.answer : "", "once");
+  assert.equal(
+    decided?.type === "permission.decision" ? decided.id : "",
+    asked?.type === "permission.request" ? asked.id : "-",
+  );
+  // It waited: the status went there and back.
+  const statuses = events.flatMap((e) => (e.type === "status" ? [e.status] : []));
+  assert.deepEqual(statuses, ["running", "waiting", "running", "idle"]);
+  agent.dispose();
+});
+
+test("a stopped turn ends with its reason", async () => {
+  const agent = await startAgent(true);
+  const { services, session } = agent;
+  setAgentHost(services, headlessAgentHost({ permissions: { otherwise: "wait" } }));
+  const events: SessionEvent[] = [];
+  const watching = observeSession(services, session, (event) => {
+    events.push(event);
+    // Nobody answers: the run is stopped instead (a time limit, Ctrl+C).
+    if (event.type === "permission.request") session.stop("the time limit was reached");
+  });
+  backend.script([{ tool: "run_command", args: { command: "echo ok" } }, { text: "never" }]);
+  await inTime(session.send("run it"), () => `status ${session.status.peek()}`);
+  watching.dispose();
+  const end = events.findLast((e) => e.type === "turn.end");
+  assert.equal(end?.type === "turn.end" ? end.reason : "", "stopped");
+  const notice = events.findLast((e) => e.type === "notice");
+  assert.match(notice?.type === "notice" ? notice.text : "", /the time limit was reached/);
+  // Stop refused the waiting question, and said so.
+  const decided = events.find((e) => e.type === "permission.decision");
+  assert.equal(decided?.type === "permission.decision" ? decided.answer : "", "deny");
   agent.dispose();
 });

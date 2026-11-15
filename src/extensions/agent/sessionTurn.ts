@@ -36,6 +36,7 @@ import { IpcError } from "../../core/ipc/invoke";
 import { formatIpc } from "../../core/ipc/process";
 import { appIpc } from "../../core/ipc/system";
 import { externalAgents } from "./acpAgents";
+import { agentHost } from "./agentHost";
 import { fileChangeNotes } from "./changeNotices";
 import { nameChat } from "./chatTitle";
 import { chatWorkspaceOf } from "./chatWorkspace";
@@ -75,6 +76,7 @@ import {
 } from "./sessionUsage";
 import { agentExternalModel } from "./subagents";
 import { runToolGate } from "./toolGate";
+import { deniedCall } from "./unattended";
 import { priceOf } from "./usage";
 import { recordUsage } from "./usageLog";
 
@@ -387,6 +389,7 @@ async function sendTurn(
   // The message shows and Stop works from now on, not after the model list, the MCP servers
   // and the IDE state are ready (that took seconds, with a Send button that did nothing).
   session.cancelled = false;
+  session.endedBy = null;
   session.error.value = null;
   session.status.value = "running";
   // Messages can be queued from now on, not only once the model call starts (D159).
@@ -655,6 +658,24 @@ async function sendTurn(
           denied: true,
           summary: "disallowed",
         };
+      // A run with nobody at the window (unattended.ts): its deny list refuses the call outright.
+      const refused = deniedCall(agentHost(session.services).permissions ?? null, call.name, args);
+      if (refused) {
+        session.toldDecision({
+          title: call.name,
+          kind: "tool",
+          ...(typeof args.command === "string" && { code: args.command }),
+          tool: call.name,
+          answer: "deny",
+          by: "policy",
+          rule: refused,
+        });
+        return {
+          result: `This run's permission policy refuses this (denied: ${refused}). Do without it.`,
+          denied: true,
+          summary: "denied by policy",
+        };
+      }
       // The tool gates: auto-approve's protected paths (D204), risky folders and agent config
       // files (D213).
       const gated = await runToolGate({
@@ -1090,6 +1111,7 @@ From the user's hooks: ${words}`,
       // half-written work).
       const tail = session.items[session.items.length - 1];
       if (used >= deps.maxSteps && tail?.type !== "assistant") {
+        session.endedBy = "max_steps";
         session.items.push({
           type: "notice",
           id: newId("n"),

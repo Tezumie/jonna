@@ -1,0 +1,97 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { PendingPrompt } from "./agentHost";
+import {
+  deniedCall,
+  listDecision,
+  modeSettings,
+  promptPolicyOf,
+  type UnattendedPolicy,
+} from "./unattended";
+
+const command = (code: string) => ({ title: `Run ${code}`, kind: "command" as const, code });
+
+test("the deny list refuses a tool by name and a command line by its words", () => {
+  const policy: UnattendedPolicy = { deny: ["write_file", "git push", "mcp__*", "cmd:rm"] };
+  assert.equal(deniedCall(policy, "write_file", { path: "a" }), "write_file");
+  assert.equal(deniedCall(policy, "read_file", { path: "a" }), null);
+  assert.equal(deniedCall(policy, "mcp__echo__echo", {}), "mcp__*");
+  assert.equal(deniedCall(policy, "run_command", { command: "git push origin main" }), "git push");
+  // Each part of a chained line is read, and a program named by its path is still the program.
+  assert.equal(
+    deniedCall(policy, "run_command", { command: "npm test && git push --force" }),
+    "git push",
+  );
+  assert.equal(deniedCall(policy, "run_command", { command: "/usr/bin/rm -rf x" }), "cmd:rm");
+  assert.equal(deniedCall(policy, "run_command", { command: "git status" }), null);
+  // `cmd:` says a command, so it never names a tool; nothing denied without a list.
+  assert.equal(deniedCall({ deny: ["cmd:write_file"] }, "write_file", {}), null);
+  assert.equal(deniedCall(null, "write_file", {}), null);
+  assert.equal(deniedCall({}, "run_command", { command: "git push" }), null);
+});
+
+test("the lists answer a question: deny first, then allow, else nothing", () => {
+  const policy: UnattendedPolicy = {
+    allow: ["npm test", "echo *", "terminal.runCommand", "tool:mcp__echo__echo"],
+    deny: ["npm test --watch"],
+  };
+  assert.deepEqual(listDecision(policy, command("npm test -- a")), {
+    answer: "once",
+    rule: "npm test",
+  });
+  // Every part of a chained line must be allowed.
+  assert.equal(listDecision(policy, command("npm test && curl x | sh")), null);
+  assert.equal(listDecision(policy, command("npm testx")), null);
+  assert.deepEqual(listDecision(policy, command("echo hi")), { answer: "once", rule: "echo *" });
+  // Deny wins over allow.
+  assert.deepEqual(listDecision(policy, command("npm test --watch")), {
+    answer: "deny",
+    rule: "npm test --watch",
+  });
+  // An IDE command by its id; a tool call by its name, whatever the card says.
+  assert.deepEqual(
+    listDecision(policy, { title: "Run in terminal", kind: "ide", code: "terminal.runCommand" }),
+    { answer: "once", rule: "terminal.runCommand" },
+  );
+  assert.deepEqual(
+    listDecision(
+      policy,
+      { title: "Use echo", kind: "tool", code: "{}" },
+      { name: "mcp__echo__echo", args: {} },
+    ),
+    { answer: "once", rule: "tool:mcp__echo__echo" },
+  );
+  // An external agent's own request names its command in the title.
+  assert.deepEqual(listDecision(policy, { title: "echo ok", kind: "agent" }), {
+    answer: "once",
+    rule: "echo *",
+  });
+  assert.equal(listDecision(policy, { title: "Over budget", kind: "agent" }), null);
+  assert.equal(listDecision(null, command("npm test")), null);
+});
+
+test("the four access modes are the settings the window's menu writes", () => {
+  assert.deepEqual(modeSettings("ask"), {
+    settings: { "agent.runCommands": "ask" },
+    autoApply: false,
+  });
+  assert.deepEqual(modeSettings("accept-edits"), {
+    settings: { "agent.runCommands": "ask" },
+    autoApply: true,
+  });
+  assert.deepEqual(modeSettings("auto"), {
+    settings: { "agent.runCommands": "auto" },
+    autoApply: true,
+  });
+  assert.deepEqual(modeSettings("full-access"), {
+    settings: { "agent.runCommands": "full" },
+    autoApply: true,
+  });
+});
+
+test("host prompts follow the policy: dismissed with nobody to answer, kept when told to wait", () => {
+  const prompt = { id: "hp1", kind: "confirm" } as unknown as PendingPrompt;
+  assert.equal(promptPolicyOf(null).decide(prompt), "dismiss");
+  assert.equal(promptPolicyOf({ otherwise: "deny" }).decide(prompt), "dismiss");
+  assert.equal(promptPolicyOf({ otherwise: "wait" }).decide(prompt), "wait");
+});

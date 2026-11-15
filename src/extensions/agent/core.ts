@@ -79,6 +79,7 @@ import { registerRiskyGuard } from "./riskyGuard";
 import { registerRooms } from "./roomService";
 import { registerRules } from "./rules";
 import { registerRulesPage } from "./rulesPage";
+import { setAgentRuntime } from "./runtime";
 import { registerSandbox } from "./sandboxRun";
 import { registerSchedules } from "./schedules";
 import type { AgentSession } from "./session";
@@ -172,6 +173,9 @@ export function activateAgentCore(
     const providers = new ProviderRegistry(services);
     Object.assign(services.languageModel, createLanguageModel(services, providers));
     const sessions = sub.add(new SessionManager(services, providers));
+    // For a host that isn't the window (runtime.ts): a chat's events, its signals.
+    setAgentRuntime(services, { sessions, providers });
+    sub.add({ dispose: () => setAgentRuntime(services, null) });
     // The user's hooks on the agent's events (D227).
     sessions.hooks = registerHooks(sub, services);
     // The user's own chat modes (D227).
