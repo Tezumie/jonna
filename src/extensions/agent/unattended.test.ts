@@ -4,6 +4,7 @@ import type { PendingPrompt } from "./agentHost";
 import {
   asksForIndirectLine,
   deniedCall,
+  externalCommandCall,
   listDecision,
   modeSettings,
   promptPolicyOf,
@@ -104,13 +105,32 @@ test("the lists answer a question: deny first, then allow, else nothing", () => 
     ),
     { answer: "once", rule: "tool:mcp__echo__echo" },
   );
-  // An external agent's own request names its command in the title.
-  assert.deepEqual(listDecision(policy, { title: "echo ok", kind: "agent" }), {
-    answer: "once",
-    rule: "echo *",
-  });
+  // A title is a card's wording, never a command line: nothing is read from it.
+  assert.equal(listDecision(policy, { title: "echo ok", kind: "agent" }), null);
   assert.equal(listDecision(policy, { title: "Over budget", kind: "agent" }), null);
   assert.equal(listDecision(null, command("npm test")), null);
+});
+
+test("an external agent's command is read from its call, as the chat asks it", () => {
+  const policy: UnattendedPolicy = { allow: ["npm test", "echo *"], deny: ["rm", "agent"] };
+  // What acp.ts sends: the agent's name in front of the command in the title, no code, and the
+  // command as the call.
+  const asked = (kind: string | undefined, line: string) =>
+    listDecision(
+      policy,
+      { title: `Some Agent: ${line}`, kind: "agent" },
+      externalCommandCall(kind, line),
+    );
+  assert.deepEqual(asked("execute", "rm -rf build"), { answer: "deny", rule: "rm" });
+  assert.deepEqual(asked("execute", "npm test -- a"), { answer: "once", rule: "npm test" });
+  assert.deepEqual(asked(undefined, "echo ok"), { answer: "once", rule: "echo *" });
+  assert.deepEqual(asked("other", "ls && rm x"), { answer: "deny", rule: "rm" });
+  assert.equal(asked("execute", "ls"), null);
+  // The agent's name is no part of the line (a deny entry that happens to spell it).
+  assert.equal(asked("execute", "git status"), null);
+  // A request that says it is something else names no command line.
+  assert.equal(asked("edit", "rm.txt"), null);
+  assert.equal(externalCommandCall("execute", "  "), undefined);
 });
 
 test("the four access modes are the settings the window's menu writes", () => {

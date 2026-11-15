@@ -1738,7 +1738,10 @@ backend, the services a turn needs, no `document` or `window`), and
   `debug.runWithoutDebugging`, `debug.restart`) can't be held against command patterns: once
   the deny list has one, they ask whatever the mode (`asksForIndirectLine`), so an allow entry
   naming the command or the person decides. Not covered, and said in the guide: test runs,
-  notebook cells, formatters and what a script the agent wrote does. `allow` answers a question (a tool's name, a
+  notebook cells, formatters and what a script the agent wrote does. An external agent's own request is read from the call `acp.ts` passes
+  (`externalCommandCall`: its command, without the agent's name the card's title has in front),
+  never from a title; the line as the agent sent it and the terminals it opens itself
+  (`createTerminal`) are held against the deny list too. `allow` answers a question (a tool's name, a
   command pattern as in `agent.allowedCommands`, an IDE command's id; `tool:` / `cmd:` say
   which), also one that asks whatever the mode. Order in `AgentSession.askBeforeSend`: deny
   list, allow list, full access, then `otherwise`: `deny` (the default: refused at once) or

@@ -209,6 +209,19 @@ export interface AskedCall {
 }
 
 /**
+ * An external agent's own request to run something, as the call the lists read: its command
+ * line is allowed and denied as `run_command`'s. `kind` is the agent's word for its tool call;
+ * one that says what else it is (an edit, a read…) names no command line.
+ */
+export function externalCommandCall(
+  kind: string | null | undefined,
+  line: string,
+): AskedCall | undefined {
+  if (kind && kind !== "execute" && kind !== "other") return undefined;
+  return line.trim() ? { name: "run_command", args: { command: line } } : undefined;
+}
+
+/**
  * How the policy's lists answer a question a chat is about to show: denied or allowed by an
  * entry, or null when neither list names it (the mode, then `otherwise`, decide).
  */
@@ -220,9 +233,9 @@ export function listDecision(
   if (!policy) return null;
   const deny = policy.deny ?? [];
   const allow = policy.allow ?? [];
-  // What the question names: a command line, an IDE command's id, or (an external agent's own
-  // request) its title, which is the command it wants to run.
-  const subject = request.code ?? (request.kind === "agent" ? request.title : undefined);
+  // What the question names: a command line or an IDE command's id. A title is never read: a
+  // card's wording (an external agent's has its name in front) is not a command line.
+  const subject = request.code;
   const isLine = request.kind === "command" || request.kind === "agent";
   // The command line of the call behind it (an IDE command that types one into a shell): read
   // as `run_command`'s is.
