@@ -3,7 +3,8 @@
 // ordinary chats with `room` set: a channel's has its agents as a group (@Name picks who answers),
 // a direct message is a chat with its agent (@mentioning another brings them in). "Reply in
 // thread" on a message starts a thread: a chat with `parent`, shown on the right.
-// Also here: channel memory, task channels, and the commands agents use (posting to a channel,
+// The list itself and what a chat reads about its own room are in roomState.ts (no commands, no
+// views). Here: channel memory, task channels, and the commands agents use (posting to a channel,
 // reading a thread, keeping a channel note), and ide://agent/channels.
 
 import { BUILT_IN_AGENT_NAMES, FIRST_TEAM } from "../../core/agent/builtInAgents";

@@ -1,8 +1,9 @@
 // Per-category auto-approve (D204): one setting, `agent.autoApprove`, for reads and edits (path
 // globs), commands (prefixes or /regex/), the browser and web pages (domains) and MCP tools
 // (server or server/tool), each pattern true (no question) or false (always ask, even with full
-// access). The model is core/agent/autoApprove.ts. Here: the tool gate for reads and edits, the
-// browser / web decision the permission handler (index.ts) uses, MCP's decision (mcp.ts), the
+// access). The model is core/agent/autoApprove.ts. The decisions (the tool gate for reads and
+// edits, the browser / web decision the permission handler uses, MCP's) are in
+// approveDecisions.ts, which has no page. Here: the
 // Auto-approve page (dock view `agent.autoApprove`), `agent.showAutoApprove`,
 // `agent.setAutoApprove` and `ide://agent/autoApprove`. Commands use it in run_command (tools.ts).
 import {
