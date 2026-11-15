@@ -17,7 +17,7 @@
     "build": "node scripts/gen.mjs && tauri build",
     "build:fast": "node scripts/gen.mjs && tauri build --bundles nsis -- --profile fast-release",
     "build:web": "node build.mjs --prod",
-    "check": "node scripts/gen.mjs && node scripts/check-colors.mjs && node scripts/check-commands.mjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && biome check .",
+    "check": "node scripts/gen.mjs && node scripts/check-colors.mjs && node scripts/check-commands.mjs && node scripts/check-ipc-names.mjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && biome check .",
     "fix": "biome check --write .",
     "test": "node scripts/test.mjs",
     "size": "node scripts/size.mjs",

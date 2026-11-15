@@ -173,7 +173,7 @@ export function createGitIpc(repo?: string) {
       const channel = new Channel<null>(() => onChange());
       await call<void>("git_watch", { onChange: channel });
       return toDisposable(() => {
-        channel.onmessage = () => {};
+        channel.close();
       });
     },
     status: (): Promise<GitStatus> => call<GitStatus>("git_status"),

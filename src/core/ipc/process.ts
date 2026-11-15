@@ -459,3 +459,10 @@ export const debugAttachIpc = {
   take: (id: string): Promise<string[]> => call<string[]>("debug_autoattach_take", { id }),
   dispose: (id: string): Promise<void> => call<void>("debug_autoattach_dispose", { id }),
 };
+
+// Notebook outputs that run code are drawn by a page of the IDE's served on a local origin of
+// its own (Rust: src-tauri/notebook/output).
+export const notebookIpc = {
+  /** The output page's origin (its proxy starts on first use). */
+  outputOrigin: (): Promise<string> => call<string>("notebook_output_origin"),
+};

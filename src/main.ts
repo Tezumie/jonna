@@ -13,7 +13,7 @@ import { Dispatcher } from "./core/dispatcher/index";
 import { EventBus } from "./core/events/index";
 import { type BuiltinExtension, ExtensionHost } from "./core/extensions/index";
 import { instancesIpc } from "./core/ipc/instances";
-import { isTauri } from "./core/ipc/invoke";
+import { hasBackend } from "./core/ipc/invoke";
 import { execIpc } from "./core/ipc/process";
 import { appIpc, auditIpc } from "./core/ipc/system";
 import type { Platform } from "./core/keybindings/index";
@@ -104,7 +104,7 @@ async function boot(): Promise<void> {
   // Dropdowns open the IDE's own menu (D282).
   installSelectMenus(document);
   // A reload mid-turn: the old page's model requests and agent commands stop (D163).
-  if (isTauri()) void execIpc.pageLoaded().catch(() => {});
+  if (hasBackend()) void execIpc.pageLoaded().catch(() => {});
   const platform = detectPlatform();
   // Per-OS tokens (the code font, D382) key off this, before the first paint.
   document.documentElement.dataset.platform = platform;
@@ -180,7 +180,7 @@ async function boot(): Promise<void> {
       testMode: () => testRun,
       authorizeExtension: (request) => extensionGate.authorize(request),
     }),
-    audit: (entry) => (isTauri() ? auditIpc.append(entry) : undefined),
+    audit: (entry) => (hasBackend() ? auditIpc.append(entry) : undefined),
     validateOutput: __DEV__,
   });
   // Overlays (notifications, quick input) live outside the workbench grid.
@@ -344,7 +344,7 @@ async function boot(): Promise<void> {
   dock.resetToDefault(["welcome"], [], []);
 
   // ---- 3. Reopen a folder -----------------------------------------------------
-  if (!isTauri()) {
+  if (!hasBackend()) {
     notifications.show(
       "warning",
       "Running outside the desktop shell: file system, terminal and dialogs are unavailable.",

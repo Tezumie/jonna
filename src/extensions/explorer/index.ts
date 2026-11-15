@@ -5,7 +5,7 @@
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { dragDropIpc, fsIpc } from "../../core/ipc/fs";
 import { instancesIpc } from "../../core/ipc/instances";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import { appIpc, clipboardIpc, dialogIpc, openerIpc } from "../../core/ipc/system";
 import { basename, dirname, displayPath, isWindowsPath, samePath } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
@@ -86,7 +86,7 @@ export const explorerExtension: BuiltinExtension<WorkbenchServices> = {
     const openElsewhere = async (folder: string): Promise<boolean> => {
       // This window's folder, or its workspace file (D251).
       const here = workspace.location.peek();
-      if (!isTauri() || (here && samePath(here, folder))) return false;
+      if (!hasBackend() || (here && samePath(here, folder))) return false;
       return instancesIpc.focusFolder(folder).catch(() => false);
     };
     sub.add(

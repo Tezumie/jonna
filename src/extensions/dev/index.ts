@@ -1,7 +1,7 @@
 // Dev-only built-in (excluded from production builds by `__DEV__`). `dev.dumpState` is the first
 // proof that an agent can "see" the IDE: the same budgeted state tree agents will read.
 import type { BuiltinExtension } from "../../core/extensions/index";
-import { isTauri } from "../../core/ipc/invoke";
+import { isDesktopShell } from "../../core/ipc/invoke";
 import { windowIpc } from "../../core/ipc/system";
 import { LeakMonitor, liveDisposableCount } from "../../core/lifecycle/index";
 import { s } from "../../core/schema/index";
@@ -190,7 +190,7 @@ export const devExtension: BuiltinExtension<WorkbenchServices> = {
         }),
         effects: ["write"],
         run: async ({ width, height }) => {
-          if (!isTauri()) throw new Error("Only in the app.");
+          if (!isDesktopShell()) throw new Error("Only in the app.");
           await windowIpc.unmaximize().catch(() => {});
           await windowIpc.setSize(width, height);
           await new Promise((r) => setTimeout(r, 400));

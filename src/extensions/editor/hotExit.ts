@@ -11,7 +11,7 @@
 // reopens that window with it (VS Code restores empty windows with their untitled editors);
 // closing an empty window while others run asks, as VS Code does.
 import { instancesIpc } from "../../core/ipc/instances";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { effect } from "../../core/reactive/index";
 import { whenStartupRestored } from "../../workbench/restoreWindows";
@@ -193,7 +193,7 @@ function registerEmptyWindowBackups(
   candidates: () => (BackupCandidate & { doc: EditorDocument })[],
   restore: RestoreState,
 ): EmptyWindowBackups | null {
-  if (!isTauri()) return null;
+  if (!hasBackend()) return null;
   // Nothing is written before this window's kept text was read: an early empty save would
   // remove it.
   let ready = false;

@@ -3,7 +3,7 @@
 import { on } from "../../core/dom/index";
 import { Emitter, type Event } from "../../core/events/index";
 import { browserIpc } from "../../core/ipc/browser";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import {
   type ProfileSpec,
   type PtyAttached,
@@ -105,7 +105,7 @@ export function terminalThemeFromTokens(theme: ThemeService): TerminalTheme {
 let build: Promise<number | null> | undefined;
 /** The Windows build (ConPTY behavior differs by build), asked once; null elsewhere. */
 function windowsBuild(): Promise<number | null> {
-  if (!navigator.userAgent.includes("Windows") || !isTauri()) return Promise.resolve(null);
+  if (!navigator.userAgent.includes("Windows") || !hasBackend()) return Promise.resolve(null);
   build ??= appIpc
     .info()
     .then((i) => i.osBuild)

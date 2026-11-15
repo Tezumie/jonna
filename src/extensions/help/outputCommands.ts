@@ -16,7 +16,7 @@ import {
 import { gitCallRecord } from "../../core/diagnostics/outputText";
 import { callerLabel } from "../../core/dispatcher/types";
 import { logIpc } from "../../core/ipc/diagnostics";
-import { isTauri, onCall } from "../../core/ipc/invoke";
+import { hasBackend, onCall } from "../../core/ipc/invoke";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -135,7 +135,7 @@ export function registerOutput(sub: DisposableStore, services: WorkbenchServices
   });
   sub.add({ dispose: () => onCall(null) });
   // What ran before this page loaded (the folder's first status) is in the journal already.
-  if (isTauri()) scheduleGitFetch();
+  if (hasBackend()) scheduleGitFetch();
 
   // Agent: the commands agents (the IDE's, ACP agents, MCP clients) ran, as tool calls.
   sub.add(

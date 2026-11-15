@@ -1,6 +1,6 @@
 // Diagnostics (D204, Rust: src-tauri/src/ipc/diagnostics.rs): the session log, the problem
 // report's zip, starting with extensions off, and what this start knows about the last one.
-import { call, isTauri } from "./invoke";
+import { call, hasBackend } from "./invoke";
 
 export interface SessionInfo {
   /** This session's log file, and the folder of session logs. */
@@ -36,7 +36,7 @@ let cached: Promise<SessionInfo | null> | null = null;
 export const sessionIpc = {
   /** Fresh each call (the next-start flag can change). */
   info: (): Promise<SessionInfo | null> =>
-    isTauri() ? call<SessionInfo>("session_info") : Promise.resolve(null),
+    hasBackend() ? call<SessionInfo>("session_info") : Promise.resolve(null),
   /** Read once: whether this session runs with extensions off. */
   extensionsOff: async (): Promise<boolean> => {
     cached ??= sessionIpc.info().catch(() => null);
@@ -52,13 +52,13 @@ export const sessionIpc = {
 
 export const logIpc = {
   write: (entries: LogEntry[]): Promise<void> =>
-    isTauri() ? call<void>("log_write", { entries }) : Promise.resolve(),
+    hasBackend() ? call<void>("log_write", { entries }) : Promise.resolve(),
   /** The session log's last `max` records (already redacted). */
   recent: (max: number): Promise<string[]> =>
-    isTauri() ? call<string[]>("log_recent", { max }) : Promise.resolve([]),
+    hasBackend() ? call<string[]>("log_recent", { max }) : Promise.resolve([]),
   /** The git command lines run after `after` (seq), oldest first, redacted (the Git channel). */
   gitCommands: (after: number): Promise<GitCall[]> =>
-    isTauri() ? call<GitCall[]>("log_git_commands", { after }) : Promise.resolve([]),
+    hasBackend() ? call<GitCall[]>("log_git_commands", { after }) : Promise.resolve([]),
 };
 
 /** A git command line the IDE ran (Rust: git/journal.rs). */

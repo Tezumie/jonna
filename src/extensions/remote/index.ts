@@ -5,7 +5,7 @@
 // connecting at startup (a window launched with `--remote`), Connect to host…, the remote folder
 // picker, the "SSH: host" status item and its menu, forwarded ports, `ide://remote`.
 import type { BuiltinExtension } from "../../core/extensions/index";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import { type RemoteEvent, type RemoteInfo, remoteIpc } from "../../core/ipc/remote";
 import { appIpc } from "../../core/ipc/system";
 import { basename, dirname } from "../../core/paths/index";
@@ -599,7 +599,7 @@ export async function connectAtStartup(
   services: WorkbenchServices,
   authority: string | null | undefined,
 ): Promise<boolean> {
-  if (!isTauri() || !authority) return false;
+  if (!hasBackend() || !authority) return false;
   const parsed = parseAuthority(authority);
   if (!parsed) return false;
   try {

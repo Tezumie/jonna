@@ -12,7 +12,7 @@
 // sends `at_mentioned` with the file and its lines. The DOM-free parts are core/mcp/ideTools.ts.
 
 import { fsIpc } from "../../core/ipc/fs";
-import { isTauri } from "../../core/ipc/invoke";
+import { hasBackend } from "../../core/ipc/invoke";
 import { type IdeIntegrationInfo, ideIntegrationIpc, type McpRequest } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { pathToUri, uriToPath } from "../../core/lsp/uri";
@@ -399,7 +399,7 @@ export function registerIdeIntegration(sub: DisposableStore, services: Workbench
   let disposed = false;
   const wanted = () => !disposed && settings.peek<boolean>("mcp.claudeCode.enabled") === true;
   const start = (): Promise<void> => {
-    if (!isTauri() || running.peek()) return Promise.resolve();
+    if (!hasBackend() || running.peek()) return Promise.resolve();
     if (starting) return starting;
     const attempt = (async () => {
       try {
