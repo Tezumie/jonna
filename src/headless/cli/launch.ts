@@ -108,6 +108,12 @@ export function runSettings(value: string | undefined): Record<string, unknown> 
     try {
       text = readFileSync(resolve(value), "utf8");
     } catch (err) {
+      // JSON a shell handed over with its quotes on (cmd.exe keeps '…') is no path, and settings
+      // may hold a provider's key: it isn't repeated in the message (twice, with the system's).
+      if (/[{}"]/.test(value))
+        throw new ConfigError(
+          '--settings takes a JSON object (text that starts with "{") or the path of a JSON file; what was given is neither. Check the quoting for your shell, or put the settings in a file.',
+        );
       throw new ConfigError(`Couldn't read ${value} (--settings): ${messageOf(err)}`);
     }
   }
