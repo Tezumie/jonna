@@ -989,6 +989,37 @@ test("notebooks: documents with their cells, the active editor, NotebookEdits (D
   assert.equal(changes.length >= 1, true);
 });
 
+test("following a notebook never opens it; a read an extension asks for does", async () => {
+  const reads: Record<string, unknown>[] = [];
+  const h = harness({
+    "commands.execute": (p) => {
+      if (p.id !== "notebook.read") return {};
+      reads.push((p.input ?? {}) as Record<string, unknown>);
+      return {
+        path: "/ws/n.ipynb",
+        type: "jupyter.notebook",
+        cells: [{ index: 0, id: "a", kind: "code", source: "1", language: "python" }],
+      };
+    },
+  });
+  await h.shim.ready();
+  // Opened and changed in the IDE: the shim reads its cells, only if it is (still) open. Such a
+  // read can arrive after Close folder closed the notebook, and put it back on screen.
+  h.fire("notebook.didOpen", { path: "/ws/n.ipynb", notebookType: "jupyter-notebook" });
+  h.fire("notebook.didChange", { path: "/ws/n.ipynb" });
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(reads.length >= 2, true);
+  assert.equal(
+    reads.every((r) => r.ifOpen === true),
+    true,
+  );
+  // openNotebookDocument is the extension asking for it: the IDE opens it to read it.
+  reads.length = 0;
+  await h.vscode.workspace.openNotebookDocument(h.vscode.Uri.file("/ws/other.ipynb"));
+  assert.equal(reads.length, 1);
+  assert.equal("ifOpen" in (reads[0] ?? {}), false);
+});
+
 test("an untitled notebook from an extension's data (D267)", async () => {
   const ran: { id: string; input: Record<string, unknown> }[] = [];
   const h = harness({
