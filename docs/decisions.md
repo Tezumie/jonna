@@ -28,7 +28,7 @@ unless noted.
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
 | · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
-| · The UI suite's baseline, the backend and the agent without a window, a command-line agent | D427–D432 |
+| · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit | D427–D433 |
 
 ## Seeded from PLAN §19
 
@@ -15280,3 +15280,58 @@ The agent as a terminal program, built from D428's host and D431's brain
   shell command in PATH" command, so the two collide on one PATH (another name, or the
   desktop's command forwarding these modes); installing it with the app; the guide page is
   not yet listed in the app's help; Linux and macOS have not run it.
+
+## D433 — An audit of the host, the windowless agent and the command-line agent
+
+An independent read of D428–D432 for holes, races and leaks. Fourteen findings, all confirmed
+and fixed with tests, plus what four further review areas turned up.
+
+- **A run's deny list reads a command line wherever a call carries one** (addendum to D431):
+  `run_command`, `monitor`, and `call_command` on the terminal's commands; an IDE command can
+  be denied by id. The list is checked before any shortcut, and "for this session" is never
+  granted for a line-running command under a policy. Lines that come from a file (tasks, debug
+  configurations) aren't resolved: once the list has a command pattern they need an allow
+  entry naming the command's id or a person's answer, even in full access.
+- **An external agent's command is read from its call,** never from its card's title, which
+  carries the agent's name; the line of a terminal it creates is checked too.
+- **The list stays a guard, not a sandbox.** Not seen: what a test run, a notebook cell, a
+  formatter or an MCP server's tool runs, settings that name a program, `${command:…}` in a
+  task. The guide says so.
+- **A `..` step in an external agent's file request is outside the folder**
+  (`core/acp/turnChanges.ts` `insideFolder`). This one changes the window too.
+- **The host runs synchronous commands on one ordered queue per connection** (addendum to
+  D428): they were answered on separate threads, so quick terminal input could arrive out of
+  order.
+- **The TCP carrier's handshake:** five seconds for the hello, a first frame of at most 64 KiB
+  with no body; a connection that never says hello frees its slot and doesn't count as a
+  client for `--linger`.
+- **Teardown** flushes for five seconds and then hangs up without waiting for the writer; the
+  outgoing queue holds at most 64 MiB, and senders wait rather than fail (a failed send reads
+  as a dead client).
+- **Windows:** the console's close, logoff, shutdown and Ctrl+Break run the host's shutdown.
+- **A key from the environment** (addendum to D428) is matched with the HTTP client's own URL
+  parser, over https only, with no user part; whole labels in front of a provider's host still
+  count.
+- **A migration removes its source only after a confirmed write** (`saveGlobalChecked`; the
+  external agents' remembered settings of D431).
+- **A screenless write of the global state is refused when the stored file can't be read or
+  parsed** (three tries), instead of writing over it; an absent file is still written.
+- **A prompt from the agent's host carries its own signal,** so closing one never closes
+  another's.
+- **A run's limits are remembered** (`headless/limits.ts`): one that fires before the turn runs
+  stops it as it starts, and later turns; background commands that report back end with the
+  run. The cost limit counts subagents; a model with no known price gets one notice, since
+  nothing can be counted.
+- **With no window a workflow's script needs the policy's word even in full access,** and runs
+  in a `node:vm` context of its own. Stated in the code and the README as not a security
+  boundary.
+- **A chat shared by a window and a run:** opening an id with nothing saved expects no file;
+  renaming, pinning or archiving an unloaded chat writes with the version it read; the
+  command-line agent says when its save lost (exit 1, `"unsaved": true`, `/conflict`).
+- **Secrets on the command line:** `serve` prints only a token it generated and refuses an
+  empty one; `--settings` text that isn't a file isn't echoed; a failure's text is redacted.
+- **On Unix the host's resource folder is found from the real program,** not a symlink to it.
+- **Left open:** the version check and the write of a chat's file aren't under one lock (a
+  race of milliseconds between two processes); helpers in their own worktree aren't counted
+  toward a cost limit; a stored global file that stays corrupt blocks every screenless write;
+  three of the command-line agent's error paths aren't redacted.

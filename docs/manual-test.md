@@ -4144,3 +4144,63 @@ Images in the chat (D381):
 4. Click a chat's ⋯ (Chat actions) beside its tabs: the menu opens. Click the same button
    again: it closes. The same for the ⋯ of the Chats list and of the Explorer. Right-click a
    file twice: the context menu opens both times.
+
+## D427 — The UI suite's baseline
+1. Open a web page in the browser pane and, right after it loads, have the agent click a
+   button on it (`browser.click`): the click lands the first time.
+2. Move a tab into its own window (right-click the tab, Move into new window), then click
+   inside it at once: the click lands where the view is drawn.
+3. Open a notebook, close the folder: the notebook does not open again by itself.
+4. Linux: ask the agent for a widget in a chat: it draws (not yet confirmed on Linux).
+
+## D428–D430 — The backend and the services without a window (nothing should look different)
+1. Start the app, open a folder: the explorer, the editor, a terminal, search and source
+   control work as before. Type in the terminal quickly and paste a long line: the characters
+   arrive in order.
+2. File → Open folder…, Save as…, a confirmation (delete a file), copy and paste, Reveal in
+   file explorer, the window's minimize / maximize / close buttons, dropping a file from the
+   OS onto the editor: all as before.
+3. Change a file outside the app: the explorer and the open editor follow. Do it again after
+   closing and reopening the folder.
+4. Move a tab into its own window and back; open a second window: both keep working.
+5. Build the host (`cargo build --no-default-features --features host --bin ide-host` in
+   `src-tauri`), then `node scripts/host-smoke.mjs src-tauri/target/debug/ide-host`: it ends
+   with every check passed.
+
+## D431 — The agent with no window (the window's agent should be as it was)
+1. A chat with a keyed provider: ask it to read a file, edit one and run a command. The
+   questions, the review of edits and the four access modes behave as before.
+2. A chat with an external agent (Claude Code or Codex): its models and reasoning levels are
+   listed before the first message, as they were before the update.
+3. Delete a custom subagent: the confirmation still appears.
+4. An MCP server that asks for an input: the question still appears in the window.
+5. `node build.mjs --headless`, then `node scripts/headless-e2e.mjs --host <the host>`: all
+   scenarios pass.
+
+## D432 — A command-line agent
+1. `node build.mjs --headless`. In a folder with code, run the launcher from
+   `dist-headless/bin` with `-p "what does this project do?"`: the answer alone on stdout,
+   progress on stderr, exit code 0.
+2. The same with `--output-format json`: one JSON object. With `stream-json`: one event a line.
+3. With no arguments at a terminal: a session. Ask for an edit: it asks before writing in ask
+   mode. `/help` lists the commands; Ctrl+C during a turn stops the turn, twice leaves.
+4. `-p "delete every file"` with no terminal attached (pipe the output): what needs an answer
+   is refused, the exit code is 3.
+5. `sessions list` shows the run; `--continue -p "and then?"` goes on in the same chat; the
+   chat is also in the app's Chats list.
+6. In a folder never trusted: the run says its hooks, MCP servers and tasks are off; with
+   `--trust` they are on, and the app then shows the folder as trusted.
+
+## D433 — The audit's fixes
+1. Command line, `--deny "rm *" --permission-mode full-access -p "run rm -rf build in the
+   terminal"`: refused, whether the agent uses its command tool or the terminal's commands.
+2. The same deny list with `-p "run the build task"`: the task isn't run without
+   `--allow tasks.run` or an answer at a terminal.
+3. In the window, a chat with an external agent: ask it to read `../` a file beside the
+   folder: the request is refused as outside the folder.
+4. In the window: rename, pin and archive a chat from the Chats list: as before.
+5. In the window: run a workflow (`run_workflow`): it runs as before.
+6. Start the host in a console window with `--listen 127.0.0.1:0` and close the window: no
+   child process (a terminal's shell) is left behind.
+7. `--max-turns 1` on a prompt that needs several steps: the run stops with a limit's message
+   and exit code 1.
