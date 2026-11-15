@@ -116,3 +116,29 @@ test("D344: hidden notices survive a reload, and only strings are kept", async (
   await b.loadGlobal();
   assert.deepEqual(b.globalState().hiddenNotices, ["lsp.yield.pyright.ms-python.python"]);
 });
+
+test("persistence: a failed global write is reported to who asks, and never thrown", async () => {
+  const disk = sharedDisk();
+  const a = new PersistenceService(disk.backend);
+  await a.loadGlobal();
+  assert.equal(await a.saveGlobalChecked({ lastFolder: "/a" }), true);
+  const save = disk.backend.save;
+  disk.backend.save = async () => {
+    throw new Error("disk full");
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(await a.saveGlobalChecked({ lastFolder: "/b" }), false);
+    // The plain save resolves as it always did.
+    assert.equal(await a.saveGlobal({ lastFolder: "/c" }), undefined);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(JSON.parse(disk.files.global ?? "{}").lastFolder, "/a");
+  // This window keeps the values for now (the file is read again before the next write).
+  assert.equal(a.globalState().lastFolder, "/c");
+  disk.backend.save = save;
+  assert.equal(await a.saveGlobalChecked({ hideImportLink: true }), true);
+  assert.equal(JSON.parse(disk.files.global ?? "{}").hideImportLink, true);
+});

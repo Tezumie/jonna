@@ -229,19 +229,40 @@ export class PersistenceService implements Disposable {
    * keeps what this window has. Writes run one at a time.
    */
   saveGlobal(patch: GlobalPatch): Promise<void> {
+    return this.writeGlobal(patch).then(() => {});
+  }
+
+  /**
+   * As `saveGlobal`, and says whether the file was written: false when the write failed (it is
+   * only warned about; this window has the values until it next reads the file). For a caller that removes another copy
+   * of what it saved, which it may only do once the values are in the file.
+   */
+  saveGlobalChecked(patch: GlobalPatch): Promise<boolean> {
+    return this.writeGlobal(patch);
+  }
+
+  private writeGlobal(patch: GlobalPatch): Promise<boolean> {
     const run = async () => {
       const fresh = await this.readGlobal();
       if (fresh) this.global = fresh;
       const changes = typeof patch === "function" ? patch(this.global) : patch;
       this.global = { ...this.global, ...changes };
-      await this.backend
-        .save("global", JSON.stringify({ version: STATE_VERSION, ...this.global }))
-        .catch((err) => {
-          console.warn("saving global state failed", err);
-        });
+      try {
+        await this.backend.save(
+          "global",
+          JSON.stringify({ version: STATE_VERSION, ...this.global }),
+        );
+        return true;
+      } catch (err) {
+        console.warn("saving global state failed", err);
+        return false;
+      }
     };
     const next = this.globalWrites.then(run, run);
-    this.globalWrites = next.catch(() => {});
+    this.globalWrites = next.then(
+      () => {},
+      () => {},
+    );
     return next;
   }
 
