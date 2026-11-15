@@ -6,6 +6,8 @@
   // Not on CI for Windows: writing the 20 000 files takes longer than the whole run may (240 s)
   // on its disk. CI for Linux and a local run still do.
   "skipOnCi": ["win32"],
+  // Writing the files alone can take longer than a run's usual 240 s on Windows.
+  "testTimeout": 900,
   "steps": [
     { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
     {
