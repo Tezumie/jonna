@@ -168,24 +168,26 @@ export class StreamTransport implements Transport {
   private outbox: Uint8Array[] = [];
   private readonly closeListeners = new Set<(error?: Error) => void>();
   private closeError: Error | undefined;
+  private rejectReady: (error: Error) => void = () => {};
   private readonly parser = new FrameParser((header, body) => this.received(header, body));
 
   constructor(
     private readonly duplex: ByteDuplex,
     private readonly options: StreamTransportOptions = {},
   ) {
-    let settle: Pending = { resolve: () => {}, reject: () => {} };
+    let opened: (info: HostInfo) => void = () => {};
     this.ready = new Promise<HostInfo>((resolve, reject) => {
-      settle = { resolve: resolve as (value: unknown) => void, reject };
+      opened = resolve;
+      this.rejectReady = reject;
     });
     // A program that never awaits `ready` still hears the failure from its first call.
     this.ready.catch(() => {});
+    // The handshake's answer. However the connection ends before it, `end` rejects `ready`.
     this.pending.set(1, {
       resolve: (value) => {
         const info = value as Partial<HostInfo> | null;
         if (info?.protocol !== STREAM_PROTOCOL) {
           const message = `The host speaks protocol ${String(info?.protocol)}, not ${STREAM_PROTOCOL}.`;
-          settle.reject(new Error(message));
           this.end({ code: "Invalid", message }, new Error(message));
           return;
         }
@@ -200,11 +202,10 @@ export class StreamTransport implements Transport {
         const queued = this.outbox;
         this.outbox = [];
         for (const frame of queued) this.write(frame);
-        settle.resolve(this.hostInfo);
+        opened(this.hostInfo);
       },
       reject: (error) => {
         const message = `The host refused the connection: ${messageOf(error)}`;
-        settle.reject(new Error(message));
         this.end({ code: "Invalid", message }, new Error(message));
       },
     });
@@ -376,6 +377,11 @@ export class StreamTransport implements Transport {
   /** The one way the connection ends; later calls are no-ops. */
   private end(reason: WireError, error: Error | undefined): void {
     if (this.current === "closed") return;
+    if (this.current === "connecting") {
+      // The handshake never completed: `ready` says why (its own pending entry says nothing).
+      this.pending.delete(1);
+      this.rejectReady(error ?? new Error(reason.message));
+    }
     this.current = "closed";
     this.closedWith = reason;
     this.closeError = error;
