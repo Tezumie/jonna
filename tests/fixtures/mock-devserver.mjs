@@ -386,9 +386,12 @@ const server = createServer((req, res) => {
   } else if (req.url === "/stream.html") {
     // The proxy passes HTML on as it comes: the first part runs before the second
     // arrives, 2.5 s later.
+    // The first part is over 2 KB (a comment pads it): WebKitGTK's network library keeps a
+    // response's first 512 bytes back until it has them all (content sniffing), so a shorter
+    // first part ran together with the second there, whatever the proxy did.
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.write(
-      "<!doctype html><html><head><title>Stream</title></head><body><p>First part</p><script>window.t1 = performance.now();</script>",
+      `<!doctype html><html><head><title>Stream</title></head><body><!-- ${"padding ".repeat(256)}--><p>First part</p><script>window.t1 = performance.now();</script>`,
     );
     setTimeout(() => {
       res.end(

@@ -7,6 +7,13 @@
 // by agent.autoApprove so the batch doesn't stop for questions.
 {
   "name": "browser-agent-m7-58",
+  // Not on Linux: the batch's fifth step (typing at the focus after a click by coordinate) fails
+  // on CI there, and the key press, the drop and the scroll after it never run. Input is
+  // synthesized on Linux (trusted input is WebView2's), and after the synthesized click the
+  // focus is still on the page: WebKitGTK didn't take the script's focus() in the preview's
+  // frame (another origin, no user input before it; CI has no window manager either). Whether
+  // a Linux desktop does the same isn't known yet: check there before taking this line out.
+  "platforms": ["win32", "darwin"],
   "steps": [
     {
       "run": "settings.set",
