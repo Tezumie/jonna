@@ -9,6 +9,7 @@ import { callerRefusal } from "../permissions/commandGuards";
 import type { PermissionPolicy } from "../permissions/index";
 import { formatIssues, type Schema } from "../schema/index";
 import { fitToBudget } from "../state/budget";
+import { screenlessFailure } from "./screen";
 import {
   type AuditEntry,
   type Caller,
@@ -23,6 +24,7 @@ import {
   USER,
 } from "./types";
 
+export * from "./screen";
 export * from "./types";
 
 export interface DispatcherEvents {
@@ -46,6 +48,11 @@ export interface DispatcherDeps {
   /** Validate outputs too (dev builds). */
   validateOutput?: boolean;
   now?: () => number;
+  /**
+   * Whether there is a screen (default: yes). Without one, commands marked `needsScreen` are
+   * refused, and one that reaches for the page anyway fails with a message that says why.
+   */
+  hasScreen?: () => boolean;
 }
 
 const ID_PATTERN = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)+$/;
@@ -86,6 +93,7 @@ export class Dispatcher implements Disposable {
         agent: spec.agent ?? "discoverable",
         palette: spec.palette ?? true,
         inputSchema: spec.input.json,
+        ...(spec.needsScreen && { needsScreen: true as const }),
       },
       input: spec.input as Schema<unknown, boolean>,
       output: spec.output as Schema<unknown, boolean> | undefined,
@@ -166,6 +174,12 @@ export class Dispatcher implements Disposable {
         ),
       );
     }
+    if (cmd.info.needsScreen && this.deps.hasScreen?.() === false) {
+      return fail(
+        "disabled",
+        new CommandError("Disabled", id, `"${id}" needs a screen, and this session has none.`),
+      );
+    }
     const parsed = cmd.input.validate(input);
     if (!parsed.ok) {
       return fail(
@@ -212,7 +226,9 @@ export class Dispatcher implements Disposable {
     try {
       result = await cmd.run(parsed.value, ctx);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message =
+        (this.deps.hasScreen?.() === false ? screenlessFailure(id, err) : null) ??
+        (err instanceof Error ? err.message : String(err));
       return fail("error", new CommandError("Failed", id, message, { cause: err }));
     }
     if (this.deps.validateOutput && cmd.output) {
