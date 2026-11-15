@@ -18,6 +18,9 @@ interface Waiting {
   resolve(line: string | null): void;
 }
 
+/** Lines entered at a terminal within this many milliseconds of each other are one paste. */
+const PASTE_MS = 25;
+
 /** Ctrl+C typed into a pipe arrives as this byte (a terminal turns it into a signal or a key). */
 const ETX = 0x03;
 
@@ -35,6 +38,12 @@ export class Prompter {
   private shown: Waiting | null = null;
   private muted = false;
   private ended = false;
+  /**
+   * Lines entered at the session's prompt that arrived together (a paste of several lines):
+   * they are one message, sent once no more of it is left on the line.
+   */
+  private pasted: string[] = [];
+  private pasteTimer: ReturnType<typeof setTimeout> | undefined;
   /** The output's last character was a newline (or nothing was written yet). */
   private atLineStart = true;
   /** Ctrl+C (a key at a terminal, a signal, or the byte on a pipe). */
@@ -178,13 +187,15 @@ export class Prompter {
     this.refresh();
   }
 
-  /** What is typed on the prompt's line so far. */
+  /** What is typed on the prompt's line so far (lines of a paste not sent yet included). */
   get typed(): string {
-    return this.rl.line ?? "";
+    return [...this.pasted, this.rl.line ?? ""].join(" ").trim();
   }
 
   /** Clears what is typed on the prompt's line. */
   clearTyped(): void {
+    clearTimeout(this.pasteTimer);
+    this.pasted = [];
     if (!this.isTTY) return;
     this.rl.write(null, { ctrl: true, name: "e" });
     this.rl.write(null, { ctrl: true, name: "u" });
@@ -205,6 +216,14 @@ export class Prompter {
 
   private take(line: string): void {
     const waiting = this.shown ?? null;
+    if (waiting && waiting === this.reader && this.isTTY) {
+      // At a terminal, lines that come within a moment of each other were pasted together:
+      // one message, not one per line.
+      this.pasted.push(line);
+      clearTimeout(this.pasteTimer);
+      this.pasteTimer = setTimeout(() => this.settlePaste(), PASTE_MS);
+      return;
+    }
     if (waiting) {
       if (waiting.secret) {
         this.muted = false;
@@ -223,6 +242,22 @@ export class Prompter {
     }
     this.buffer.push(line);
     // A question waiting on a pipe takes it at once.
+    this.refresh();
+  }
+
+  /** The lines entered together are the message, unless more of the paste waits on the line. */
+  private settlePaste(): void {
+    const waiting = this.reader;
+    if (!waiting || !this.pasted.length) return;
+    // What was pasted didn't end with a line end: its last line is still being edited, and
+    // Enter sends everything.
+    if (this.rl.line) return;
+    const text = this.pasted.join("\n");
+    this.pasted = [];
+    if (this.shown === waiting) this.shown = null;
+    this.atLineStart = true;
+    this.reader = null;
+    waiting.resolve(text);
     this.refresh();
   }
 
@@ -288,7 +323,10 @@ export class Prompter {
     this.shown = null;
     // What was piped before the end is still read, in order; then null.
     for (const ask of asks) ask.resolve(this.isTTY ? null : (this.buffer.shift() ?? null));
-    if (reader) reader.resolve(this.buffer.shift() ?? null);
+    clearTimeout(this.pasteTimer);
+    if (reader)
+      reader.resolve(this.pasted.length ? this.pasted.join("\n") : (this.buffer.shift() ?? null));
+    this.pasted = [];
     this.onEnd();
   }
 }

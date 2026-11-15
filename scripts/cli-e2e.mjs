@@ -337,6 +337,61 @@ const scenarios = [
     },
   },
   {
+    name: "the tools: files, search, commands, the web, skills, memory, subagents; none that need a screen; fewer in ask mode",
+    run: async () => {
+      const r = await run(base("-p", "which tools do you have"));
+      equal(r.code, 0, r.stderr);
+      const tools = r.stdout.replace(/^Tools: |\.\s*$/g, "").split(", ");
+      for (const name of [
+        "read_file",
+        "write_file",
+        "edit_file",
+        "search",
+        "find_files",
+        "run_command",
+        "web_fetch",
+        "web_search",
+        "use_skill",
+        "remember",
+        "recall",
+        "delegate",
+        "ask_user",
+        "call_command",
+      ])
+        ok(tools.includes(name), `no ${name} tool: ${r.stdout}`);
+      const screen = tools.filter((t) => /screenshot|browser|computer|widget/.test(t));
+      deepEqual(screen, []);
+      const ask = await run(base("-p", "which tools do you have", "--mode", "ask"));
+      const reading = ask.stdout.replace(/^Tools: |\.\s*$/g, "").split(", ");
+      for (const name of ["write_file", "edit_file", "run_command", "remember"])
+        ok(!reading.includes(name), `ask mode offers ${name}`);
+      ok(reading.includes("read_file") && reading.includes("web_fetch"), ask.stdout);
+    },
+  },
+  {
+    name: "the command sandbox, where this system has one: a write beside the folder is blocked",
+    skip:
+      process.platform === "linux" &&
+      spawnSync("bwrap", ["--version"], { stdio: "ignore" }).status !== 0
+        ? "no bubblewrap here"
+        : false,
+    run: async () => {
+      const sandboxed = ["--settings", join(scratch, "sandbox.json")];
+      await rm(join(scratch, "pkgj-outside.txt"), { force: true });
+      const inside = await run(
+        base("-p", "pkgj sandbox write inside", "--permission-mode", "full-access", ...sandboxed),
+      );
+      equal(inside.stdout, "PkgJ inside: ok\n", inside.stderr);
+      // Outside the sandbox asks even with full access: refused with nobody to ask.
+      const outside = await run(
+        base("-p", "pkgj sandbox write outside", "--permission-mode", "full-access", ...sandboxed),
+      );
+      equal(outside.stdout, "PkgJ sandbox: blocked=yes hint=yes outside=no\n", outside.stderr);
+      equal(outside.code, 3);
+      ok(!existsSync(join(scratch, "pkgj-outside.txt")), "the sandboxed command wrote outside");
+    },
+  },
+  {
     name: "a subagent by name, with its own instructions",
     run: async () => {
       const r = await run(base("-p", "cli e2e: delegate", "--permission-mode", "full-access"));
@@ -1139,6 +1194,12 @@ const scenarios = [
         ok(/\x1b\[[0-9;]*1m[^\x1b]*bold/.test(pty.raw), "bold isn't styled on a terminal");
         // biome-ignore lint/suspicious/noControlCharactersInRegex: escape sequences are the point
         ok(/\x1b\[[0-9;]*36m[^\x1b]*code/.test(pty.raw), "code isn't styled on a terminal");
+        // Several lines pasted at once are one message, not one per line.
+        mark = pty.text.length;
+        pty.write("which model answers?\rcli e2e: markdown\r");
+        await pty.expect(/Title\n\nSome bold and code/, { from: mark });
+        await prompt(mark);
+        ok(!/Answered by/.test(pty.text.slice(mark)), "two pasted lines were sent as two messages");
         // A permission asked inline, and refused with a key.
         mark = pty.text.length;
         pty.write("headless e2e: push\r");
@@ -1169,6 +1230,37 @@ const scenarios = [
         pty.write("\x03");
         const code = await Promise.race([pty.exited, sleep(20_000).then(() => "still running")]);
         equal(code, 0, pty.text.slice(-800));
+      } finally {
+        await pty.close();
+      }
+    },
+  },
+  {
+    name: "Ctrl+C on a one-shot run in a real terminal: the turn stops, exit 130; a permission is asked there too",
+    run: async () => {
+      const cli = ["--cwd", workspace, "--user-data-dir", profile];
+      const vars = { IDE_NO_KEYCHAIN: "1", IDE_HOST_PATH: host };
+      // The line editor reads the key itself here. (The console's own Ctrl+C, which a run with
+      // --non-interactive gets, is the signal the scenario above sends where it can be sent.)
+      for (const more of [[]]) {
+        const pty = await hostPty(null, [...cli, "-p", "start the long essay", ...more], vars);
+        try {
+          await sleep(3500);
+          pty.write("\x03");
+          const code = await Promise.race([pty.exited, sleep(20_000).then(() => "still running")]);
+          equal(code, 130, `${more.join(" ")}: ${pty.text.slice(-600)}`);
+          match(pty.text, /Interrupted/);
+        } finally {
+          await pty.close();
+        }
+      }
+      // At a terminal a one shot asks, as a session does.
+      const pty = await hostPty(null, [...cli, "-p", "headless e2e: push"], vars);
+      try {
+        await pty.expect(/git push origin main[\s\S]*\[y\] yes, once/);
+        pty.write("y\r");
+        await pty.expect(/Headless push: ran/);
+        equal(await Promise.race([pty.exited, sleep(20_000).then(() => "still running")]), 0);
       } finally {
         await pty.close();
       }
@@ -1582,7 +1674,8 @@ function jsonRpc(child) {
 /**
  * Runs `program` in a pseudo-terminal of the host's own (the one the IDE's terminals use: ConPTY
  * on Windows), so the command line sees a real terminal: the host is started for this alone and
- * spoken to in its wire format (docs: the contract's frames).
+ * spoken to in its wire format (docs: the contract's frames). `program` null: the launcher,
+ * through a shell.
  */
 async function hostPty(program, args, extraEnv) {
   const proc = spawn(host, ["--user-data-dir", join(scratch, "pty-profile")], {
@@ -1666,7 +1759,18 @@ async function hostPty(program, args, extraEnv) {
     rows: 40,
     onOutput: { __channel: 1 },
     shellIntegration: false,
-    run: { kind: "process", command: program, args, env: extraEnv },
+    run:
+      program === null
+        ? // The launcher through a shell, as a person runs it (cmd.exe on Windows).
+          {
+            kind: "shell",
+            command: windows
+              ? [quoted(launcher), ...args.map(quoted)].join(" ")
+              : [launcher, ...args].map((a) => `'${a}'`).join(" "),
+            ...(windows && { shell: { executable: "cmd.exe", args: ["/d", "/c"] } }),
+            env: extraEnv,
+          }
+        : { kind: "process", command: program, args, env: extraEnv },
     profile: null,
     env: null,
   });
@@ -1795,6 +1899,7 @@ async function setup() {
       `"${node}" "${join(scratch, "hook.mjs")}" UserPromptSubmit`;
   await writeFile(join(profile, "config", "settings.json"), JSON.stringify(settings, null, 2));
   await writeFile(join(scratch, "full.json"), JSON.stringify({ "agent.runCommands": "full" }));
+  await writeFile(join(scratch, "sandbox.json"), JSON.stringify({ "agent.sandbox": "auto" }));
   const provider = {
     id: "claude",
     name: "Claude",

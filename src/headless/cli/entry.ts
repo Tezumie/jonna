@@ -3,7 +3,8 @@
 // runs the command line.
 const MINIMUM_NODE = 20;
 
-const major = Number((process.versions.node ?? "0").split(".")[0]);
+// (Nothing newer than an old Node parses in this file: no `??`, no `?.`.)
+const major = Number(String(process.versions.node).split(".")[0]);
 if (!(major >= MINIMUM_NODE)) {
   process.stderr.write(
     `Node.js ${MINIMUM_NODE} or newer is needed; this is ${process.versions.node}. Install a current Node.js (nodejs.org) and try again.\n`,
@@ -21,7 +22,7 @@ process.on("uncaughtException", (error: NodeJS.ErrnoException) => {
   // Writing to a pipe whose reader left (`| head`) isn't one.
   if (error.code === "EPIPE") return;
   try {
-    process.stderr.write(`Unexpected error: ${error.stack ?? error.message}\n`);
+    process.stderr.write(`Unexpected error: ${error.stack || error.message}\n`);
   } catch {
     // Nowhere to say it.
   }
@@ -34,7 +35,7 @@ process.on("unhandledRejection", (reason) => {
   if (!process.argv.includes("--verbose")) return;
   try {
     process.stderr.write(
-      `[unhandled] ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
+      `[unhandled] ${reason instanceof Error ? reason.stack || reason.message : String(reason)}\n`,
     );
   } catch {
     // Nowhere to say it.

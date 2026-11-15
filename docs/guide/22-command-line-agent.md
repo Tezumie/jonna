@@ -20,7 +20,8 @@ Run `<cli>` in a project's folder. You get a prompt; type what you want done and
   the cost so far (when the model's price is known) and how full the context is.
 - `<cli> "fix the failing test"` starts the session with that message.
 - To write a message over several lines, end a line with `\`; the next line continues it.
-  Pasting several lines sends each line as its own message unless they end in `\`.
+  Several lines pasted at once are one message: it is sent when the paste ends with a line
+  end, or when you press Enter on its last line.
 - The Up and Down arrows go through what you typed before, and the usual keys edit the line.
 
 ### When the agent asks
@@ -145,7 +146,7 @@ the IDE asks which version to keep.
 ## Models, settings and keys
 
 - The model is the one your settings name (`agent.model`), or `--model`: a provider's model
-  (`ollama/qwen3:8b`, `anthropic/claude-sonnet-4-5`) or an external agent, with its own model
+  (`ollama/qwen3:8b`; `/model` in a session lists them) or an external agent, with its own model
   after a colon (`"Claude Code:opus"`). `--agent <name>` picks one of your own agents or an
   external agent, and `--effort <level>` the reasoning effort.
 - Settings are the IDE's: your user settings, then the folder's. A flag wins over both for the

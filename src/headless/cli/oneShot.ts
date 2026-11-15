@@ -62,6 +62,10 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
     return code;
   };
 
+  if (args.resume === true)
+    throw new UsageError(
+      "--resume needs a chat's id in a one-shot run (see: sessions list); alone, it offers a list in a session at a terminal.",
+    );
   let prompt: string;
   try {
     prompt = await readPrompt(args, io, tty);
