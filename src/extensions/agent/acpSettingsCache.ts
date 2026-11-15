@@ -4,7 +4,8 @@
 //
 // It used to live in the web view's own storage. Values found there are taken over once, the
 // first time the cache is used in a window: the saved state's own values win, the rest are
-// written to it, and only then are they removed from the web view's storage.
+// written to it, and only once that write has succeeded are they removed from the web view's
+// storage.
 //
 // DOM-free: the web view's storage is only looked at where there is one.
 
@@ -67,8 +68,13 @@ function cacheOf(services: WorkbenchServices): Map<string, AcpSetting[]> {
   for (const [agent, settings] of Object.entries(old.settings))
     if (!(agent in saved)) cache.set(agent, settings);
   void services.persistence
-    .saveGlobal((current) => ({ acpSettings: { ...old.settings, ...(current.acpSettings ?? {}) } }))
-    .then(() => {
+    .saveGlobalChecked((current) => ({
+      acpSettings: { ...old.settings, ...(current.acpSettings ?? {}) },
+    }))
+    .then((written) => {
+      // Not written (the file locked, the disk full): the old copies are the only ones on disk,
+      // so they stay, and the next window takes them over again.
+      if (!written) return;
       // Written (or already there): the old copies go, so this runs once.
       for (const key of old.keys) {
         try {

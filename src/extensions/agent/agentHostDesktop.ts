@@ -30,11 +30,36 @@ const documentPresence: Presence = {
   },
 };
 
+/**
+ * `asked`, closed when `asker` aborts while it is still the quick input open (there is one at a
+ * time, and a newer one has already ended this one's wait).
+ */
+async function untilGone<T>(
+  services: WorkbenchServices,
+  asker: AbortSignal | undefined,
+  asked: () => Promise<T | undefined>,
+): Promise<T | undefined> {
+  if (!asker) return asked();
+  if (asker.aborted) return undefined;
+  const close = () => services.quickInput.cancel();
+  asker.addEventListener("abort", close, { once: true });
+  try {
+    return await asked();
+  } finally {
+    asker.removeEventListener("abort", close);
+  }
+}
+
 function windowPrompts(services: WorkbenchServices): HostPrompts {
   return {
-    text: ({ reason: _reason, server: _server, ...options }) => services.quickInput.prompt(options),
-    choose: async ({ choices, placeholder }) =>
-      (await services.quickInput.pick([...choices], { placeholder }))?.id,
+    text: ({ reason: _reason, server: _server, signal, ...options }) =>
+      untilGone(services, signal, () => services.quickInput.prompt(options)),
+    choose: async ({ choices, placeholder, signal }) =>
+      (
+        await untilGone(services, signal, () =>
+          services.quickInput.pick([...choices], { placeholder }),
+        )
+      )?.id,
     review: async ({ title, message, label, text, signal }) => {
       const box = textArea(label, text, 10);
       const choice = await showDialog<"send" | "reject" | "closed">({

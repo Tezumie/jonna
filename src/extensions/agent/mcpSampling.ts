@@ -215,12 +215,8 @@ export function registerMcpSampling(
     const stopped = stoppedOf.get(request);
     for (;;) {
       if (stopped?.aborted) return "deny";
-      // The server stopped while asked: the question goes away (its answer would reach nobody).
-      let asking = true;
-      const close = () => {
-        if (asking) agentHost(services).prompts.cancel();
-      };
-      stopped?.addEventListener("abort", close, { once: true });
+      // The server stopped while asked: its question goes away (the answer would reach nobody),
+      // and only its own: another server's question may be waiting beside it.
       const picked = await agentHost(services).prompts.choose({
         reason: "mcp.sampling",
         server,
@@ -239,9 +235,8 @@ export function registerMcpSampling(
           { id: "deny", label: "Deny", description: "The server is told you said no" },
           { id: "show", label: "Show the whole prompt…" },
         ],
+        ...(stopped && { signal: stopped }),
       });
-      asking = false;
-      stopped?.removeEventListener("abort", close);
       if (!picked || picked === "deny" || stopped?.aborted) return "deny";
       if (picked === "show") {
         await services.dispatcher

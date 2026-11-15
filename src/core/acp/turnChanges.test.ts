@@ -7,6 +7,7 @@ import {
   changedByAgent,
   compareSnaps,
   ignoredPath,
+  insideFolder,
   joinPath,
   relativeTo,
   type StepWindow,
@@ -51,6 +52,14 @@ test("paths: joined, relative, ignored, candidates (D208)", () => {
   assert.equal(relativeTo("/p", "/p/src/a.ts", false), "src/a.ts");
   assert.equal(relativeTo("/p", "/pq/a.ts", false), null);
   assert.equal(relativeTo("/p", "/p", false), null);
+  // Confining a request: under the folder, and no step back out of it.
+  assert.equal(insideFolder("/p", "/p/src/a.ts", false), true);
+  assert.equal(insideFolder("/p", "/p/../etc/passwd", false), false);
+  assert.equal(insideFolder("/p", "/p/src/../../etc/passwd", false), false);
+  assert.equal(insideFolder("C:\\P", "c:\\p\\..\\Windows\\win.ini", true), false);
+  assert.equal(insideFolder("C:\\P", "c:\\p\\SRC\\a..b.ts", true), true);
+  assert.equal(insideFolder("/p", "/P/a.ts", false), false);
+  assert.equal(insideFolder("/p", "/pq/a.ts", false), false);
   assert.equal(ignoredPath(".git/index"), true);
   assert.equal(ignoredPath("web/node_modules/x/y.js"), true);
   assert.equal(ignoredPath("src/git.ts"), false);

@@ -56,6 +56,15 @@ export function relativeTo(root: string, path: string, windows: boolean): string
   return path.replace(/\\/g, "/").slice(r.length + 1);
 }
 
+/**
+ * Whether `path` stays inside `root`: under it, with no `..` step that could leave it again
+ * (`/p/../etc/x` starts with `/p/` and is not in it). What confines an agent's file requests.
+ */
+export function insideFolder(root: string, path: string, windows: boolean): boolean {
+  const rel = relativeTo(root, path, windows);
+  return rel !== null && !rel.split("/").includes("..");
+}
+
 /** A path inside git's own folder or a dependency folder: never a change to show. */
 export function ignoredPath(rel: string): boolean {
   return /(^|\/)(\.git|node_modules)(\/|$)/.test(rel);

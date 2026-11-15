@@ -20,7 +20,7 @@ import {
 } from "../../core/acp/client";
 import { packageRunner, prettyCommand, updateCost } from "../../core/acp/display";
 import { findMode, permissionLevel, pickMode, writesWithoutAsking } from "../../core/acp/modes";
-import { changedByAgent, relativeTo, type StepWindow } from "../../core/acp/turnChanges";
+import { changedByAgent, insideFolder, type StepWindow } from "../../core/acp/turnChanges";
 import { nextImageId } from "../../core/agent/chatImages";
 import type { Item } from "../../core/agent/conversation";
 import { scratchIpc } from "../../core/ipc/agent";
@@ -48,11 +48,13 @@ import { type ExternalAgentConfig, helpChoices, helpCommandLine, shellArg } from
 import { TurnWatch } from "./acpChanges";
 import { AgentReviews } from "./acpReviews";
 import { rememberSettings } from "./acpSettingsCache";
+import { agentHost } from "./agentHost";
 import { registerSlashSource } from "./composerExtras";
 import { newId } from "./ids";
 import { mayDeleteFiles } from "./permissions";
 import { askProtectedWrite, askRiskyAccess, protectedTarget, riskyTargets } from "./riskyGuard";
 import type { AgentSession } from "./session";
+import { deniedCall, externalCommandCall } from "./unattended";
 import { recordAgentUsage } from "./usageLog";
 
 /** A model chosen by launch flag (not an ACP setting): changing it restarts the agent. */
@@ -147,7 +149,7 @@ export class AcpBackend {
       root && !this.scratch && samePath(root, this.services.workspace.root.peek() ?? "")
         ? this.services.workspace.folderPaths()
         : [];
-    const inside = (folder: string) => relativeTo(folder, path, windows) !== null;
+    const inside = (folder: string) => insideFolder(folder, path, windows);
     if (!root || !(inside(root) || folders.some(inside)))
       throw new Error(
         `${path} is outside the folder${folders.length > 1 ? "s" : ""} ${this.config.name} works in${root ? ` (${folders.length > 1 ? folders.join(", ") : root})` : ""}.`,
@@ -226,19 +228,43 @@ export class AcpBackend {
         const config = this.scratch ? null : this.configRisk(toolCall, title);
         const always =
           protect || config ? undefined : options.find((o) => o.kind === "allow_always");
-        const answer = await s.ask({
-          title: `${this.config.name}: ${title}`,
-          heading: config ? "Change an agent or startup configuration file?" : title,
-          detail: config
-            ? `${this.config.name} wants to change ${config.subject}. ${configQuestionDetail(config.found)}`
-            : this.config.name,
-          ...(config && { code: title }),
-          kind: "agent",
-          ...(always && { always: always.name }),
-          danger: toolCall.kind === "delete" || protect || !!config,
-          ...((protect || config) && { evenWithFullAccess: true }),
-        });
         const pick = (kinds: string[]) => options.find((o) => kinds.includes(o.kind));
+        // A run with nobody at the window (unattended.ts): the command itself is what its lists
+        // read, never this card's title (the agent's name is in front of it). The line as the
+        // agent sent it is held against the deny list too: the tidied one may leave words out.
+        const call = externalCommandCall(toolCall.kind, title);
+        const refused =
+          call && raw !== title
+            ? deniedCall(agentHost(this.services).permissions ?? null, call.name, { command: raw })
+            : null;
+        if (refused) {
+          s.toldDecision({
+            title: `${this.config.name}: ${title}`,
+            kind: "agent",
+            code: raw,
+            tool: call?.name ?? "run_command",
+            answer: "deny",
+            by: "policy",
+            rule: refused,
+          });
+          const no = pick(["reject_once", "reject_always"]);
+          return no ? { outcome: "selected", optionId: no.optionId } : { outcome: "cancelled" };
+        }
+        const answer = await s.ask(
+          {
+            title: `${this.config.name}: ${title}`,
+            heading: config ? "Change an agent or startup configuration file?" : title,
+            detail: config
+              ? `${this.config.name} wants to change ${config.subject}. ${configQuestionDetail(config.found)}`
+              : this.config.name,
+            ...(config && { code: title }),
+            kind: "agent",
+            ...(always && { always: always.name }),
+            danger: toolCall.kind === "delete" || protect || !!config,
+            ...((protect || config) && { evenWithFullAccess: true }),
+          },
+          call,
+        );
         const chosen =
           answer === "always"
             ? (always ?? pick(["allow_once"]))
@@ -318,6 +344,24 @@ export class AcpBackend {
           await this.guard("run_command", { command: line, ...(cwd && { cwd }) });
         } catch (err) {
           term.output = err instanceof Error ? err.message : String(err);
+          this.terminals.set(id, term);
+          return id;
+        }
+        // A run's deny list (unattended.ts): the agent's own terminals are command lines too.
+        const denied = deniedCall(agentHost(this.services).permissions ?? null, "run_command", {
+          command: line,
+        });
+        if (denied) {
+          s.toldDecision({
+            title: `${this.config.name}: ${line}`,
+            kind: "command",
+            code: line,
+            tool: "run_command",
+            answer: "deny",
+            by: "policy",
+            rule: denied,
+          });
+          term.output = `This run's permission policy refuses this command (denied: ${denied}). Do without it.`;
           this.terminals.set(id, term);
           return id;
         }

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PendingPrompt } from "./agentHost";
 import {
+  asksForIndirectLine,
   deniedCall,
+  externalCommandCall,
   listDecision,
   modeSettings,
   promptPolicyOf,
@@ -28,6 +30,48 @@ test("the deny list refuses a tool by name and a command line by its words", () 
   assert.equal(deniedCall({ deny: ["cmd:write_file"] }, "write_file", {}), null);
   assert.equal(deniedCall(null, "write_file", {}), null);
   assert.equal(deniedCall({}, "run_command", { command: "git push" }), null);
+});
+
+test("the deny list reads a command line wherever a call carries one", () => {
+  const policy: UnattendedPolicy = { deny: ["curl", "terminal.split"] };
+  const ide = (id: string, input: Record<string, unknown>) =>
+    deniedCall(policy, "call_command", { id, input });
+  assert.equal(ide("terminal.runCommand", { command: "curl http://x" }), "curl");
+  assert.equal(ide("terminal.sendText", { text: "ls; C:\\Windows\\System32\\CURL.EXE x" }), "curl");
+  assert.equal(ide("terminal.start", { command: "npm test && curl x" }), "curl");
+  assert.equal(ide("terminal.runCommand", { command: "echo curl" }), null);
+  // An IDE command by its id, before the mode could let it through unasked.
+  assert.equal(ide("terminal.split", {}), "terminal.split");
+  assert.equal(ide("editor.open", { path: "curl" }), null);
+  // A monitor's command is a command line as run_command's is.
+  assert.equal(deniedCall(policy, "monitor", { command: "curl -N http://x" }), "curl");
+  assert.equal(deniedCall(policy, "monitor", { ws: { url: "ws://curl" } }), null);
+  // Malformed calls name nothing.
+  assert.equal(deniedCall(policy, "call_command", { id: 3, input: "curl" }), null);
+  assert.equal(deniedCall(policy, "call_command", { id: "terminal.runCommand" }), null);
+});
+
+test("a question about an IDE command that types a line is answered as run_command's", () => {
+  const policy: UnattendedPolicy = { allow: ["npm test"], deny: ["curl"] };
+  const asked = (command: string) =>
+    listDecision(
+      policy,
+      { title: "Run in terminal", kind: "ide", code: "terminal.runCommand" },
+      { name: "call_command", args: { id: "terminal.runCommand", input: { command } } },
+    );
+  assert.deepEqual(asked("curl x"), { answer: "deny", rule: "curl" });
+  assert.deepEqual(asked("npm test -- a"), { answer: "once", rule: "npm test" });
+  assert.equal(asked("npm test && ls"), null);
+});
+
+test("a command line from a file asks whatever the mode, once command lines are denied", () => {
+  assert.equal(asksForIndirectLine({ deny: ["curl"] }, "tasks.run"), true);
+  assert.equal(asksForIndirectLine({ deny: ["cmd:rm"] }, "debug.start"), true);
+  assert.equal(asksForIndirectLine({ deny: ["curl"] }, "terminal.runCommand"), false);
+  // A deny list of tools only says nothing about command lines.
+  assert.equal(asksForIndirectLine({ deny: ["tool:write_file"] }, "tasks.run"), false);
+  assert.equal(asksForIndirectLine({ allow: ["echo"] }, "tasks.run"), false);
+  assert.equal(asksForIndirectLine(null, "tasks.run"), false);
 });
 
 test("the lists answer a question: deny first, then allow, else nothing", () => {
@@ -61,13 +105,32 @@ test("the lists answer a question: deny first, then allow, else nothing", () => 
     ),
     { answer: "once", rule: "tool:mcp__echo__echo" },
   );
-  // An external agent's own request names its command in the title.
-  assert.deepEqual(listDecision(policy, { title: "echo ok", kind: "agent" }), {
-    answer: "once",
-    rule: "echo *",
-  });
+  // A title is a card's wording, never a command line: nothing is read from it.
+  assert.equal(listDecision(policy, { title: "echo ok", kind: "agent" }), null);
   assert.equal(listDecision(policy, { title: "Over budget", kind: "agent" }), null);
   assert.equal(listDecision(null, command("npm test")), null);
+});
+
+test("an external agent's command is read from its call, as the chat asks it", () => {
+  const policy: UnattendedPolicy = { allow: ["npm test", "echo *"], deny: ["rm", "agent"] };
+  // What acp.ts sends: the agent's name in front of the command in the title, no code, and the
+  // command as the call.
+  const asked = (kind: string | undefined, line: string) =>
+    listDecision(
+      policy,
+      { title: `Some Agent: ${line}`, kind: "agent" },
+      externalCommandCall(kind, line),
+    );
+  assert.deepEqual(asked("execute", "rm -rf build"), { answer: "deny", rule: "rm" });
+  assert.deepEqual(asked("execute", "npm test -- a"), { answer: "once", rule: "npm test" });
+  assert.deepEqual(asked(undefined, "echo ok"), { answer: "once", rule: "echo *" });
+  assert.deepEqual(asked("other", "ls && rm x"), { answer: "deny", rule: "rm" });
+  assert.equal(asked("execute", "ls"), null);
+  // The agent's name is no part of the line (a deny entry that happens to spell it).
+  assert.equal(asked("execute", "git status"), null);
+  // A request that says it is something else names no command line.
+  assert.equal(asked("edit", "rm.txt"), null);
+  assert.equal(externalCommandCall("execute", "  "), undefined);
 });
 
 test("the four access modes are the settings the window's menu writes", () => {

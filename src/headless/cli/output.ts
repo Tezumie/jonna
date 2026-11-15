@@ -1,6 +1,7 @@
 // How a one-shot run ends for whoever started it: the exit code, and the result as text, as one
 // JSON object (`--output-format json`) or as the last line of the event stream (`stream-json`).
 // Pure.
+import { redactSecrets } from "../../core/diagnostics/redact";
 import type { PermissionDecision, RunResult, SessionEvent, SessionUsage } from "../run";
 
 export const EXIT = {
@@ -20,9 +21,13 @@ export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 /**
  * The exit code of a finished run. A failure or a limit: 1. Interrupted: 130. The agent answered
  * but something it asked for was refused (by the policy, the deny list or the person): 3, since
- * the task couldn't be done as asked. Else 0.
+ * the task couldn't be done as asked. An answer that couldn't be saved to its chat (`unsaved`:
+ * someone else saved the chat meanwhile): 1, since a later --resume won't have this turn. Else 0.
  */
-export function exitCodeOf(result: Pick<RunResult, "reason" | "denied">): ExitCode {
+export function exitCodeOf(
+  result: Pick<RunResult, "reason" | "denied">,
+  unsaved = false,
+): ExitCode {
   switch (result.reason) {
     case "cancelled":
       return EXIT.interrupted;
@@ -33,8 +38,17 @@ export function exitCodeOf(result: Pick<RunResult, "reason" | "denied">): ExitCo
     case "stopped":
       return EXIT.failed;
     case "end":
+      if (unsaved) return EXIT.failed;
       return result.denied.length > 0 ? EXIT.refused : EXIT.ok;
   }
+}
+
+/**
+ * What to say when the chat was saved by someone else (a window, another run) while this run
+ * worked on it: the stored chat is kept as they left it, so this run's turn is not in it.
+ */
+export function unsavedNote(session: string): string {
+  return `The chat ${session} was saved by another window or run while this one worked on it. The saved chat was kept as it is: this run's turn is NOT in it (what the run changed on disk stays). Use one chat from one place at a time, or give each run a chat of its own.`;
 }
 
 /** Why a run ended, in a sentence, when it didn't simply answer; null when it did. */
@@ -45,7 +59,7 @@ export function endNote(result: Pick<RunResult, "reason" | "error" | "denied">):
         ? `Refused: ${result.denied.map(deniedLine).join("; ")}. Allow it with --allow or --permission-mode.`
         : null;
     case "error":
-      return `The run failed: ${result.error ?? "the model or the provider failed"}`;
+      return `The run failed: ${redactSecrets(result.error ?? "the model or the provider failed")}`;
     case "max_steps":
       return "Stopped at the step limit with work left (raise --max-steps, or --continue).";
     case "timeout":
@@ -81,11 +95,13 @@ export interface ResultRecord {
   denied: PermissionDecision[];
   /** Files whose edits wait for review (`--review`). */
   pending: string[];
+  /** The turn isn't in the saved chat: someone else saved the chat while the run worked. */
+  unsaved?: true;
   durationMs: number;
 }
 
-export function resultRecord(result: RunResult, durationMs: number): ResultRecord {
-  const exitCode = exitCodeOf(result);
+export function resultRecord(result: RunResult, durationMs: number, unsaved = false): ResultRecord {
+  const exitCode = exitCodeOf(result, unsaved);
   return {
     type: "result",
     ok: exitCode === 0,
@@ -93,12 +109,13 @@ export function resultRecord(result: RunResult, durationMs: number): ResultRecor
     session: result.session,
     text: result.text,
     reason: result.reason,
-    ...(result.error && { error: result.error }),
+    ...(result.error && { error: redactSecrets(result.error) }),
     usage: result.usage,
     steps: result.steps,
     cost: result.cost,
     denied: result.denied,
     pending: result.pending,
+    ...(unsaved && { unsaved: true as const }),
     durationMs,
   };
 }
@@ -117,7 +134,7 @@ export function failureRecord(
     session: null,
     text: "",
     reason,
-    error,
+    error: redactSecrets(error),
     usage: null,
     steps: 0,
     cost: null,
@@ -129,7 +146,30 @@ export function failureRecord(
 
 /** One line of `stream-json`: an event of the chat, or the result. Never contains a newline. */
 export function jsonLine(value: SessionEvent | ResultRecord): string {
-  return `${JSON.stringify(value)}\n`;
+  return `${JSON.stringify(value.type === "result" ? value : eventWithoutSecrets(value))}\n`;
+}
+
+/**
+ * An event as it is printed. The texts of a failure (the chat's error, a notice, a turn that
+ * failed) are a provider's, an MCP server's or another agent's own words, and some repeat the
+ * request they refused, key and all: secrets are taken out of those. What the model wrote and
+ * what tools were given and answered stay as they are.
+ */
+export function eventWithoutSecrets(event: SessionEvent): SessionEvent {
+  switch (event.type) {
+    case "error":
+      return { ...event, message: redactSecrets(event.message) };
+    case "notice":
+      return {
+        ...event,
+        text: redactSecrets(event.text),
+        ...(event.detail !== undefined && { detail: redactSecrets(event.detail) }),
+      };
+    case "turn.end":
+      return event.error ? { ...event, error: redactSecrets(event.error) } : event;
+    default:
+      return event;
+  }
 }
 
 /** `json`: the result alone, on one line. */

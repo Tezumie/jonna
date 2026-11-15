@@ -18,7 +18,8 @@ const flagLines = (command: Subcommand): string => {
 
 const EXIT_CODES = `Exit codes:
   0    the task finished
-  1    the task failed (the model or a tool failed, a step, cost or time limit)
+  1    the task failed (the model or a tool failed, a step, cost or time limit), or its
+       chat was saved elsewhere meanwhile and this turn couldn't be saved to it
   2    bad usage or configuration (an unknown option, no model, no key, no host)
   3    a permission was refused
   130  interrupted (Ctrl+C; a second Ctrl+C quits at once)`;
@@ -88,6 +89,8 @@ Usage:
 
 Listens on 127.0.0.1 and prints one line of JSON when ready:
   {"type":"listening","host":"127.0.0.1","port":<n>,"token":"<secret>"}
+The token is in that line only when this program made it up: one you chose (--token, or
+IDE_SERVE_TOKEN in the environment, which keeps it out of the process list) is never printed.
 A client sends newline-delimited JSON requests ({"id","method","params"}): hello (with the
 token) first, then execute, state, chats, open, subscribe, send, stop, shutdown. Chat events
 arrive as {"event":{…}} lines. Permission requests wait for the client

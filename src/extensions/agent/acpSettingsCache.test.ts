@@ -121,3 +121,35 @@ test("reporting the same settings again writes nothing", async () => {
   assert.ok(writes >= 1);
   assert.deepEqual(cachedSettings(services, "codex"), [setting("gpt-next")]);
 });
+
+test("a take-over whose write fails leaves the old copies where they are", async () => {
+  const old = fakeStorage({ "ide.acpSettings.claude": JSON.stringify([setting("sonnet")]) });
+  const { services, persistence, backend, saved } = await servicesWith();
+  const save = backend.save;
+  // The state file can't be written (locked, the disk full).
+  backend.save = async () => {
+    throw new Error("locked");
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    // Still readable in this window.
+    assert.deepEqual(cachedSettings(services, "claude"), [setting("sonnet")]);
+    await settled(persistence);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(saved().acpSettings, undefined);
+  // The only copy on disk is still there.
+  assert.deepEqual([...old.keys()], ["ide.acpSettings.claude"]);
+
+  // The next window takes them over again, and this time the write lands.
+  backend.save = save;
+  const later = { persistence } as unknown as WorkbenchServices;
+  assert.deepEqual(cachedSettings(later, "claude"), [setting("sonnet")]);
+  await settled(persistence);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(saved().acpSettings, { claude: [setting("sonnet")] });
+  assert.deepEqual([...old.keys()], []);
+});

@@ -15,6 +15,7 @@ import {
   type ToolCallContent,
   type ToolCallFields,
 } from "../../core/acp/client";
+import { redactSecrets } from "../../core/diagnostics/redact";
 import { Emitter } from "../../core/events/index";
 import { RpcConnection, RpcError, type Transport } from "../../core/lsp/jsonrpc";
 import { product } from "../../core/product";
@@ -124,7 +125,8 @@ export function updateOf(event: SessionEvent): SessionUpdate | null {
       return event.tone === "error"
         ? {
             sessionUpdate: "agent_thought_chunk",
-            content: { type: "text", text: `${event.text}\n` },
+            // A failure in somebody else's words (a provider, an MCP server): no key goes out.
+            content: { type: "text", text: `${redactSecrets(event.text)}\n` },
           }
         : null;
     default:

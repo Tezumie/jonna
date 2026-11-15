@@ -74,6 +74,9 @@ and never made; a command that needs one fails with a message that says a screen
   a run that opens a folder doesn't put it in the app's recent folders or make the app reopen
   it. Trust decisions, the external agents' remembered settings, hand-offs between agents and
   the like are shared with the app.
+  Each write reads the file first (`screenlessStateBackend`); when it can't be read (locked
+  while the app replaces it: tried three times) or isn't a state file, that write is refused and
+  warned about instead of written without the window's keys. A file that isn't there is written.
 - **Chats**: saved where the app saves them (the backend's session store, per profile), so the
   app lists a run's chats and a run continues the app's.
 - **Settings files**: only by commands that write settings (`settings.set`, an "always allow").
@@ -116,7 +119,13 @@ is there.
   `send` goes through `agent.send` and resolves when the chat is at rest (the turn, queued
   messages, background helpers and workflows, their reports).
 - `RunLimits`: `maxSteps` (the app's `agent.maxSteps`, for the run), `maxCost` (dollars this
-  run may spend), `timeoutMs`, `signal`. Each stops the turn as Stop does.
+  run may spend), `timeoutMs`, `signal`. Each stops the turn as Stop does (`limits.ts`,
+  `RunLimiter`, tested): a limit that fires before the turn runs is remembered and stops it as
+  it starts, as it stops a turn something starts afterwards, and the chat's background commands
+  that report back (notify on exit, monitors) are ended with it. `maxCost` counts the chat's
+  requests and its subagents' (`AgentSession.sideCost`; a helper in a worktree of its own is a
+  chat of its own and is not counted). A model whose price isn't known costs nothing as far as
+  the limit can tell: the run says so once, as a `notice` event.
 - `RunResult`: `session`, `text`, `reason` (`end`, `stopped`, `max_steps`, `error`,
   `timeout`, `max_cost`, `cancelled`), `error?`, `usage`, `steps`, `cost`, `denied`
   (`PermissionDecision[]`), `pending` (files waiting for review), `command?` (a slash
@@ -136,7 +145,14 @@ Excluded from `tsconfig.json` (no Node types there) and checked by `tsconfig.tes
 - `node/hostBackend.ts` `hostBackend({ binary, userDataDir, args, env, onLog, onExit })`.
 - `node/workers.ts` `nodeWorkers(directory)`: a `WorkerFactory` over `<script>.worker.mjs`
   (src/workers/node/: the worker script with a web worker's globals over the thread's port,
-  and the process, module loaders and buffers taken away; not an engine-level sandbox).
+  and the process, module loaders and buffers taken away; not an engine-level sandbox). The
+  script's body is compiled in a `node:vm` context of its own (`src/workers/node/isolate.ts`,
+  tested): only the language's built-ins and the names handed in, `import()` rejects, `eval` and
+  `new Function` throw. That removes the ordinary ways out; it is not a security boundary
+  (`node:vm` isn't one: what is handed in comes from the thread's realm, and nothing limits
+  memory or CPU). So with no window `run_workflow` asks whatever the mode (`workflows.ts`):
+  the run's allow list names the tool (`--allow run_workflow`) or a person answers; full access
+  alone doesn't run it.
 
 ## The build and its test
 
@@ -174,7 +190,7 @@ lower case, or `node build.mjs --headless --cli-name=<name>`), read through `nam
 | `asks.ts` | A permission, the agent's questions, host prompts, the services' pickers: asked at the terminal, answered through the commands any front end uses. |
 | `render.ts`, `markdown.ts`, `style.ts`, `diffText.ts` | Events as text; Markdown styled as it streams; colour (`NO_COLOR`, `FORCE_COLOR`, `--color`) and glyphs; unified diffs. Pure. Text from the model is stripped of escape sequences before it is printed. |
 | `slash.ts` | The session's own slash commands and the line parser. Pure. |
-| `output.ts` | Exit codes, the `json` result record, `stream-json` lines. Pure. |
+| `output.ts` | Exit codes, the `json` result record, `stream-json` lines. Pure. A failure's text (the result's `error`, `error` / `notice` / `turn.end` events, a failed tool's reason, a provider's status, the host's log under `--verbose`) is printed with secrets taken out (`redactSecrets`): those are a provider's or a server's own words and may repeat the request. What the model wrote and what tools were given are printed as they are. |
 | `sessionsCommand.ts` | `sessions list` / `show`. |
 | `serve.ts`, `serveClient.ts` | `serve` and its client (bundled alone as `serve-client.mjs`). |
 | `acpAgent.ts` | `acp`: the Agent Client Protocol's agent side. |
@@ -195,6 +211,12 @@ Decisions worth knowing when changing it:
 - **Review.** One shot accepts edits as they are made unless `--review` or `--permission-mode
   ask`; a session follows the app's own choice for the folder. Under review an edit is in the
   file, as in the app, and `/accept` keeps it or `/reject` puts the old text back.
+- **One chat, two places.** A chat's save only goes over the version this process read
+  (the app's two-window check, `sessionStore.ts`), so a window and a run on the same chat never
+  replace each other's turns: the later saver is refused and its chat stops saving. One shot
+  then exits 1 with a sentence on stderr and `"unsaved": true` in the result (the turn is not
+  in the saved chat); a session says so after the turn and `/conflict mine|saved` chooses
+  (`agent.resolveChatConflict`); `serve` and `acp` clients get the chat's own notice.
 - **Asking.** A session and `serve` leave what the policy doesn't decide waiting
   (`otherwise: "wait"`); one shot does only with a terminal on stdin and without
   `--non-interactive`.
@@ -220,7 +242,8 @@ lookup finds.
 
 `<cli> serve [--port n] [--token text]` listens on 127.0.0.1 and prints one line when ready:
 `{"type":"listening","host":"127.0.0.1","port":n,"token":"…","folder":"…"}`. The token is
-`--token`, else `IDE_SERVE_TOKEN`, else random. Messages are newline-delimited JSON, one object
+`--token`, else `IDE_SERVE_TOKEN`, else random (an empty one counts as none), and the line
+carries it only when it is the random one: a token the caller chose is never printed. Messages are newline-delimited JSON, one object
 per line, UTF-8. One client at a time (a second is answered `Busy`).
 
 - Client → server: `{ "id": n, "method": "<name>", "params": { … } }`.

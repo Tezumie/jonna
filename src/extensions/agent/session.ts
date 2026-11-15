@@ -218,6 +218,11 @@ export class AgentSession {
   readonly cost = signal<number | null>(null);
   /** The price of the model answering now (set per turn). */
   /** @internal */ price: ModelPrice | undefined;
+  /**
+   * What its subagents' requests cost in dollars since the chat was opened: they are logged and
+   * stay outside the chat's meter (D127), so a run's cost limit adds this (headless/limits.ts).
+   */
+  /** @internal */ sideCost = 0;
   /** The current turn's cost so far (shown under its answer). */
   /** @internal */ turnCost = 0;
   /** The budget warning was shown, and going past the budget was allowed, in this chat. */

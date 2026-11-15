@@ -2,6 +2,7 @@
 // output (text, one JSON object, or a line of JSON per event); what the agent does on the way goes
 // to standard error when that is a terminal or with --verbose, so the output stays clean for
 // whatever reads it.
+import { redactSecrets } from "../../core/diagnostics/redact";
 import type { BrainChat, HostedBrain, RunResult } from "../run";
 import { type CliArgs, mayAsk, type Terminals, UsageError } from "./args";
 import { Asks } from "./asks";
@@ -18,6 +19,7 @@ import {
   jsonResult,
   resultRecord,
   textResult,
+  unsavedNote,
 } from "./output";
 import { Prompter } from "./prompter";
 import { EventRenderer } from "./render";
@@ -56,7 +58,8 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
     reason: "usage" | "config" | "error" | "cancelled",
     error: string,
   ) => {
-    io.err(`${error}\n`);
+    // (The record takes secrets out of the error itself.)
+    io.err(`${redactSecrets(error)}\n`);
     if (format !== "text")
       io.out(jsonResult(failureRecord(reason, code, error, Date.now() - started)));
     return code;
@@ -155,12 +158,16 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
     finished = true;
     renderer?.flush();
     if (result === "gone") return fail(EXIT.failed, "error", hostGone ?? "The host program ended.");
-    const record = resultRecord(result, Date.now() - started);
+    // Someone else saved this chat while the run worked (the app's window, another run): the
+    // run's saves were refused, so theirs stands and this turn isn't stored. Said, not hidden.
+    const unsaved = chat.session.conflict.peek();
+    const record = resultRecord(result, Date.now() - started, unsaved);
     if (format === "json") io.out(jsonResult(record));
     else if (format === "stream-json") io.out(jsonLine(record));
     else io.out(textResult(result));
     const note = endNote(result);
     if (note) io.err(`${errStyle.yellow(note)}\n`);
+    if (unsaved) io.err(`${errStyle.red(unsavedNote(result.session))}\n`);
     if (result.pending.length)
       io.err(
         `${errStyle.dim(`${result.pending.length} file(s) changed and wait for review: ${result.pending.join(", ")} (accept or reject them in the app, or in a session: --resume ${result.session}, then /accept or /reject).`)}\n`,
@@ -171,7 +178,7 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
       );
     // A reader that went away mid-run cut the run short.
     if (io.broken && result.reason === "cancelled") return EXIT.failed;
-    return exitCodeOf(result);
+    return exitCodeOf(result, unsaved);
   } catch (err) {
     finished = true;
     renderer?.flush();

@@ -173,12 +173,50 @@ export async function resolveSaveConflict(
   await session.save();
 }
 
+/**
+ * Changes the saved details (title, pinned, archived) of a chat this process hasn't loaded:
+ * read, changed, and written only over the version that was read. Another process saving the
+ * chat in between (a turn ending in another window, or in a run with no window) would otherwise
+ * have its transcript replaced by the older one read here: it is read again instead.
+ */
+export async function updateSavedMeta<M extends object>(
+  id: string,
+  change: (meta: M) => void,
+): Promise<M> {
+  for (let attempt = 1; ; attempt++) {
+    const version = await agentStoreIpc.version(id).catch(() => null);
+    const text = await agentStoreIpc.load(id);
+    if (!text) throw new Error("That chat no longer exists.");
+    const saved = JSON.parse(text) as { meta?: M };
+    const meta = { ...saved.meta } as M;
+    change(meta);
+    saved.meta = meta;
+    const done = await agentStoreIpc.save(id, JSON.stringify(saved), version);
+    if (!done.conflict) return meta;
+    // A chat saved again and again while this runs is at work somewhere: said, not forced.
+    if (attempt >= 4)
+      throw new Error("That chat is being changed elsewhere right now; try again in a moment.");
+  }
+}
+
+/**
+ * The version a chat opened by its id has when nothing could be read under that id. It matches
+ * no file's version, so the first save writes only while there is still no file: a chat another
+ * process saved under the same id meanwhile (a run with no window given the same id, the same
+ * channel's conversation started in two windows), or one whose file couldn't be read, is a
+ * conflict instead of being replaced by this one.
+ */
+export const NOTHING_SAVED = "none";
+
 export async function loadSaved(session: AgentSession): Promise<boolean> {
   // The saved file's version first (D221): a write by another window after it then shows as a
   // conflict on this window's next save, rather than slipping through.
   const version = await agentStoreIpc.version(session.id).catch(() => null);
   const text = await agentStoreIpc.load(session.id).catch(() => null);
-  if (!text) return false;
+  if (!text) {
+    session.savedVersion = NOTHING_SAVED;
+    return false;
+  }
   session.savedVersion = version;
   // Loaded again (the other window's version, D221): nothing of this window's chat stays.
   session.attachedRules.clear();

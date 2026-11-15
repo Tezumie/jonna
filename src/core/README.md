@@ -120,7 +120,9 @@ none. With a screen none of this applies.
 
 Alpha support (D204), DOM-free and tested (`diagnostics.test.ts`): `redact.ts` (`redactText`:
 keys, tokens, `key=value` secrets, URL passwords, home and user folders; `redactValue`: also
-secrets by key name and file contents by key name or length), `logBuffer.ts` (`LogBuffer`:
+secrets by key name and file contents by key name or length; `redactSecrets`: the secrets alone,
+for a message shown to the person as it is, with paths and plain words left readable),
+`logBuffer.ts` (`LogBuffer`:
 batches, collapses repeats, caps a flood per minute, keeps the last errors; `describeError`),
 `report.ts` (`reportBody`, `issueLink`: a new-issue URL cut to fit), `releaseNotes.ts`
 (`parseReleaseNotes`, `shouldShowReleaseNotes`).

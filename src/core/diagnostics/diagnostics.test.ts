@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { describeError, LogBuffer } from "./logBuffer";
-import { redactText, redactValue } from "./redact";
+import { redactSecrets, redactText, redactValue } from "./redact";
 import { parseReleaseNotes, shouldShowReleaseNotes } from "./releaseNotes";
 import { issueLink, MAX_ISSUE_URL, reportBody } from "./report";
 
@@ -145,4 +145,42 @@ test("redact: a long run of name characters takes linear time", () => {
   redactText("A".repeat(100_000));
   assert.ok(performance.now() - started < 2_000);
   assert.equal(redactText("my_api_key=abcdef123456"), "my_api_key=<redacted>");
+});
+
+test("redactSecrets: keys go, a message's own words and paths stay", () => {
+  // A provider that repeats the request it refused.
+  assert.equal(
+    redactSecrets("401 from https://api.example.com/v1/models?api_key=abc123def456ghi789&x=1"),
+    "401 from https://api.example.com/v1/models?api_key=<redacted>&x=1",
+  );
+  assert.equal(
+    redactSecrets("GET https://host/v1beta/models?key=Zm9vYmFyMTIzNDU2 failed"),
+    "GET https://host/v1beta/models?key=<redacted> failed",
+  );
+  assert.equal(
+    redactSecrets("Incorrect API key provided: sk-proj-0123456789abcdefABCDEF."),
+    "Incorrect API key provided: <redacted>.",
+  );
+  assert.equal(
+    redactSecrets("headers: Authorization: Bearer abc123def456ghi789jkl"),
+    "headers: Authorization: Bearer <redacted>",
+  );
+  assert.equal(
+    redactSecrets("x-api-key: 9f8e7d6c5b4a39281706 was refused"),
+    "x-api-key: <redacted> was refused",
+  );
+  assert.equal(
+    redactSecrets("https://ada:pw123@mcp.example.com/mcp: must use https"),
+    "https://<redacted>@mcp.example.com/mcp: must use https",
+  );
+  // Words and counts after such a name aren't secrets, and nothing else is touched.
+  for (const plain of [
+    "Basic authentication required",
+    "max_tokens: 100000 > 64000, which is the maximum allowed",
+    "invalid_token: expired",
+    "password: incorrect",
+    "Couldn't read C:Usersadaprojectsettings.json",
+    "no such file: /home/ada/project/a.ts",
+  ])
+    assert.equal(redactSecrets(plain), plain);
 });

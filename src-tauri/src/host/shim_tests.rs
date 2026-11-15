@@ -5,13 +5,16 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::host::{ChannelSink, CommandEntry, Invocation, Reply};
+use tauri::host::{ChannelSink, CommandEntry, Invocation, Reply, SyncQueue};
 use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
 use tauri::{AppHandle, Manager, State, Webview};
 
 struct Counter {
     start: u32,
 }
+
+#[derive(Default)]
+struct Notes(Mutex<Vec<u32>>);
 
 /// The app's error shape: `{ code, message }`.
 #[derive(Debug, Serialize)]
@@ -115,6 +118,20 @@ mod commands {
     pub fn panics() -> u32 {
         panic!("on purpose")
     }
+
+    /// Notes `n` after `wait_ms`: what ran, in the order it ran.
+    #[tauri::command]
+    pub fn note(notes: State<'_, Notes>, n: u32, wait_ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        notes.0.lock().unwrap().push(n);
+    }
+
+    /// The same, off the caller's thread.
+    #[tauri::command(async)]
+    pub fn note_unordered(notes: State<'_, Notes>, n: u32, wait_ms: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+        notes.0.lock().unwrap().push(n);
+    }
 }
 
 const TABLE: &[CommandEntry] = tauri::generate_handler![
@@ -126,6 +143,8 @@ const TABLE: &[CommandEntry] = tauri::generate_handler![
     commands::raw_echo,
     commands::stream,
     commands::panics,
+    commands::note,
+    commands::note_unordered,
 ];
 
 /// What the commands sent, and which channels ended (id, no body).
@@ -158,6 +177,7 @@ fn invocation(params: Value, sent: &Sent) -> Invocation {
         params,
         headers: tauri::http::HeaderMap::new(),
         channels: Arc::new(Recorder(sent.clone())),
+        ordered: SyncQueue::new().unwrap(),
     }
 }
 
@@ -200,7 +220,9 @@ fn the_table_names_commands_by_function_name() {
             "unit_result",
             "raw_echo",
             "stream",
-            "panics"
+            "panics",
+            "note",
+            "note_unordered"
         ]
     );
 }
@@ -348,4 +370,64 @@ fn a_missing_channel_is_invalid() {
 #[test]
 fn a_panicking_sync_command_answers_an_error() {
     assert_eq!(error_of(call("panics", json!({})))["code"], "Unknown");
+}
+
+/// Calls `name` with n = 0, 1, 2… one after another without waiting for answers (the first
+/// two calls are the slow ones), then waits for all; answers what ran, in the order it ran.
+fn notes_of(name: &str, count: u32) -> Vec<u32> {
+    let entry = TABLE.iter().find(|e| e.name == name).unwrap();
+    let app = app();
+    app.manage(Notes::default());
+    let ordered = SyncQueue::new().unwrap();
+    tauri::async_runtime::block_on(async {
+        let mut running = Vec::new();
+        for n in 0..count {
+            let mut inv = invocation(
+                json!({ "n": n, "waitMs": if n < 2 { 150 } else { 0 } }),
+                &Sent::default(),
+            );
+            inv.app = app.clone();
+            inv.ordered = ordered.clone();
+            running.push(tokio::spawn((entry.run)(inv)));
+        }
+        for task in running {
+            assert_eq!(json_of(task.await.unwrap()), Value::Null);
+        }
+    });
+    let notes = app.state::<Notes>().0.lock().unwrap().clone();
+    notes
+}
+
+#[test]
+fn sync_commands_run_one_at_a_time_in_the_order_called() {
+    assert_eq!(notes_of("note", 50), (0..50).collect::<Vec<u32>>());
+}
+
+#[test]
+fn a_sync_command_marked_async_does_not_wait_for_the_others() {
+    let notes = notes_of("note_unordered", 10);
+    // The two slow ones ran beside the rest and finished last.
+    let mut last_two = notes[8..].to_vec();
+    last_two.sort_unstable();
+    assert_eq!(last_two, [0, 1]);
+}
+
+#[test]
+fn a_panic_in_a_sync_command_does_not_stop_the_ones_behind_it() {
+    let ordered = SyncQueue::new().unwrap();
+    let call_on = |name: &str, params: Value| {
+        let mut inv = invocation(params, &Sent::default());
+        inv.ordered = ordered.clone();
+        call_with(name, inv)
+    };
+    let error = error_of(call_on("panics", json!({})));
+    assert_eq!(error["code"], "Unknown");
+    assert!(error["message"].as_str().unwrap().contains("on purpose"));
+    assert_eq!(
+        json_of(call_on(
+            "sync_point",
+            json!({ "point": { "xPos": 1, "yPos": 2 }, "scale": 2 })
+        )),
+        json!({ "xPos": 2, "yPos": 4 })
+    );
 }

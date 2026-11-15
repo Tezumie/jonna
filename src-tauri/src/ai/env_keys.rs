@@ -27,22 +27,29 @@ const VARIABLES: &[(&str, &[&str])] = &[
     ("api.cerebras.ai", &["CEREBRAS_API_KEY"]),
 ];
 
-/// The host of a provider's base URL, lower-cased (no scheme, user, port or path).
+/// The host a request to `base_url` connects to, when a key may travel there. The address is
+/// read by the HTTP client's own parser, so both see the same host whatever `\`, `@` or encoded
+/// characters it holds. Over https only (a key never goes out in clear text; no provider here
+/// is on loopback) and with no user or password in it. Lower case, as the parser gives it.
 fn host_of(base_url: &str) -> Option<String> {
-    let rest = base_url.split_once("://").map_or(base_url, |(_, r)| r);
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-    let host = host.split(':').next()?.trim().to_ascii_lowercase();
-    (!host.is_empty()).then_some(host)
+    let url = reqwest::Url::parse(base_url).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return None;
+    }
+    url.host_str().map(str::to_string)
 }
 
 /// The key for the provider at `base_url` from `var` (the environment), when one of its
 /// provider's variables is set and not empty.
 pub fn key_for(base_url: &str, var: impl Fn(&str) -> Option<String>) -> Option<String> {
     let host = host_of(base_url)?;
-    let (_, names) = VARIABLES
-        .iter()
-        .find(|(known, _)| host == *known || host.ends_with(&format!(".{known}")))?;
+    // The whole host, or whole labels in front of it (a subdomain): never a part of a label.
+    let (_, names) = VARIABLES.iter().find(|(known, _)| {
+        host == *known
+            || host
+                .strip_suffix(known)
+                .is_some_and(|front| front.ends_with('.'))
+    })?;
     names
         .iter()
         .filter_map(|name| var(name))
@@ -127,5 +134,67 @@ mod tests {
             .as_deref(),
             Some("k")
         );
+    }
+
+    #[test]
+    fn the_key_goes_where_the_http_client_connects() {
+        let vars = [("OPENAI_API_KEY", "sk-2")];
+        let get = env(&vars);
+        for url in [
+            // The client reads `\` as `/` in an https address: the host is what is before it.
+            r"https://evil.example\@api.openai.com/v1",
+            r"https://evil.example\.api.openai.com/v1",
+            r"https://evil.example:443\@api.openai.com",
+            r"https:\\evil.example\@api.openai.com/v1",
+            "https://evil.example/@api.openai.com/v1",
+            "https://evil.example?@api.openai.com/v1",
+            "https://evil.example#@api.openai.com/v1",
+            "https://api.openai.com:443@evil.example/v1",
+            "https://api.openai.com%2Fv1@evil.example/",
+            "https:///api.openai.com@evil.example",
+            // Another host that only looks like it.
+            "https://xapi.openai.com/v1",
+            "https://api.openai.com.evil.example/v1",
+            "https://api.openai.com./v1",
+            "https://api.openai.com../v1",
+            "https://api.\u{43e}penai.com/v1",
+            "https://api.openai.com%2eevil.example/v1",
+            // Not an address the client could call.
+            "api.openai.com/v1",
+            "//api.openai.com/v1",
+            "https://",
+            "https://api.openai.com%00/v1",
+        ] {
+            assert_eq!(key_for(url, &get), None, "{url}");
+        }
+        // The same host written another way: the client connects to api.openai.com.
+        for url in [
+            "https://API.OpenAI.com/v1",
+            "HTTPS://api.openai.com/v1",
+            "https://api.openai.com:8443/v1",
+            " https://api.openai.com/v1 ",
+            "https://api%2Eopenai.com/v1",
+            "https://api.openai.com/v1?x=@evil.example",
+        ] {
+            assert_eq!(key_for(url, &get).as_deref(), Some("sk-2"), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_key_never_leaves_in_clear_text_or_beside_a_user_name() {
+        let vars = [("OPENAI_API_KEY", "sk-2")];
+        let get = env(&vars);
+        for url in [
+            "http://api.openai.com/v1",
+            "http://api.openai.com:443/v1",
+            "ws://api.openai.com/v1",
+            "ftp://api.openai.com/v1",
+            "file://api.openai.com/v1",
+            "https://user@api.openai.com/v1",
+            "https://user:pass@api.openai.com/v1",
+            "https://:pass@api.openai.com/v1",
+        ] {
+            assert_eq!(key_for(url, &get), None, "{url}");
+        }
     }
 }

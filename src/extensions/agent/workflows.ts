@@ -279,6 +279,10 @@ function workflowTool(
           always: editors.length
             ? "workflows with editing agents in this chat"
             : "workflows in this chat",
+          // With no window the script runs in a Node thread, which no engine sandboxes
+          // (workers/node/isolate.ts): full access alone doesn't run model-written code there.
+          // The run's allow list has to name the tool, or a person answers.
+          ...(!agentHost(services).screen && { evenWithFullAccess: true }),
         });
         if (answer === "deny") return { result: "The user declined the workflow.", denied: true };
         if (answer === "always")

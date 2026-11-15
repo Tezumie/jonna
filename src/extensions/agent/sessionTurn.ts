@@ -69,6 +69,7 @@ import { compactWith } from "./sessionSummaries";
 import { allModeRules, MODE_RULES, modeRules, SMALL_CONTEXT } from "./sessionTypes";
 import {
   contextLengthFor,
+  countSideUsage,
   countUsage,
   requestOptions,
   thinkFor,
@@ -76,7 +77,7 @@ import {
 } from "./sessionUsage";
 import { agentExternalModel } from "./subagents";
 import { runToolGate } from "./toolGate";
-import { deniedCall } from "./unattended";
+import { commandLineOf, deniedCall } from "./unattended";
 import { priceOf } from "./usage";
 import { recordUsage } from "./usageLog";
 
@@ -661,10 +662,11 @@ async function sendTurn(
       // A run with nobody at the window (unattended.ts): its deny list refuses the call outright.
       const refused = deniedCall(agentHost(session.services).permissions ?? null, call.name, args);
       if (refused) {
+        const deniedLine = commandLineOf(call.name, args);
         session.toldDecision({
           title: call.name,
           kind: "tool",
-          ...(typeof args.command === "string" && { code: args.command }),
+          ...(deniedLine !== null && { code: deniedLine }),
           tool: call.name,
           answer: "deny",
           by: "policy",
@@ -965,7 +967,7 @@ From the user's hooks: ${words}`,
                 if (event.kind === "done") {
                   if (subSystem === null) countUsage(session, event, contextLength, "chat", choice);
                   // The explore subagent on the chat's model (D127): logged, not in the meter.
-                  else
+                  else {
                     recordUsage(session.services, {
                       source: "subagent",
                       session: session.id,
@@ -973,6 +975,8 @@ From the user's hooks: ${words}`,
                       event,
                       price: session.price,
                     });
+                    countSideUsage(session, event, session.price);
+                  }
                 }
                 if (stuck) return;
                 if (event.kind === "text" || event.kind === "thinking") {

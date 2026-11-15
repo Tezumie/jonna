@@ -1,12 +1,15 @@
 //! The wire's frame, both directions:
 //! `[u32 LE header length][u32 LE body length][header: UTF-8 JSON][body: raw bytes]`.
 //! The body is empty for ordinary messages. A header over 64 MiB or a body over 1 GiB is a
-//! protocol error: the connection closes.
+//! protocol error: the connection closes. A connection's first frame (`$/hello`, from a client
+//! that hasn't shown its token yet) has a header of at most 64 KiB and no body.
 
 use std::io::{self, Read, Write};
 
 pub const MAX_HEADER: u32 = 64 * 1024 * 1024;
 pub const MAX_BODY: u32 = 1024 * 1024 * 1024;
+/// The first frame's header: `$/hello` is a few hundred bytes.
+pub const MAX_FIRST_HEADER: u32 = 64 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Frame {
@@ -34,6 +37,16 @@ fn read_exactly(reader: &mut impl Read, length: u32) -> io::Result<Vec<u8>> {
 
 /// The next frame; `None` when the stream ended cleanly between frames.
 pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
+    read_frame_within(reader, MAX_HEADER, MAX_BODY)
+}
+
+/// The next frame, with limits of the caller's: a longer one is refused on its lengths alone,
+/// before any of it is read or kept.
+pub fn read_frame_within(
+    reader: &mut impl Read,
+    max_header: u32,
+    max_body: u32,
+) -> io::Result<Option<Frame>> {
     let mut prefix = [0u8; 8];
     let mut filled = 0;
     while filled < prefix.len() {
@@ -47,11 +60,11 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Option<Frame>> {
     }
     let header_length = u32::from_le_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]);
     let body_length = u32::from_le_bytes([prefix[4], prefix[5], prefix[6], prefix[7]]);
-    if header_length > MAX_HEADER {
-        return Err(too_large("header", header_length, MAX_HEADER));
+    if header_length > max_header {
+        return Err(too_large("header", header_length, max_header));
     }
-    if body_length > MAX_BODY {
-        return Err(too_large("body", body_length, MAX_BODY));
+    if body_length > max_body {
+        return Err(too_large("body", body_length, max_body));
     }
     let header = read_exactly(reader, header_length)?;
     let body = read_exactly(reader, body_length)?;
@@ -125,6 +138,27 @@ mod tests {
         let mut body_too_long = 2u32.to_le_bytes().to_vec();
         body_too_long.extend_from_slice(&(MAX_BODY + 1).to_le_bytes());
         let error = read_frame(&mut body_too_long.as_slice())
+            .err()
+            .map(|e| e.kind());
+        assert_eq!(error, Some(io::ErrorKind::InvalidData));
+    }
+
+    #[test]
+    fn a_callers_limits_are_checked_before_anything_is_read() {
+        let mut wire = Vec::new();
+        assert!(write_frame(&mut wire, br#"{"id":1}"#, b"").is_ok());
+        assert!(matches!(
+            read_frame_within(&mut wire.as_slice(), 8, 0),
+            Ok(Some(_))
+        ));
+        let error = read_frame_within(&mut wire.as_slice(), 7, 0)
+            .err()
+            .map(|e| e.kind());
+        assert_eq!(error, Some(io::ErrorKind::InvalidData));
+        // Only the lengths are there: a body is refused without waiting for it.
+        let mut lengths = 8u32.to_le_bytes().to_vec();
+        lengths.extend_from_slice(&1u32.to_le_bytes());
+        let error = read_frame_within(&mut lengths.as_slice(), MAX_FIRST_HEADER, 0)
             .err()
             .map(|e| e.kind());
         assert_eq!(error, Some(io::ErrorKind::InvalidData));

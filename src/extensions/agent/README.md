@@ -20,6 +20,10 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   `sessionExternal.ts` (an ACP agent's turn), `sessionSubagents.ts` (subagents, background runs,
   automatic review), `sessionSummaries.ts` (summaries, one-off tasks), `sessionUsage.ts` (request
   options, usage, budget), `sessionStore.ts` (the saved form), `sessionTypes.ts` (shared types).
+  A save only goes over the version this process last read or wrote (D221), whoever the other
+  writer is (a window, a run with no window): a chat opened by an id under which nothing could
+  be read expects no file (`NOTHING_SAVED`), so one saved under that id meanwhile is a conflict
+  too, not replaced.
   Commands: `commands.ts` (sessions, modes, slash, mentions), `sendCommands.ts` (`agent.send`,
   `agent.startInFolder`), `reviewCommands.ts` (accept / reject, review diffs, checkpoints),
   `modelCommands.ts` (models, providers, keys), `mentionContext.ts` (@-mention context).
@@ -1658,6 +1662,8 @@ backend, the services a turn needs, no `document` or `window`), and
     `mcp.samplingReview`, `mcp.argument`, `confirm`). These are the questions that aren't a
     chat's own; a chat's permissions and questions wait on the session and are answered by
     commands (`agent.respondPermission`, `agent.answer`).
+    A text or a choice may carry a `signal`: aborting it takes that one question away (who
+    asked is gone), where `cancel` takes whichever is on top.
   - `workers` (`WorkerFactory` → `ScriptWorker`): where a workflow's script runs, or null.
 - **In the window** (`agentHostDesktop.ts`, view code): `desktopAgentHost(services)`, set first
   thing in `activate`. Presence is the document's focus and visibility and whether the chat's
@@ -1721,7 +1727,21 @@ backend, the services a turn needs, no `document` or `window`), and
   (`ask`, `accept-edits`, `auto`, `full-access`; `modeSettings` gives the settings the window's
   menu writes and whether edits apply, which a host applies for the run only). `deny` refuses a
   tool call before it runs (`sessionTurn.ts`: by the tool's name, or a command line by its
-  words) and a question before it is shown; `allow` answers a question (a tool's name, a
+  words) and a question before it is shown. A command line is read wherever a call carries one
+  (`commandLineOf`): `run_command`, `monitor`, and `call_command` on an IDE command that types
+  one into a shell (`SHELL_LINE_INPUT`: `terminal.runCommand`, `terminal.sendText`,
+  `terminal.start`); an IDE command is also refused by its id. The agent's permission handler
+  (`core.ts`) reads the deny list again before any of its shortcuts (an external agent's calls
+  come only there), passes the call into the question so the allow list reads the line as
+  `run_command`'s, and never grants such a command "for this session" under a policy. Commands
+  whose line comes from a file the agent can write (`tasks.run` and its kin, `debug.start`,
+  `debug.runWithoutDebugging`, `debug.restart`) can't be held against command patterns: once
+  the deny list has one, they ask whatever the mode (`asksForIndirectLine`), so an allow entry
+  naming the command or the person decides. Not covered, and said in the guide: test runs,
+  notebook cells, formatters and what a script the agent wrote does. An external agent's own request is read from the call `acp.ts` passes
+  (`externalCommandCall`: its command, without the agent's name the card's title has in front),
+  never from a title; the line as the agent sent it and the terminals it opens itself
+  (`createTerminal`) are held against the deny list too. `allow` answers a question (a tool's name, a
   command pattern as in `agent.allowedCommands`, an IDE command's id; `tool:` / `cmd:` say
   which), also one that asks whatever the mode. Order in `AgentSession.askBeforeSend`: deny
   list, allow list, full access, then `otherwise`: `deny` (the default: refused at once) or

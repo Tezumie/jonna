@@ -19,6 +19,36 @@ const scope = self as unknown as Record<string, unknown> & {
   addEventListener(type: "message", listener: (e: MessageEvent) => void): void;
 };
 const post = scope.postMessage.bind(scope) as (message: FromWorkflowWorker) => void;
+/**
+ * A Node worker thread only (workers/node/scope.ts): compiles the script in a context of its
+ * own, since a thread has no worker sandbox from the engine. Read once and taken off the
+ * global; a page's worker has none and makes the function itself.
+ */
+const compileIsolated = scope.compileIsolated as
+  | ((
+      params: readonly string[],
+      body: string,
+      globals: Readonly<Record<string, unknown>>,
+      filename: string,
+    ) => (...values: unknown[]) => Promise<unknown>)
+  | undefined;
+delete scope.compileIsolated;
+/** What the script names: its parameters, in the order they are passed. */
+const PARAMS = [
+  "agent",
+  "parallel",
+  "pipeline",
+  "phase",
+  "log",
+  "args",
+  "budget",
+  "workflow",
+  "console",
+] as const;
+/** An error of this realm or of the script's own (a context of its own has its own Error). */
+const isError = (err: unknown): err is Error =>
+  err instanceof Error ||
+  (typeof err === "object" && err !== null && "message" in err && "stack" in err);
 const waiting = new Map<number, { resolve(v: unknown): void; reject(e: Error): void }>();
 let nextCall = 1;
 let started = false;
@@ -41,7 +71,7 @@ function text(args: unknown[]): string {
   return args
     .map((a) => {
       if (typeof a === "string") return a;
-      if (a instanceof Error) return a.message;
+      if (isError(a)) return a.message;
       try {
         return JSON.stringify(a);
       } catch {
@@ -103,23 +133,41 @@ async function run(body: string, argsJson: string): Promise<void> {
       throw new Error("Workflow scripts can't load code with import(): write everything inline.");
     const args = JSON.parse(argsJson) as unknown;
     // The script's body runs as an async function: `await` and `return` at its top level.
-    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
-      ...params: string[]
-    ) => (...values: unknown[]) => Promise<unknown>;
-    const script = new AsyncFunction(
-      "agent",
-      "parallel",
-      "pipeline",
-      "phase",
-      "log",
-      "args",
-      "budget",
-      "workflow",
-      "console",
-      `"use strict";\n${body}\n//# sourceURL=workflow.js`,
-    );
-    lockCodeGeneration("Workflow scripts can't create code at run time.");
-    lockNondeterminism();
+    let script: (...values: unknown[]) => Promise<unknown>;
+    if (compileIsolated) {
+      // In a context of its own: the locks first, so what it is handed is already locked. It
+      // gets the timers (functions only), and this realm's Date and Math, which refuse what
+      // would make a resumed run differ; its own would not.
+      lockCodeGeneration("Workflow scripts can't create code at run time.");
+      lockNondeterminism();
+      const globals: Record<string, unknown> = {};
+      for (const name of [
+        "Date",
+        "Math",
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "queueMicrotask",
+        "structuredClone",
+        "URL",
+        "URLSearchParams",
+        "TextEncoder",
+        "TextDecoder",
+        "atob",
+        "btoa",
+        "AbortController",
+      ])
+        if (scope[name] !== undefined) globals[name] = scope[name];
+      script = compileIsolated(PARAMS, body, globals, "workflow.js");
+    } else {
+      const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (
+        ...params: string[]
+      ) => (...values: unknown[]) => Promise<unknown>;
+      script = new AsyncFunction(...PARAMS, `"use strict";\n${body}\n//# sourceURL=workflow.js`);
+      lockCodeGeneration("Workflow scripts can't create code at run time.");
+      lockNondeterminism();
+    }
     const result = await script(
       agent,
       parallel,
@@ -143,12 +191,12 @@ async function run(body: string, argsJson: string): Promise<void> {
     post({ t: "done", result: out });
   } catch (err) {
     // The script's own line: the body keeps its lines, after the one "use strict" line.
-    const stack = err instanceof Error ? (err.stack ?? "") : "";
+    const stack = isError(err) ? (err.stack ?? "") : "";
     const line = /workflow\.js:(\d+)/.exec(stack)?.[1];
-    const message = err instanceof Error ? err.message : String(err);
+    const message = isError(err) ? err.message : String(err);
     post({
       t: "error",
-      error: `${err instanceof SyntaxError ? "SyntaxError: " : ""}${message}${line ? ` (line ${Number(line) - 3})` : ""}`,
+      error: `${err instanceof SyntaxError || (isError(err) && err.name === "SyntaxError") ? "SyntaxError: " : ""}${message}${line ? ` (line ${Number(line) - 3})` : ""}`,
     });
   }
 }

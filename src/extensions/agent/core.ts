@@ -18,6 +18,7 @@ import { registerAgentSlashCommands, registerIdeToolsState } from "./acp";
 import { registerAcpRegistry } from "./acpRegistry";
 import { registerAgentConfig } from "./agentConfig";
 import { registerAgentEditor } from "./agentEditorCommands";
+import { agentHost } from "./agentHost";
 import { registerAiFeatures } from "./aiFeatures";
 import {
   browserDecision,
@@ -96,6 +97,13 @@ import { registerThreadList } from "./threadList";
 import { setEmptyThreadCheck } from "./threadTabs";
 import { latestFindings, pendingQuestions, registerToolCardCommands } from "./toolCardCommands";
 import { registerTurnCommands } from "./turnCommands";
+import {
+  type AskedCall,
+  asksForIndirectLine,
+  commandLineOf,
+  deniedCall,
+  SHELL_LINE_INPUT,
+} from "./unattended";
 import { registerUnread } from "./unread";
 import { registerUploadCommands } from "./uploads";
 import { registerUsageState } from "./usage";
@@ -107,13 +115,6 @@ import { registerWidgets } from "./widgets";
 import { registerWorkflows } from "./workflows";
 import { registerWorktreeAgents } from "./worktreeAgents";
 import { registerWorktreePages } from "./worktreePages";
-
-/** IDE commands that run a command line in a shell: the field holding it. */
-const SHELL_LINE_INPUT: Record<string, string> = {
-  "terminal.sendText": "text",
-  "terminal.runCommand": "command",
-  "terminal.start": "command",
-};
 
 /** A chat image in ide://agent/session (D381): what it is, without its bytes. */
 const imageState = (img: ChatImage) => ({
@@ -385,6 +386,54 @@ export function activateAgentCore(
       const session = sessions.find(request.session);
       if (!session) return "deny";
       const danger = request.effects.includes("destructive");
+      // A run with nobody at the window (unattended.ts). Its deny list is read here as well as
+      // before a tool call: an external agent's calls and the shortcuts below (a pre-approval,
+      // "run commands automatically") never reach a question the lists would answer.
+      const policy = agentHost(services).permissions ?? null;
+      const call: AskedCall = {
+        name: "call_command",
+        args: { id: request.commandId, input: request.input },
+      };
+      const decided = (answer: "once" | "deny", rule?: string) =>
+        session.toldDecision({
+          title: request.title,
+          kind: "ide",
+          code: commandLineOf(call.name, call.args) ?? request.commandId,
+          tool: call.name,
+          answer,
+          by: "policy",
+          ...(rule && { rule }),
+        });
+      const refused = deniedCall(policy, call.name, call.args);
+      if (refused) {
+        decided("deny", refused);
+        return "deny";
+      }
+      // With a policy, a command that runs a command line is decided call by call: "for this
+      // session" would let the next line through without the lists.
+      const runsLine =
+        request.commandId in SHELL_LINE_INPUT || asksForIndirectLine(policy, request.commandId);
+      const perCall = (answer: "once" | "session" | "deny") =>
+        policy && answer === "session" && runsLine ? "once" : answer;
+      // A command line from a file (a task, a launch configuration) can't be held against the
+      // deny list's command patterns: an allow entry naming the command or the person decides,
+      // whatever the mode.
+      if (asksForIndirectLine(policy, request.commandId)) {
+        const answer = await session.ask(
+          {
+            title: `Run IDE command \`${request.commandId}\` (${request.title})`,
+            heading: request.title,
+            code: request.commandId,
+            kind: "ide",
+            detail:
+              "It runs a command line from a file, which this run's deny list can't check: allow the command by its id to let it run.",
+            danger,
+            evenWithFullAccess: true,
+          },
+          call,
+        );
+        return answer === "always" ? "once" : answer;
+      }
       // Web reading turned off: refused before anyone is asked (D179).
       // Searching (web.search, D200) follows the same two settings.
       const web = request.commandId === "web.fetch" || request.commandId === "web.search";
@@ -485,18 +534,23 @@ export function activateAgentCore(
         )
           return "once";
       }
-      const answer = await session.ask({
-        title: `Run IDE command \`${request.commandId}\` (${request.title})`,
-        heading: request.title,
-        code: request.commandId,
-        kind: "ide",
-        ...(request.confirmMessage && { detail: request.confirmMessage }),
-        // A page's command: Always is for its site (saved, D207); others for this session.
-        ...(!danger && { always: site ?? "this session" }),
-        danger,
-      });
+      const answer = await session.ask(
+        {
+          title: `Run IDE command \`${request.commandId}\` (${request.title})`,
+          heading: request.title,
+          code: request.commandId,
+          kind: "ide",
+          ...(request.confirmMessage && { detail: request.confirmMessage }),
+          // A page's command: Always is for its site (saved, D207); others for this session.
+          ...(!danger && { always: site ?? "this session" }),
+          danger,
+        },
+        // The call, for a run's lists: a command line typed into a terminal is allowed and
+        // denied as run_command's is.
+        call,
+      );
       if (site) return remember(answer);
-      return answer === "always" ? "session" : answer;
+      return perCall(answer === "always" ? "session" : answer);
     });
     sub.add({ dispose: () => setAgentPermissionHandler(undefined) });
 

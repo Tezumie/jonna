@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NeedsScreenError } from "../core/dispatcher/screen";
+import { PersistenceService, type StateBackend } from "../workbench/persistence";
 import type { TrustFolderRequest } from "../workbench/trust";
 import {
   HeadlessNotifications,
@@ -11,6 +12,7 @@ import {
   noAuxWindows,
   noIframes,
   policyTrustPrompts,
+  screenlessStateBackend,
   WINDOW_GLOBAL_KEYS,
 } from "./services";
 
@@ -248,7 +250,7 @@ test("saved state: the window's own keys of the global state stay as the file ha
     trusted: ["/app/project", "/scratch/run"],
     acpSettings: { agent: { model: "fast" } },
   });
-  assert.deepEqual(JSON.parse(keepWindowKeys(next, stored)), {
+  assert.deepEqual(JSON.parse(keepWindowKeys(next, stored) ?? "null"), {
     version: 3,
     lastFolder: "/app/project",
     recentFolders: ["/app/project", "/other"],
@@ -258,7 +260,7 @@ test("saved state: the window's own keys of the global state stay as the file ha
     acpSettings: { agent: { model: "fast" } },
   });
   // No file yet: the window's keys are left out rather than invented.
-  assert.deepEqual(JSON.parse(keepWindowKeys(next, null)), {
+  assert.deepEqual(JSON.parse(keepWindowKeys(next, null) ?? "null"), {
     version: 3,
     trusted: ["/app/project", "/scratch/run"],
     acpSettings: { agent: { model: "fast" } },
@@ -267,4 +269,126 @@ test("saved state: the window's own keys of the global state stay as the file ha
   assert.ok(WINDOW_GLOBAL_KEYS.includes("lastFolder"));
   // Text that isn't JSON goes through untouched (the store's own problem to report).
   assert.equal(keepWindowKeys("not json", stored), "not json");
+  // An empty file is no file.
+  assert.equal(keepWindowKeys(next, ""), keepWindowKeys(next, null));
+  // A stored text that can't be read says nothing about the window's keys: no answer, rather
+  // than one without them.
+  assert.equal(keepWindowKeys(next, '{"lastFolder": "/app/pro'), null);
+  assert.equal(keepWindowKeys(next, "[1, 2]"), null);
+});
+
+/** The backend's state files, with reads that can be made to fail. */
+function stateFiles(global: string | null) {
+  const files: { global: string | null; workspace: string | null } = { global, workspace: "{}" };
+  const calls = { loads: 0, saves: 0, pauses: 0 };
+  let failing = 0;
+  const store: StateBackend = {
+    load: async (scope) => {
+      calls.loads++;
+      if (scope === "global" && failing-- > 0) throw new Error("sharing violation");
+      return files[scope];
+    },
+    save: async (scope, json) => {
+      calls.saves++;
+      files[scope] = json;
+    },
+  };
+  const backend = screenlessStateBackend(store, async () => {
+    calls.pauses++;
+  });
+  return {
+    files,
+    calls,
+    backend,
+    /** The next `count` reads of the global state fail (the file is locked). */
+    failLoads: (count: number) => {
+      failing = count;
+    },
+    saved: () => JSON.parse(files.global ?? "null") as Record<string, unknown> | null,
+  };
+}
+
+const windowState = JSON.stringify({
+  version: 3,
+  lastFolder: "/app/project",
+  recentFolders: ["/app/project"],
+  ui: { theme: "light" },
+  trust: { "/app/project": true },
+});
+const sessionState = JSON.stringify({
+  version: 3,
+  lastFolder: "/scratch/run",
+  trust: { "/app/project": true, "/scratch/run": true },
+});
+
+test("saved state: a global write keeps the window's keys, and the workspace's is never written", async () => {
+  const disk = stateFiles(windowState);
+  await disk.backend.save("workspace", '{"dock":1}');
+  assert.equal(disk.files.workspace, "{}");
+  assert.equal(disk.calls.saves, 0);
+  await disk.backend.save("global", sessionState);
+  assert.deepEqual(disk.saved(), {
+    version: 3,
+    lastFolder: "/app/project",
+    recentFolders: ["/app/project"],
+    ui: { theme: "light" },
+    trust: { "/app/project": true, "/scratch/run": true },
+  });
+});
+
+test("saved state: a file that isn't there yet is written, without the window's keys", async () => {
+  for (const nothing of [null, ""]) {
+    const disk = stateFiles(nothing);
+    await disk.backend.save("global", sessionState);
+    assert.deepEqual(disk.saved(), {
+      version: 3,
+      trust: { "/app/project": true, "/scratch/run": true },
+    });
+  }
+});
+
+test("saved state: a read that fails is tried again, and is never taken for no file", async () => {
+  // Locked for a moment (the app is replacing the file): the next read has it.
+  const brief = stateFiles(windowState);
+  brief.failLoads(2);
+  await brief.backend.save("global", sessionState);
+  assert.equal(brief.calls.pauses, 2);
+  assert.equal(brief.saved()?.lastFolder, "/app/project");
+  assert.deepEqual(brief.saved()?.ui, { theme: "light" });
+
+  // Still unreadable: nothing is written, and the caller hears why.
+  const locked = stateFiles(windowState);
+  locked.failLoads(100);
+  await assert.rejects(locked.backend.save("global", sessionState), /could not be read/);
+  assert.equal(locked.calls.saves, 0);
+  assert.equal(locked.files.global, windowState);
+});
+
+test("saved state: a stored text that isn't a state file is left alone", async () => {
+  const cut = '{"version":3,"lastFolder":"/app/pro';
+  const disk = stateFiles(cut);
+  await assert.rejects(disk.backend.save("global", sessionState), /not readable JSON/);
+  assert.equal(disk.calls.saves, 0);
+  assert.equal(disk.files.global, cut);
+});
+
+test("saved state: the persistence service goes on after a refused write", async () => {
+  const disk = stateFiles(windowState);
+  const persistence = new PersistenceService(disk.backend);
+  await persistence.loadGlobal();
+  disk.failLoads(100);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    // Never thrown at the caller: reported to who asks.
+    assert.equal(await persistence.saveGlobalChecked({ lastPreset: "review" }), false);
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(disk.files.global, windowState);
+  disk.failLoads(0);
+  assert.equal(await persistence.saveGlobalChecked({ lastPreset: "review" }), true);
+  assert.equal(disk.saved()?.lastFolder, "/app/project");
+  assert.equal(disk.saved()?.lastPreset, "review");
+  persistence.dispose();
 });

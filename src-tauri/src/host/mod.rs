@@ -19,7 +19,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::Manager;
 
@@ -282,7 +282,7 @@ async fn serve(
             writer: Box::new(output),
             hang_up: Box::new(|| {}),
         };
-        server.serve(carrier, None).await;
+        let _ = server.serve(carrier, None).await;
         return;
     }
     let Some((listener, token)) = listener else {
@@ -321,31 +321,39 @@ async fn serve(
             return;
         }
     }
-    let mut had_client = false;
+    // When the last client left. Only one that said `$/hello` with the token counts: another
+    // connection neither starts the wait nor makes it longer.
+    let mut client_left: Option<Instant> = None;
     loop {
-        let stream = if had_client {
-            match tokio::time::timeout(linger, clients.recv()).await {
-                Ok(Some(stream)) => stream,
-                // Nobody came back.
-                _ => return,
+        let stream = match client_left {
+            Some(left) => {
+                let wait = linger.saturating_sub(left.elapsed());
+                match tokio::time::timeout(wait, clients.recv()).await {
+                    Ok(Some(stream)) => stream,
+                    // Nobody came back.
+                    _ => return,
+                }
             }
-        } else {
-            match clients.recv().await {
+            None => match clients.recv().await {
                 Some(stream) => stream,
                 None => return,
-            }
+            },
         };
-        had_client = true;
-        let ended = match tcp_carrier(stream) {
-            Ok(carrier) => server.serve(carrier, Some(&token)).await,
+        let served = match tcp_carrier(stream) {
+            Ok(carrier) => Some(server.serve(carrier, Some(&token)).await),
             Err(e) => {
                 eprintln!("host: a client's connection failed: {e}");
-                Ended::Closed
+                None
             }
         };
+        // The place is free again, however the connection went (no hello in time, too).
         busy.store(false, Ordering::SeqCst);
-        if ended == Ended::Shutdown {
+        let Some(served) = served else { continue };
+        if served.ended == Ended::Shutdown {
             return;
+        }
+        if served.greeted {
+            client_left = Some(Instant::now());
         }
     }
 }
@@ -363,18 +371,51 @@ fn tcp_carrier(stream: TcpStream) -> std::io::Result<Carrier> {
     })
 }
 
-/// Resolves when the process is asked to stop (Ctrl+C; SIGTERM on Unix).
+/// Resolves when the process is asked to stop: Ctrl+C; SIGTERM on Unix; on Windows also
+/// Ctrl+Break and the console's end (its window closed, the user logging off, the system
+/// shutting down), after which Windows gives the process a few seconds, enough for the
+/// host's own shutdown.
 async fn stop_signal() {
-    // A signal that can't be listened for never resolves (the stream's end stops the host);
-    // resolving on the error would stop a host that was never asked to.
-    let interrupt = async {
-        if tokio::signal::ctrl_c().await.is_err() {
-            std::future::pending::<()>().await;
+    #[cfg(windows)]
+    {
+        use tokio::signal::windows::{ctrl_break, ctrl_close, ctrl_logoff, ctrl_shutdown};
+        // One that can't be listened for never comes: the others, and the stream's end, still
+        // stop the host.
+        macro_rules! heard {
+            ($listen:expr) => {
+                async {
+                    match $listen {
+                        Ok(mut events) => {
+                            events.recv().await;
+                        }
+                        Err(_) => std::future::pending::<()>().await,
+                    }
+                }
+            };
         }
-    };
+        let interrupted = async {
+            if tokio::signal::ctrl_c().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::select! {
+            _ = interrupted => {}
+            _ = heard!(ctrl_break()) => {}
+            _ = heard!(ctrl_close()) => {}
+            _ = heard!(ctrl_logoff()) => {}
+            _ = heard!(ctrl_shutdown()) => {}
+        }
+    }
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
+        // A signal that can't be listened for never resolves (the stream's end stops the
+        // host); resolving on the error would stop a host that was never asked to.
+        let interrupt = async {
+            if tokio::signal::ctrl_c().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        };
         let terminate = async {
             match signal(SignalKind::terminate()) {
                 Ok(mut terminate) => {
@@ -390,8 +431,13 @@ async fn stop_signal() {
             _ = terminate => {}
         }
     }
-    #[cfg(not(unix))]
-    interrupt.await;
+    #[cfg(not(any(unix, windows)))]
+    {
+        if tokio::signal::ctrl_c().await.is_err() {
+            // No way to hear it: never resolve, the stream's end stops the host.
+            std::future::pending::<()>().await;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -442,6 +488,61 @@ mod tests {
         assert!(args(&["--listen", "192.168.1.5:4000"]).is_err());
         assert!(args(&["--listen", "[::1]:4000"]).is_ok());
         assert!(args(&["--listen", "nonsense"]).is_err());
+    }
+
+    /// A TCP host with no commands, a short wait for `$/hello` and `linger`; answers its
+    /// address and its thread, which ends when the host would exit.
+    fn tcp_host(linger: Duration) -> (SocketAddr, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let host = std::thread::spawn(move || {
+            let app = tauri::AppHandle::new("dev.example.app", "Example", "9.9.9");
+            let server = Server::new(app, &[], "9.9.9")
+                .with_waits(Duration::from_millis(300), Duration::from_secs(5));
+            tauri::async_runtime::block_on(serve(
+                &server,
+                None,
+                Some((listener, "secret".to_string())),
+                linger,
+            ));
+        });
+        (address, host)
+    }
+
+    /// Connects and says `$/hello` with the token; the answer's header, when one came.
+    fn hello(address: SocketAddr) -> Option<(TcpStream, serde_json::Value)> {
+        let mut stream = TcpStream::connect(address).ok()?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .ok()?;
+        let header = serde_json::json!({
+            "id": 1, "method": "$/hello", "params": { "protocol": 1, "token": "secret" }
+        });
+        frame::write_frame(&mut stream, header.to_string().as_bytes(), b"").ok()?;
+        let answer = frame::read_frame(&mut stream).ok()??;
+        let answer = serde_json::from_slice(&answer.header).ok()?;
+        Some((stream, answer))
+    }
+
+    #[test]
+    fn a_silent_connection_gives_the_place_back_and_is_no_client() {
+        let (address, host) = tcp_host(Duration::from_millis(400));
+        // It holds the one place: the real client is closed at once.
+        let silent = TcpStream::connect(address).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(hello(address).is_none());
+        // Not for long, and its going doesn't start the wait for a client to come back: the
+        // host is still there well past `--linger`.
+        std::thread::sleep(Duration::from_millis(1200));
+        assert!(!host.is_finished());
+        let (stream, answer) = hello(address).expect("the place is free again");
+        assert_eq!(answer["result"]["protocol"], 1);
+        // The real client leaves: now the host waits, then exits.
+        drop(stream);
+        let left = Instant::now();
+        host.join().unwrap();
+        assert!(left.elapsed() >= Duration::from_millis(300));
+        drop(silent);
     }
 
     #[test]

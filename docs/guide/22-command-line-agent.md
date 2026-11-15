@@ -54,6 +54,7 @@ Run `<cli>` in a project's folder. You get a prompt; type what you want done and
 | `/compact [focus]` | Summarizes the conversation to free context |
 | `/cost`, `/status` | Tokens and cost; the model, mode, folder and chat |
 | `/diff`, `/accept [path]`, `/reject [path]` | The changes waiting for review; keep them; put the old text back |
+| `/conflict mine`, `/conflict saved` | When the chat was saved somewhere else meanwhile (the app, another run): save this session's chat over it, or load the saved one |
 | `/key [provider]` | Stores a provider's API key (typed unseen) |
 | `/exit` | Ends the session |
 
@@ -99,8 +100,18 @@ Without the flag, your settings decide, as in the IDE.
   whatever the mode. Both can be repeated. A pattern is a tool's name (`write_file`,
   `mcp__github__*`) or the start of a command line (`"npm test"` allows `npm test -- --watch`).
   Every part of a chained command has to be allowed; one denied part refuses the line.
+  A denied command line is refused wherever the agent types it: its own command tool, a
+  monitor, or a terminal of the IDE. A task or a launch configuration runs a line from a file,
+  which the list can't read: once you deny a command line, those run only with
+  `--allow tasks.run` (the command's id) or your answer. The list is a guard against the
+  expected, not a sandbox: it doesn't see what a script, a test or a notebook cell runs.
+- A workflow script (`run_workflow`) runs only with `--allow run_workflow` or your answer, even
+  with `full-access`: without a window its script runs in a thread of the program itself, which
+  is locked down but not sandboxed as the IDE's is.
 - `--mode plan` and `--mode ask` are read-only: the agent researches and plans, or answers.
 - `--max-steps`, `--max-cost` and `--timeout` (seconds) stop a run that goes on too long.
+  `--max-cost` counts the agent's own requests and its subagents'. It needs a model whose price
+  is known: with one that has none, the run tells you once that the limit can't be enforced.
 
 ### Trust
 
@@ -126,7 +137,7 @@ terminal asks once.
 | Code | Meaning |
 |---|---|
 | 0 | The task finished |
-| 1 | It failed: the model or a tool failed, or a step, cost or time limit stopped it |
+| 1 | It failed: the model or a tool failed, or a step, cost or time limit stopped it. Also when the chat was saved somewhere else while the run worked (the app, another run): the saved chat is kept, this run's turn is not in it, and the JSON result has `"unsaved": true` |
 | 2 | Bad usage or setup: an unknown option, no model, no key, the host program not found |
 | 3 | A permission was refused |
 | 130 | Interrupted with Ctrl+C |

@@ -54,8 +54,41 @@ function sameToken(given: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** The token a client must give, and whether this program made it up. */
+export function serveToken(
+  flag: string | undefined,
+  env: string | undefined,
+  random: () => string,
+): { token: string; made: boolean } {
+  // An empty one (a variable set to nothing) is no token: it would let anyone attach.
+  const given = flag || env;
+  return given ? { token: given, made: false } : { token: random(), made: true };
+}
+
+/**
+ * The line that says the server is ready. It carries the token only when this program made
+ * it up: that line is the one way to hand it over. A token the caller chose (`--token`,
+ * `IDE_SERVE_TOKEN`) is theirs already, and standard output often ends up in a log.
+ */
+export function listeningLine(
+  port: number,
+  folder: string,
+  token: { token: string; made: boolean },
+): string {
+  return `${JSON.stringify({
+    type: "listening",
+    host: "127.0.0.1",
+    port,
+    ...(token.made && { token: token.token }),
+    folder,
+  })}\n`;
+}
+
 export async function runServe(args: CliArgs, io: Io): Promise<number> {
-  const token = args.token ?? io.env.IDE_SERVE_TOKEN ?? randomBytes(24).toString("base64url");
+  const chosen = serveToken(args.token, io.env.IDE_SERVE_TOKEN, () =>
+    randomBytes(24).toString("base64url"),
+  );
+  const token = chosen.token;
   // A front end answers what waits, unless told nobody will.
   const { brain, folder, notes } = await start(args, {
     frontend: "serve",
@@ -274,7 +307,7 @@ export async function runServe(args: CliArgs, io: Io): Promise<number> {
     });
     const address = server.address();
     const port = address && typeof address === "object" ? address.port : (args.port ?? 0);
-    io.out(`${JSON.stringify({ type: "listening", host: "127.0.0.1", port, token, folder })}\n`);
+    io.out(listeningLine(port, folder, chosen));
     code = await finished;
   } catch (err) {
     io.err(`Couldn't listen: ${messageOf(err)}\n`);

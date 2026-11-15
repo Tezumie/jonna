@@ -36,6 +36,8 @@ pub struct Invocation {
     /// A raw call's headers (names lower-case).
     pub headers: http::HeaderMap,
     pub channels: Arc<dyn ChannelSink>,
+    /// Where the client's sync commands run, one after another.
+    pub ordered: SyncQueue,
 }
 
 /// What a command answered.
@@ -213,7 +215,65 @@ pub fn reply_panic(what: &str) -> Reply {
     )
 }
 
-/// A sync command: run on a blocking thread, off the runtime's own.
+/// A client's sync commands: run one at a time on one thread, in the order they were called.
+/// The desktop framework runs sync commands so (one after another, in the order they were
+/// sent), and commands are written for it: a terminal's write is a sync command so that
+/// keystrokes can't overtake each other.
+#[derive(Clone)]
+pub struct SyncQueue {
+    jobs: std::sync::mpsc::Sender<Box<dyn FnOnce() + Send>>,
+}
+
+impl SyncQueue {
+    /// A queue with its thread, which ends once every handle to the queue is dropped and what
+    /// was queued has run.
+    pub fn new() -> std::io::Result<Self> {
+        let (jobs, queued) = std::sync::mpsc::channel::<Box<dyn FnOnce() + Send>>();
+        std::thread::Builder::new()
+            .name("host-sync-commands".into())
+            .spawn(move || {
+                for job in queued {
+                    job();
+                }
+            })?;
+        Ok(Self { jobs })
+    }
+}
+
+/// What a panic said, when it said it in words.
+fn panic_text(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("a panic")
+}
+
+/// A sync command: queued on `queue` by this call itself (not when the answer is first
+/// awaited), so commands run in the order their adapters were called.
+pub fn run_ordered<F>(queue: &SyncQueue, command: F) -> CommandFuture
+where
+    F: FnOnce() -> Reply + Send + 'static,
+{
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    let queued = queue
+        .jobs
+        .send(Box::new(move || {
+            let reply = std::panic::catch_unwind(std::panic::AssertUnwindSafe(command))
+                .unwrap_or_else(|payload| reply_panic(panic_text(payload.as_ref())));
+            let _ = answer.send(reply);
+        }))
+        .is_ok();
+    Box::pin(async move {
+        match answered.await {
+            Ok(reply) if queued => reply,
+            _ => reply_panic("the sync commands' thread is gone"),
+        }
+    })
+}
+
+/// A sync command marked to run off the caller's thread (the attribute's `async` option): on a
+/// blocking thread of its own, in no order, as the desktop framework runs those.
 pub fn run_blocking<F>(command: F) -> CommandFuture
 where
     F: FnOnce() -> Reply + Send + 'static,

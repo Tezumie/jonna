@@ -36,6 +36,7 @@ import {
 } from "../extensions/agent/unattended";
 import type { WorkbenchServices } from "../workbench/services";
 import { bootHeadless, type HeadlessBackend, type HeadlessSession } from "./boot";
+import { RunLimiter } from "./limits";
 import type { HeadlessPolicy } from "./services";
 
 export interface BrainOptions {
@@ -365,21 +366,22 @@ async function runPrompt(
   limits: RunLimits,
 ): Promise<RunResult> {
   const startRequests = session.totals.peek().requests;
-  const startCost = session.cost.peek() ?? 0;
   const denied: PermissionDecision[] = [];
   let text = "";
-  /** How the last turn ended, and the limit that stopped the run when one did. */
-  const end: {
-    turn: TurnEndReason | null;
-    error: string | undefined;
-    limit: Exclude<RunEndReason, TurnEndReason> | null;
-  } = { turn: null, error: undefined, limit: null };
-  const stopFor = (reason: Exclude<RunEndReason, TurnEndReason>, why: string) => {
-    if (end.limit) return;
-    end.limit = reason;
-    session.stop(why);
+  /** How the last turn ended. */
+  const end: { turn: TurnEndReason | null; error: string | undefined } = {
+    turn: null,
+    error: undefined,
   };
-  const spent = () => (session.cost.peek() ?? 0) - startCost;
+  // The run's limits (limits.ts): a limit reached stops the turn, a turn that starts after it,
+  // and the background commands whose end or output would start another.
+  const limiter = new RunLimiter(session, limits.maxCost, () => {
+    for (const p of backgroundProcesses.list(session.id))
+      if (p.status === "running" && (p.notify || p.monitor)) void backgroundProcesses.kill(p.id);
+  });
+  const stopFor = (reason: Exclude<RunEndReason, TurnEndReason>, why: string) =>
+    limiter.stopFor(reason, why);
+  const spent = () => limiter.spent();
   const onEvent = (event: SessionEvent) => {
     if (event.type === "permission.decision" && event.answer === "deny") {
       const { type: _type, session: _session, ...decision } = event;
@@ -388,9 +390,8 @@ async function runPrompt(
       if (event.text) text = event.text;
       end.turn = event.reason;
       end.error = event.error;
-    } else if (event.type === "usage" && limits.maxCost !== undefined) {
-      if (spent() >= limits.maxCost) stopFor("max_cost", "the cost limit of this run was reached");
     }
+    limiter.onEvent(event);
   };
   const observer = observeSession(services, session, onEvent);
   if (limits.maxSteps !== undefined) override({ "agent.maxSteps": limits.maxSteps });
@@ -402,11 +403,11 @@ async function runPrompt(
         )
       : undefined;
   const onAbort = () => stopFor("cancelled", "the run was cancelled");
-  if (limits.signal?.aborted) end.limit = "cancelled";
+  if (limits.signal?.aborted) limiter.cancelledBeforeStart();
   limits.signal?.addEventListener("abort", onAbort, { once: true });
   let command: Record<string, unknown> | undefined;
   try {
-    if (!end.limit) {
+    if (!limiter.limit) {
       const sent = await execute<Record<string, unknown> | null>("agent.send", {
         session: session.id,
         message: prompt,
@@ -424,7 +425,7 @@ async function runPrompt(
           await wait(30);
           await session.settle();
           if (!atWork(session)) break;
-        } else if (end.limit && !session.busyNow()) break;
+        } else if (limiter.limit && !session.busyNow()) break;
         else await wait(25);
       }
     }
@@ -434,7 +435,7 @@ async function runPrompt(
     observer.dispose();
   }
   await session.save().catch(() => {});
-  const reason: RunEndReason = end.limit ?? end.turn ?? "end";
+  const reason: RunEndReason = limiter.limit ?? end.turn ?? "end";
   const error = end.error ?? session.error.peek() ?? undefined;
   return {
     session: session.id,

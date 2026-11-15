@@ -9,7 +9,7 @@
 // it opens and the profile (`--user-data-dir`), never the user's own settings.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -165,6 +165,8 @@ async function fails(promise, code, what) {
   throw new Error(`${what}: expected the error ${code}`);
 }
 
+const wait = (ms) => new Promise((done) => setTimeout(done, ms));
+
 const waitFor = async (condition, what, ms = TIMEOUT_MS) => {
   const until = Date.now() + ms;
   while (!condition()) {
@@ -318,6 +320,16 @@ async function overStdio() {
       () => seen.toString("utf8").includes("smoke-pty-marker"),
       "the terminal's output",
     );
+    // Keystrokes sent without waiting for answers reach the terminal in the order sent
+    // (`pty_write` is a sync command: the host runs those one at a time, as the desktop does).
+    const typed = "echo order-abcdefghijklmnopqrstuvwxyz-0123456789\r";
+    await Promise.all(
+      [...typed].map((key) => client.call("pty_write", { id: terminal.id, data: key })),
+    );
+    await waitFor(
+      () => seen.toString("utf8").includes("order-abcdefghijklmnopqrstuvwxyz-0123456789"),
+      "keystrokes in the order they were sent",
+    );
     await client.call("pty_write", { id: terminal.id, data: "exit\r" });
     await waitFor(() => exited, "the terminal's exit message", 10_000).catch(() =>
       client.call("pty_kill", { id: terminal.id }),
@@ -416,6 +428,31 @@ async function overTcp() {
     await fails(hello(new Client(wrong, wrong), { token: "a guess" }), "Invalid", "a wrong token");
     await new Promise((r) => setTimeout(r, 200));
 
+    // A first frame larger than a hello may be: closed on its lengths alone.
+    const large = await connect(port);
+    const largeClosed = new Promise((done) => large.on("close", done));
+    large.on("error", () => {});
+    const lengths = Buffer.alloc(8);
+    lengths.writeUInt32LE(64 * 1024 + 1, 0);
+    large.write(lengths);
+    check(
+      (await Promise.race([largeClosed.then(() => "closed"), wait(3000)])) === "closed",
+      "a first frame over 64 KiB wasn't refused",
+    );
+    await wait(200);
+
+    // A connection that says nothing doesn't keep the host's one place: dropped after 5 s.
+    const silent = await connect(port);
+    const silentClosed = new Promise((done) => silent.on("close", done));
+    silent.on("error", () => {});
+    const connected = Date.now();
+    check(
+      (await Promise.race([silentClosed.then(() => "closed"), wait(12_000)])) === "closed",
+      "a connection that says nothing kept the host's place",
+    );
+    check(Date.now() - connected > 3000, "a silent connection was dropped before its 5 seconds");
+    await wait(200);
+
     const socket = await connect(port);
     const client = new Client(socket, socket);
     const result = await hello(client, { token: "smoke-token-1234" });
@@ -453,6 +490,99 @@ async function overTcp() {
   if (host.child.exitCode === null) host.child.kill();
 }
 
+/** Runs a program to its end; its exit code and what it printed. */
+const runToEnd = (program, args) =>
+  new Promise((done) => {
+    const child = spawn(program, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.on("error", (error) => done({ code: -1, out: String(error) }));
+    child.on("exit", (code) => done({ code, out }));
+  });
+
+/** Everything written under `dir`, as one text. */
+async function textUnder(dir) {
+  let text = "";
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) text += await textUnder(path);
+    else text += await readFile(path, "utf8").catch(() => "");
+  }
+  return text;
+}
+
+/**
+ * Windows: a host in a console of its own, whose console is closed (what closing its window,
+ * logging off or shutting down sends). The host runs its shutdown, as on Ctrl+C.
+ */
+async function consoleClose() {
+  if (process.platform !== "win32") return;
+  await step("Windows: the console's close runs the host's shutdown", async () => {
+    const closeProfile = join(scratch, "profile-close");
+    const tokenFile = join(scratch, "token-close.txt");
+    await writeFile(tokenFile, "smoke-token-close\n");
+    // A free port, picked here: the host's own console keeps its stderr.
+    const port = await new Promise((done, failed) => {
+      const probe = net.createServer();
+      probe.on("error", failed);
+      probe.listen(0, "127.0.0.1", () => {
+        const { port } = probe.address();
+        probe.close(() => done(port));
+      });
+    });
+    const quoted = (text) => `'${text.replaceAll("'", "''")}'`;
+    const args = ["--listen", `127.0.0.1:${port}`, "--token-file", tokenFile];
+    args.push("--user-data-dir", closeProfile, "--linger", "60");
+    // A console of its own, hidden: the close below reaches only this host.
+    const started = await runToEnd("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `Start-Process -WindowStyle Hidden -FilePath ${quoted(binary)} -ArgumentList ${args
+        .map((arg) => quoted(`"${arg}"`))
+        .join(",")}`,
+    ]);
+    check(started.code === 0, `the host didn't start in its own console: ${started.out}`);
+    let socket;
+    for (let attempt = 0; attempt < 100 && !socket; attempt++) {
+      socket = await new Promise((done) => {
+        const trying = net.connect({ host: "127.0.0.1", port }, () => done(trying));
+        trying.on("error", () => done(undefined));
+      });
+      if (!socket) await wait(100);
+    }
+    check(socket, "the host in its own console doesn't listen");
+    const { pid } = await hello(new Client(socket, socket), { token: "smoke-token-close" });
+    const running = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      // Without /F: a close message to the console's window, which its process hears as the
+      // console's close event.
+      const closing = await runToEnd("taskkill.exe", ["/PID", String(pid)]);
+      check(closing.code === 0, `the console couldn't be closed: ${closing.out}`);
+      await waitFor(() => !running(), "the host's exit after its console closed", 15_000);
+      const log = await textUnder(closeProfile);
+      check(
+        log.includes("The windowless host stopped"),
+        "the host ended without its shutdown when its console closed",
+      );
+    } finally {
+      if (running()) await runToEnd("taskkill.exe", ["/F", "/PID", String(pid)]);
+    }
+  });
+}
+
 async function information() {
   const run = (args) =>
     new Promise((done) => {
@@ -488,6 +618,7 @@ try {
   await overStdio();
   await endOfInput();
   await overTcp();
+  await consoleClose();
 } catch (error) {
   failures++;
   console.error(`host-smoke: ${error?.stack ?? error}`);

@@ -68,6 +68,66 @@ mod commands {
     pub async fn panics() -> u32 {
         panic!("on purpose (a test)")
     }
+
+    /// How many of `flood`'s messages the connection has taken.
+    pub static FLOODED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+    /// Sends `count` messages of a mebibyte each from `from`: the command's "task", a "thread"
+    /// of its own, or a single-threaded "runtime" of its own (as some services keep); answers
+    /// how many were taken.
+    #[tauri::command]
+    pub async fn flood(
+        count: u32,
+        from: String,
+        on_data: Channel<tauri::ipc::InvokeResponseBody>,
+    ) -> u32 {
+        let send = move || {
+            let mut taken = 0;
+            for n in 0..count {
+                let chunk = vec![n as u8; 1024 * 1024];
+                if on_data
+                    .send(tauri::ipc::InvokeResponseBody::Raw(chunk))
+                    .is_err()
+                {
+                    break;
+                }
+                taken += 1;
+                FLOODED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            taken
+        };
+        if from == "task" {
+            return send();
+        }
+        let (done, taken) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let taken = if from == "runtime" {
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(async move { send() })
+            } else {
+                send()
+            };
+            let _ = done.send(taken);
+        });
+        taken.await.unwrap_or(0)
+    }
+
+    /// What `note` was called with, in the order the calls ran.
+    pub static NOTES: std::sync::Mutex<Vec<u64>> = std::sync::Mutex::new(Vec::new());
+
+    /// A sync command, as a terminal's write is: the order of the calls is the result.
+    #[tauri::command]
+    pub fn note(n: u64, wait_ms: Option<u64>) {
+        std::thread::sleep(Duration::from_millis(wait_ms.unwrap_or(0)));
+        NOTES.lock().unwrap().push(n);
+    }
+
+    #[tauri::command]
+    pub async fn noted() -> Vec<u64> {
+        NOTES.lock().unwrap().clone()
+    }
 }
 
 fn table() -> &'static [CommandEntry] {
@@ -78,6 +138,9 @@ fn table() -> &'static [CommandEntry] {
         commands::count,
         commands::slow,
         commands::panics,
+        commands::note,
+        commands::noted,
+        commands::flood,
     ]
 }
 
@@ -88,6 +151,11 @@ struct Client {
 }
 
 fn connect(token: Option<&'static str>) -> Client {
+    connect_with(token, None)
+}
+
+/// `waits`: how long the host waits for `$/hello`, and for its last frames to be read.
+fn connect_with(token: Option<&'static str>, waits: Option<(Duration, Duration)>) -> Client {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     stream
@@ -106,7 +174,11 @@ fn connect(token: Option<&'static str>) -> Client {
                 let _ = accepted.shutdown(std::net::Shutdown::Both);
             }),
         };
-        tauri::async_runtime::block_on(server.serve(carrier, token))
+        let server = match waits {
+            Some((hello, flush)) => server.with_waits(hello, flush),
+            None => server,
+        };
+        tauri::async_runtime::block_on(server.serve(carrier, token)).ended
     });
     Client { stream, served }
 }
@@ -148,6 +220,19 @@ impl Client {
         self.answer(id, &mut Vec::new()).0
     }
 
+    /// How the connection ended, when it did within `wait`.
+    fn ended_within(self, wait: Duration) -> Option<Ended> {
+        let Client { stream, served } = self;
+        let (done, ended) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(served.join().unwrap());
+        });
+        let ended = ended.recv_timeout(wait).ok();
+        // The client's end stays open until here: the host ended by itself.
+        drop(stream);
+        ended
+    }
+
     /// True when the host has closed the connection.
     fn closed(&mut self) -> bool {
         matches!(read_frame(&mut self.stream), Ok(None) | Err(_))
@@ -166,7 +251,7 @@ fn hello_lists_the_commands() {
     assert_eq!(result["pid"], std::process::id());
     assert_eq!(
         result["commands"],
-        json!(["echo", "fails", "upper", "count", "slow", "panics"])
+        json!(["echo", "fails", "upper", "count", "slow", "panics", "note", "noted", "flood"])
     );
 }
 
@@ -356,6 +441,40 @@ fn requests_are_answered_as_they_finish() {
 }
 
 #[test]
+fn sync_commands_run_one_at_a_time_in_the_order_sent() {
+    let mut client = connect(None);
+    client.hello();
+    // The first one is slow: run each on a thread of its own and it would finish last.
+    client.send(
+        json!({ "id": 2, "method": "note", "params": { "n": 2, "waitMs": 300 } }),
+        b"",
+    );
+    for id in 3..200u64 {
+        client.send(
+            json!({ "id": id, "method": "note", "params": { "n": id } }),
+            b"",
+        );
+    }
+    // An async command doesn't wait behind them.
+    client.send(
+        json!({ "id": 200, "method": "echo", "params": { "text": "now" } }),
+        b"",
+    );
+    let mut order = Vec::new();
+    for _ in 2..=200 {
+        order.push(client.next().0["id"].as_u64().unwrap());
+    }
+    assert_eq!(order.first(), Some(&200));
+    // Answers come in any order; what counts is the order the commands ran in.
+    order.sort_unstable();
+    assert_eq!(order, (2..=200).collect::<Vec<u64>>());
+    assert_eq!(
+        client.call(201, "noted", json!({}))["result"],
+        json!((2..200).collect::<Vec<u64>>())
+    );
+}
+
+#[test]
 fn a_panicking_command_answers_and_the_host_goes_on() {
     let mut client = connect(None);
     client.hello();
@@ -394,4 +513,148 @@ fn a_broken_frame_closes_the_connection() {
     write_frame(&mut client.stream, b"not json", b"").unwrap();
     assert!(client.closed());
     assert_eq!(client.served.join().unwrap(), Ended::Closed);
+}
+
+#[test]
+fn a_client_that_says_nothing_is_dropped() {
+    let waits = Some((Duration::from_millis(300), Duration::from_secs(5)));
+    // Nothing at all.
+    let client = connect_with(Some("secret"), waits);
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+    // A frame that never comes whole.
+    let mut client = connect_with(Some("secret"), waits);
+    client.stream.write_all(&[40, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+}
+
+#[test]
+fn the_first_frame_is_small_and_has_no_body() {
+    // A header past the first frame's limit: refused on its length alone, none of it awaited.
+    let mut client = connect(Some("secret"));
+    let mut prefix = (64 * 1024 + 1u32).to_le_bytes().to_vec();
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    client.stream.write_all(&prefix).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(3)),
+        Some(Ended::Closed)
+    );
+    // A body, of any size.
+    let mut client = connect(Some("secret"));
+    let mut prefix = 20u32.to_le_bytes().to_vec();
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    client.stream.write_all(&prefix).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(3)),
+        Some(Ended::Closed)
+    );
+    // After `$/hello`, a frame may be larger than the first one.
+    let mut client = connect(Some("secret"));
+    client.send(
+        json!({ "id": 1, "method": "$/hello", "params": { "protocol": 1, "token": "secret" } }),
+        b"",
+    );
+    assert_eq!(client.next().0["result"]["protocol"], 1);
+    let text = "x".repeat(100 * 1024);
+    assert_eq!(
+        client.call(2, "echo", json!({ "text": text }))["result"],
+        text
+    );
+}
+
+#[test]
+fn frames_sent_behind_the_hello_are_read_once_it_is_accepted() {
+    let mut client = connect(Some("secret"));
+    client.send(
+        json!({ "id": 1, "method": "$/hello", "params": { "protocol": 1, "token": "secret" } }),
+        b"",
+    );
+    client.send(
+        json!({ "id": 2, "method": "echo", "params": { "text": "x".repeat(100 * 1024) } }),
+        b"",
+    );
+    assert_eq!(client.next().0["result"]["protocol"], 1);
+    assert_eq!(client.next().0["id"], 2);
+}
+
+#[test]
+fn the_processs_own_pipes_have_no_deadline() {
+    // No token: the stream is the host's own stdin, whose other end started the host.
+    let waits = Some((Duration::from_millis(100), Duration::from_secs(5)));
+    let mut client = connect_with(None, waits);
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(client.hello()["result"]["protocol"], 1);
+}
+
+#[test]
+fn a_client_that_stops_reading_does_not_keep_the_connection_open() {
+    let waits = Some((Duration::from_secs(5), Duration::from_millis(300)));
+    let mut client = connect_with(None, waits);
+    client.hello();
+    // Answers nobody reads: more than the socket holds, so the writer is stuck in a write.
+    let text = "x".repeat(1024 * 1024);
+    for id in 2..34u64 {
+        client.send(
+            json!({ "id": id, "method": "echo", "params": { "text": text } }),
+            b"",
+        );
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    client.stream.shutdown(std::net::Shutdown::Write).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+}
+
+#[test]
+fn messages_wait_for_a_client_that_reads_slowly() {
+    use std::sync::atomic::Ordering;
+    let mut client = connect(None);
+    client.hello();
+    let mut next_id = 2;
+    for from in ["task", "thread", "runtime"] {
+        commands::FLOODED.store(0, Ordering::SeqCst);
+        let id = next_id;
+        next_id += 1;
+        client.send(
+            json!({ "id": id, "method": "flood", "params": { "count": 200, "from": from, "onData": { "__channel": id } } }),
+            b"",
+        );
+        // Nothing is read: the host takes what fits its budget (64 MiB, and what the socket
+        // holds), and the command waits with the rest.
+        std::thread::sleep(Duration::from_millis(1500));
+        let taken = commands::FLOODED.load(Ordering::SeqCst);
+        assert!(
+            (1..140).contains(&taken),
+            "{taken} of 200 MiB queued (sent from its {from})"
+        );
+        // Read: everything arrives, in order, and the command answers.
+        let mut seen = 0u32;
+        loop {
+            let (header, body) = client.next();
+            if header.get("id").and_then(Value::as_u64) == Some(id) {
+                assert_eq!(header["result"], 200);
+                break;
+            }
+            if header.get("end").is_some() {
+                continue;
+            }
+            assert_eq!(header["channel"], id);
+            assert_eq!(body.len(), 1024 * 1024);
+            assert_eq!(body[0], seen as u8);
+            seen += 1;
+        }
+        assert_eq!(seen, 200);
+    }
+    // The connection still answers.
+    assert_eq!(
+        client.call(next_id, "echo", json!({ "text": "after" }))["result"],
+        "after"
+    );
 }

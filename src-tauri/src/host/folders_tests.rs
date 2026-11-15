@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::path::{app_folders, BaseDirs};
+use tauri::path::{app_folders, resource_dir_of, BaseDirs};
 
 fn base(home: &str, data: &str, config: &str, local: &str, cache: &str) -> BaseDirs {
     BaseDirs {
@@ -165,4 +165,53 @@ fn the_data_folder_is_the_desktop_apps() {
     if let Some(windows) = crate::instances::registry_dir(None) {
         assert_eq!(windows, data.join("windows"));
     }
+}
+
+/// A launcher's link to the host program (`/usr/local/bin/…` into the app's bundle): the
+/// resources are where the program is.
+#[cfg(unix)]
+#[test]
+fn resources_are_beside_the_program_not_beside_a_link_to_it() {
+    let root = std::env::temp_dir().join(format!("host-resources-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bin = root.join("app").join("bin");
+    let resources = if cfg!(target_os = "macos") {
+        root.join("app").join("Resources")
+    } else {
+        root.join("app").join("lib").join("Example")
+    };
+    let links = root.join("links");
+    for dir in [&bin, &resources, &links] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let program = bin.join("host");
+    std::fs::write(&program, b"").unwrap();
+    let link = links.join("host");
+    std::os::unix::fs::symlink(&program, &link).unwrap();
+    let expected = resources.canonicalize().unwrap();
+    assert_eq!(resource_dir_of(&program, "Example"), Some(expected.clone()));
+    assert_eq!(resource_dir_of(&link, "Example"), Some(expected));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// On Windows the resources are in the program's folder, whatever the path looks like: a
+/// share, letters outside ASCII, a `\\?\` path. None of it is rewritten.
+#[cfg(windows)]
+#[test]
+fn windows_resources_are_in_the_programs_folder() {
+    for folder in [
+        r"C:\Program Files\Example",
+        r"C:\Users\Jörg 山田\AppData\Local\Example",
+        r"\\server\share\équipe\Example",
+        r"\\?\C:\Users\Jörg\Example",
+        r"\\?\UNC\server\share\Example",
+    ] {
+        let exe = Path::new(folder).join("ide-host.exe");
+        assert_eq!(
+            resource_dir_of(&exe, "Example"),
+            Some(PathBuf::from(folder)),
+            "{folder}"
+        );
+    }
+    assert_eq!(resource_dir_of(Path::new(r"C:\"), "Example"), None);
 }

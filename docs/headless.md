@@ -39,6 +39,11 @@ Every message, both directions:
   - `$/hello` first, before anything else: `{ "id": 1, "method": "$/hello", "params": { "protocol": 1, "client": "<kind>", "token": "<string, TCP only>" } }`
     -> `{ "id": 1, "result": { "protocol": 1, "version": "<app version>", "os": "windows|macos|linux", "pid": <n>, "commands": ["...every command the host answers..."] } }`
     A wrong protocol or token answers an error and closes.
+    The first frame of a connection has a header of at most 64 KiB and no body (a larger one
+    closes the connection), and the host reads nothing behind it until it accepted the hello.
+    Over TCP the whole `$/hello` must arrive within 5 seconds of connecting, else the host
+    closes the connection: its one place is free for another client. A connection that never
+    said an accepted `$/hello` doesn't count as the host's client for `--linger`.
   - `$/shutdown`: the host answers `{ "id", "result": null }`, runs its shutdown (kills children,
     flushes stores) and exits 0. End of stdin does the same without an answer.
 
@@ -60,12 +65,19 @@ Every message, both directions:
   handle to that channel (nothing more will ever be sent on it), so the client can forget the id.
   Not sent for a channel the client closed with `$/channelClose`.
 - Requests are answered in any order; many may be in flight.
+- A client must keep reading. The host keeps at most about 64 MiB of frames the client hasn't
+  read (one larger frame goes alone); past that, commands wait where they send (a channel
+  message, an answer) and the host stops reading requests, until the client reads again.
+  Nothing is dropped. When the connection is over, the host gives its last frames (the answer
+  to `$/shutdown`) 5 seconds to be read, then hangs up.
 
 ## Semantics that must match the desktop
 
 - Missing optional args are `None`. Unknown args are ignored.
 - Arg names are camelCase on the wire unless the Rust command says `rename_all = "snake_case"`.
-- Sync Rust commands may run on a blocking thread; async ones on the runtime.
+- Sync Rust commands run one at a time, in the order their requests arrived on the connection
+  (`pty_write`, `pty_resize`: keystrokes can't overtake each other), on a thread of their own;
+  async ones run on the runtime, many at once. Answers still come in any order.
 - One host process serves one client connection at a time and one workspace session. A second
   TCP connection while one is open is refused (v1).
 - Desktop-only commands (windows, native dialogs through the window, the embedded browser,
