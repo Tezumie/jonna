@@ -5,7 +5,7 @@
 
 import { windowIpc } from "../../core/ipc/system";
 import { toDisposable } from "../../core/lifecycle/index";
-import { showDialog } from "../../ui/Dialog";
+import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { AgentHost, HostPrompts, Presence, ScriptWorker, WorkerFactory } from "./agentHost";
 import { textArea } from "./view/pageKit";
@@ -51,6 +51,8 @@ function windowPrompts(services: WorkbenchServices): HostPrompts {
       });
       return { choice, text: box.value };
     },
+    confirm: ({ title, message, confirmLabel, destructive }) =>
+      confirmAction(title, message, confirmLabel, destructive),
     cancel: () => services.quickInput.cancel(),
   };
 }

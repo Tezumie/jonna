@@ -33,7 +33,6 @@ import {
 } from "../../core/agent/skills";
 import { mergeTurnTools } from "../../core/agent/slash";
 import { subagentSystem, subagentTools } from "../../core/agent/subagents";
-import { on } from "../../core/dom/index";
 import { skillsIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import { appIpc } from "../../core/ipc/system";
@@ -51,6 +50,7 @@ import { effect, signal, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
+import { agentHost } from "./agentHost";
 import { approveRules } from "./approveDecisions";
 import buildExtensionSkill from "./builtinSkills/build-extension.md?raw";
 import { registerSlashSource } from "./composerExtras";
@@ -59,7 +59,6 @@ import { activePlugins, pluginLabel } from "./pluginContributions";
 import { projectInstructionsBlocked } from "./riskyGuard";
 import { rulesFor } from "./rules";
 import type { SessionManager } from "./sessions";
-import { registerSkillsPage } from "./skillsPage";
 import { type SubagentRegistry, subagentModel } from "./subagents";
 import type { AgentTool } from "./tools";
 
@@ -731,7 +730,16 @@ function registerSkillsWatch(
     .catch(() => {
       skills.watching = false;
     });
-  sub.add(on(window, "focus", () => void refresh()));
+  // The person came back to the app (the window got the focus): a folder made meanwhile shows.
+  const presence = agentHost(services).presence;
+  let away = presence.away();
+  sub.add(
+    presence.onDidChange(() => {
+      const before = away;
+      away = presence.away();
+      if (before && !away) void refresh();
+    }),
+  );
   // Read again (a skill made, a setting changed): a user folder the IDE just made is watched.
   sub.add(
     effect(() => {
@@ -898,6 +906,5 @@ export function registerSkills(
       },
     }),
   );
-  registerSkillsPage(sub, services, skills);
   return skills;
 }

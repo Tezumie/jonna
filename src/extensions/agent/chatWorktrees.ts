@@ -27,8 +27,8 @@ import type { DisposableStore } from "../../core/lifecycle/index";
 import { samePath } from "../../core/paths/index";
 import { effect, type ReadonlySignal, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
-import { confirmAction } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
 import { backgroundProcesses } from "./backgroundProcesses";
 import { newId } from "./ids";
 import type { SessionManager } from "./sessions";
@@ -399,7 +399,13 @@ export function registerChatWorktrees(
         if (what === "merge") return ctx.execute("agent.applyWorktree", { agent: w.agent });
         if (what === "leave" || what === "remove") {
           const out = await leave(id, what === "remove" ? "remove" : "keep", (loss) =>
-            confirmAction("Remove the worktree?", `${w.branch}: ${loss}`, "Remove", true),
+            agentHost(services).prompts.confirm({
+              reason: "confirm",
+              title: "Remove the worktree?",
+              message: `${w.branch}: ${loss}`,
+              confirmLabel: "Remove",
+              destructive: true,
+            }),
           );
           if (!out.isError && !out.denied)
             notifications.show(

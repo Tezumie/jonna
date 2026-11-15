@@ -113,6 +113,7 @@ import { SessionManager } from "./sessions";
 import { registerSetupCommands, SetupState } from "./setupCommands";
 import { registerSkillCatalog } from "./skillCatalog";
 import { registerSkills } from "./skills";
+import { registerSkillsPage } from "./skillsPage";
 import { registerSlashBuiltins } from "./slashBuiltins";
 import { registerStatusLine } from "./statusLine";
 import { registerSubagents } from "./subagents";
@@ -608,7 +609,7 @@ export const agentExtension: BuiltinExtension<WorkbenchServices> = {
     sessions.prepare = async (session) => {
       await Promise.all([mcpPrepare(session), subagents.refresh()]);
     };
-    registerSkills(sub, services, sessions, subagents);
+    registerSkillsPage(sub, services, registerSkills(sub, services, sessions, subagents));
     // D358, D360: Claude Code plugins; the notify message to the user's phone.
     registerPluginsPage(sub, services, registerPlugins(sub, services, subagents, mcpClients));
     registerPhoneNotify(sub, services);

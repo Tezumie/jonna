@@ -47,7 +47,9 @@ export type PromptReason =
   /** The sampled answer, checked before it goes back to the server. */
   | "mcp.samplingReview"
   /** A missing argument of a server's prompt, or a resource template's variable. */
-  | "mcp.argument";
+  | "mcp.argument"
+  /** A yes or no before a command a person ran does something that can't be taken back. */
+  | "confirm";
 
 interface PromptBase {
   reason: PromptReason;
@@ -89,6 +91,17 @@ export interface ReviewPrompt extends PromptBase {
   signal: AbortSignal;
 }
 
+/** A yes or no (the window's confirmation dialog). */
+export interface ConfirmPrompt {
+  reason: "confirm";
+  title: string;
+  message: string;
+  /** The button that says yes ("Delete"). */
+  confirmLabel: string;
+  /** What it confirms can't be taken back: the button says so by its look. */
+  destructive?: boolean;
+}
+
 /** How a review ended; `text` is the text as it stood then. */
 export interface ReviewAnswer {
   choice: "send" | "reject" | "closed";
@@ -104,6 +117,8 @@ export interface HostPrompts {
   /** The chosen choice's id. */
   choose(prompt: ChoicePrompt): Promise<string | undefined>;
   review(prompt: ReviewPrompt): Promise<ReviewAnswer>;
+  /** False when turned down or dismissed. */
+  confirm(prompt: ConfirmPrompt): Promise<boolean>;
   /** Takes the question on screen away (who asked is gone). */
   cancel(): void;
 }
@@ -113,14 +128,16 @@ export type PendingPrompt = { id: string } & (
   | { kind: "text"; prompt: TextPrompt; answer(value: string | undefined): void }
   | { kind: "choice"; prompt: ChoicePrompt; answer(id: string | undefined): void }
   | { kind: "review"; prompt: ReviewPrompt; answer(answer: ReviewAnswer): void }
+  | { kind: "confirm"; prompt: ConfirmPrompt; answer(yes: boolean): void }
 );
 
 /** What a prompt gets when there is no screen to show it on. */
 export interface PromptPolicy {
   /**
-   * `dismiss`: answered at once as if closed (a text or a choice: nothing; a review: rejected).
+   * `dismiss`: answered at once as if closed (a text or a choice: nothing; a review: rejected;
+   * a confirmation: no).
    * `wait`: it stays in `pending` until a front end answers it. `{ answer }`: that answer (the
-   * text typed, the choice's id, or the reviewed text to send).
+   * text typed, the choice's id, the reviewed text to send, or "yes" to a confirmation).
    */
   decide(prompt: PendingPrompt): "dismiss" | "wait" | { answer: string };
 }
@@ -186,9 +203,22 @@ export function headlessPrompts(policy: PromptPolicy = DISMISS_ALL): HeadlessPro
           (text) => resolve({ choice: "send", text }),
         );
       }),
+    confirm: (prompt) =>
+      new Promise((resolve) => {
+        const id = `hp${next++}`;
+        const answer = (yes: boolean) => {
+          done(id);
+          resolve(yes);
+        };
+        settle(
+          { id, kind: "confirm", prompt, answer },
+          () => resolve(false),
+          (given) => resolve(given === "yes"),
+        );
+      }),
     cancel: () => {
       // The newest waiting question goes, as the window's one open quick input would.
-      const last = pending.peek().findLast((p) => p.kind !== "review");
+      const last = pending.peek().findLast((p) => p.kind === "text" || p.kind === "choice");
       if (last?.kind === "text" || last?.kind === "choice") last.answer(undefined);
     },
   };
