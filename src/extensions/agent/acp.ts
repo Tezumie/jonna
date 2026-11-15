@@ -20,7 +20,7 @@ import {
 } from "../../core/acp/client";
 import { packageRunner, prettyCommand, updateCost } from "../../core/acp/display";
 import { findMode, permissionLevel, pickMode, writesWithoutAsking } from "../../core/acp/modes";
-import { changedByAgent, relativeTo, type StepWindow } from "../../core/acp/turnChanges";
+import { changedByAgent, insideFolder, type StepWindow } from "../../core/acp/turnChanges";
 import { nextImageId } from "../../core/agent/chatImages";
 import type { Item } from "../../core/agent/conversation";
 import { scratchIpc } from "../../core/ipc/agent";
@@ -149,7 +149,7 @@ export class AcpBackend {
       root && !this.scratch && samePath(root, this.services.workspace.root.peek() ?? "")
         ? this.services.workspace.folderPaths()
         : [];
-    const inside = (folder: string) => relativeTo(folder, path, windows) !== null;
+    const inside = (folder: string) => insideFolder(folder, path, windows);
     if (!root || !(inside(root) || folders.some(inside)))
       throw new Error(
         `${path} is outside the folder${folders.length > 1 ? "s" : ""} ${this.config.name} works in${root ? ` (${folders.length > 1 ? folders.join(", ") : root})` : ""}.`,
