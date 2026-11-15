@@ -9,7 +9,12 @@ use tauri::State;
 
 // Model provider commands (`crate::ai`). Keys are stored and read on this side only.
 fn key(state: &AppState, provider: &Provider) -> Option<String> {
-    secrets::get(&state.dirs.data.join("secrets.json"), &provider.id)
+    let stored = secrets::get(&state.dirs.data.join("secrets.json"), &provider.id);
+    // The host without a window is started from a shell: with no key in the store, the
+    // provider's conventional variable is one (`ai/env_keys.rs`). The app reads its store only.
+    #[cfg(not(feature = "desktop"))]
+    let stored = stored.or_else(|| crate::ai::env_keys::from_environment(&provider.base_url));
+    stored
 }
 
 #[tauri::command]

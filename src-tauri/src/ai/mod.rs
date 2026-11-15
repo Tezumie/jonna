@@ -7,6 +7,7 @@
 
 mod anthropic;
 pub mod embed;
+pub mod env_keys;
 pub mod fim;
 pub mod keychain;
 pub mod limits;
