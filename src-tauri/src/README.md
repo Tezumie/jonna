@@ -41,7 +41,8 @@ The windowless host (the `host` feature only). `mod.rs`: the program's arguments
 127.0.0.1:<port>`, `--token-file`, `--linger`, `--user-data-dir` and `--disable-extensions` as
 the desktop's, `--help`, `--version`), start (the same app folders as the desktop app, by
 product.json's identifier; the session log; `AppState`), serving, and the exit (`$/shutdown`,
-the end of stdin, Ctrl+C or SIGTERM: `AppState::shutdown`, exit 0). `frame.rs`: the wire's
+the end of stdin, Ctrl+C or SIGTERM, and on Windows Ctrl+Break and the console's close, logoff
+and shutdown events: `AppState::shutdown`, exit 0). `frame.rs`: the wire's
 frame (two little-endian u32 lengths, a JSON header, a raw body; 64 MiB / 1 GiB limits).
 `server.rs`: one client's connection: `$/hello` first (protocol 1, the token over TCP, the list
 of commands; the first frame is at most 64 KiB with no body, nothing behind it is read before

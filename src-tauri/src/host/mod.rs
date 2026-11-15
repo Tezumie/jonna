@@ -371,8 +371,41 @@ fn tcp_carrier(stream: TcpStream) -> std::io::Result<Carrier> {
     })
 }
 
-/// Resolves when the process is asked to stop (Ctrl+C; SIGTERM on Unix).
+/// Resolves when the process is asked to stop: Ctrl+C; SIGTERM on Unix; on Windows also
+/// Ctrl+Break and the console's end (its window closed, the user logging off, the system
+/// shutting down), after which Windows gives the process a few seconds, enough for the
+/// host's own shutdown.
 async fn stop_signal() {
+    #[cfg(windows)]
+    {
+        use tokio::signal::windows::{ctrl_break, ctrl_close, ctrl_logoff, ctrl_shutdown};
+        // One that can't be listened for never comes: the others, and the stream's end, still
+        // stop the host.
+        macro_rules! heard {
+            ($listen:expr) => {
+                async {
+                    match $listen {
+                        Ok(mut events) => {
+                            events.recv().await;
+                        }
+                        Err(_) => std::future::pending::<()>().await,
+                    }
+                }
+            };
+        }
+        let interrupted = async {
+            if tokio::signal::ctrl_c().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::select! {
+            _ = interrupted => {}
+            _ = heard!(ctrl_break()) => {}
+            _ = heard!(ctrl_close()) => {}
+            _ = heard!(ctrl_logoff()) => {}
+            _ = heard!(ctrl_shutdown()) => {}
+        }
+    }
     #[cfg(unix)]
     {
         use tokio::signal::unix::{signal, SignalKind};
@@ -388,7 +421,7 @@ async fn stop_signal() {
             }
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         if tokio::signal::ctrl_c().await.is_err() {
             // No way to hear it: never resolve, the stream's end stops the host.
