@@ -28,6 +28,7 @@ unless noted.
 | · The public repository, external agents as their chat's agent, custom editor fixes | D417–D420 |
 | · Large files, a section of settings read whole, updates that fit, chat forks, VS Code 1.146 | D421–D423 |
 | · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
+| · The UI suite's baseline, the backend and the agent without a window, a command-line agent | D427–D432 |
 
 ## Seeded from PLAN §19
 
@@ -15079,3 +15080,155 @@ More small changes from the owner's use; added to until it's committed.
   the click reopening it. A right-click is left out, so a context menu still opens anew where
   asked. Presses are followed from startup, not from the first menu shown.
   `tests/scripts/menu-toggle-m7-128.jsonc`.
+
+## D427 — The UI suite's baseline: stale scripts, races, what CI's machines can't run
+
+The full UI suite ran in CI for the first time on 0.1.6 (273 of 289 scripts on Windows, 263 of
+276 on Linux). Before the work of D428–D432, every failure was read and either fixed or given
+a stated reason.
+
+- **Stale scripts** (behaviour changed on purpose): `terminal-m7-8` and `notebooks2-m7-5`
+  assumed a folder opens with a terminal (gone since D424), so they make their own;
+  `vscode-shim-m7-21` expected the API version before D423; `alpha-m7-5` pinned the newest
+  release notes and no issue tracker, and now checks against the 0.1.0 entry.
+- **The stand-in tools are executable in git** (`tests/fixtures/fake-gh/gh`, `fake-docker`,
+  `fake-make`): stored as plain files, Linux ran the real `gh` with the fake token, which
+  failed four scripts.
+- **A trusted click is verified** (addendum to D346): the page counts trusted presses and a
+  click's report says whether its press came; one that never came (a document in its first
+  moments drops it) is sent again, twice at most, 200 ms apart, else the answer carries a note.
+  `browser/input.js`, `extensions/browser/trustedInput.ts`.
+- **A tab's own window waits for its stylesheets** (up to 2 s) before the view moves in
+  (addendum to D101): the click otherwise went where the frame had been.
+- **`notebook.read` takes `ifOpen`**, and the VS Code API's following reads use it, so a read
+  arriving after Close folder no longer opens the notebook again (addendum to D299).
+- **The widget page carries its scripts inline** (addendum to D334): in a sandboxed frame
+  WebKit matches `'self'` against the opaque origin and refused them, so no widget drew on
+  Linux. Not yet confirmed on Linux.
+- **`terminal.scrollTo…Command` reports whether the view moved**, not always true.
+- **The runner** (`scripts/ui-test.mjs`): `"requires": ["wsl:<name>"]` (a WSL distribution by
+  that name), `"skipOnCi": ["win32"]`, and the skip line names its reason. The WSL and dev
+  container scripts need a distribution; the two huge-folder scripts skip on CI's Windows
+  machine (writing their files takes over ten minutes there). `browser-agent-m7-58` is skipped
+  on Linux: after a synthesized click the focus stays on the page there, cause not confirmed.
+- **Known for reproducing CI locally:** its Windows window is 1028×780, its temp folder is a
+  short (8.3) path, and it is slow; several "timing" failures were one of the first two.
+- **Still open:** `workbench-m6` (a popped-back frame not reconnecting) and
+  `terminal-restore-m7-19` (the restored output's last line) each failed once in CI and never
+  locally.
+
+## D428 — The backend without a window: one source, two builds
+
+The Rust backend also builds as a program with no window, `ide-host`, which answers the same
+commands over a byte stream. It is what a command-line agent, and later a hosted editor, talk
+to. `PLAN.md` had no such build.
+
+- **The same source compiles against a stand-in.** With the `desktop` feature (the default)
+  nothing changes. With `host` instead, `extern crate host_shim as tauri` makes every
+  `tauri::…` path resolve to a small crate (`src-tauri/host-shim`, and its macros in
+  `host-shim-macros`) that offers the part of the framework's API the code uses: `command`,
+  `State`, `ipc::Channel`, `async_runtime`, `AppHandle` with the app's folders. Rewriting the
+  services onto types of our own was the alternative; this keeps the desktop's code as it was,
+  which is the strongest guard against regressions. Build-time dependencies only (`syn`,
+  `quote`, `proc-macro2`, `heck`; `dirs`, `http`, `url` at run time), all already built and
+  MIT/Apache-2.0.
+- **Desktop-only code is gated** (`#[cfg(feature = "desktop")]`): windows, the embedded
+  browser, screenshots of the web view, native dialogs, OS drag and drop, the window registry,
+  the updater. 54 of 345 commands; the host answers the other 291 and says "unknown command"
+  for the rest. The handler list is one macro with two lists (`desktop_only`, `common`), and
+  `scripts/check-commands.mjs` checks both.
+- **The wire** (`docs/headless.md`): frames of a JSON header and an optional raw body, both
+  lengths first; requests with ids, in flight together; channels with ids the client chooses,
+  closed from either side; raw bodies in and out; errors serialized as the desktop serializes
+  them. Over the program's own pipes by default, or loopback TCP with a token, one client at a
+  time.
+- **The same folders as the app** (settings, keys, chats), so a headless run sees what the
+  window sees; `--user-data-dir` as the desktop has it. The app's state is built by
+  `AppState::new`, which the desktop's `run()` now calls too, with `shutdown()`.
+- **The host takes its pipes out of the standard handles first,** so a stray print or a child
+  that inherits them can't corrupt the stream. It answers the same helper modes as the
+  desktop program (remote relay, askpass, the MCP proxy, Ctrl+C).
+- **A provider's key from its conventional variable** (`ANTHROPIC_API_KEY` and the like,
+  matched by the provider's host), in the host build only and only when the store has none.
+- **Not yet built anywhere but Windows.** A CI job for the host build is the owner's decision.
+
+## D429 — The call layer takes a transport; what has no backend goes through a shell
+
+- **`core/ipc/invoke.ts` calls a `Transport`:** the desktop framework's by default, or one set
+  with `setTransport`. `StreamTransport` speaks D428's wire over any pair of byte streams;
+  `core/ipc/node/hostProcess.ts` starts a host program and connects. `call()` is unchanged.
+- **`Channel` is the project's own class** over the transport's channel. On the desktop it
+  wraps the framework's, so order and cleanup are the framework's. `close()` there only
+  silences the handler (unregistering makes the framework warn when Rust sends later); on a
+  stream it tells the host. Watchers' disposables call it instead of swapping the handler.
+- **`isTauri()` became two questions:** `hasBackend()` (calls are answered) and
+  `isDesktopShell()` (the framework's window exists). All 30 sites were read and assigned.
+- **Window controls, native dialogs, clipboard, opener and drag and drop go through a
+  `Shell`** (`core/ipc/shell.ts`). Inside the app's window it is always the desktop's. With no
+  window, pickers answer "nothing chosen", confirmations refuse with a clear error, the
+  clipboard is a buffer in memory.
+- **A lost connection fails pending calls with `Io`**; a failed handshake is `Invalid`.
+- **`scripts/check-ipc-names.mjs`** (in `npm run check`): every command the front end calls
+  exists in the backend's list, and nothing calls the backend from outside `core/ipc`.
+
+## D430 — Services from a factory, and a set with no screen
+
+- **`createServices(implementations)`** (`workbench/createServices.ts`) builds every service;
+  the window's entry and a screenless one differ only in what they pass. The built-in
+  extensions are listed in `extensions/builtins.ts`.
+- **`platform` is two values:** `screenPlatform` (keys, the shell's web view) and
+  `backendPlatform` (paths, shells). Equal in the desktop app.
+- **`services.hasScreen`** is the one question extensions ask at activation. Every built-in
+  activates in Node with no `document`.
+- **Commands can say `needsScreen`,** and the dispatcher fails those clearly without one; `h()`
+  throws the same error when there is no document. Only window commands are marked so far;
+  pickers are not, so a policy can answer them.
+- **The screenless set** (`src/headless/services.ts`): notifications kept as state, quick input
+  answered by a policy or refused, a status bar that holds its items, trust and permissions by
+  policy (declined by default), no first-paint cache, decorations counted at once.
+- **A screenless session never writes the open folder's saved state** (dock layout, review
+  mode), and keeps the window's own keys of the global state as the file has them
+  (`WINDOW_GLOBAL_KEYS`): it would otherwise overwrite the window's layout and recents.
+
+## D431 — The agent with no window
+
+- **The agent has a host** (`extensions/agent/agentHost.ts`): whether there is a screen, who
+  is watching (presence), prompts that used to call dialogs directly (MCP inputs, step-up,
+  elicitation, sampling review, two confirmations), and a worker factory. The window sets its
+  own first in `activate`; with nothing set it is the headless one: nobody present, prompts
+  dismissed or left pending by policy.
+- **Tools that need a screen are left out without one** (`NEEDS_SCREEN`, beside
+  `NEEDS_FOLDER`): screenshots, the browser pane's tools, desktop control, widgets, the
+  extension suggestion. `run_workflow` is left out without a worker factory. `search` and
+  fuzzy `find_files` go straight to the backend where their window commands aren't registered.
+- **The extension is `core.ts` (setup) and `screen.ts` (views),** with the screen's steps
+  called at their original points, so the order of registrations is as it was.
+- **The session's graph imports no view code** (`scripts/check-headless-imports.mjs`, in
+  `npm run check`). Three modules were split for it (`roomState.ts`, `view/groupFaces.ts`,
+  `approveDecisions.ts`).
+- **External agents' remembered settings live in the global state** (`acpSettings`), not the
+  page's storage; old values are taken over once and the old keys removed.
+- **A caller kind `frontend`** for a front end that isn't the window (a terminal): the user's
+  rights, destructive commands through the policy's confirm. `isUserCaller` is the one check.
+  No command input can choose a caller's kind.
+- **A run's permission policy** (`unattended.ts`): the app's four modes, allow and deny lists
+  (a tool, a command pattern, a command id), and what happens otherwise (deny, or wait for a
+  front end). Order: deny list, allow list, full access, otherwise. The deny list is a guard
+  on what the agent is offered, not a sandbox.
+- **A chat as events** (`sessionEvents.ts`): one typed, serializable union (text, tool calls
+  and results, permission requests and decisions, questions, edits, usage, turn end), built
+  on the session's signals; nothing polls.
+- **Settings for one run only** (`SettingsService.setOverrides`), above every file and never
+  written: a run's model, mode and limits don't change the user's settings.
+- **The brain** (`src/headless/brain.ts`, `run.ts`): the screenless services over a real host,
+  the extensions an agent needs (`headless/extensions.ts`: workbench, explorer, editor, tasks,
+  terminal, settings, search, mcp, git, accounts, the agent's core), chats saved where the app
+  saves them. The IDE's own MCP server and git's auto-fetch are held off unless asked for;
+  external agents still get the IDE's tools.
+- **`node build.mjs --headless`** bundles it for Node into `dist-headless/`. View code that
+  extensions import statically is bundled and never run (views are registered, not created);
+  splitting about 40 modules would make it smaller.
+- **Workflows run in a Node worker thread** there, with `process` and `require` removed: less
+  of a lockdown than a web worker, and the permission question still applies.
+- **Tests' fake backends are transports** (D429); a full turn runs in a realm with no
+  document, on a keyed provider and on an external agent.
