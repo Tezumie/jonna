@@ -713,9 +713,19 @@ pub async fn notebook_output_origin(state: State<'_, AppState>) -> Result<String
         ("widget.js", include_str!("../../notebook/output/widget.js")),
     ];
     let dir = state.dirs.data.join("notebook").join("output");
+    let widget = inline_widget_scripts(
+        include_str!("../../notebook/output/widget.html"),
+        include_str!("../../notebook/output/harden.js"),
+        include_str!("../../notebook/output/widget.js"),
+    );
     for (name, text) in FILES {
+        let text = if *name == "widget.html" {
+            widget.as_str()
+        } else {
+            text
+        };
         let path = dir.join(name);
-        if std::fs::read_to_string(&path).ok().as_deref() != Some(*text) {
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(text) {
             crate::store::atomic_write(&path, text.as_bytes())?;
         }
     }
@@ -727,6 +737,43 @@ pub async fn notebook_output_origin(state: State<'_, AppState>) -> Result<String
         })
         .await?;
     Ok(info.origin)
+}
+
+/// The widget page with its two scripts in the page itself. Its policy lets scripts come from
+/// `'self'`, and its frame is sandboxed without same-origin: WebKit compares `'self'` with the
+/// frame's (opaque) origin, so the scripts were refused there and no widget drew on Linux. Inline
+/// scripts are allowed by the same policy on every engine.
+fn inline_widget_scripts(page: &str, harden: &str, widget: &str) -> String {
+    page.replace(
+        "<script src=\"harden.js\"></script>",
+        &format!("<script>\n{harden}\n</script>"),
+    )
+    .replace(
+        "<script src=\"widget.js\"></script>",
+        &format!("<script>\n{widget}\n</script>"),
+    )
+}
+
+#[cfg(test)]
+mod widget_page_tests {
+    #[test]
+    fn the_widget_page_carries_its_scripts() {
+        let harden = include_str!("../../notebook/output/harden.js");
+        let widget = include_str!("../../notebook/output/widget.js");
+        let page = super::inline_widget_scripts(
+            include_str!("../../notebook/output/widget.html"),
+            harden,
+            widget,
+        );
+        // Nothing is loaded by address any more, and both scripts are there whole.
+        assert!(!page.contains("<script src="));
+        assert!(page.contains(harden.trim()));
+        assert!(page.contains(widget.trim()));
+        assert_eq!(page.matches("<script>").count(), 2);
+        // A closing tag inside either script would end the inline script early.
+        assert!(!harden.to_ascii_lowercase().contains("</script"));
+        assert!(!widget.to_ascii_lowercase().contains("</script"));
+    }
 }
 
 #[cfg(test)]

@@ -51,7 +51,8 @@ session where nothing ran keeps the last save, so separators don't pile up.
 copy command, copy output, fix), and `terminal.copyLastCommand` / `copyLastOutput` /
 `fixWithAgent` take `command` to act on any of them. `terminal.scrollToPreviousCommand` /
 `scrollToNextCommand` (Ctrl+Up / Ctrl+Down) and `terminal.runRecentCommand` (Ctrl+Alt+R, history
-kept per workspace by `index.ts`). A command whose line was trimmed off the scrollback stays known
+kept per workspace by `index.ts`); the scroll commands answer `scrolled: false` when there is no
+such command or the view couldn't move (everything fits on screen). A command whose line was trimmed off the scrollback stays known
 while its output is there.
 
 **Input and sizes** (D150): Rust writes input in order on a writer thread per session, and

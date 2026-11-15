@@ -86,7 +86,7 @@ export interface TerminalRenderer extends Disposable {
   ): { command: string; output: string; exitCode?: number; finished: boolean } | null;
   /** Every command still in the buffer, oldest first (Run recent command). */
   commandList(): { seq: number; command: string; exitCode?: number }[];
-  /** Scrolls to the previous / next command's line; false when there's none. */
+  /** Scrolls to the previous / next command's line; false when there's none or the view didn't move. */
   scrollToCommand(direction: -1 | 1): boolean;
   /** The command's dot was clicked: its number and where (for a menu). */
   readonly onCommandMenu: Event<{ seq: number; x: number; y: number }>;
@@ -929,8 +929,12 @@ class XtermRenderer implements TerminalRenderer {
       if (direction > 0) this.term.scrollToBottom();
       return false;
     }
+    // Whether the view moved: a command's line that can't come to the top (everything fits on
+    // screen, or it's within the last screenful) was found again by every "next", each saying
+    // it had scrolled.
+    const before = this.term.buffer.active.viewportY;
     this.term.scrollToLine(Math.max(0, line));
-    return true;
+    return this.term.buffer.active.viewportY !== before;
   }
 
   lastCommand(): { command: string; output: string; exitCode?: number } | null {
