@@ -24,7 +24,16 @@ import { type HeadlessPolicy, type ScreenlessParts, screenlessImplementations } 
  * (fakeBackend.ts). One connection per JavaScript realm: the call layer is module-level state.
  */
 export interface HeadlessBackend {
-  connect(): Disposable | Promise<Disposable>;
+  connect(): HeadlessConnection | Promise<HeadlessConnection>;
+}
+
+/** A connected backend. `dispose` disconnects at once; `close` first lets it shut down. */
+export interface HeadlessConnection extends Disposable {
+  /**
+   * Ends the backend in order (a host process is asked to shut down and waited for), when the
+   * connection owns one. The session's `dispose` awaits it before disconnecting.
+   */
+  close?(): Promise<void>;
 }
 
 export interface HeadlessBootOptions {
@@ -37,6 +46,11 @@ export interface HeadlessBootOptions {
   policy?: HeadlessPolicy;
   /** The backend's OS, when the caller knows it; default: what the backend's app info says. */
   backendPlatform?: Platform;
+  /**
+   * Called with the services once they exist and before any extension activates: where an entry
+   * sets what extensions read as they start (the agent's host, settings that hold for this run).
+   */
+  beforeActivate?(services: WorkbenchServices): void | Promise<void>;
 }
 
 /** A running screenless session. */
@@ -80,6 +94,7 @@ export async function bootHeadless(options: HeadlessBootOptions): Promise<Headle
     store.add({ dispose: set.dispose });
     const services = createServices(set.implementations);
     const { dispatcher, keyboard, settings, languageClients, persistence, workspace } = services;
+    await options.beforeActivate?.(services);
 
     // ---- Extensions ---------------------------------------------------------
     const extensionHost = store.add(
@@ -138,6 +153,7 @@ export async function bootHeadless(options: HeadlessBootOptions): Promise<Headle
         services.keyboard.dispose();
         services.quickDiff.dispose();
         services.views.dispose();
+        await connection.close?.().catch(() => {});
         connection.dispose();
       },
     };

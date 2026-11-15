@@ -55,6 +55,9 @@ export interface ShowOptions {
 
 /** Shows thread `id`: its own tab if open, else in the preview thread tab, else a new one. */
 export function showThreadTab(dock: DockService, id: string, options: ShowOptions = {}): string {
+  // No chat view (a run with no window): there is no tab to show the chat in, and nothing that
+  // works on a chat needs one.
+  if (!dock.views.get(THREAD_VIEW)) return "";
   const focus = options.focus ?? true;
   const open = dock.tabs(THREAD_VIEW).find((t) => sessionOf(t.viewState) === id);
   if (options.side) return openBeside(dock, THREAD_VIEW, { session: id }, open?.id, focus);
@@ -84,6 +87,7 @@ export function showRoomTab(dock: DockService, room: string, options: ShowOption
   // keeps the channel tab.
   const conversation = roomConversation(room);
   if (conversation) return showThreadTab(dock, conversation, options);
+  if (!dock.views.get(ROOM_VIEW)) return "";
   const focus = options.focus ?? true;
   const open = dock.tabs(ROOM_VIEW).find((t) => roomOf(t.viewState) === room);
   if (options.side) return openBeside(dock, ROOM_VIEW, { room }, open?.id, focus);

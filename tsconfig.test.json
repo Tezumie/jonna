@@ -6,6 +6,9 @@
   "include": [
     "src/**/*.test.ts",
     "src/core/ipc/node/**/*.ts",
+    "src/headless/node/**/*.ts",
+    "src/headless/run.ts",
+    "src/workers/node/**/*.ts",
     "src/globals.d.ts",
     "src/assets.d.ts"
   ],
