@@ -140,8 +140,11 @@ test("settings: two computers converge, each keeping what only it changed", asyn
   await engineA.tick();
   await engineB.tick();
   await engineA.tick();
-  assert.deepEqual(a.values, { theme: "dark", fontSize: 14, "accounts.serverUrl": "http://a" });
-  assert.deepEqual(b.values, { fontSize: 14, theme: "dark" });
+  assert.deepEqual(
+    { ...a.values },
+    { theme: "dark", fontSize: 14, "accounts.serverUrl": "http://a" },
+  );
+  assert.deepEqual({ ...b.values }, { fontSize: 14, theme: "dark" });
 
   // Each changes a different setting.
   clock.now = 200;
@@ -198,9 +201,9 @@ test("settings: a write that loses the race is merged at the next pass", async (
   };
   const engine = new SyncEngine(racing, memoryStore(), [settingsLayer(a)]);
   await engine.tick();
-  assert.deepEqual(a.values, { a: 1 }, "nothing applied from a write it never saw");
+  assert.deepEqual({ ...a.values }, { a: 1 }, "nothing applied from a write it never saw");
   await engine.tick();
-  assert.deepEqual(a.values, { a: 1, b: 2 });
+  assert.deepEqual({ ...a.values }, { a: 1, b: 2 });
   const record = JSON.parse(account.records.get("settings/user")?.text ?? "{}");
   assert.deepEqual(Object.keys(record.keys).sort(), ["a", "b"]);
   void engineA;
