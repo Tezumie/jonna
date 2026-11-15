@@ -20,6 +20,10 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   `sessionExternal.ts` (an ACP agent's turn), `sessionSubagents.ts` (subagents, background runs,
   automatic review), `sessionSummaries.ts` (summaries, one-off tasks), `sessionUsage.ts` (request
   options, usage, budget), `sessionStore.ts` (the saved form), `sessionTypes.ts` (shared types).
+  A save only goes over the version this process last read or wrote (D221), whoever the other
+  writer is (a window, a run with no window): a chat opened by an id under which nothing could
+  be read expects no file (`NOTHING_SAVED`), so one saved under that id meanwhile is a conflict
+  too, not replaced.
   Commands: `commands.ts` (sessions, modes, slash, mentions), `sendCommands.ts` (`agent.send`,
   `agent.startInFolder`), `reviewCommands.ts` (accept / reject, review diffs, checkpoints),
   `modelCommands.ts` (models, providers, keys), `mentionContext.ts` (@-mention context).

@@ -4,7 +4,7 @@ import type { Item } from "../../core/agent/conversation";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { signal } from "../../core/reactive/index";
 import type { AgentSession } from "./session";
-import { loadSaved } from "./sessionStore";
+import { loadSaved, saveSessionNow } from "./sessionStore";
 
 /** What loadSaved touches of a session (no Tauri, no workbench in tests). */
 function fakeSession() {
@@ -90,4 +90,63 @@ test("loadSaved: a finished answer gets no interrupted notice", async () => {
   });
   assert.equal(session.items.length, 2);
   assert.equal(session.items[1]?.type, "assistant");
+});
+
+/** The transcript store as the backend keeps it: a save with `expect` only over that version. */
+function fakeStore() {
+  const files = new Map<string, { json: string; version: string }>();
+  let writes = 0;
+  const real = { ...agentStoreIpc };
+  Object.assign(agentStoreIpc, {
+    version: async (id: string) => files.get(id)?.version ?? null,
+    load: async (id: string) => files.get(id)?.json ?? null,
+    save: async (id: string, json: string, expect?: string | null) => {
+      const now = files.get(id);
+      if (expect != null && now && now.version !== expect)
+        return { version: now.version, conflict: true };
+      const version = `v${++writes}`;
+      files.set(id, { json, version });
+      return { version, conflict: false };
+    },
+  });
+  return { files, restore: () => Object.assign(agentStoreIpc, real) };
+}
+
+/** A chat as one process holds it, with what a save touches. */
+function savingSession(text: string) {
+  const session = {
+    ...fakeSession(),
+    deleted: false,
+    conflict: signal(false),
+    bump: () => {},
+    toJSON(): unknown {
+      return { meta: { title: text }, items: session.items };
+    },
+  };
+  return session;
+}
+
+test("saveSessionNow: a chat opened by an id nobody had saved doesn't replace one saved under it meanwhile", async () => {
+  const store = fakeStore();
+  try {
+    // Two processes open the same id before either saved (a run given --session-id twice).
+    const first = savingSession("first");
+    const second = savingSession("second");
+    assert.equal(await loadSaved(first as unknown as AgentSession), false);
+    assert.equal(await loadSaved(second as unknown as AgentSession), false);
+    first.items.push({ type: "user", id: "u1", text: "from the first", turn: 1 } as Item);
+    second.items.push({ type: "user", id: "u2", text: "from the second", turn: 1 } as Item);
+    await saveSessionNow(first as unknown as AgentSession);
+    assert.equal(first.conflict.peek(), false, "nothing saved yet: the first save writes");
+    await saveSessionNow(second as unknown as AgentSession);
+    assert.equal(second.conflict.peek(), true, "the second is told, and writes nothing");
+    assert.match(store.files.get("s-test")?.json ?? "", /from the first/);
+    // The first goes on saving over its own version.
+    first.items.push({ type: "user", id: "u3", text: "more", turn: 2 } as Item);
+    await saveSessionNow(first as unknown as AgentSession);
+    assert.equal(first.conflict.peek(), false);
+    assert.match(store.files.get("s-test")?.json ?? "", /more/);
+  } finally {
+    store.restore();
+  }
 });

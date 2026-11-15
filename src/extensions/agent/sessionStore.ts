@@ -173,12 +173,24 @@ export async function resolveSaveConflict(
   await session.save();
 }
 
+/**
+ * The version a chat opened by its id has when nothing could be read under that id. It matches
+ * no file's version, so the first save writes only while there is still no file: a chat another
+ * process saved under the same id meanwhile (a run with no window given the same id, the same
+ * channel's conversation started in two windows), or one whose file couldn't be read, is a
+ * conflict instead of being replaced by this one.
+ */
+export const NOTHING_SAVED = "none";
+
 export async function loadSaved(session: AgentSession): Promise<boolean> {
   // The saved file's version first (D221): a write by another window after it then shows as a
   // conflict on this window's next save, rather than slipping through.
   const version = await agentStoreIpc.version(session.id).catch(() => null);
   const text = await agentStoreIpc.load(session.id).catch(() => null);
-  if (!text) return false;
+  if (!text) {
+    session.savedVersion = NOTHING_SAVED;
+    return false;
+  }
   session.savedVersion = version;
   // Loaded again (the other window's version, D221): nothing of this window's chat stays.
   session.attachedRules.clear();
