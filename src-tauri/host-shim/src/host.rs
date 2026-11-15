@@ -14,9 +14,15 @@ use serde::Serialize;
 use crate::ipc::{Channel, InvokeBody, InvokeResponseBody, IpcResponse, Request};
 use crate::{AppHandle, Manager, Result, State, Webview, WebviewWindow, Window};
 
-/// Sends one message on the client's channel `id`. Fails when the client closed that channel or
-/// is gone.
-pub type ChannelSender = dyn Fn(u32, InvokeResponseBody) -> Result<()> + Send + Sync;
+/// The client's side of channels: where a command's channel messages go.
+pub trait ChannelSink: Send + Sync {
+    /// Sends one message on the client's channel `id`. Fails when the client closed that channel
+    /// or is gone.
+    fn send(&self, id: u32, body: InvokeResponseBody) -> Result<()>;
+
+    /// Every handle to channel `id` is dropped: nothing more will be sent on it.
+    fn end(&self, id: u32);
+}
 
 /// One call of a command.
 pub struct Invocation {
@@ -29,7 +35,7 @@ pub struct Invocation {
     pub body: InvokeBody,
     /// A raw call's headers (names lower-case).
     pub headers: http::HeaderMap,
-    pub channels: Arc<ChannelSender>,
+    pub channels: Arc<dyn ChannelSink>,
 }
 
 /// What a command answered.
@@ -120,8 +126,13 @@ impl<'a, TSend> CommandArg<'a> for Channel<TSend> {
                     "invalid argument `{key}`: expected a channel ({{\"__channel\": id}})"
                 ))
             })?;
-        let send = invocation.channels.clone();
-        Ok(Channel::with_id(id, move |body| send(id, body)))
+        let sink = invocation.channels.clone();
+        let ended = invocation.channels.clone();
+        Ok(Channel::bound(
+            id,
+            move |body| sink.send(id, body),
+            move || ended.end(id),
+        ))
     }
 }
 

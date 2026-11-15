@@ -600,9 +600,11 @@ mod snippet_path_tests {
     }
 }
 
+#[cfg(feature = "desktop")]
 /// Most bytes of a profile file read back (settings, keybindings and snippets are small).
 const MAX_PROFILE_BYTES: u64 = 8 * 1024 * 1024;
 
+#[cfg(feature = "desktop")]
 /// Debug builds (UI tests) may name the file; release builds always ask with the system dialog,
 /// so the frontend can't read or write arbitrary paths through these commands.
 fn test_path(path: Option<String>) -> Option<PathBuf> {

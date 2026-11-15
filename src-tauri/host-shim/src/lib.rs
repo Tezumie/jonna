@@ -21,4 +21,5 @@ pub use app::{
 };
 pub use error::{Error, Result};
 pub use host_shim_macros::{command, generate_handler};
+pub use http;
 pub use url::Url;

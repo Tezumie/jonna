@@ -47,7 +47,7 @@ fn is_link_for(arg: &str, scheme: &str) -> bool {
 
 /// Registers the scheme for the current user, pointing at this program (Windows; once per start,
 /// only when it points elsewhere or nowhere). Errors are only logged by the caller.
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 pub fn register() -> Result<(), String> {
     use windows::core::HSTRING;
     use windows::Win32::System::Registry::{
@@ -126,7 +126,7 @@ pub fn register() -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "desktop"))]
 fn product_name() -> String {
     serde_json::from_str::<serde_json::Value>(include_str!("../../product.json"))
         .ok()

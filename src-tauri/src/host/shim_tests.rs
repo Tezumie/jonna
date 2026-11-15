@@ -1,12 +1,13 @@
-//! The `#[command]` attribute's argument and return mapping, and the command table.
+//! The stand-in framework's `#[command]` attribute: its argument and return mapping, and the
+//! command table (`host-shim`, tested here because it is only built with the host).
 
 use std::sync::{Arc, Mutex};
 
-use host_shim::host::{CommandEntry, Invocation, Reply};
-use host_shim::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
-use host_shim::{AppHandle, Manager, State, Webview};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::host::{ChannelSink, CommandEntry, Invocation, Reply};
+use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request, Response};
+use tauri::{AppHandle, Manager, State, Webview};
 
 struct Counter {
     start: u32,
@@ -29,12 +30,12 @@ struct Point {
 mod commands {
     use super::*;
 
-    #[host_shim::command]
+    #[tauri::command]
     pub async fn add(state: State<'_, Counter>, first_number: u32, other: Option<u32>) -> u32 {
         state.start + first_number + other.unwrap_or(0)
     }
 
-    #[host_shim::command]
+    #[tauri::command]
     pub fn sync_point(point: Point, mut scale: i32) -> Result<Point, Failure> {
         scale += 0;
         if scale == 0 {
@@ -49,15 +50,15 @@ mod commands {
         })
     }
 
-    #[host_shim::command(rename_all = "snake_case")]
+    #[tauri::command(rename_all = "snake_case")]
     pub async fn snake(file_name: String) -> String {
         file_name
     }
 
-    #[host_shim::command]
+    #[tauri::command]
     pub async fn nothing() {}
 
-    #[host_shim::command]
+    #[tauri::command]
     pub async fn unit_result(fail: bool) -> Result<(), Failure> {
         if fail {
             Err(Failure {
@@ -69,7 +70,7 @@ mod commands {
         }
     }
 
-    #[host_shim::command]
+    #[tauri::command]
     pub async fn raw_echo(request: Request<'_>) -> Result<Response, Failure> {
         let name = request
             .headers()
@@ -88,7 +89,7 @@ mod commands {
         Ok(Response::new(out))
     }
 
-    #[host_shim::command]
+    #[tauri::command]
     pub async fn stream(
         app: AppHandle,
         webview: Webview,
@@ -110,13 +111,13 @@ mod commands {
         ))
     }
 
-    #[host_shim::command]
+    #[tauri::command]
     pub fn panics() -> u32 {
         panic!("on purpose")
     }
 }
 
-const TABLE: &[CommandEntry] = host_shim::generate_handler![
+const TABLE: &[CommandEntry] = tauri::generate_handler![
     commands::add,
     commands::sync_point,
     commands::snake,
@@ -127,7 +128,21 @@ const TABLE: &[CommandEntry] = host_shim::generate_handler![
     commands::panics,
 ];
 
-type Sent = Arc<Mutex<Vec<(u32, InvokeResponseBody)>>>;
+/// What the commands sent, and which channels ended (id, no body).
+type Sent = Arc<Mutex<Vec<(u32, Option<InvokeResponseBody>)>>>;
+
+struct Recorder(Sent);
+
+impl ChannelSink for Recorder {
+    fn send(&self, id: u32, body: InvokeResponseBody) -> tauri::Result<()> {
+        self.0.lock().unwrap().push((id, Some(body)));
+        Ok(())
+    }
+
+    fn end(&self, id: u32) {
+        self.0.lock().unwrap().push((id, None));
+    }
+}
 
 fn app() -> AppHandle {
     let app = AppHandle::new("dev.example.app", "Example", "1.2.3");
@@ -136,17 +151,13 @@ fn app() -> AppHandle {
 }
 
 fn invocation(params: Value, sent: &Sent) -> Invocation {
-    let sent = sent.clone();
     Invocation {
         app: app(),
         client: Arc::from("main"),
         body: InvokeBody::Json(params.clone()),
         params,
-        headers: http::HeaderMap::new(),
-        channels: Arc::new(move |id, body| {
-            sent.lock().unwrap().push((id, body));
-            Ok(())
-        }),
+        headers: tauri::http::HeaderMap::new(),
+        channels: Arc::new(Recorder(sent.clone())),
     }
 }
 
@@ -159,7 +170,7 @@ fn call_with(name: &str, invocation: Invocation) -> Reply {
         .iter()
         .find(|e| e.name == name)
         .unwrap_or_else(|| panic!("no command {name}"));
-    host_shim::async_runtime::block_on((entry.run)(invocation))
+    tauri::async_runtime::block_on((entry.run)(invocation))
 }
 
 fn json_of(reply: Reply) -> Value {
@@ -281,7 +292,7 @@ fn a_raw_body_and_headers_reach_the_command_and_bytes_come_back() {
     let mut inv = invocation(Value::Null, &Sent::default());
     inv.body = InvokeBody::Raw(b"abc".to_vec());
     inv.headers
-        .insert("x-name", http::HeaderValue::from_static("n:"));
+        .insert("x-name", tauri::http::HeaderValue::from_static("n:"));
     assert_eq!(call_with("raw_echo", inv), Reply::Raw(b"n:abc".to_vec()));
     // Called without a raw body: the command's own error.
     assert_eq!(
@@ -302,10 +313,9 @@ fn channels_are_bound_to_the_clients_ids() {
     );
     assert_eq!(json_of(reply), json!("main:100"));
     let sent = sent.lock().unwrap();
-    assert_eq!(sent.len(), 3);
     for (i, (id, body)) in sent.iter().take(2).enumerate() {
         assert_eq!(*id, 7);
-        let InvokeResponseBody::Json(text) = body else {
+        let Some(InvokeResponseBody::Json(text)) = body else {
             panic!("expected JSON");
         };
         assert_eq!(
@@ -314,7 +324,18 @@ fn channels_are_bound_to_the_clients_ids() {
         );
     }
     assert_eq!(sent[2].0, 8);
-    assert!(matches!(&sent[2].1, InvokeResponseBody::Raw(b) if b == &[1, 2, 3]));
+    assert!(matches!(&sent[2].1, Some(InvokeResponseBody::Raw(b)) if b == &[1, 2, 3]));
+    // The command returned and kept neither channel: each ended, once, after its messages.
+    assert_eq!(sent.len(), 5);
+    let mut ended: Vec<u32> = sent[3..]
+        .iter()
+        .map(|(id, body)| {
+            assert!(body.is_none());
+            *id
+        })
+        .collect();
+    ended.sort_unstable();
+    assert_eq!(ended, [7, 8]);
 }
 
 #[test]

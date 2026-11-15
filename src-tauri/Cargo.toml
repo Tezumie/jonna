@@ -11,17 +11,14 @@ default-run = "ide"
 name = "ide_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# The desktop app (a window, the web view).
-[[bin]]
-name = "ide"
-path = "src/main.rs"
-required-features = ["desktop"]
-
-# The windowless host: the same services, answering the same commands over a byte stream
-# (src/host/). Built with `--no-default-features --features host`.
+# The desktop app is `src/main.rs`, found as before (no entry here, so the framework's command
+# line sees the program it always saw). This is the windowless host: the same services, answering
+# the same commands over a byte stream (src/host/). Built with `--no-default-features --features
+# host`. Its file is outside `src/bin/` on purpose: the framework's command line bundles every
+# program it finds there.
 [[bin]]
 name = "ide-host"
-path = "src/bin/host.rs"
+path = "src/host_main.rs"
 required-features = ["host"]
 
 # Exactly one of the two (lib.rs refuses anything else). `desktop` compiles the code against the
@@ -41,7 +38,7 @@ desktop = [
   "dep:cairo-rs",
   "dep:webview2-com",
 ]
-host = ["dep:host-shim", "tokio/rt-multi-thread", "tokio/io-std"]
+host = ["dep:host-shim", "tokio/rt-multi-thread", "tokio/signal"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.3", features = [], optional = true }

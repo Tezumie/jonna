@@ -586,6 +586,7 @@ pub async fn agent_checkpoint_load(
     agent::checkpoint_load(&state.dirs.data, &session, turn)
 }
 
+#[cfg(feature = "desktop")]
 /// A file the user picked or dropped, to attach to an agent message (D131).
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -596,6 +597,7 @@ pub struct OutsideFile {
     pub is_dir: bool,
 }
 
+#[cfg(feature = "desktop")]
 fn outside_files(paths: &[std::path::PathBuf]) -> Vec<OutsideFile> {
     paths
         .iter()
@@ -662,6 +664,7 @@ pub async fn dropped_list(state: State<'_, AppState>) -> Result<Vec<OutsideFile>
     Ok(outside_files(&paths))
 }
 
+#[cfg(feature = "desktop")]
 /// Most bytes of one attached file.
 const MAX_ATTACH_BYTES: u64 = 20 * 1024 * 1024;
 

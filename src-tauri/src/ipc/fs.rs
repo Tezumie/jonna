@@ -492,6 +492,7 @@ pub async fn fs_dropped_entries(state: State<'_, AppState>) -> Result<Vec<Droppe
         .collect())
 }
 
+#[cfg(feature = "desktop")]
 #[derive(serde::Serialize)]
 pub struct DroppedEntry {
     path: String,

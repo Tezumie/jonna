@@ -10,12 +10,29 @@
 //! (a crash, or the last window of the session, which keeps its entry on purpose so the next
 //! start can restore it). `shell_command.rs` installs the command line in PATH.
 
+// The windowless host keeps only the clock and the file-argument type of this.
+#![cfg_attr(not(feature = "desktop"), allow(dead_code))]
+
+#[cfg(feature = "desktop")]
 pub mod client;
 #[cfg(target_os = "macos")]
 #[cfg(feature = "desktop")]
 pub mod dock_menu;
+#[cfg(feature = "desktop")]
 pub mod jump_list;
+#[cfg(feature = "desktop")]
 pub mod server;
+/// The windowless host is not a window: it has no entry in the registry of windows, and what
+/// its commands tell the registry goes nowhere (as in a window whose registry didn't start).
+#[cfg(not(feature = "desktop"))]
+pub mod server {
+    pub fn set_folder(_folder: Option<String>) {}
+
+    pub fn other_live_pids() -> Option<Vec<u32>> {
+        None
+    }
+}
+#[cfg(feature = "desktop")]
 pub mod shell_command;
 
 use std::io::{BufRead, BufReader, Write};

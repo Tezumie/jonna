@@ -39,7 +39,7 @@ mod fs;
 mod git;
 mod history;
 #[cfg(feature = "host")]
-pub mod host;
+mod host;
 mod index;
 mod instances;
 mod ipc;
@@ -250,6 +250,34 @@ impl AppState {
 #[cfg(feature = "desktop")]
 pub fn cli_forward() -> Option<i32> {
     instances::client::forward()
+}
+
+/// The windowless host program (`host/`): its exit code. The services start the program again
+/// for small jobs, as they start the desktop one (`main.rs`): each is answered first, before
+/// anything else runs.
+#[cfg(feature = "host")]
+pub fn host_program() -> i32 {
+    // A remote session's relay (remote/relay.rs, D252): runs a program there, exits with its code.
+    if let Some(code) = remote_relay() {
+        return code;
+    }
+    // Started by git or ssh as their sign-in prompt (git/askpass.rs): answer and exit.
+    if let Some(code) = askpass_client() {
+        return code;
+    }
+    // Started by an external agent as its stdio MCP server, bridging to the IDE's (D223).
+    if let Some(code) = mcp_stdio_proxy() {
+        return code;
+    }
+    // Started to send Ctrl+C to a program's console (lsp/ctrl_c.rs): done.
+    if let Some(code) = ctrl_c_helper() {
+        return code;
+    }
+    // Started from an npm script or another editor's terminal: what they set for their own
+    // programs isn't passed on to the ones the host starts (D192).
+    forget_npm_launcher();
+    forget_parent_editor();
+    host::main()
 }
 
 /// Started as the Ctrl+C helper (`lsp/ctrl_c.rs`, D229): the exit code after sending it.

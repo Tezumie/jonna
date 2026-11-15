@@ -1,0 +1,452 @@
+//! One client connection: frames in, commands run, frames out.
+//!
+//! The reader and the writer are threads of their own (the carriers are blocking streams); every
+//! frame to the client goes through the one writer, in the order it was queued. Requests run as
+//! tasks on the shared runtime, many at once, and answer in any order. A command that panics
+//! answers an error; the host keeps running.
+
+use std::collections::{HashMap, HashSet};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+
+use serde::Deserialize;
+use serde_json::Value;
+use tauri::host::{ChannelSink, CommandEntry, CommandFuture, Invocation, Reply};
+use tauri::ipc::{InvokeBody, InvokeResponseBody};
+use tauri::AppHandle;
+
+use super::frame::{read_frame, write_frame, Frame};
+
+/// The wire contract's version.
+pub const PROTOCOL: u64 = 1;
+
+/// The name commands see where the desktop gives them a window's label. The host's one client
+/// is the app's page, which the desktop calls "main" (what a reloaded page may stop, who owns
+/// a request).
+pub const CLIENT_LABEL: &str = "main";
+
+/// Frames read ahead of the dispatcher. With the cap on running requests below, this bounds
+/// what the host holds of what the client sent: when the host is behind, it stops reading and
+/// the stream itself pushes back on the client.
+const FRAMES_AHEAD: usize = 16;
+
+/// Requests running at once; more wait unread on the stream.
+const MAX_RUNNING: usize = 1024;
+
+/// The two ends of a client's byte stream.
+pub struct Carrier {
+    pub reader: Box<dyn Read + Send>,
+    pub writer: Box<dyn Write + Send>,
+    /// Ends the stream for good, so a reader blocked on it returns (a socket's shutdown).
+    pub hang_up: Box<dyn FnOnce() + Send>,
+}
+
+/// How a connection ended.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Ended {
+    /// The client asked the host to shut down (`$/shutdown`).
+    Shutdown,
+    /// The stream ended, or broke the protocol.
+    Closed,
+}
+
+enum Outgoing {
+    Frame {
+        header: String,
+        body: Vec<u8>,
+    },
+    /// Flush and stop writing: the connection is over.
+    Close,
+}
+
+/// What commands and channels share of the connection.
+struct Connection {
+    out: mpsc::Sender<Outgoing>,
+    alive: AtomicBool,
+    /// Channels the client no longer reads (`$/channelClose`).
+    closed_channels: Mutex<HashSet<u32>>,
+}
+
+impl Connection {
+    fn send(&self, header: String, body: Vec<u8>) -> bool {
+        self.alive.load(Ordering::SeqCst) && self.out.send(Outgoing::Frame { header, body }).is_ok()
+    }
+
+    fn reply(&self, id: u64, reply: Reply) {
+        let (header, body) = match reply {
+            Reply::Json(text) => (format!("{{\"id\":{id},\"result\":{text}}}"), Vec::new()),
+            Reply::Raw(bytes) => (format!("{{\"id\":{id},\"raw\":true}}"), bytes),
+            Reply::Error(text) => (format!("{{\"id\":{id},\"error\":{text}}}"), Vec::new()),
+        };
+        self.send(header, body);
+    }
+
+    /// Whether the client said it no longer reads `channel`.
+    fn closed_by_client(&self, channel: u32) -> bool {
+        self.closed_channels
+            .lock()
+            .map(|closed| closed.contains(&channel))
+            .unwrap_or(true)
+    }
+}
+
+impl ChannelSink for Connection {
+    /// A channel message. Fails once the client closed the channel or is gone, as a send fails
+    /// on the desktop when the page is gone.
+    fn send(&self, channel: u32, body: InvokeResponseBody) -> tauri::Result<()> {
+        if self.closed_by_client(channel) {
+            return Err(tauri::Error::ChannelClosed);
+        }
+        let (header, body) = match body {
+            InvokeResponseBody::Json(text) => (
+                format!("{{\"channel\":{channel},\"data\":{text}}}"),
+                Vec::new(),
+            ),
+            InvokeResponseBody::Raw(bytes) => {
+                (format!("{{\"channel\":{channel},\"raw\":true}}"), bytes)
+            }
+        };
+        if Connection::send(self, header, body) {
+            Ok(())
+        } else {
+            Err(tauri::Error::ChannelClosed)
+        }
+    }
+
+    /// The host holds the channel no more: the client may forget its id. Not said for a channel
+    /// the client closed itself (it already forgot it).
+    fn end(&self, channel: u32) {
+        if self.closed_by_client(channel) {
+            // Nothing refers to the id any more: forget that it was closed.
+            if let Ok(mut closed) = self.closed_channels.lock() {
+                closed.remove(&channel);
+            }
+            return;
+        }
+        Connection::send(
+            self,
+            format!("{{\"channel\":{channel},\"end\":true}}"),
+            Vec::new(),
+        );
+    }
+}
+
+/// A frame's header from the client.
+#[derive(Deserialize)]
+struct Incoming {
+    id: Option<Value>,
+    method: Option<String>,
+    params: Option<Value>,
+    #[serde(default)]
+    raw: bool,
+    headers: Option<HashMap<String, String>>,
+}
+
+/// A request's id: a positive integer.
+fn request_id(id: &Value) -> Option<u64> {
+    id.as_u64().filter(|id| *id > 0)
+}
+
+/// The same length and the same bytes, without stopping at the first difference.
+fn same_token(given: &str, expected: &str) -> bool {
+    let (given, expected) = (given.as_bytes(), expected.as_bytes());
+    given.len() == expected.len()
+        && given
+            .iter()
+            .zip(expected)
+            .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+            == 0
+}
+
+fn header_map(headers: Option<HashMap<String, String>>) -> Result<tauri::http::HeaderMap, String> {
+    let mut map = tauri::http::HeaderMap::new();
+    for (name, value) in headers.unwrap_or_default() {
+        let name = tauri::http::HeaderName::from_bytes(name.to_ascii_lowercase().as_bytes())
+            .map_err(|_| format!("invalid header name: {name}"))?;
+        let value = tauri::http::HeaderValue::from_str(&value)
+            .map_err(|_| format!("invalid value for header {name}"))?;
+        map.insert(name, value);
+    }
+    Ok(map)
+}
+
+/// Answers clients, one connection at a time.
+pub struct Server {
+    app: AppHandle,
+    commands: HashMap<&'static str, fn(Invocation) -> CommandFuture>,
+    /// The commands' names, as `$/hello` lists them.
+    names: Vec<&'static str>,
+    version: String,
+}
+
+impl Server {
+    pub fn new(app: AppHandle, table: &'static [CommandEntry], version: &str) -> Self {
+        Self {
+            app,
+            commands: table.iter().map(|entry| (entry.name, entry.run)).collect(),
+            names: table.iter().map(|entry| entry.name).collect(),
+            version: version.to_string(),
+        }
+    }
+
+    /// Serves one client until its stream ends or it asks for shutdown. `token`: what
+    /// `$/hello` must carry (a TCP client), `None` for the process's own pipes.
+    pub async fn serve(&self, carrier: Carrier, token: Option<&str>) -> Ended {
+        let Carrier {
+            reader,
+            writer,
+            hang_up,
+        } = carrier;
+        let (out, queued) = mpsc::channel::<Outgoing>();
+        let connection = Arc::new(Connection {
+            out,
+            alive: AtomicBool::new(true),
+            closed_channels: Mutex::new(HashSet::new()),
+        });
+        let writing = {
+            let connection = connection.clone();
+            std::thread::Builder::new()
+                .name("host-writer".into())
+                .spawn(move || write_loop(writer, queued, &connection))
+        };
+        let (frames, mut incoming) = tokio::sync::mpsc::channel(FRAMES_AHEAD);
+        let running = Arc::new(tokio::sync::Semaphore::new(MAX_RUNNING));
+        let reading = std::thread::Builder::new()
+            .name("host-reader".into())
+            .spawn(move || read_loop(reader, frames));
+        let ended = match (&writing, &reading) {
+            (Ok(_), Ok(_)) => {
+                let mut greeted = false;
+                loop {
+                    // A place for the next request first: none is read while all are taken.
+                    let Ok(place) = running.clone().acquire_owned().await else {
+                        break Ended::Closed;
+                    };
+                    let frame = match incoming.recv().await {
+                        Some(Ok(Some(frame))) => frame,
+                        // The stream ended between frames.
+                        Some(Ok(None)) | None => break Ended::Closed,
+                        Some(Err(e)) => {
+                            eprintln!("host: the connection broke: {e}");
+                            break Ended::Closed;
+                        }
+                    };
+                    match self.handle(&connection, frame, &mut greeted, token, place) {
+                        Next::Continue => {}
+                        Next::End(ended) => break ended,
+                    }
+                }
+            }
+            _ => {
+                eprintln!("host: couldn't start the connection's threads");
+                Ended::Closed
+            }
+        };
+        // What is queued (the answer to `$/shutdown`, an error) still goes out; then nothing.
+        let _ = connection.out.send(Outgoing::Close);
+        if let Ok(writing) = writing {
+            let _ = tokio::task::spawn_blocking(move || writing.join()).await;
+        }
+        connection.alive.store(false, Ordering::SeqCst);
+        hang_up();
+        ended
+    }
+
+    /// One frame from the client.
+    fn handle(
+        &self,
+        connection: &Arc<Connection>,
+        frame: Frame,
+        greeted: &mut bool,
+        token: Option<&str>,
+        place: tokio::sync::OwnedSemaphorePermit,
+    ) -> Next {
+        let message: Incoming = match serde_json::from_slice(&frame.header) {
+            Ok(message) => message,
+            Err(e) => {
+                eprintln!("host: a frame's header isn't a JSON object: {e}");
+                return Next::End(Ended::Closed);
+            }
+        };
+        let Some(method) = message.method else {
+            eprintln!("host: a frame without a method");
+            return Next::End(Ended::Closed);
+        };
+        let id = match &message.id {
+            None => None,
+            Some(id) => match request_id(id) {
+                Some(id) => Some(id),
+                None => {
+                    eprintln!("host: a request's id must be a positive integer");
+                    return Next::End(Ended::Closed);
+                }
+            },
+        };
+        if !*greeted {
+            // `$/hello` first, before anything else.
+            let Some(id) = id.filter(|_| method == "$/hello") else {
+                if let Some(id) = id {
+                    connection.reply(id, Reply::invalid("expected $/hello first"));
+                }
+                return Next::End(Ended::Closed);
+            };
+            let params = message.params.unwrap_or(Value::Null);
+            if params.get("protocol").and_then(Value::as_u64) != Some(PROTOCOL) {
+                connection.reply(
+                    id,
+                    Reply::invalid(&format!(
+                        "unsupported protocol (this host speaks {PROTOCOL})"
+                    )),
+                );
+                return Next::End(Ended::Closed);
+            }
+            if let Some(expected) = token {
+                let given = params.get("token").and_then(Value::as_str).unwrap_or("");
+                if !same_token(given, expected) {
+                    connection.reply(id, Reply::invalid("wrong token"));
+                    return Next::End(Ended::Closed);
+                }
+            }
+            *greeted = true;
+            connection.reply(
+                id,
+                Reply::Json(
+                    serde_json::json!({
+                        "protocol": PROTOCOL,
+                        "version": self.version,
+                        "os": std::env::consts::OS,
+                        "pid": std::process::id(),
+                        "commands": self.names,
+                    })
+                    .to_string(),
+                ),
+            );
+            return Next::Continue;
+        }
+        let Some(id) = id else {
+            // A notification.
+            if method == "$/channelClose" {
+                let channel = message
+                    .params
+                    .as_ref()
+                    .and_then(|p| p.get("channel"))
+                    .and_then(Value::as_u64)
+                    .and_then(|c| u32::try_from(c).ok());
+                if let (Some(channel), Ok(mut closed)) =
+                    (channel, connection.closed_channels.lock())
+                {
+                    closed.insert(channel);
+                }
+            }
+            return Next::Continue;
+        };
+        match method.as_str() {
+            "$/shutdown" => {
+                connection.reply(id, Reply::Json("null".into()));
+                return Next::End(Ended::Shutdown);
+            }
+            "$/hello" => {
+                connection.reply(id, Reply::invalid("$/hello was already answered"));
+                return Next::Continue;
+            }
+            _ => {}
+        }
+        let Some(run) = self.commands.get(method.as_str()).copied() else {
+            connection.reply(id, Reply::invalid(&format!("unknown command: {method}")));
+            return Next::Continue;
+        };
+        let (params, body, headers) = if message.raw {
+            match header_map(message.headers) {
+                Ok(headers) => (Value::Null, InvokeBody::Raw(frame.body), headers),
+                Err(e) => {
+                    connection.reply(id, Reply::invalid(&e));
+                    return Next::Continue;
+                }
+            }
+        } else {
+            let params = match message.params {
+                None | Some(Value::Null) => Value::Object(serde_json::Map::new()),
+                Some(params @ Value::Object(_)) => params,
+                Some(_) => {
+                    connection.reply(id, Reply::invalid("params must be an object"));
+                    return Next::Continue;
+                }
+            };
+            (
+                params.clone(),
+                InvokeBody::Json(params),
+                tauri::http::HeaderMap::new(),
+            )
+        };
+        let invocation = Invocation {
+            app: self.app.clone(),
+            client: Arc::from(CLIENT_LABEL),
+            params,
+            body,
+            headers,
+            channels: connection.clone(),
+        };
+        let connection = connection.clone();
+        tokio::spawn(async move {
+            // A task of its own, so a panic inside the command ends only the command.
+            let reply = match tokio::spawn(run(invocation)).await {
+                Ok(reply) => reply,
+                Err(e) => tauri::host::reply_panic(&e.to_string()),
+            };
+            connection.reply(id, reply);
+            drop(place);
+        });
+        Next::Continue
+    }
+}
+
+enum Next {
+    Continue,
+    End(Ended),
+}
+
+type ReadResult = std::io::Result<Option<Frame>>;
+
+fn read_loop(reader: Box<dyn Read + Send>, frames: tokio::sync::mpsc::Sender<ReadResult>) {
+    let mut reader = BufReader::with_capacity(64 * 1024, reader);
+    loop {
+        let frame = read_frame(&mut reader);
+        let last = !matches!(frame, Ok(Some(_)));
+        if frames.blocking_send(frame).is_err() || last {
+            return;
+        }
+    }
+}
+
+fn write_loop(
+    writer: Box<dyn Write + Send>,
+    queued: mpsc::Receiver<Outgoing>,
+    connection: &Connection,
+) {
+    let mut writer = BufWriter::with_capacity(64 * 1024, writer);
+    let mut next = queued.recv().ok();
+    while let Some(Outgoing::Frame { header, body }) = next {
+        if write_frame(&mut writer, header.as_bytes(), &body).is_err() {
+            break;
+        }
+        // Flushed whenever nothing more is waiting, so a burst goes out in few writes.
+        next = match queued.try_recv() {
+            Ok(message) => Some(message),
+            Err(mpsc::TryRecvError::Empty) => {
+                if writer.flush().is_err() {
+                    break;
+                }
+                queued.recv().ok()
+            }
+            Err(mpsc::TryRecvError::Disconnected) => None,
+        };
+    }
+    let _ = writer.flush();
+    // The client is gone, or the connection is over: later sends fail.
+    connection.alive.store(false, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+#[path = "server_tests.rs"]
+mod tests;

@@ -13,9 +13,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::AppHandle;
-#[cfg(feature = "desktop")]
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 use super::{alive, now_ms, read_entries, restorable_folders, Entry, FileArg, Reply, Request};
 use crate::error::{Error, Result};
@@ -403,10 +401,6 @@ fn deliver(event: OpenEvent) {
 }
 
 fn bring_to_front(app: &AppHandle) {
-    // The windowless host has no window (and never starts this registry).
-    #[cfg(not(feature = "desktop"))]
-    let _ = app;
-    #[cfg(feature = "desktop")]
     // The window, not the webview window: once a browser tab shows a site inside it (a second
     // webview), "main" is no longer a single-webview window.
     if let Some(window) = app.get_window("main") {

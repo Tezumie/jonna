@@ -299,6 +299,7 @@ pub async fn app_windows_alive(
     .map_err(|e| Error::Exec(e.to_string()))
 }
 
+#[cfg(feature = "desktop")]
 /// The folder as a window's registration names it (canonical, D209), else as given.
 fn canonical_folder(folder: &str) -> String {
     // A network folder is compared as given: touching it makes Windows connect (D161).
@@ -311,6 +312,7 @@ fn canonical_folder(folder: &str) -> String {
         .unwrap_or_else(|_| folder.to_string())
 }
 
+#[cfg(feature = "desktop")]
 /// The windows this process started with a tag, by tag (D207).
 mod windows {
     use std::process::Child;

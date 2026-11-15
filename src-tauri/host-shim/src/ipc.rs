@@ -90,12 +90,28 @@ impl<'a> Request<'a> {
 }
 
 type OnMessage = dyn Fn(InvokeResponseBody) -> Result<()> + Send + Sync;
+type OnEnd = dyn Fn() + Send + Sync;
+
+/// What every clone of a channel shares. Dropped with the last clone: nothing more will ever be
+/// sent, which `on_end` reports.
+struct Shared {
+    on_message: Box<OnMessage>,
+    on_end: Option<Box<OnEnd>>,
+}
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        if let Some(on_end) = &self.on_end {
+            on_end();
+        }
+    }
+}
 
 /// A stream of messages from a command to the client, in send order. Cloning it gives another
 /// handle to the same stream.
 pub struct Channel<TSend = InvokeResponseBody> {
     id: u32,
-    on_message: Arc<OnMessage>,
+    shared: Arc<Shared>,
     phantom: PhantomData<fn(TSend)>,
 }
 
@@ -103,7 +119,7 @@ impl<TSend> Clone for Channel<TSend> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
-            on_message: self.on_message.clone(),
+            shared: self.shared.clone(),
             phantom: PhantomData,
         }
     }
@@ -121,17 +137,29 @@ impl<TSend> Channel<TSend> {
     where
         F: Fn(InvokeResponseBody) -> Result<()> + Send + Sync + 'static,
     {
-        Self::with_id(0, on_message)
+        Self {
+            id: 0,
+            shared: Arc::new(Shared {
+                on_message: Box::new(on_message),
+                on_end: None,
+            }),
+            phantom: PhantomData,
+        }
     }
 
-    /// A channel bound to the id the client chose.
-    pub fn with_id<F>(id: u32, on_message: F) -> Self
+    /// A channel bound to the id the client chose. `on_end` runs once, when the last clone is
+    /// dropped.
+    pub fn bound<F, E>(id: u32, on_message: F, on_end: E) -> Self
     where
         F: Fn(InvokeResponseBody) -> Result<()> + Send + Sync + 'static,
+        E: Fn() + Send + Sync + 'static,
     {
         Self {
             id,
-            on_message: Arc::new(on_message),
+            shared: Arc::new(Shared {
+                on_message: Box::new(on_message),
+                on_end: Some(Box::new(on_end)),
+            }),
             phantom: PhantomData,
         }
     }
@@ -145,6 +173,6 @@ impl<TSend> Channel<TSend> {
     where
         TSend: IpcResponse,
     {
-        (self.on_message)(data.body()?)
+        (self.shared.on_message)(data.body()?)
     }
 }
