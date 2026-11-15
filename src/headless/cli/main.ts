@@ -5,10 +5,8 @@ import { product } from "../../core/product";
 import { type CliArgs, decideMode, parseArgs, type Terminals, UsageError } from "./args";
 import { helpText } from "./help";
 import { leave, processIo } from "./io";
+import { cliName } from "./name";
 import { EXIT } from "./output";
-
-/** The launcher's name: the product's short name, lower-cased (the build names the files so). */
-export const cliName = (): string => product.nameShort.toLowerCase();
 
 export async function main(argv: readonly string[]): Promise<never> {
   const io = processIo();

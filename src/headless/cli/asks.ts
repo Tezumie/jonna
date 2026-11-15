@@ -256,7 +256,10 @@ export class Asks {
         pick: ({ placeholder, items }) => this.pick(placeholder, items),
         prompt: (options) =>
           this.text(options.prompt, {
-            ...(options.password && { secret: true }),
+            // A key or a password is never shown as typed, whether or not the asker said so.
+            ...((options.password || /api key|password|token|secret/i.test(options.prompt)) && {
+              secret: true,
+            }),
             ...(options.value !== undefined && { value: options.value }),
           }),
       },

@@ -189,7 +189,7 @@ export class EventRenderer {
       }
       case "edit": {
         this.flush();
-        const state = event.state === "proposed" ? "waits for review" : "written";
+        const state = event.state === "proposed" ? "proposed" : "written";
         this.out(`${style.dim(`${corner}${sanitize(event.path)}:${event.line} ${state}`)}\n`);
         this.block = "tool";
         return;

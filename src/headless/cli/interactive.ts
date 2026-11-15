@@ -18,6 +18,7 @@ import { limitsOf, policyOf } from "./config";
 import { countsText, diffCounts, unifiedDiff } from "./diffText";
 import type { Io } from "./io";
 import { ConfigError, openChat, start } from "./launch";
+import { cliName } from "./name";
 import { EXIT, endNote, money, tokens } from "./output";
 import { Prompter } from "./prompter";
 import { EventRenderer } from "./render";
@@ -47,7 +48,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
   const asks = new Asks(prompter, style);
   const say = (text = "") => prompter.line(text);
   const policy: UnattendedPolicy = policyOf(args, true);
-  const name = product.nameShort.toLowerCase();
+  const name = cliName();
 
   let brain: HostedBrain;
   let folder: string;
@@ -89,6 +90,8 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
   let quitting = false;
   let exitCode: number = EXIT.ok;
   let lastInterrupt = 0;
+  /** The last Ctrl+C stopped a turn (and nothing was typed since). */
+  let stoppedTurn = false;
   let hostGone: string | null = null;
   const multi = new MultiLine();
 
@@ -135,7 +138,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
     if (!files.length) return;
     say(
       style.yellow(
-        `${files.length} file${files.length === 1 ? "" : "s"} wait${files.length === 1 ? "s" : ""} for review: /diff shows, /accept keeps, /reject drops.`,
+        `${files.length} file${files.length === 1 ? "" : "s"} wait${files.length === 1 ? "s" : ""} for review: /diff shows the changes, /accept keeps them, /reject puts the old text back.`,
       ),
     );
   };
@@ -306,7 +309,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
             [
               `Access: ${style.bold(accessMode())}`,
               style.dim(
-                "ask (edits wait for review, commands ask) · accept-edits (edits are written, commands ask) · auto (commands run, risky ones ask) · full-access (nothing asks)",
+                "ask (edits wait for your review, commands ask) · accept-edits (edits are accepted, commands ask) · auto (commands run, risky ones ask) · full-access (nothing asks)",
               ),
               ...(policy.allow?.length ? [style.dim(`--allow: ${policy.allow.join(", ")}`)] : []),
               ...(policy.deny?.length ? [style.dim(`--deny: ${policy.deny.join(", ")}`)] : []),
@@ -389,6 +392,40 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
         );
         return true;
       }
+      case "key": {
+        const providers = brain.agent.providers.statuses.peek();
+        if (!providers.length) {
+          say(style.yellow("No provider is set up. Add one in the settings (agent.providers)."));
+          return true;
+        }
+        const chosen = rest
+          ? pick(rest, providers, (p) => [p.id, p.name])
+          : providers.length === 1
+            ? providers[0]
+            : null;
+        if (!chosen) {
+          say(
+            `${rest ? style.red(`No provider matches "${rest}". `) : ""}Providers: ${providers.map((p) => `${p.id}${p.state === "ok" ? "" : style.dim(` (${p.state})`)}`).join(", ")}
+${style.dim("Store a key with /key <provider>. Keys in the environment (ANTHROPIC_API_KEY…) work without this.")}`,
+          );
+          return true;
+        }
+        // The app's own command: the key goes to its store (the keychain where there is one),
+        // typed unseen, and is never shown again.
+        const stored = await brain.execute<{ stored?: boolean } | null>("agent.setApiKey", {
+          provider: chosen.id,
+        });
+        say(
+          style.dim(
+            stored === null
+              ? "Nothing changed."
+              : stored.stored
+                ? `Key stored for ${chosen.id}.`
+                : `Key removed for ${chosen.id}.`,
+          ),
+        );
+        return true;
+      }
       case "diff": {
         const files = chat.session.changeset.files.peek();
         if (!files.length) {
@@ -463,6 +500,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
       }
       say(style.dim("Stopping… (Ctrl+C again to quit)"));
       prompter.cancelAsks();
+      stoppedTurn = true;
       chat.stop("you pressed Ctrl+C");
       return;
     }
@@ -476,7 +514,8 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
       lastInterrupt = 0;
       return;
     }
-    if (again) quit(EXIT.ok);
+    // Right after stopping a turn, the second one is the "twice" that quits an interrupted run.
+    if (again) quit(stoppedTurn ? EXIT.interrupted : EXIT.ok);
     else say(style.dim("(Ctrl+C again to quit, or /exit)"));
   };
   // A signal from outside (kill, a closed terminal) ends the session in order.
@@ -533,6 +572,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
         );
       }
       if (line === null) break;
+      stoppedTurn = false;
       const message = multi.add(line);
       if (message === null) continue;
       if (message.includes("\n")) prompter.remember(message.replace(/\n/g, " "));

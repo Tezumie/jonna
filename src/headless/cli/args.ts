@@ -291,7 +291,7 @@ export const FLAGS: readonly FlagSpec[] = [
   {
     name: "review",
     kind: "boolean",
-    help: "Hold edits for review instead of writing them (one shot writes them by default).",
+    help: "Keep edits under review (accept or reject them later); one shot accepts them by default.",
     on: SESSION_HOSTS,
     set: (a) => {
       a.review = true;

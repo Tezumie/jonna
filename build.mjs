@@ -36,6 +36,11 @@ if (args.has("--headless")) {
  * registered and never made without a screen. Stylesheets, fonts and images are left out.
  */
 async function buildHeadless() {
+  // The command line's name: the product's short name in lower case, or `--cli-name=<name>`.
+  const productJson = JSON.parse(await readFile(join(root, "product.json"), "utf8"));
+  const cliName =
+    process.argv.find((a) => a.startsWith("--cli-name="))?.slice("--cli-name=".length) ||
+    String(productJson.nameShort).toLowerCase();
   await rm(headlessOutdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await mkdir(headlessOutdir, { recursive: true });
   /** @type {import("esbuild").BuildOptions} */
@@ -48,7 +53,7 @@ async function buildHeadless() {
     format: "esm",
     target: "node20",
     outExtension: { ".js": ".mjs" },
-    define: { __DEV__: JSON.stringify(devFeatures) },
+    define: { __DEV__: JSON.stringify(devFeatures), __CLI_NAME__: JSON.stringify(cliName) },
     legalComments: prod ? "external" : "inline",
     logLevel: "info",
     loader: { ".svg": "text", ".css": "empty", ".ttf": "empty", ".woff2": "empty" },
@@ -116,7 +121,7 @@ async function buildHeadless() {
       outdir: headlessOutdir,
     }),
   ]);
-  await writeLaunchers();
+  await writeLaunchers(cliName);
   await mkdir(join(root, ".build-meta"), { recursive: true });
   await writeFile(
     join(root, ".build-meta/headless-meta.json"),
@@ -125,28 +130,27 @@ async function buildHeadless() {
 }
 
 /**
- * The command line's launchers, in dist-headless/bin/, named after the product (product.json's
+ * The command line's launchers, in dist-headless/bin/, named `name` (by default product.json's
  * short name, lower-cased): a `.cmd` for Windows (cmd.exe and PowerShell both run it; no `.ps1`,
  * which the default execution policy refuses) and a shell script for everything else. Each
  * starts `node` on cli.mjs one folder up and passes the arguments and the exit code through.
  */
-async function writeLaunchers() {
-  const productJson = JSON.parse(await readFile(join(root, "product.json"), "utf8"));
-  const name = String(productJson.nameShort).toLowerCase();
+async function writeLaunchers(name) {
   const bin = join(headlessOutdir, "bin");
   await mkdir(bin, { recursive: true });
   const missing =
     'Node.js 20 or newer is needed, and "node" was not found on PATH. Install it from https://nodejs.org and try again.';
-  // 9009 is cmd.exe's own code for a program it couldn't find. The script ends on node's line
-  // otherwise, so node's exit code is the script's.
+  // 9009 is cmd.exe's own code for a program it couldn't find. The exit code is passed on by
+  // name: a script that ends on an `if` leaves 0 behind when it ran through `cmd /c`.
   const cmd = [
     "@echo off",
     "setlocal",
     'node "%~dp0..\\cli.mjs" %*',
-    "if errorlevel 9009 if not errorlevel 9010 (",
+    "if %errorlevel% equ 9009 (",
     `  echo ${missing.replaceAll('"', "")} 1>&2`,
     "  exit /b 2",
     ")",
+    "exit /b %errorlevel%",
     "",
   ].join("\r\n");
   await writeFile(join(bin, `${name}.cmd`), cmd);

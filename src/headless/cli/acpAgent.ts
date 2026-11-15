@@ -24,6 +24,7 @@ import type { CliArgs } from "./args";
 import { EFFORTS, limitsOf, policyOf } from "./config";
 import type { Io } from "./io";
 import { openChat, start } from "./launch";
+import { cliName } from "./name";
 import { EXIT } from "./output";
 import { toolBrief } from "./render";
 import { disposeSoon } from "./serve";
@@ -32,11 +33,11 @@ import { disposeSoon } from "./serve";
 type AcpModeId = AccessMode | "plan";
 
 const MODES: readonly { id: AcpModeId; name: string; description: string }[] = [
-  { id: "ask", name: "Ask", description: "Edits wait for your review; commands ask first" },
+  { id: "ask", name: "Ask", description: "Edits are kept for your review; commands ask first" },
   {
     id: "accept-edits",
     name: "Accept edits",
-    description: "Edits are written; commands ask first",
+    description: "Edits are accepted; commands ask first",
   },
   { id: "auto", name: "Auto", description: "Commands run; risky ones still ask" },
   { id: "full-access", name: "Full access", description: "Nothing asks" },
@@ -498,7 +499,7 @@ export async function runAcp(args: CliArgs, io: Io): Promise<number> {
         mcpCapabilities: { http: true, sse: false },
       },
       agentInfo: {
-        name: product.nameShort.toLowerCase(),
+        name: cliName(),
         title: product.nameLong,
         version: product.version,
       },

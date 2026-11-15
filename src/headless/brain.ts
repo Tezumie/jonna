@@ -209,6 +209,11 @@ export async function startBrain(options: BrainOptions): Promise<Brain> {
     ...(options.ideServer !== true && { "mcp.enabled": false, "mcp.claudeCode.enabled": false }),
     // Fetching in the background is for a window somebody keeps open; a run fetches when asked.
     "git.autofetch": false,
+    // The agent's own upkeep (tidying its memory in a chat of its own, and suggesting it) is
+    // the app's: a run would start model work nobody asked for, and leave a chat behind that
+    // the folder's "last chat" then is.
+    "agent.memory.autoTidyUp": false,
+    "agent.memory.suggestTidyUp": false,
     ...mode?.settings,
     ...options.settings,
   };

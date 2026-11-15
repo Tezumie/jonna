@@ -157,9 +157,9 @@ export async function runOneShot(args: CliArgs, io: Io, tty: Terminals): Promise
     else io.out(textResult(result));
     const note = endNote(result);
     if (note) io.err(`${errStyle.yellow(note)}\n`);
-    if (result.pending.length && format === "text")
+    if (result.pending.length)
       io.err(
-        `${errStyle.dim(`${result.pending.length} file(s) wait for review: ${result.pending.join(", ")} (open the chat in the app, or run a session and /accept).`)}\n`,
+        `${errStyle.dim(`${result.pending.length} file(s) changed and wait for review: ${result.pending.join(", ")} (accept or reject them in the app, or in a session: --resume ${result.session}, then /accept or /reject).`)}\n`,
       );
     if (args.verbose)
       io.err(

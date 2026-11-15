@@ -19,9 +19,11 @@ export function policyOf(args: CliArgs, ask: boolean): UnattendedPolicy {
 }
 
 /**
- * Whether edits are held for review. `--review`: yes. Else the access mode's own answer when one
- * was given (ask: held, as in the app; the others: written). Else, in a one-shot run, written
- * (nobody is there to review); in a session, undefined: the app's own choice for this folder.
+ * Whether edits stay under review (written to the files as in the app, and kept or put back
+ * when the person accepts or rejects them). `--review`: yes. Else the access mode's own answer
+ * when one was given (ask: reviewed; the others: accepted at once). Else, in a one-shot run,
+ * accepted at once (nobody is there to review); in a session, undefined: the app's own choice
+ * for this folder.
  */
 export function reviewOf(args: CliArgs, oneShot: boolean): boolean | undefined {
   if (args.review) return true;

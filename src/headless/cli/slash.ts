@@ -34,9 +34,10 @@ export const FRONT_COMMANDS: readonly FrontCommand[] = [
   { name: "compact", hint: "[focus]", description: "Summarize the conversation to free context" },
   { name: "cost", aliases: ["usage"], description: "Tokens and cost of this chat" },
   { name: "status", description: "The model, mode, folder and chat" },
-  { name: "diff", description: "The edits waiting for review" },
-  { name: "accept", hint: "[path]", description: "Keep the edits waiting for review" },
-  { name: "reject", hint: "[path]", description: "Drop the edits waiting for review" },
+  { name: "key", hint: "[provider]", description: "Store a provider's API key (typed unseen)" },
+  { name: "diff", description: "The changes waiting for review" },
+  { name: "accept", hint: "[path]", description: "Keep the changes under review" },
+  { name: "reject", hint: "[path]", description: "Put back what the files held before them" },
   { name: "exit", aliases: ["quit", "q"], description: "End the session" },
 ];
 

@@ -11,6 +11,11 @@ if (!(major >= MINIMUM_NODE)) {
   process.exit(2);
 }
 
+// Standard output is the answer's (or a protocol's): what anything loaded logs goes to stderr.
+console.log = console.error;
+console.info = console.error;
+console.debug = console.error;
+
 // A failure nobody caught is a bug: say it once, plainly, and leave with the failure code.
 process.on("uncaughtException", (error: NodeJS.ErrnoException) => {
   // Writing to a pipe whose reader left (`| head`) isn't one.

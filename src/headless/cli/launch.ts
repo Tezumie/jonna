@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { product } from "../../core/product";
 import { parseJsoncOrThrow } from "../../core/settings/jsonc";
 import { externalAgents } from "../../extensions/agent/acpAgents";
+import { modeSettings } from "../../extensions/agent/unattended";
 import type { BrainChat, HeadlessPolicy, HostedBrain, UnattendedPolicy } from "../run";
 import type { CliArgs } from "./args";
 import { type KnownAgents, modelChoice, reviewOf } from "./config";
@@ -152,7 +153,12 @@ export async function start(args: CliArgs, options: StartOptions): Promise<Start
     return path;
   });
   const hostBinary = findHost(args.host);
-  const settings = { ...runSettings(args.settings), ...options.settings };
+  // A flag of its own wins over --settings: the access mode's settings go on top of it.
+  const settings = {
+    ...runSettings(args.settings),
+    ...(options.policy.mode && modeSettings(options.policy.mode).settings),
+    ...options.settings,
+  };
   const { openBrain, onFailedCall } = await import("../run");
   if (options.log) {
     const log = options.log;
@@ -237,10 +243,20 @@ export async function openChat(
   session?: string,
 ): Promise<OpenedChat> {
   const needNames = args.model !== undefined || args.agent !== undefined;
-  const choice = modelChoice(
-    args,
-    needNames ? await knownAgents(brain) : { external: [], custom: [] },
-  );
+  let choice: ReturnType<typeof modelChoice> | null = null;
+  // The user's agents are read from their files just after the start: a name that isn't known
+  // yet gets a moment before it is an error.
+  for (const started = Date.now(); !choice; ) {
+    try {
+      choice = modelChoice(
+        args,
+        needNames ? await knownAgents(brain) : { external: [], custom: [] },
+      );
+    } catch (err) {
+      if (!args.agent || Date.now() - started > 4000) throw err;
+      await new Promise((done) => setTimeout(done, 150));
+    }
+  }
   if (Object.keys(choice.settings).length) brain.override(choice.settings);
   const id = session ?? (typeof args.resume === "string" ? args.resume : args.sessionId);
   const review = reviewOf(args, oneShot);

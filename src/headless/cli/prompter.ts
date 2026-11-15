@@ -209,6 +209,9 @@ export class Prompter {
       if (waiting.secret) {
         this.muted = false;
         this.out.write("\n");
+      } else if (!this.isTTY) {
+        // A pipe echoes nothing: the transcript shows what was entered after its prompt.
+        this.out.write(`${line}\n`);
       }
       this.shown = null;
       this.atLineStart = true;

@@ -61,8 +61,9 @@ Usage:
   <command> | ${name} exec [-] [options]
 
 The answer is printed on standard output; what the agent does on the way goes to standard error
-(when that is a terminal, or with --verbose). Edits are written directly unless --review; a
-question nobody can answer is refused (see --permission-mode, --allow).
+(when that is a terminal, or with --verbose). Edits are accepted as they are made unless
+--review keeps them for you to accept or reject; a question nobody can answer is refused (see
+--permission-mode, --allow).
 
 Options:
 ${flagLines("exec")}
