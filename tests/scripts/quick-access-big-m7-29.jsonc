@@ -3,6 +3,11 @@
 // command palette opens. Each step logs its time (measured: about 0.1 s, no long task).
 {
   "name": "quick-access-big-m7-29",
+  // Not on CI for Windows: writing the 20 000 files takes longer than the whole run may (240 s)
+  // on its disk. CI for Linux and a local run still do.
+  "skipOnCi": ["win32"],
+  // Writing the files alone can take longer than a run's usual 240 s on Windows.
+  "testTimeout": 900,
   "steps": [
     { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
     {

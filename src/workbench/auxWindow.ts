@@ -26,6 +26,8 @@ export interface AuxWindow extends Disposable {
 }
 
 let counter = 0;
+/** A new window waits this long at most for its stylesheets before a view moves in. */
+const STYLES_WAIT_MS = 2000;
 
 export class AuxWindowService implements Disposable {
   private readonly open = new Set<AuxWindow>();
@@ -91,6 +93,24 @@ export class AuxWindowService implements Disposable {
       copy.parentNode?.removeChild(copy);
     };
     for (const node of Array.from(document.head.children)) mirror(node);
+    // The linked stylesheets load a moment later. A view moved in before that is laid out
+    // unstyled and jumps once they apply: a click sent to the page then (browser.click right
+    // after layout.moveToNewWindow) went to where its frame had been. Waited for, briefly.
+    await Promise.race([
+      Promise.all(
+        Array.from(copies.values())
+          .filter((copy): copy is HTMLLinkElement => copy instanceof HTMLLinkElement)
+          .filter((link) => !link.sheet)
+          .map(
+            (link) =>
+              new Promise<void>((done) => {
+                link.addEventListener("load", () => done(), { once: true });
+                link.addEventListener("error", () => done(), { once: true });
+              }),
+          ),
+      ),
+      new Promise<void>((done) => setTimeout(done, STYLES_WAIT_MS)),
+    ]);
     const headObserver = new MutationObserver((records) => {
       for (const r of records) {
         for (const n of Array.from(r.removedNodes)) unmirror(n);

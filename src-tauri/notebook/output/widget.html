@@ -101,6 +101,8 @@
   </head>
   <body>
     <div id="out"></div>
+    <!-- Both are put into the page itself when it is written (ipc/process.rs,
+         inline_widget_scripts): 'self' matches nothing in a sandboxed frame on WebKit. -->
     <script src="harden.js"></script>
     <script src="widget.js"></script>
   </body>

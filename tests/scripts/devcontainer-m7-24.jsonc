@@ -3,10 +3,11 @@
 // is started with the folder mounted (copied there) and its postCreateCommand run, then this
 // window works inside it through `docker exec` (files, a terminal), Reopen folder locally goes
 // back, and reopening finds the same container again by its labels. Windows with a WSL
-// distribution named Ubuntu only (like remote-wsl-m7-18).
+// distribution named Ubuntu only (like remote-wsl-m7-18): skipped without that distribution
+// ("wsl:Ubuntu"), since wsl.exe itself is on every Windows machine, CI included.
 {
   "name": "devcontainer-m7-24",
-  "requires": ["wsl"],
+  "requires": ["wsl:Ubuntu"],
   "platforms": ["win32"],
   "fakeDocker": true,
   "steps": [

@@ -27,10 +27,19 @@
       "timeoutMs": 10000
     },
     { "wait": 1500 },
+    { "state": "ide://workspace", "save": "ws" },
     { "run": "workspace.closeFolder", "expect": { "closed": true } },
+    // What the extension host sends while it follows a notebook (a read of its cells) can arrive
+    // after the close: it is refused, where it used to open the notebook again (seen on CI).
+    {
+      "run": "notebook.read",
+      "input": { "path": "${ws.root}/nb/close.ipynb", "ifOpen": true },
+      "expectError": "open"
+    },
     { "wait": 4000 },
     { "state": "ide://notebook", "print": true },
-    { "state": "ide://notebook", "expect": { "open": [] } },
+    // No notebook is open (`[]` alone matched any list: expectations match partially).
+    { "state": "ide://notebook", "expect": { "open": { "$length": 0 }, "active": null } },
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".notebook-editor", "limit": 5 },

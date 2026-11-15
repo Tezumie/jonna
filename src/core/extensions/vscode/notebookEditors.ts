@@ -507,11 +507,20 @@ export function createNotebookEditors(
     else if (!nb.notebookType && notebookType) nb.notebookType = vscodeNotebookType(notebookType);
     return nb;
   };
-  const read = (path: string) =>
-    ide.commands.execute<NotebookRead>("notebook.read", { path, metadata: true, outputs: true });
+  // `ifOpen`: following a notebook that is open (its changes, the ones open at the start). Such a
+  // read can arrive after the notebook closed (the host is another process): it must not open it
+  // again, which put a notebook back on screen after Close folder. Only a read an extension asked
+  // for (openNotebookDocument, an edit) opens one.
+  const read = (path: string, ifOpen = false) =>
+    ide.commands.execute<NotebookRead>("notebook.read", {
+      path,
+      metadata: true,
+      outputs: true,
+      ...(ifOpen && { ifOpen: true }),
+    });
   /** Reads its cells again; the changes go to onDidChangeNotebookDocument. */
   const refresh = async (nb: ShimNotebook, fire = true) => {
-    const changes = nb.update(await read(nb.path));
+    const changes = nb.update(await read(nb.path, true));
     if (fire && (changes.contentChanges.length || changes.cellChanges.length || changes.metadata))
       onDidChange.fire({ notebook: nb, ...changes });
   };
@@ -670,7 +679,7 @@ export function createNotebookEditors(
     } | null;
     await Promise.all(
       (state?.open ?? []).map(async (path) => {
-        const r = await read(path).catch(() => null);
+        const r = await read(path, true).catch(() => null);
         if (r) known(r.path, r.type).update(r);
       }),
     );

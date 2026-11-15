@@ -336,8 +336,9 @@ D334: inline widgets, like Claude Code's `show_widget` / `read_me`: `widgetTools
 `show_widget` (`title`, `widget_code`, `loading_messages`; `<svg` first → SVG, else HTML) and
 `widget_guide` (the design rules, a tool of its own so they aren't in every request), parsed by
 `core/agent/widgets.ts`. `view/widgetCard.ts` draws the card: one element per chat view, so the
-frame never reloads on a re-render; the frame is `src-tauri/notebook/output/widget.html` on the
-notebook outputs' local origin, sandboxed (`allow-scripts` only) under a policy with no network,
+frame never reloads on a re-render; the frame is `src-tauri/notebook/output/widget.html` (written
+with `harden.js` and `widget.js` inside it: `'self'` matches nothing in a sandboxed frame on
+WebKit, so scripts loaded by address never ran on Linux) on the notebook outputs' local origin, sandboxed (`allow-scripts` only) under a policy with no network,
 themed with the IDE's tokens (refreshed on theme change), sized by its height messages (max
 900px, then it scrolls). `sendPrompt(text)` posts to the chat, accepted only while the frame has
 focus (a click in it) and rate-limited (1.5 s apart, 6 a minute, in the frame and in the

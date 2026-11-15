@@ -181,12 +181,15 @@ export function registerNotebooks(
   const resolve = (path: string) =>
     isUntitled(path) || !workspace.root.peek() ? path : workspace.resolve(path);
 
-  /** The notebook a command is for: `path` (opened if needed), else the active tab's. */
-  const target = async (path?: string): Promise<NotebookView> => {
+  /**
+   * The notebook a command is for: `path` (opened if needed, unless `ifOpen`), else the active
+   * tab's.
+   */
+  const target = async (path?: string, ifOpen = false): Promise<NotebookView> => {
     if (path) {
       const full = resolve(path);
       let view = findNotebook(full);
-      if (!view && isUntitled(full)) throw new Error(`${path} isn't open.`);
+      if (!view && (ifOpen || isUntitled(full))) throw new Error(`${path} isn't open.`);
       if (!view) {
         await dispatcher.execute("editor.openFile", { path: full, preview: false });
         for (let i = 0; i < 60 && !findNotebook(full); i++)
@@ -657,16 +660,20 @@ export function registerNotebooks(
     id: "notebook.read",
     title: "Read notebook",
     description:
-      "A notebook's cells: id, kind, source, execution count and outputs as text (images by type). Opens it if needed. `metadata`: the notebook's and each cell's metadata and language too; `outputs`: each code cell's outputs as nbformat (`outputs`, images as base64) besides the text.",
+      "A notebook's cells: id, kind, source, execution count and outputs as text (images by type). Opens it if needed (`ifOpen`: fails instead when it isn't open). `metadata`: the notebook's and each cell's metadata and language too; `outputs`: each code cell's outputs as nbformat (`outputs`, images as base64) besides the text.",
     input: s.object({
       path: where.path,
       metadata: s.boolean().optional(),
       outputs: s.boolean().optional(),
+      ifOpen: s
+        .boolean()
+        .describe("Only a notebook that is open: never opens one (what follows a notebook)")
+        .optional(),
     }),
     effects: ["read"],
     agent: "discoverable",
-    run: async ({ path, metadata, outputs }) => {
-      const view = await target(path);
+    run: async ({ path, metadata, outputs, ifOpen }) => {
+      const view = await target(path, ifOpen === true);
       // The file's own fields besides metadata (VS Code's ipynb layout gives extensions them).
       const nb = metadata ? view.toNotebook() : null;
       return {

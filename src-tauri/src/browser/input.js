@@ -792,12 +792,37 @@
     const top = deepAt(cx, cy);
     return top && top !== el && !el.contains(top) && !top.contains(el) ? label(top) : null;
   };
+  // Whether a click's press reached this document. The engine drops input sent to a document in
+  // its first moments (a page just loaded, a frame just moved to another window): the IDE sent
+  // the events, nothing happened, and the click still said "clicked". The presses seen are
+  // counted (trusted ones, first in line: this listener is added before the page's own), a click
+  // notes the count it starts from, and the report says whether one came (the IDE sends the click
+  // again when none did). Not watched where a press doesn't show here: on a frame of the page
+  // (its events stay in that frame) or a disabled control (it gets none).
+  let presses = 0;
+  let pressesBefore = null;
+  // pointerdown, not mousedown: a page that cancels pointerdown gets no mousedown at all.
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      if (e.isTrusted) presses++;
+    },
+    true,
+  );
+  const pressShowsAt = (cx, cy) => {
+    const top = document.elementFromPoint(cx, cy);
+    if (!top || /^(IFRAME|FRAME|OBJECT|EMBED)$/.test(top.tagName)) return false;
+    const at = deepAt(cx, cy);
+    return !(at?.closest?.(":disabled") ?? false);
+  };
   methods["input.prepare"] = (p) => {
     const base = { viewport: viewport() };
+    pressesBefore = null;
     switch (p.op) {
       case "click":
       case "hover": {
         const { el, cx, cy } = targetOf(p);
+        if (p.op === "click" && pressShowsAt(cx, cy)) pressesBefore = presses;
         const covered = hasLocator(p) ? coveredBy(el, cx, cy) : null;
         return { ...base, x: cx, y: cy, target: label(el), ...(covered && { covered }) };
       }
@@ -887,6 +912,8 @@
       focused: focused === document.body ? "page" : label(focused),
       ...("value" in focused && isField(focused) && { value: String(focused.value).slice(0, 500) }),
       scrollY: Math.round(scrollY),
+      // A click's press came (or not yet): only while a click is watched (see `presses`).
+      ...(pressesBefore !== null && { pressed: presses > pressesBefore }),
       ...page(),
     };
   };

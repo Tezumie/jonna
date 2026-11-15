@@ -151,17 +151,22 @@
       "expect": { "recorded": { "fromNavigation": true } }
     },
 
-    // Wide DevTools: every tab with its icon and name.
+    // Wide DevTools: every tab with its icon and name. The browser's group is maximized for it:
+    // beside the editor the names only fit in a wide window, and CI's screen for Windows gives
+    // the window 1028 px (too narrow there), not the 1280 it asks for.
+    { "run": "layout.toggleMaximize", "expect": { "maximizedGroupId": { "$exists": true } } },
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".dt-tablist[data-fit=\"full\"]" },
-      "expect": [{ "tag": "div" }]
+      "expect": [{ "tag": "div" }],
+      "timeoutMs": 3000
     },
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".dt-tab .icon", "limit": 20 },
       "expect": { "$length": 6 }
     },
+    { "run": "layout.toggleMaximize", "expect": { "maximizedGroupId": null } },
 
     // A small window: icons only (the selected tab keeps its name), panes stack, the console's
     // levels are one menu.
