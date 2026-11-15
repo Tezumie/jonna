@@ -475,6 +475,24 @@ async function main() {
       },
     },
     {
+      name: "full access alone doesn't run a workflow's script: the policy has to name the tool",
+      spec: {
+        kind: "run",
+        options: {
+          ...base,
+          prompt: "pkgk run a workflow",
+          model: MODEL,
+          permissions: { mode: "full-access" },
+        },
+      },
+      check: (r) => {
+        equal(r.result.reason, "end");
+        deepEqual(decisions(r), ["deny/policy/-"]);
+        equal(r.result.denied[0].tool, "run_workflow");
+        ok(!toolEnds(r).includes("run_workflow:done"), toolEnds(r).join(" "));
+      },
+    },
+    {
       name: "a time limit stops the run",
       spec: {
         kind: "run",

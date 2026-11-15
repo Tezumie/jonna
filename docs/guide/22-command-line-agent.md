@@ -105,6 +105,9 @@ Without the flag, your settings decide, as in the IDE.
   which the list can't read: once you deny a command line, those run only with
   `--allow tasks.run` (the command's id) or your answer. The list is a guard against the
   expected, not a sandbox: it doesn't see what a script, a test or a notebook cell runs.
+- A workflow script (`run_workflow`) runs only with `--allow run_workflow` or your answer, even
+  with `full-access`: without a window its script runs in a thread of the program itself, which
+  is locked down but not sandboxed as the IDE's is.
 - `--mode plan` and `--mode ask` are read-only: the agent researches and plans, or answers.
 - `--max-steps`, `--max-cost` and `--timeout` (seconds) stop a run that goes on too long.
   `--max-cost` counts the agent's own requests and its subagents'. It needs a model whose price

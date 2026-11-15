@@ -145,7 +145,14 @@ Excluded from `tsconfig.json` (no Node types there) and checked by `tsconfig.tes
 - `node/hostBackend.ts` `hostBackend({ binary, userDataDir, args, env, onLog, onExit })`.
 - `node/workers.ts` `nodeWorkers(directory)`: a `WorkerFactory` over `<script>.worker.mjs`
   (src/workers/node/: the worker script with a web worker's globals over the thread's port,
-  and the process, module loaders and buffers taken away; not an engine-level sandbox).
+  and the process, module loaders and buffers taken away; not an engine-level sandbox). The
+  script's body is compiled in a `node:vm` context of its own (`src/workers/node/isolate.ts`,
+  tested): only the language's built-ins and the names handed in, `import()` rejects, `eval` and
+  `new Function` throw. That removes the ordinary ways out; it is not a security boundary
+  (`node:vm` isn't one: what is handed in comes from the thread's realm, and nothing limits
+  memory or CPU). So with no window `run_workflow` asks whatever the mode (`workflows.ts`):
+  the run's allow list names the tool (`--allow run_workflow`) or a person answers; full access
+  alone doesn't run it.
 
 ## The build and its test
 
