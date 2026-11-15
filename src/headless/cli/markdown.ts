@@ -216,7 +216,12 @@ export class MarkdownStream {
   /** A line's start that may still become a block mark (or a fence's end): wait for more. */
   private undecided(line: string): boolean {
     const rest = line.replace(/^[ \t]*/, "");
-    if (this.inFence) return rest.length < this.fence.length && this.fence.startsWith(rest);
+    // In a fence: the start of its closing mark, or the mark itself until the line ends.
+    if (this.inFence)
+      return (
+        this.fence.startsWith(rest) ||
+        (rest.startsWith(this.fence) && rest.slice(this.fence.length).trim() === "")
+      );
     if (rest === "") return line.length < 8;
     // A fence's first line (its language) and a rule are short: taken whole.
     if (/^(`{3,}|~{3,})[^\n]*$/.test(rest) && rest.length < 40) return true;

@@ -219,16 +219,21 @@ export class EventRenderer {
       case "permission.decision": {
         if (event.by === "user") return;
         const what = event.code ?? event.tool ?? event.title;
-        if (event.answer === "deny")
-          this.note(
-            `${style.glyph("✗", "x")} Refused: ${what}${event.rule ? ` (denied by ${event.rule})` : " (nobody to ask; see --allow, --permission-mode)"}`,
-            style.yellow,
-          );
-        else if (verbose)
-          this.note(
-            `${style.glyph("✓", "+")} Allowed: ${what}${event.rule ? ` (${event.rule})` : ""}`,
-            style.dim,
-          );
+        // Under the tool call it is about.
+        const line =
+          event.answer === "deny"
+            ? style.yellow(
+                `  ${style.glyph("✗", "x")} Refused: ${sanitize(what)}${event.rule ? ` (denied by ${event.rule})` : " (nobody to ask; see --allow, --permission-mode)"}`,
+              )
+            : verbose
+              ? style.dim(
+                  `  ${style.glyph("✓", "+")} Allowed: ${sanitize(what)}${event.rule ? ` (${event.rule})` : ""}`,
+                )
+              : "";
+        if (!line) return;
+        this.flush();
+        this.out(`${line}\n`);
+        this.block = "tool";
         return;
       }
       case "error":
