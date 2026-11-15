@@ -52,6 +52,8 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
 
   let brain: HostedBrain;
   let folder: string;
+  // Until the session is up, Ctrl+C simply leaves (the host ends when its input closes).
+  prompter.onInterrupt = () => process.exit(EXIT.interrupted);
   try {
     const started = await start(args, {
       frontend: "cli",

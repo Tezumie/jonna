@@ -346,6 +346,21 @@ export class StreamTransport implements Transport {
     return this.pending.size;
   }
 
+  /** The id the next call gets: every call sent from now on has this id or a later one. */
+  get nextCallId(): number {
+    return this.nextRequest;
+  }
+
+  /**
+   * Calls with the id `from` or a later one that aren't answered yet: what was sent since a
+   * moment (`nextCallId` then), without the older ones still out (a slow probe from the start).
+   */
+  pendingCallsFrom(from: number): number {
+    let count = 0;
+    for (const id of this.pending.keys()) if (id >= from) count++;
+    return count;
+  }
+
   /** Closes the connection from this side: pending calls fail, channels end. */
   close(): void {
     this.end({ code: "Io", message: "The host connection was closed." }, undefined);

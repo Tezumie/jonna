@@ -24,15 +24,26 @@ export interface HostBackendOptions {
 export interface HostBackend extends HeadlessBackend {
   /** The running host, once connected (its handshake answer: version, OS, commands). */
   readonly info: HostInfo | null;
+  /**
+   * The session is about to end: what is sent from now on (a last save, audit entries) is what
+   * the close waits for. Without it the close waits for every call still out, a slow probe from
+   * the start among them.
+   */
+  ending(): void;
 }
 
 /** A backend that starts the host program when the session connects. */
 export function hostBackend(options: HostBackendOptions): HostBackend {
   let host: HostProcess | null = null;
   let closing = false;
+  /** The first call id of the session's end (`ending`); 0: every call counts. */
+  let endingFrom = 0;
   return {
     get info() {
       return host?.info ?? null;
+    },
+    ending() {
+      if (host && !endingFrom) endingFrom = host.transport.nextCallId;
     },
     async connect(): Promise<HeadlessConnection> {
       if (host) throw new Error("This backend is already connected.");
@@ -56,7 +67,7 @@ export function hostBackend(options: HostBackendOptions): HostBackend {
           // What the session's end started (a last save, audit entries) is answered first: the
           // host is asked to shut down once no call has been waiting for a moment.
           for (let quiet = 0, waited = 0; quiet < 3 && waited < 3000; waited += 10) {
-            quiet = started.transport.pendingCalls === 0 ? quiet + 1 : 0;
+            quiet = started.transport.pendingCallsFrom(endingFrom) === 0 ? quiet + 1 : 0;
             await new Promise<void>((done) => setTimeout(done, 10));
           }
           await started.stop();
