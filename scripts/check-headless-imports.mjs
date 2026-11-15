@@ -16,13 +16,18 @@ import * as esbuild from "esbuild";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** What has to stay free of view code: a chat's logic, the sessions, the models, the agent's host. */
+/**
+ * What has to stay free of view code: a chat's logic (which reaches the external agents' too),
+ * the sessions, the models, the agent's host, and the MCP clients with what servers ask for.
+ */
 const ENTRIES = [
   "src/extensions/agent/session.ts",
   "src/extensions/agent/sessions.ts",
   "src/extensions/agent/providers.ts",
   "src/extensions/agent/agentHost.ts",
   "src/extensions/agent/mcp.ts",
+  "src/extensions/agent/mcpFeatures.ts",
+  "src/extensions/agent/mcpSampling.ts",
 ];
 
 /** Why a module (a path from the repository root, `/` separators) is view code; null when it isn't. */
