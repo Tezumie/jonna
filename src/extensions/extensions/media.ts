@@ -8,6 +8,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { dialogIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { basename, isAbsolute as isAbsolutePath, joinPath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import { icon } from "../../ui/Icon";
 import { setTooltip } from "../../ui/Tooltip";
@@ -177,7 +178,7 @@ export function registerMediaCommands(
     effects: ["write"],
     run: async ({ id, file, name }, ctx) => {
       const r = editable(id, ctx.caller.kind);
-      const user = ctx.caller.kind === "user" || ctx.caller.kind === "test";
+      const user = isUserCaller(ctx.caller);
       if (name) {
         if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`Not an icon name: ${name}`);
         await editManifest(r, (json) => {
@@ -214,7 +215,7 @@ export function registerMediaCommands(
     effects: ["write"],
     run: async ({ id, from, file, caption }, ctx) => {
       const r = editable(id, ctx.caller.kind);
-      const user = ctx.caller.kind === "user" || ctx.caller.kind === "test";
+      const user = isUserCaller(ctx.caller);
       const list = r.manifest?.screenshots ?? [];
       if (list.length >= MAX_SCREENSHOTS)
         throw new Error(`An extension shows at most ${MAX_SCREENSHOTS} screenshots.`);

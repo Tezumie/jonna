@@ -18,6 +18,7 @@ import { mergeServers, type ResolvedServer, substitute } from "../../core/mcp/co
 import { galleryConfig, galleryEntry, MCP_GALLERY, searchGallery } from "../../core/mcp/gallery";
 import { type McpIcon, pickIcon } from "../../core/mcp/icons";
 import { samplingPolicy } from "../../core/mcp/sampling";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -627,7 +628,7 @@ export function registerMcpPage(
           if (!picked) return { installed: false };
           where = picked.id as "folder" | "user";
         }
-        if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test") {
+        if (!isUserCaller(ctx.caller)) {
           const session = sessions.find(undefined);
           if (!session) throw new Error("No agent chat to ask the user in.");
           const answer = await session.ask({

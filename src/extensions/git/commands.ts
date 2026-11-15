@@ -6,6 +6,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { type GitIpc, gitIpc, type RemoteOp } from "../../core/ipc/git";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { pathKey, relativePath, samePath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import { showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -160,7 +161,7 @@ export function registerGitCommands(
       run: async ({ repository: named }, ctx) => {
         // The whole point is that a person looked: an agent (or an extension) that could trust
         // them could undo the pause it caused.
-        if (ctx.caller.kind !== "user" && ctx.caller.kind !== "test")
+        if (!isUserCaller(ctx.caller))
           throw new Error(
             "Only a person can trust a repository's git settings: ask the user to check them and choose Trust git settings.",
           );

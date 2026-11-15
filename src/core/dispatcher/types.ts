@@ -7,6 +7,15 @@ export type Effect = "read" | "write" | "exec" | "network" | "destructive";
 export type Caller =
   | { kind: "user" }
   | { kind: "test" }
+  /**
+   * A front end that isn't the window, acting for the person at it: a terminal session, a client
+   * attached to a running brain. `name` says which ("cli", "serve"…). It has the user's rights
+   * (the same commands, the human-in-the-loop ones included, the same confirmations); what it
+   * doesn't have is the window, so a command that would show a picker takes the path it takes
+   * for any caller that can't be shown one. Only the program that hosts the brain gives a call
+   * this kind: nothing an agent, an extension or an MCP client sends can choose it.
+   */
+  | { kind: "frontend"; name: string }
   | { kind: "agent"; session: string }
   | { kind: "acp"; agent: string; session: string }
   | { kind: "ext"; id: string }
@@ -19,6 +28,8 @@ export function callerLabel(caller: Caller): string {
     case "user":
     case "test":
       return caller.kind;
+    case "frontend":
+      return `frontend:${caller.name}`;
     case "agent":
       return `agent:${caller.session}`;
     case "acp":

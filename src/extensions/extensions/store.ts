@@ -39,6 +39,7 @@ import { extIpc } from "../../core/ipc/extensions";
 import { fsIpc } from "../../core/ipc/fs";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { joinPath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { product } from "../../core/product";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -472,7 +473,7 @@ export function registerStore(
     run: async ({ id, version, with: given }, ctx) => {
       // Only the IDE (the user) says an install comes with another one: an extension asking for an
       // install still gets the permission question for what it installs.
-      const along = ctx.caller.kind === "user" || ctx.caller.kind === "test" ? given : undefined;
+      const along = isUserCaller(ctx.caller) ? given : undefined;
       if (!enabled(services))
         throw new Error("The extension store is off (extensions.store.enabled).");
       const { namespace, name } = split(id);

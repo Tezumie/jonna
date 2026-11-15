@@ -19,6 +19,7 @@ import {
   parseKeybinding,
   validateUserKeybindings,
 } from "../../core/keybindings/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { appendJsoncArrayItem } from "../../core/settings/jsoncEdit";
@@ -311,7 +312,7 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
           // The user, from the shortcuts tab: the row's when column becomes an input (D209).
           if (
             when === undefined &&
-            (ctx.caller.kind === "user" || ctx.caller.kind === "test") &&
+            isUserCaller(ctx.caller) &&
             status.editWhenInline?.({ command, key, when: currentWhen ?? ref.when ?? "" })
           )
             return { editing: true };

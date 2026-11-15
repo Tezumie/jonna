@@ -12,6 +12,7 @@ import type { Disposable } from "../../core/lifecycle/index";
 import type { LanguageClient } from "../../core/lsp/client";
 import { INTERACTIVE_EDITOR_ID, NOTEBOOK_EDITOR_ID } from "../../core/notebook/contextKeys";
 import { isAbsolute as isAbsolutePath, pathKey, samePath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { computed, effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { showDialog } from "../../ui/Dialog";
@@ -925,11 +926,7 @@ export const editorExtension: BuiltinExtension<WorkbenchServices> = {
           // (a path they typed, clicked or dropped), that file only. Agents and extensions stay
           // inside the folder.
           const root0 = workspace.root.peek();
-          if (
-            isAbsolutePath(path) &&
-            !workspace.contains(path) &&
-            (ctx.caller.kind === "user" || ctx.caller.kind === "test")
-          ) {
+          if (isAbsolutePath(path) && !workspace.contains(path) && isUserCaller(ctx.caller)) {
             await fsIpc.allowFile(path).catch(() => {});
             outsideFiles.delete(pathKey(path));
             outsideFiles.add(pathKey(path));

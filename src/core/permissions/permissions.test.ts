@@ -120,3 +120,32 @@ test("agents changing the IDE itself ask, and one 'this chat' covers all of it (
   );
   assert.equal(asked.length, 3);
 });
+
+test("a front end acting for the person has the user's rights, confirmations included", async () => {
+  const confirmed: string[] = [];
+  let yes = true;
+  const policy = createM2Policy({
+    confirm: async (message) => {
+      confirmed.push(message);
+      return yes;
+    },
+    askMcp: async () => "deny",
+    testMode: () => false,
+  });
+  const frontend = { caller: { kind: "frontend" as const, name: "cli" } };
+  // Commands hidden from agents (the human-in-the-loop ones) run for it, as for the user.
+  assert.equal(await policy.authorize(req({ ...frontend, agent: "hidden" })), "allow");
+  assert.equal(await policy.authorize(req({ ...frontend, effects: ["write", "exec"] })), "allow");
+  // A destructive command is confirmed first, as at the window.
+  assert.equal(await policy.authorize(req({ ...frontend, effects: ["destructive"] })), "allow");
+  assert.equal(confirmed.length, 1);
+  yes = false;
+  assert.equal(await policy.authorize(req({ ...frontend, effects: ["destructive"] })), "deny");
+  // An agent gains nothing from the kind existing: hidden commands stay refused.
+  assert.equal(
+    await policy.authorize(
+      req({ caller: { kind: "agent", session: "s1" }, agent: "hidden", effects: [] }),
+    ),
+    "deny",
+  );
+});

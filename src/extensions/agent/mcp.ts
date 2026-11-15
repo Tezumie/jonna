@@ -40,6 +40,7 @@ import { exitReason } from "../../core/mcp/exitReason";
 import type { McpIcon } from "../../core/mcp/icons";
 import type { SamplingRequest } from "../../core/mcp/sampling";
 import { basename, isAbsolute, joinPath, samePath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { product } from "../../core/product";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -1117,7 +1118,7 @@ export function registerMcpClients(
         if (usesRawSecret({ ...(url ? { url } : { command, args }), env, headers }))
           throw new Error("Don't use ${secret:…}: declare an input with password true instead.");
         // Anyone but the user (an agent, an extension, an MCP client) needs the user's yes.
-        const byAgent = ctx.caller.kind !== "user" && ctx.caller.kind !== "test";
+        const byAgent = !isUserCaller(ctx.caller);
         if (byAgent) {
           const session = sessions.find(undefined);
           if (!session) throw new Error("No agent chat to ask the user in.");

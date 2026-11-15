@@ -6,6 +6,7 @@
 import { extIpc } from "../../core/ipc/extensions";
 import { dialogIpc } from "../../core/ipc/system";
 import { isAbsolute, joinPath } from "../../core/paths/index";
+import { isUserCaller } from "../../core/permissions/commandGuards";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { ExtensionManager } from "./manager";
@@ -73,7 +74,7 @@ export function registerFromVsix(
         // so: the command is hidden from agents and extensions).
         const along_ =
           !!along &&
-          (ctx.caller.kind === "user" || ctx.caller.kind === "test") &&
+          isUserCaller(ctx.caller) &&
           (manager.get(along)?.manifest?.permissions ?? []).every((p) =>
             manager.granted(along).includes(p),
           );
