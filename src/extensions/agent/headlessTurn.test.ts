@@ -321,6 +321,8 @@ async function startAgent(commands: boolean) {
     services,
     dispatcher,
     session,
+    /** Members read from services the stub leaves out. */
+    used,
     dispose: () => {
       sessions.dispose();
       store.dispose();
@@ -422,6 +424,12 @@ test("a full turn with no window: write, read, search, a command asked for and a
     assert.equal(offered.has(name), true, `${name} missing`);
 
   assert.deepEqual([...backend.windowReads], [], "the window was read");
+  // Of the services the stub leaves out, only notifications were used: nobody is watching, so
+  // the chat said it needed an answer.
+  assert.deepEqual(
+    [...agent.used],
+    ["services.notifications.show", "services.notifications.show()"],
+  );
   agent.dispose();
 });
 
@@ -457,5 +465,22 @@ test("with a screen, the same chat is offered the screen's tools again", async (
   assert.equal(offers("show_widget"), true);
   setAgentHost(services, headlessAgentHost());
   assert.equal(offers("show_widget"), false);
+  agent.dispose();
+});
+
+test("read_file shows a PNG as it is where there is no canvas to redraw it", async () => {
+  const agent = await startAgent(false);
+  const { session } = agent;
+  // A one-pixel PNG.
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  writeFileSync(join(root, "dot.png"), Buffer.from(png, "base64"));
+  backend.script([{ tool: "read_file", args: { path: "dot.png" } }, { text: "A dot." }]);
+  await inTime(session.send("look at dot.png"), () => `status ${session.status.peek()}`);
+  assert.equal(session.error.peek(), null);
+  const read = session.items.find((i) => i.type === "tool");
+  assert.equal(read?.type === "tool" ? read.status : "", "done");
+  assert.equal(read?.type === "tool" ? read.summary : "", "image");
+  assert.deepEqual([...backend.windowReads], []);
   agent.dispose();
 });
