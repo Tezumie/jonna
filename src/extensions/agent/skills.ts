@@ -51,7 +51,7 @@ import { effect, signal, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
-import { approveRules } from "./autoApprove";
+import { approveRules } from "./approveDecisions";
 import buildExtensionSkill from "./builtinSkills/build-extension.md?raw";
 import { registerSlashSource } from "./composerExtras";
 import { agentIgnored, ignoredMessage } from "./ignore";
