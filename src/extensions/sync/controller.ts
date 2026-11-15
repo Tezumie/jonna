@@ -78,6 +78,8 @@ const pathKey = (path: string) => {
 interface SyncedFolder {
   id: string;
   path: string;
+  /** The snapshot this folder was last brought to. */
+  restored?: string;
 }
 
 export class SyncController implements Disposable {
@@ -150,7 +152,11 @@ export class SyncController implements Disposable {
     for (const [folder, entry] of Object.entries(value as Record<string, unknown>)) {
       const e = entry as Partial<SyncedFolder> | null;
       if (e && typeof e.id === "string" && typeof e.path === "string") {
-        out[folder] = { id: e.id, path: e.path };
+        out[folder] = {
+          id: e.id,
+          path: e.path,
+          ...(typeof e.restored === "string" && { restored: e.restored }),
+        };
       }
     }
     return out;
@@ -393,7 +399,8 @@ export class SyncController implements Disposable {
     } else delete projects[pathKey(root)];
     await this.services.settings.update("sync.projects", projects, "user");
     await this.refreshProject();
-    if (on) void this.pass(true).then(() => this.snapshotNow(true).catch(() => {}));
+    // A first snapshot at once, unless another computer's are there to continue from.
+    if (on) void this.pass(true).then(() => this.maybeSnapshot(false).catch(() => null));
   }
 
   private collection(): string | null {
@@ -424,12 +431,18 @@ export class SyncController implements Disposable {
     this.snapshotAt = Date.now();
     const everything =
       this.services.settings.peek<string | undefined>("sync.snapshotScope") === "everything";
+    // Other computers have snapshots of this project and this one has none: its state now is
+    // noted, not stored, so "Continue from" stays on offer until work is done here.
+    const mine = this.status.peek()?.deviceId;
+    const rows = this.snapshots.peek();
+    const baseline = rows.length > 0 && !rows.some((r) => r.summary.device === mine);
     const created = await syncIpc.snapshotCreate(
       this.base(),
       project.root,
       collection,
       everything,
       force,
+      baseline,
     );
     if (!created) return null;
     await this.engine.tick().catch(() => {});
@@ -489,6 +502,14 @@ export class SyncController implements Disposable {
     );
     // What a restore leaves isn't new work: no snapshot of it until something changes.
     this.snapshotAt = Date.now();
+    // Remembered, so the snapshot just continued from isn't offered again.
+    const projects = { ...this.projects() };
+    const folder = projects[pathKey(project.root)];
+    if (folder) {
+      projects[pathKey(project.root)] = { ...folder, restored: id };
+      await this.services.settings.update("sync.projects", projects, "user").catch(() => {});
+    }
+    this.snapshots.value = [...this.snapshots.peek()];
     return restored;
   }
 
@@ -523,7 +544,10 @@ export class SyncController implements Disposable {
     const mine = this.status.peek()?.deviceId;
     const rows = this.snapshots.peek();
     const newest = rows[0];
-    return newest && newest.summary.device !== mine ? newest : null;
+    if (!newest || newest.summary.device === mine) return null;
+    const root = this.project.peek()?.root;
+    const restored = root ? this.projects()[pathKey(root)]?.restored : undefined;
+    return newest.id === restored ? null : newest;
   }
 
   dispose(): void {

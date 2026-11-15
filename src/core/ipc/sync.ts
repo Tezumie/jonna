@@ -166,6 +166,7 @@ export const syncIpc = {
     collection: string,
     everything: boolean,
     force: boolean,
+    baseline = false,
   ): Promise<SnapshotCreated | null> =>
     call<SnapshotCreated | null>("sync_snapshot_create", {
       base,
@@ -173,6 +174,7 @@ export const syncIpc = {
       collection,
       everything,
       force,
+      baseline,
     }),
   snapshotFiles: (base: string, collection: string, id: string): Promise<SnapshotFile[]> =>
     call<SnapshotFile[]>("sync_snapshot_files", { base, collection, id }),

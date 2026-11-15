@@ -253,7 +253,8 @@ fn now_ms() -> u64 {
 }
 
 /// Captures the open folder `root` as a new snapshot in `collection`. Null when nothing
-/// changed since this computer's last one (unless `force`).
+/// changed since this computer's last one (unless `force`), or when `baseline` only noted
+/// the folder's state.
 #[tauri::command]
 pub async fn sync_snapshot_create(
     state: State<'_, AppState>,
@@ -262,6 +263,7 @@ pub async fn sync_snapshot_create(
     collection: String,
     everything: bool,
     force: bool,
+    baseline: Option<bool>,
 ) -> Result<Option<crate::sync::snapshot::Created>> {
     use crate::sync::snapshot;
     writable(&collection)?;
@@ -278,6 +280,23 @@ pub async fn sync_snapshot_create(
         .filter(|l: &LastSnapshot| l.root == root.to_string_lossy());
     let picture = snapshot::fingerprint(&root)?;
     if !force && last.as_ref().is_some_and(|l| l.fingerprint == picture) {
+        return Ok(None);
+    }
+    // `baseline`: another computer's snapshots of this project exist and this one has made
+    // none. The folder as it is now is only noted, so this computer's first snapshot is of
+    // work done here, not of a state older than the one it could continue from.
+    if !force && baseline == Some(true) && last.is_none() {
+        if let Some(dir) = cache.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let noted = LastSnapshot {
+            root: root.to_string_lossy().to_string(),
+            fingerprint: picture,
+            manifest: snapshot::Manifest::default(),
+        };
+        if let Ok(bytes) = serde_json::to_vec(&noted) {
+            let _ = crate::store::atomic_write(&cache, &bytes);
+        }
         return Ok(None);
     }
     let created = snapshot::create(
