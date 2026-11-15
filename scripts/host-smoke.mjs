@@ -53,7 +53,8 @@ class Client {
       readable.on("error", done);
     });
     this.ended.then(() => {
-      for (const { reject } of this.pending.values()) reject(new Error("the host closed the stream"));
+      for (const { reject } of this.pending.values())
+        reject(new Error("the host closed the stream"));
       this.pending.clear();
     });
     readable.on("data", (chunk) => {
@@ -67,7 +68,8 @@ class Client {
       if (this.buffer.length < 8) return;
       const headLength = this.buffer.readUInt32LE(0);
       const bodyLength = this.buffer.readUInt32LE(4);
-      if (headLength > 64 * 1024 * 1024) throw new Error("not a frame: something else is on the stream");
+      if (headLength > 64 * 1024 * 1024)
+        throw new Error("not a frame: something else is on the stream");
       if (this.buffer.length < 8 + headLength + bodyLength) return;
       const header = JSON.parse(this.buffer.subarray(8, 8 + headLength).toString("utf8"));
       const body = Buffer.from(this.buffer.subarray(8 + headLength, 8 + headLength + bodyLength));
@@ -103,8 +105,14 @@ class Client {
         TIMEOUT_MS,
       );
       this.pending.set(id, {
-        resolve: (value) => (clearTimeout(timer), resolve(value)),
-        reject: (error) => (clearTimeout(timer), reject(error)),
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
       });
       this.send({ id, ...header }, body);
     });
@@ -205,7 +213,12 @@ async function overStdio() {
     check(Array.isArray(commands) && commands.length > 200, `commands: ${commands?.length}`);
     for (const name of ["fs_read", "fs_write", "git_status", "pty_spawn", "exec_run", "ai_chat"])
       check(commands.includes(name), `the commands lack ${name}`);
-    for (const name of ["screenshot_window", "browser_window_open", "update_check", "fs_start_drag"])
+    for (const name of [
+      "screenshot_window",
+      "browser_window_open",
+      "update_check",
+      "fs_start_drag",
+    ])
       check(!commands.includes(name), `the commands list the desktop-only ${name}`);
   });
 
@@ -241,10 +254,17 @@ async function overStdio() {
 
   await step("arguments that don't fit, and an unknown command", async () => {
     const invalid = await fails(client.call("fs_read", {}), "Invalid", "fs_read without a path");
-    check(invalid.message.includes("path"), `the message doesn't name the argument: ${invalid.message}`);
+    check(
+      invalid.message.includes("path"),
+      `the message doesn't name the argument: ${invalid.message}`,
+    );
     const unknown = await fails(client.call("no_such_command"), "Invalid", "an unknown command");
     check(unknown.message === "unknown command: no_such_command", unknown.message);
-    const desktop = await fails(client.call("screenshot_window", { label: "main" }), "Invalid", "a desktop-only command");
+    const desktop = await fails(
+      client.call("screenshot_window", { label: "main" }),
+      "Invalid",
+      "a desktop-only command",
+    );
     check(desktop.message === "unknown command: screenshot_window", desktop.message);
   });
 
@@ -294,7 +314,10 @@ async function overStdio() {
     });
     check(typeof terminal.id === "number", `pty_spawn: ${JSON.stringify(terminal)}`);
     await client.call("pty_write", { id: terminal.id, data: "echo smoke-pty-marker\r" });
-    await waitFor(() => seen.toString("utf8").includes("smoke-pty-marker"), "the terminal's output");
+    await waitFor(
+      () => seen.toString("utf8").includes("smoke-pty-marker"),
+      "the terminal's output",
+    );
     await client.call("pty_write", { id: terminal.id, data: "exit\r" });
     await waitFor(() => exited, "the terminal's exit message", 10_000).catch(() =>
       client.call("pty_kill", { id: terminal.id }),
@@ -320,7 +343,10 @@ async function overStdio() {
     await writeFile(join(folder, "watched.txt"), "two");
     await writeFile(join(folder, "watched-2.txt"), "three");
     await new Promise((r) => setTimeout(r, 1200));
-    check(batches.length === before, `${batches.length - before} batch(es) after the channel was closed`);
+    check(
+      batches.length === before,
+      `${batches.length - before} batch(es) after the channel was closed`,
+    );
     await client.call("watch_stop").catch(() => {});
   });
 
@@ -329,7 +355,13 @@ async function overStdio() {
     const writes = [];
     for (let i = 0; i < count; i++) {
       const path = join(folder, "many", `file-${i}.txt`);
-      writes.push(client.callRaw("fs_write", { "x-path": encodeURIComponent(path) }, Buffer.from(`content ${i}`)));
+      writes.push(
+        client.callRaw(
+          "fs_write",
+          { "x-path": encodeURIComponent(path) },
+          Buffer.from(`content ${i}`),
+        ),
+      );
     }
     await Promise.all(writes);
     const reads = [];
@@ -374,7 +406,10 @@ async function overTcp() {
       socket.on("error", failed);
     });
   await step("TCP: the port on stderr, the token, one client at a time, shutdown", async () => {
-    await waitFor(() => /host: listening on 127\.0\.0\.1:\d+/.test(host.stderr()), "the port line on stderr");
+    await waitFor(
+      () => /host: listening on 127\.0\.0\.1:\d+/.test(host.stderr()),
+      "the port line on stderr",
+    );
     const port = Number(/host: listening on 127\.0\.0\.1:(\d+)/.exec(host.stderr())[1]);
 
     const wrong = await connect(port);
@@ -385,9 +420,14 @@ async function overTcp() {
     const client = new Client(socket, socket);
     const result = await hello(client, { token: "smoke-token-1234" });
     check(result.protocol === 1, "hello over TCP");
-    const stat = await client.call("fs_stat", { path: join(workspace, "hello.txt") }).catch((e) => e.detail);
+    const stat = await client
+      .call("fs_stat", { path: join(workspace, "hello.txt") })
+      .catch((e) => e.detail);
     // No folder is open in this host: the answer is the scope error, over the same stream.
-    check(stat && (typeof stat.size === "number" || typeof stat.code === "string"), "a command over TCP");
+    check(
+      stat && (typeof stat.size === "number" || typeof stat.code === "string"),
+      "a command over TCP",
+    );
 
     // A second client while the first is connected: closed at once, nothing answered.
     const second = await connect(port);
@@ -426,9 +466,15 @@ async function information() {
   await step("--version, --help, an unknown argument", async () => {
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
     const version = await run(["--version"]);
-    check(version.code === 0 && version.out.split(/\r?\n/)[0] === pkg.version, `--version: ${JSON.stringify(version)}`);
+    check(
+      version.code === 0 && version.out.split(/\r?\n/)[0] === pkg.version,
+      `--version: ${JSON.stringify(version)}`,
+    );
     const help = await run(["--help"]);
-    check(help.code === 0 && help.out.includes("--user-data-dir") && help.out.includes("--listen"), `--help: ${help.out}`);
+    check(
+      help.code === 0 && help.out.includes("--user-data-dir") && help.out.includes("--listen"),
+      `--help: ${help.out}`,
+    );
     const bad = await run(["--no-such-flag"]);
     check(bad.code === 2 && bad.out === "", `an unknown argument: ${JSON.stringify(bad)}`);
   });
@@ -446,7 +492,9 @@ try {
   failures++;
   console.error(`host-smoke: ${error?.stack ?? error}`);
 } finally {
-  await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
+  await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(
+    () => {},
+  );
 }
 if (failures) {
   console.error(`host-smoke: ${failures} step(s) failed`);

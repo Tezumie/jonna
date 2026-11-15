@@ -301,7 +301,12 @@ async fn serve(
         let accepting = std::thread::Builder::new()
             .name("host-accept".into())
             .spawn(move || {
-                for stream in listener.incoming().flatten() {
+                for stream in listener.incoming() {
+                    let Ok(stream) = stream else {
+                        // Out of sockets, say: wait a moment rather than spin.
+                        std::thread::sleep(Duration::from_millis(200));
+                        continue;
+                    };
                     if busy.swap(true, Ordering::SeqCst) {
                         drop(stream);
                         continue;

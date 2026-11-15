@@ -149,3 +149,20 @@ fn base_folders_of_this_os() {
         found.data.as_ref().map(|d| d.join("dev.example.app"))
     );
 }
+
+/// The host's data folder is where the desktop app keeps its registry of windows (a formula
+/// written independently, for the command line that runs before the framework starts).
+#[test]
+fn the_data_folder_is_the_desktop_apps() {
+    use tauri::Manager;
+    let (identifier, name) = super::product();
+    let app = tauri::AppHandle::new(&identifier, &name, "0.0.0");
+    let Ok(data) = app.path().app_data_dir() else {
+        // No home folder here (a bare container): nothing to compare.
+        return;
+    };
+    assert!(data.ends_with(&identifier));
+    if let Some(windows) = crate::instances::registry_dir(None) {
+        assert_eq!(windows, data.join("windows"));
+    }
+}
