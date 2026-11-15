@@ -5,7 +5,7 @@
 // back, which the session hands to the command.
 import { relativeAge } from "../../core/agent/rooms";
 import type { Json } from "../../core/dock/index";
-import { h, on } from "../../core/dom/index";
+import { type Child, h, on } from "../../core/dom/index";
 import { attachIpc } from "../../core/ipc/agent";
 import type { SyncDevice, SyncStatus } from "../../core/ipc/sync";
 import { clipboardIpc } from "../../core/ipc/system";
@@ -22,13 +22,20 @@ import type { SnapshotRow, SyncController } from "./controller";
 import {
   activityLine,
   countOf,
+  folderName,
   formatSize,
+  groupFiles,
+  type OverviewProject,
+  PRIVACY_NOTE,
   platformLabel,
+  projectCounts,
+  retentionText,
+  type SyncEvent,
   serviceTime,
+  storageNotice,
   storageShare,
-  storageText,
 } from "./model";
-import type { SyncSession, SyncStep } from "./session";
+import { DEFAULT_DEVICE_NAME, type SyncSession, type SyncStep } from "./session";
 
 /** How often a computer waiting to be approved asks whether it has been. */
 const PENDING_POLL_MS = 4_000;
@@ -58,7 +65,11 @@ class SyncView implements DockView {
   private readonly body: HTMLElement;
   /** What is typed in the tab's fields, kept across redraws. */
   private readonly fields = new Map<string, string>();
+  /** The parts left open (your files, recent activity), kept across redraws. */
+  private readonly opened = new Set<string>();
   private lastDrawn = "";
+  /** Whether the name field took this computer's own name already (once; then it's the person's). */
+  private prefilled = false;
 
   constructor(
     private readonly services: WorkbenchServices,
@@ -76,6 +87,9 @@ class SyncView implements DockView {
           controller.activity.value,
           controller.project.value,
           controller.snapshots.value,
+          controller.overview.value,
+          controller.log.value,
+          session.ownName.value,
           session.profile.value,
           session.step.value,
           session.working.value,
@@ -87,6 +101,13 @@ class SyncView implements DockView {
         // redraws nothing.
         if (seen === this.lastDrawn) return undefined;
         this.lastDrawn = seen;
+        // The name field starts with this computer's own name, unless one was typed already.
+        const own = session.ownName.peek();
+        const typed = this.fields.get("name") ?? "";
+        if (own && !this.prefilled && (typed === "" || typed === DEFAULT_DEVICE_NAME)) {
+          this.prefilled = true;
+          this.fields.set("name", own);
+        }
         this.draw();
         return undefined;
       }),
@@ -286,9 +307,7 @@ class SyncView implements DockView {
         h("li", null, "The chats of the projects you choose to sync."),
         h("li", null, "Snapshots of unfinished work in those projects, with a history."),
       ),
-      this.text(
-        "All of it is encrypted on this computer before it leaves. The service stores it and can't read it.",
-      ),
+      this.text(PRIVACY_NOTE, true),
       h(
         "div",
         { class: "sync-form" },
@@ -419,6 +438,7 @@ class SyncView implements DockView {
       this.text(
         "This account already syncs. Join from this computer: a computer that already syncs approves it, or you enter the recovery key.",
       ),
+      this.text(PRIVACY_NOTE, true),
       h(
         "div",
         { class: "sync-form" },
@@ -436,10 +456,14 @@ class SyncView implements DockView {
     return [
       this.section(
         "Waiting to be approved",
-        h("div", { class: "sync-code", "aria-label": "Verification code" }, status.code ?? "…"),
-        this.text(
-          "Approve this on a computer that already syncs: check that it shows the same code.",
-        ),
+        status.code === null
+          ? this.text(
+              "On a computer that already syncs, open Sync and choose Check code for this computer.",
+            )
+          : h("div", { class: "sync-code", "aria-label": "Verification code" }, status.code),
+        status.code === null
+          ? null
+          : this.text("Check that the other computer shows the same code, then approve it there."),
         asking ? this.recoveryForm(step.error) : null,
         h(
           "div",
@@ -450,24 +474,12 @@ class SyncView implements DockView {
           this.button("Cancel", () => this.run("sync.turnOff"), "ghost"),
         ),
       ),
+      this.text(PRIVACY_NOTE, true),
     ];
   }
 
   private whenOn(status: SyncStatus): (Node | null)[] {
     const { controller, services, session } = this;
-    const activity = controller.activity.peek();
-    const line = activityLine(activity);
-    const limit = status.storageLimit || session.profile.peek()?.storageLimit || 0;
-    const share = storageShare(status.usageBytes, limit);
-    const meter = h("div", {
-      class: `sync-meter${share >= 0.9 ? " is-full" : ""}`,
-      role: "meter",
-      "aria-label": "Storage used",
-      "aria-valuemin": "0",
-      "aria-valuemax": "100",
-      "aria-valuenow": String(Math.round(share * 100)),
-    });
-    meter.append(h("div", { class: "sync-meter-fill", style: { width: `${share * 100}%` } }));
     const made = serviceTime(status.recoveryCreatedAt);
     const boxes = SYNCED_KINDS.map(([key, label]) => {
       const box = h("input", { class: "checkbox", type: "checkbox" });
@@ -477,23 +489,12 @@ class SyncView implements DockView {
       );
       return h("label", { class: "sync-check" }, box, h("span", null, label));
     });
+    const limit = status.storageLimit || session.profile.peek()?.storageLimit || 0;
     return [
-      h(
-        "div",
-        { class: "sync-status" },
-        h(
-          "div",
-          {
-            class: `sync-status-text${activity.state === "error" ? " is-error" : ""}`,
-            role: "status",
-          },
-          line.text,
-          line.time === null ? null : " ",
-          line.time === null ? null : this.when(line.time),
-        ),
-        this.button("Sync now", () => this.run("sync.syncNow"), "secondary", "refresh-cw"),
-      ),
-      this.section("Storage", meter, this.text(storageText(status.usageBytes, limit), true)),
+      this.statusHeader(),
+      this.accountSection(),
+      this.projectSection(),
+      this.storageSection(status.usageBytes, limit),
       this.section(
         "Computers",
         h("div", { class: "sync-list" }, ...status.devices.map((d) => this.deviceRow(d))),
@@ -517,11 +518,16 @@ class SyncView implements DockView {
           this.button("Make a new recovery key", () => this.run("sync.newRecoveryKey")),
         ),
       ),
-      this.section("What syncs", h("div", { class: "sync-checks" }, ...boxes)),
-      this.projectSection(),
+      this.section(
+        "What syncs",
+        this.text("What this computer sends and takes. Each computer has its own choice.", true),
+        h("div", { class: "sync-checks" }, ...boxes),
+      ),
+      this.activitySection(controller.log.peek()),
       h(
         "footer",
         { class: "sync-footer" },
+        this.text(PRIVACY_NOTE, true),
         this.link(
           "Manage devices and storage, or reset sync, on the account page",
           () => this.run("sync.openAccountPage"),
@@ -532,9 +538,262 @@ class SyncView implements DockView {
     ];
   }
 
+  /** Is it working: the state, when it last synced, and Sync now (Retry after an error). */
+  private statusHeader(): HTMLElement {
+    const activity = this.controller.activity.peek();
+    const failed = activity.state === "error";
+    const line = activityLine(activity);
+    const glyph: IconName = failed
+      ? "circle-alert"
+      : activity.state === "syncing"
+        ? "refresh-cw"
+        : activity.state === "idle" && activity.at !== null
+          ? "circle-check"
+          : "cloud";
+    // The time of the last good pass stays in sight while something else is said.
+    const earlier = line.time === null && activity.at !== null ? activity.at : null;
+    return h(
+      "div",
+      { class: `sync-status${failed ? " is-error" : ""}`, "data-state": activity.state },
+      h(
+        "div",
+        { class: "sync-status-main", role: "status" },
+        h(
+          "div",
+          { class: "sync-status-state" },
+          icon(glyph),
+          h(
+            "span",
+            { class: "sync-status-text" },
+            failed ? "Sync ran into a problem" : line.text,
+            line.time === null ? null : " ",
+            line.time === null ? null : this.when(line.time),
+          ),
+        ),
+        failed ? h("div", { class: "sync-status-reason" }, line.text) : null,
+        earlier === null
+          ? null
+          : h("div", { class: "sync-status-earlier" }, "Last synced ", this.when(earlier)),
+      ),
+      failed
+        ? this.button("Retry", () => this.run("sync.syncNow"), "secondary", "refresh-cw")
+        : this.button("Sync now", () => this.run("sync.syncNow"), "secondary", "refresh-cw"),
+    );
+  }
+
+  /** A part that opens and closes, and stays as it was left through redraws. */
+  private details(key: string, summary: Child[], ...children: Child[]): HTMLElement {
+    const el = h(
+      "details",
+      { class: "sync-details", "data-details": key },
+      h("summary", { class: "sync-details-summary" }, icon("chevron-right"), ...summary),
+      ...children,
+    );
+    el.open = this.opened.has(key);
+    this.drawn.add(
+      on(el, "toggle", () => {
+        if (el.open) this.opened.add(key);
+        else this.opened.delete(key);
+      }),
+    );
+    return el;
+  }
+
+  /** One line of what the account holds: what it is, and how much of it. */
+  private holdingRow(kind: string, title: string, ...detail: Child[]): HTMLElement {
+    return h(
+      "div",
+      { class: "sync-row is-line", "data-holding": kind },
+      h("span", { class: "sync-row-name" }, title),
+      h("span", { class: "sync-row-detail" }, ...detail),
+    );
+  }
+
+  /** What is synced, by name: settings, the user's files, chats, and each project. */
+  private accountSection(): HTMLElement {
+    const { settings } = this.services;
+    const overview = this.controller.overview.peek();
+    const off = (key: string) => settings.peek<boolean | undefined>(key) === false;
+    const none = (key: string) => (off(key) ? "Off on this computer" : "Nothing synced yet");
+
+    const settingsRow = this.holdingRow(
+      "settings",
+      "Settings",
+      ...(overview.settings
+        ? [
+            countOf(overview.settings.count, "setting"),
+            ...(overview.settings.updatedAt === null
+              ? []
+              : [" · changed ", this.when(overview.settings.updatedAt)]),
+          ]
+        : [none("sync.settings")]),
+    );
+
+    const files =
+      overview.files.length === 0
+        ? this.holdingRow("files", "Your files", "Nothing synced yet")
+        : this.details(
+            "files",
+            [
+              h("span", { class: "sync-row-name" }, "Your files"),
+              h("span", { class: "sync-row-detail" }, countOf(overview.files.length, "file")),
+            ],
+            ...groupFiles(overview.files).map((group) =>
+              h(
+                "div",
+                { class: "sync-files", "data-kind": group.kind },
+                h("div", { class: "sync-files-kind" }, group.label),
+                ...group.files.map((file) =>
+                  h(
+                    "div",
+                    { class: "sync-file" },
+                    h("span", { class: "sync-file-path", title: file.path }, file.path),
+                    h("span", { class: "sync-file-size" }, formatSize(file.bytes)),
+                  ),
+                ),
+              ),
+            ),
+          );
+    files.classList.add("sync-holding");
+    files.setAttribute("data-holding", "files");
+
+    const chats = this.holdingRow(
+      "chats",
+      "Chats without a folder",
+      overview.accountChats > 0 ? countOf(overview.accountChats, "chat") : none("sync.chats"),
+    );
+
+    return this.section(
+      "In your account",
+      h("div", { class: "sync-list" }, settingsRow, files, chats),
+      h("h3", { class: "sync-subtitle" }, "Projects"),
+      overview.projects.length === 0
+        ? this.text(
+            "No projects yet. A project syncs once you choose Sync this project with it open.",
+            true,
+          )
+        : h("div", { class: "sync-list" }, ...overview.projects.map((p) => this.projectRow(p))),
+    );
+  }
+
+  private projectRow(project: OverviewProject): HTMLElement {
+    const open = this.controller.project.peek();
+    const isOpen = !!open?.on && open.id === project.id;
+    const more = h(
+      "button",
+      { class: "icon-button", type: "button", "aria-label": `More for ${project.name}` },
+      icon("ellipsis"),
+    );
+    const items: MenuItem[] = [
+      ...(isOpen
+        ? [
+            {
+              label: "Snapshot now",
+              icon: "camera" as const,
+              run: () => void this.run("sync.snapshot.create"),
+            },
+            {
+              label: "Stop syncing this project",
+              run: () => void this.run("sync.project.disable"),
+            },
+          ]
+        : []),
+      {
+        label: "Delete from the account…",
+        icon: "trash-2",
+        destructive: true,
+        separatorBefore: isOpen,
+        run: () => void this.run("sync.project.deleteFromAccount", { id: project.id }),
+      },
+    ];
+    this.drawn.add(
+      on(more, "click", () => {
+        this.menu.value = showMenu(more, items, "Project");
+      }),
+    );
+    return h(
+      "div",
+      { class: "sync-row is-compact", "data-project": project.id },
+      h(
+        "div",
+        { class: "sync-row-main" },
+        h(
+          "div",
+          { class: "sync-row-title" },
+          h("span", { class: "sync-row-name", title: project.name }, project.name),
+          h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
+        ),
+        h("div", { class: "sync-row-detail" }, projectCounts(project)),
+        project.lastChange === null
+          ? null
+          : h(
+              "div",
+              { class: "sync-row-detail" },
+              "Changed ",
+              this.when(project.lastChange),
+              project.lastComputer ? ` on ${project.lastComputer}` : null,
+            ),
+        project.folder
+          ? h("div", { class: "sync-row-detail sync-path", title: project.folder }, project.folder)
+          : null,
+      ),
+      h("div", { class: "sync-row-actions" }, more),
+    );
+  }
+
+  private storageSection(used: number, limit: number): HTMLElement {
+    const share = storageShare(used, limit);
+    const notice = storageNotice(used, limit);
+    const meter = h("div", {
+      class: `sync-meter${notice ? " is-full" : ""}`,
+      role: "meter",
+      "aria-label": "Storage used",
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-valuenow": String(Math.round(share * 100)),
+    });
+    meter.append(h("div", { class: "sync-meter-fill", style: { width: `${share * 100}%` } }));
+    return this.section(
+      "Storage",
+      limit > 0 ? meter : null,
+      this.text(
+        limit > 0 ? `${formatSize(used)} used of ${formatSize(limit)}` : `${formatSize(used)} used`,
+        true,
+      ),
+      notice ? h("p", { class: "sync-text sync-storage-notice" }, notice.text) : null,
+    );
+  }
+
+  /** What sync did lately; closed until asked for. */
+  private activitySection(log: readonly SyncEvent[]): HTMLElement {
+    return h(
+      "section",
+      { class: "ai-section sync-section" },
+      this.details(
+        "activity",
+        [h("h2", { class: "ai-section-title" }, "Recent activity")],
+        log.length === 0
+          ? this.text("Nothing yet.", true)
+          : h(
+              "div",
+              { class: "sync-log" },
+              ...log.map((event) =>
+                h(
+                  "div",
+                  { class: `sync-log-row${event.error ? " is-error" : ""}` },
+                  h("span", { class: "sync-log-time" }, this.when(event.at)),
+                  h("span", { class: "sync-log-text" }, event.text),
+                ),
+              ),
+            ),
+      ),
+    );
+  }
+
   private deviceRow(device: SyncDevice): HTMLElement {
     const seen = serviceTime(device.lastSeenAt);
     const waiting = device.status === "pending";
+    const checking = waiting && device.code !== null;
     const detail: (Node | string | null)[] = [platformLabel(device.platform)];
     if (waiting) detail.push(" · wants to join");
     else if (seen !== null) detail.push(" · last seen ", this.when(seen));
@@ -547,23 +806,32 @@ class SyncView implements DockView {
         h(
           "div",
           { class: "sync-row-title" },
-          h("span", { class: "sync-row-name" }, device.name),
+          h("span", { class: "sync-row-name", title: device.name }, device.name),
           device.current ? h("span", { class: "ai-tag" }, "This computer") : null,
         ),
         h("div", { class: "sync-row-detail" }, ...detail),
-        waiting
+        checking
+          ? h("div", { class: "sync-code is-row", "aria-label": "Verification code" }, device.code)
+          : null,
+        checking
           ? h(
               "div",
-              { class: "sync-row-code" },
-              "Check that it shows this code: ",
-              h("span", { class: "sync-code-inline" }, device.code),
+              { class: "sync-row-detail" },
+              "Approve only if that computer shows the same code.",
             )
           : null,
       ),
       h(
         "div",
         { class: "sync-row-actions" },
-        waiting
+        waiting && !checking
+          ? this.button(
+              "Check code",
+              () => this.run("sync.reviewDevice", { device: device.id }),
+              "primary",
+            )
+          : null,
+        checking
           ? this.button(
               "Approve",
               () => this.run("sync.approveDevice", { device: device.id }),
@@ -578,13 +846,18 @@ class SyncView implements DockView {
   }
 
   private projectSection(): HTMLElement | null {
-    const project = this.controller.project.peek();
+    const { controller, services } = this;
+    const project = controller.project.peek();
     if (!project) return null;
-    if (!project.on)
+    const name = folderName(project.root);
+    if (!project.on) {
+      // A folder the account doesn't know, while the account has projects that aren't here:
+      // it may be one of them (a copy made by hand, a clone without its remote).
+      const linkable = !project.known && controller.overview.peek().projects.some((p) => !p.here);
       return this.section(
         "This project",
         this.text(
-          `Its chats travel with you, and snapshots of unfinished work are taken automatically, with a history.${project.known ? " Another of your computers already syncs it." : ""}`,
+          `${name ? `${name} doesn't sync yet. ` : ""}When it does, its chats travel with you, and snapshots of unfinished work are taken automatically, with a history.${project.known ? " Another of your computers already syncs it." : ""}`,
           true,
         ),
         h(
@@ -592,9 +865,15 @@ class SyncView implements DockView {
           { class: "sync-actions" },
           this.button("Sync this project", () => this.run("sync.project.enable"), "primary"),
         ),
+        linkable
+          ? this.link("This folder is one of my synced projects…", () =>
+              this.run("sync.project.link"),
+            )
+          : null,
       );
-    const rows = this.controller.snapshots.peek();
-    const other = this.controller.continueFrom();
+    }
+    const rows = controller.snapshots.peek();
+    const other = controller.continueFrom();
     const continueButton = other
       ? h(
           "button",
@@ -607,13 +886,25 @@ class SyncView implements DockView {
       continueButton.disabled = this.session.working.peek() !== null;
       this.drawn.add(on(continueButton, "click", () => void this.run("sync.snapshot.continue")));
     }
+    const days = services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
     return this.section(
       "This project",
+      this.text(
+        `${name || "This folder"} syncs from this computer: its chats, and snapshots of its unfinished work.`,
+        true,
+      ),
       h(
         "div",
         { class: "sync-actions" },
         continueButton,
         this.button("Snapshot now", () => this.run("sync.snapshot.create"), "secondary", "camera"),
+      ),
+      h(
+        "div",
+        { class: "sync-subhead" },
+        h("h3", { class: "sync-subtitle" }, "Snapshot history"),
+        h("span", { class: "sync-subhead-note" }, `${retentionText(days)}.`),
+        this.link("Change", () => this.run("settings.open", { query: "@id:sync.historyDays" })),
       ),
       rows.length === 0
         ? this.text("No snapshots yet. One is taken when there is unfinished work.", true)

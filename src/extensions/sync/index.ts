@@ -5,12 +5,14 @@
 // screenless session doesn't sync.
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { accountsIpc } from "../../core/ipc/accounts";
+import { syncIpc } from "../../core/ipc/sync";
 import { perf } from "../../core/perf";
 import { effect } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { registerSyncCommands } from "./commands";
 import { SyncController } from "./controller";
 import manifest from "./extension.json";
+import { statusBarWords } from "./model";
 import { SyncSession } from "./session";
 import { syncViewDescriptor } from "./view";
 
@@ -51,6 +53,44 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
 
     sub.add(dock.views.register(syncViewDescriptor(services, controller, session)));
     registerSyncCommands(sub, services, { controller, session });
+
+    // This computer's own name, for the "Computer name" field.
+    void syncIpc
+      .deviceName()
+      .then((name) => {
+        if (!disposed) session.suggestName(name);
+      })
+      .catch(() => {});
+
+    // The status bar: there only while sync is on here (or waiting to be approved). Quiet: an
+    // icon and a word, colored only for an error.
+    const words = () =>
+      statusBarWords(
+        !!controller.base() && session.profile.value?.sync === true,
+        controller.status.value?.state ?? null,
+        controller.activity.value,
+      );
+    sub.add(
+      services.statusBar.add({
+        id: "sync.status",
+        name: "Sync",
+        alignment: "right",
+        priority: 28,
+        text: () => words()?.text ?? "",
+        tooltip: () => words()?.tooltip ?? "",
+        tone: () => (words()?.error ? "error-text" : undefined),
+        command: "sync.show",
+      }),
+    );
+
+    // A last snapshot as the window or the folder closes, when something changed. Never in the
+    // way of closing: a few seconds at most, and always yes.
+    sub.add(
+      workspace.onWillClose(async () => {
+        await controller.snapshotOnClose().catch(() => {});
+        return true;
+      }),
+    );
 
     // Once the folder is back (the project's identity is the folder's).
     void perf
@@ -103,7 +143,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), where it stands here (`state`: signedOut, unavailable, off, pending, on), this account's computers, storage, the last pass (`activity`), and the open project with its snapshots (newest first). Never the recovery key or a verification code.",
+          "Sync: whether it is open to the account (`available`), where it stands here (`state`: signedOut, unavailable, off, pending, on), this account's computers, storage, the last pass (`activity`), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
@@ -121,11 +161,15 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
               platform: d.platform,
               status: d.status,
               current: d.current,
+              // Whether a code is on show for it; never the code.
+              codeChecked: d.code !== null,
             })),
             recoveryKeySet: !!status && status.recoveryCreatedAt !== null,
             usageBytes: status?.usageBytes ?? 0,
             storageLimit: status?.storageLimit || session.profile.peek()?.storageLimit || 0,
             activity: { state: activity.state, message: activity.message, at: activity.at },
+            overview: controller.overview.peek(),
+            recent: controller.log.peek(),
             project: project
               ? { root: project.root, id: project.id, on: project.on, known: project.known }
               : null,

@@ -33,6 +33,11 @@
         "category": "Sync"
       },
       {
+        "id": "sync.reviewDevice",
+        "title": "Check a waiting computer's code…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.approveDevice",
         "title": "Approve a computer…",
         "category": "Sync"
@@ -65,6 +70,16 @@
       {
         "id": "sync.project.disable",
         "title": "Stop syncing this project",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.link",
+        "title": "This folder is one of my synced projects…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.deleteFromAccount",
+        "title": "Delete a project from the account…",
         "category": "Sync"
       },
       {

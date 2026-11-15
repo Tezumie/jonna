@@ -1,6 +1,7 @@
 // D435: Sync as people see it, with nobody signed in (there is no sync service in UI tests; the
 // signed-in flows are covered by scripts/sync-e2e.mjs): the Sync tab opens and asks to sign in,
-// ide://sync says sync isn't available, and the commands fail with a sentence that says why.
+// ide://sync says sync isn't available (nothing of the account's in `overview`), the status bar
+// has no sync item, and the commands fail with a sentence that says why.
 {
   "name": "sync-m7-129",
   "steps": [
@@ -40,9 +41,23 @@
         "devices": { "$length": 0 },
         "recoveryKeySet": false,
         "project": null,
-        "snapshots": { "$length": 0 }
+        "snapshots": { "$length": 0 },
+        "overview": {
+          "settings": null,
+          "files": { "$length": 0 },
+          "accountChats": 0,
+          "projects": { "$length": 0 }
+        },
+        "recent": { "$length": 0 }
       },
       "timeoutMs": 10000
+    },
+
+    // The status bar item is there only while sync is on (or waiting to be approved).
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".statusbar-item[data-id='sync.status']", "html": 10 },
+      "expect": [{ "display": "none" }]
     },
 
     // The commands say why they can't run.
@@ -51,6 +66,22 @@
     { "run": "sync.syncNow", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.snapshot.create", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.project.enable", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "sync.reviewDevice",
+      "input": { "device": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.approveDevice",
+      "input": { "device": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    { "run": "sync.project.link", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "sync.project.deleteFromAccount",
+      "input": { "id": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
 
     // Its settings are known ones (a value that fits the schema is taken).
     { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },

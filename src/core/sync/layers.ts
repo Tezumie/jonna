@@ -237,10 +237,13 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
       }
       const remote = new Map<string, RemoteFile>();
       const where = new Map<string, string>();
+      /** Records removed from the account (not deleted as chats): where to write over them. */
+      const removed = new Map<string, { collection: string; version: number }>();
       for (const collection of ctx.collections(CHATS)) {
         for (const r of ctx.records(collection)) {
           // A record the service marks deleted, or one that can't be read, says nothing here:
           // a deletion counts only as sealed content, which takes the account's keys to make.
+          if (r.deleted) removed.set(r.id, { collection, version: r.version });
           if (r.unreadable || r.deleted || !r.text) continue;
           const entry = JSON.parse(r.text) as { deleted?: unknown; meta?: { updated?: unknown } };
           const updated = typeof entry.meta?.updated === "number" ? entry.meta.updated : 0;
@@ -253,14 +256,24 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
         }
       }
       const base = ctx.base<{ chats: Record<string, ChatBase> }>("chats", () => ({ chats: {} }));
+      // A chat this computer synced that the account no longer has (its project was removed
+      // from the account): it is sent again, as a chat that was never synced.
+      for (const [id, b] of Object.entries(base.chats)) {
+        if (b.hash !== undefined && !remote.has(id) && local.has(id)) {
+          delete base.chats[id];
+          ctx.changed();
+        }
+      }
 
       const upload = async (id: string, expect: number | null): Promise<void> => {
         const chat = chats.get(id);
         if (!chat) return;
         // A chat keeps the collection it was first synced under.
-        const collection = where.get(id) ?? port.collectionOf(chat.workspace);
+        const gone = removed.get(id);
+        const collection = where.get(id) ?? gone?.collection ?? port.collectionOf(chat.workspace);
         if (!collection) return;
-        const result = await port.push(collection, id, expect);
+        // Over the marker of a record removed from the account, when there is one.
+        const result = await port.push(collection, id, expect ?? gone?.version ?? null);
         if (!result) return;
         if (result.outcome === "done") {
           ctx.wrote(collection, id, result.version, "{}");

@@ -23,6 +23,8 @@ export class SyncSession {
   readonly working: Signal<string | null> = signal<string | null>(null);
   /** The computer's name as typed in the tab. */
   deviceName = DEFAULT_DEVICE_NAME;
+  /** This computer's own name, once read: what the name field starts with. */
+  readonly ownName: Signal<string | null> = signal<string | null>(null);
 
   private shownKey: string | null = null;
   private typed: string | null = null;
@@ -30,6 +32,14 @@ export class SyncSession {
   /** Whether sync is open to the signed-in account. */
   available(): boolean {
     return this.profile.peek()?.sync === true;
+  }
+
+  /** Takes this computer's own name as the name to join under, unless one was typed. */
+  suggestName(name: string): void {
+    const own = name.trim();
+    if (!own) return;
+    if (this.deviceName === DEFAULT_DEVICE_NAME) this.deviceName = own;
+    this.ownName.value = own;
   }
 
   /** The recovery key to show, while its step is open. */

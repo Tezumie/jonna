@@ -40,7 +40,13 @@ export interface LayerContext {
     info?: SyncInfo | null,
   ): Promise<number | null>;
   /** Tells the mirror about a record written another way (a chat upload). */
-  wrote(collection: string, id: string, version: number, text: string | null): void;
+  wrote(
+    collection: string,
+    id: string,
+    version: number,
+    text: string | null,
+    info?: SyncInfo | null,
+  ): void;
   /** A conflict another call reported: the record as the account has it. */
   saw(record: SyncRecord | null, collection: string, id: string): void;
   /** This layer's base: an object kept on disk; call `changed()` after changing it. */
@@ -156,13 +162,13 @@ export class SyncEngine {
           info ?? null,
         );
         if (result.outcome === "done") {
-          ctx.wrote(collection, id, result.version, text);
+          ctx.wrote(collection, id, result.version, text, info ?? null);
           return result.version;
         }
         if (result.outcome === "conflict") ctx.saw(result.current, collection, id);
         return null;
       },
-      wrote: (collection, id, version, text) => {
+      wrote: (collection, id, version, text, info) => {
         const before = this.mirror.get(key(collection, id));
         this.mirror.set(key(collection, id), {
           collection,
@@ -173,8 +179,10 @@ export class SyncEngine {
           text,
           unreadable: false,
           refs: before?.refs ?? 0,
-          device: null,
-          updatedAt: null,
+          device: before?.device ?? null,
+          updatedAt: before?.updatedAt ?? null,
+          // Kept for the views until the next read brings the record back whole.
+          info: info ?? before?.info ?? null,
         });
       },
       saw: (record, collection, id) => {

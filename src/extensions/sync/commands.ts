@@ -12,7 +12,7 @@ import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { SnapshotRow, SyncController } from "./controller";
-import { countOf, formatSize } from "./model";
+import { countOf, folderName, formatSize, projectCounts } from "./model";
 import { DEFAULT_DEVICE_NAME, type SyncSession } from "./session";
 
 export const SYNC_VIEW = "sync";
@@ -175,7 +175,7 @@ export function registerSyncCommands(
       const ok = mine
         ? await confirmAction(
             "Turn sync off on this computer?",
-            `Your settings, files and chats stay here; they stop syncing. To sync again, join from this computer.${last ? "\n\nThis is the only computer that syncs: afterwards the recovery key is the only way back to the synced copy." : ""}`,
+            `This computer stops syncing and is removed from the account's computers. What is already here stays: your settings, files, chats and projects.\n\nThe synced copy stays in the account for your other computers. To delete it, use Reset sync on the account page.${last ? "\n\nThis is the only computer that syncs: afterwards the recovery key is the only way back to the synced copy." : ""}`,
             "Turn off",
             true,
           )
@@ -190,6 +190,7 @@ export function registerSyncCommands(
     await syncIpc.removeDevice(base, id);
     if (mine) session.closeStep();
     await sync().refreshStatus();
+    if (!mine) sync().note(`${name} was removed from sync.`);
     return { removed: true, device: name, current: mine };
   };
 
@@ -199,7 +200,7 @@ export function registerSyncCommands(
       title: "Sync",
       category: CATEGORY,
       description:
-        "Opens the Sync tab: turning sync on or joining it, this account's computers, storage, what syncs, and the open project's snapshots. State: ide://sync.",
+        "Opens the Sync tab: turning sync on or joining it, what the account holds (settings, files, chats, projects by name), the open project's snapshots, storage, this account's computers, what syncs, and recent activity. State: ide://sync.",
       input: s.empty(),
       effects: [],
       agent: "discoverable",
@@ -265,7 +266,7 @@ export function registerSyncCommands(
       title: "Join sync…",
       category: CATEGORY,
       description:
-        "Asks to join the account's sync from this computer. The Sync tab then shows a code; a computer that already syncs shows the same one and approves it there.",
+        "Asks to join the account's sync from this computer. It then waits: on a computer that already syncs, the person chooses Check code for this one, both show the same code, and that computer approves it.",
       input: s.object({
         name: s.string({ maxLength: 80 }).describe("This computer's name").optional(),
       }),
@@ -278,7 +279,8 @@ export function registerSyncCommands(
         if (status.state !== "pending") {
           if (!status.exists)
             throw new Error("This account doesn't sync yet: turn sync on from this computer.");
-          // The code it returns is shown by the tab, from the status.
+          // The code to compare shows in the tab, from the status, once another computer
+          // starts checking this one.
           await syncIpc.join(base, nameOf(name));
           await sync().refreshStatus();
         }
@@ -350,11 +352,11 @@ export function registerSyncCommands(
 
   sub.add(
     dispatcher.register({
-      id: "sync.approveDevice",
-      title: "Approve a computer…",
+      id: "sync.reviewDevice",
+      title: "Check a waiting computer's code…",
       category: CATEGORY,
       description:
-        "Lets a computer that asked to join read this account's sync. Only after the person checked that both computers show the same code (the Sync tab shows it).",
+        "Starts checking a computer that asked to join: from then on this computer and the waiting one both show the same six-digit code in their Sync tabs, for the person to compare before approving. Never returns the code.",
       input: s.object({ device: s.string().describe("The waiting device's id (ide://sync)") }),
       effects: ["network"],
       agent: "hidden",
@@ -364,8 +366,35 @@ export function registerSyncCommands(
           .status.peek()
           ?.devices.find((d) => d.id === device && d.status === "pending");
         if (!waiting) throw new Error("No computer with that id is waiting to join.");
+        // The code shows in the tab, from the status.
+        await syncIpc.reviewDevice(base, device);
+        await sync().refreshStatus();
+        showTab();
+        return { device: waiting.name, checking: true };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.approveDevice",
+      title: "Approve a computer…",
+      category: CATEGORY,
+      description:
+        "Lets a computer that asked to join read this account's sync. Only after sync.reviewDevice, and after the person checked that both computers show the same code (the Sync tab shows it).",
+      input: s.object({ device: s.string().describe("The waiting device's id (ide://sync)") }),
+      effects: ["network"],
+      agent: "hidden",
+      run: async ({ device }) => {
+        const base = await whenOn();
+        const waiting = sync()
+          .status.peek()
+          ?.devices.find((d) => d.id === device && d.status === "pending");
+        if (!waiting) throw new Error("No computer with that id is waiting to join.");
+        if (waiting.code === null) throw new Error("Check that device's code first.");
         await syncIpc.approve(base, device);
         await sync().refreshStatus();
+        sync().note(`${waiting.name} was approved and now syncs.`);
         notifications.show("success", `${waiting.name} now syncs.`, { title: "Sync" });
         return { approved: waiting.name };
       },
@@ -462,9 +491,37 @@ export function registerSyncCommands(
     if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
     if (services.workspace.remote.peek())
       throw new Error("Only folders on this computer can sync.");
+    if (on) {
+      // A copied folder carries the id file of the folder it was copied from: asked once,
+      // before the two sync as one project.
+      const other = await sync().copiedFrom();
+      if (other) {
+        const answer = await showDialog<"same" | "own" | null>({
+          title: `Is this the same project as ${folderName(other) || other}?`,
+          message: `This folder has the same project identity as ${other}, which syncs from this computer. The same project shares its chats and snapshots with that folder. A project of its own starts with a new identity and nothing synced.`,
+          actions: [
+            { label: "Cancel", value: null },
+            { label: "A project of its own", value: "own" },
+            { label: "The same project", value: "same", variant: "primary" },
+          ],
+          cancelValue: null,
+        });
+        if (answer === null) return { root: services.workspace.root.peek(), on: false };
+        if (answer === "own") await sync().separateProject();
+      }
+    }
     await sync().setProjectSync(on);
     const project = sync().project.peek();
     return { root: project?.root ?? null, on: project?.on ?? false };
+  };
+
+  /** One of the account's projects, by id. */
+  const accountProject = (id: string) => {
+    const found = sync()
+      .overview.peek()
+      .projects.find((p) => p.id === id);
+    if (!found) throw new Error("The account has no project with that id.");
+    return found;
   };
 
   sub.add(
@@ -492,6 +549,112 @@ export function registerSyncCommands(
       effects: ["write"],
       agent: "hidden",
       run: () => projectSync(false),
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.link",
+      title: "This folder is one of my synced projects…",
+      category: CATEGORY,
+      description:
+        "Makes the open folder one of the account's projects that isn't on this computer yet (its identity is written to the folder), then syncs it from here: its chats arrive and its snapshots can be continued from. Without `id`, asks which project.",
+      input: s.object({
+        id: s.string().describe("The project's id (ide://sync overview.projects)").optional(),
+      }),
+      effects: ["write", "network"],
+      agent: "hidden",
+      run: async ({ id }) => {
+        await whenOn();
+        if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
+        if (services.workspace.remote.peek())
+          throw new Error("Only folders on this computer can sync.");
+        if (sync().project.peek()?.on)
+          throw new Error("This folder already syncs. Stop syncing it first.");
+        let target = id;
+        if (target === undefined) {
+          const others = sync()
+            .overview.peek()
+            .projects.filter((p) => !p.here);
+          if (others.length === 0)
+            throw new Error("Every project in the account is already on this computer.");
+          const picked = await quickInput.pick(
+            others.map((p) => ({
+              id: p.id,
+              label: p.name,
+              description: [
+                projectCounts(p),
+                p.lastChange === null ? null : `changed ${relativeAge(p.lastChange)}`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            })),
+            { placeholder: "Which of your synced projects is this folder?" },
+          );
+          if (!picked) return { linked: false, cancelled: true };
+          target = picked.id;
+        }
+        const project = accountProject(target);
+        if (project.here)
+          throw new Error(
+            `${project.name} already syncs from ${project.folder ?? "this computer"}.`,
+          );
+        await sync().linkProject(target);
+        notifications.show("success", `This folder now syncs as ${project.name}.`, {
+          title: "Sync",
+        });
+        return { linked: true, id: target, name: project.name };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.deleteFromAccount",
+      title: "Delete a project from the account…",
+      category: CATEGORY,
+      description:
+        "Deletes one project's synced copy from the account after asking: its snapshots and its chats' synced copies. Nothing on any computer is deleted; a computer that still syncs the project uploads it again. The open folder's own project stops syncing from here first.",
+      input: s.object({
+        id: s.string().describe("The project's id (ide://sync overview.projects)"),
+      }),
+      // Asked in run (the question names the project).
+      effects: ["write", "network"],
+      agent: "hidden",
+      run: async ({ id }) => {
+        await whenOn();
+        const project = accountProject(id);
+        const open = sync().project.peek();
+        const isOpen = !!open?.on && open.id === id;
+        const elsewhere = project.here && !isOpen;
+        const ok = await confirmAction(
+          `Delete ${project.name} from the account?`,
+          [
+            `Its snapshots (${project.snapshots}) and the synced copies of its chats (${project.chats}) are removed from the account. This can't be undone.`,
+            "Nothing on any computer is deleted: the folders and the chats saved on your computers stay as they are.",
+            "A computer that still syncs this project uploads it again, so stop syncing it there first.",
+            ...(isOpen ? ["It stops syncing from this computer first."] : []),
+            ...(elsewhere
+              ? [
+                  `It still syncs from ${project.folder ?? "another folder"} on this computer: open that folder and stop syncing it, or it is uploaded again.`,
+                ]
+              : []),
+          ].join("\n\n"),
+          "Delete from the account",
+          true,
+        );
+        if (!ok) return { deleted: false, cancelled: true };
+        if (isOpen) await sync().setProjectSync(false);
+        const { removed, failed } = await sync().deleteProjectFromAccount(id);
+        if (failed > 0)
+          throw new Error(
+            `${countOf(failed, "item")} of ${project.name} couldn't be deleted (another computer changed them meanwhile). Try again.`,
+          );
+        notifications.show("success", `${project.name} was deleted from the account.`, {
+          title: "Sync",
+        });
+        return { deleted: true, id, name: project.name, removed };
+      },
     }),
   );
 

@@ -268,12 +268,21 @@ try {
     const before = await laptop.sync("status");
     check(before.state === "off" && before.exists === true, JSON.stringify(before));
     await fails(laptop.sync("changes", { since: 0 }), "SyncOff", "reading before joining");
-    const code = await laptop.sync("join", { name: "Laptop" });
-    check(/^\d{3} \d{3}$/.test(code), code);
+    await laptop.sync("join", { name: "Laptop" });
     const waiting = await laptop.sync("status");
-    check(waiting.state === "pending" && waiting.code === code, JSON.stringify(waiting));
+    check(waiting.state === "pending" && waiting.code === null, JSON.stringify(waiting));
     const seen = (await desk.sync("status")).devices.find((d) => d.status === "pending");
-    check(seen?.name === "Laptop" && seen.code === code, JSON.stringify(seen));
+    check(seen?.name === "Laptop" && seen.code === null, JSON.stringify(seen));
+    // Not approved unseen: the desk first fixes the key and chooses the code's random part.
+    await fails(desk.sync("approve", { device: seen.id }), "Sync", "approving unchecked");
+    const code = await desk.sync("review_device", { device: seen.id });
+    check(/^\d{3} \d{3}$/.test(code), code);
+    const shown = await laptop.sync("status");
+    check(shown.state === "pending" && shown.code === code, JSON.stringify(shown));
+    const listed = (await desk.sync("status")).devices.find((d) => d.id === seen.id);
+    check(listed.code === code, JSON.stringify(listed));
+    // A waiting computer can't read, write or remove anyone.
+    await fails(laptop.sync("changes", { since: 0 }), "SyncOff", "a waiting computer reading");
     await desk.sync("approve", { device: seen.id });
     const after = await laptop.sync("status");
     check(after.state === "on" && after.devices.length === 2, JSON.stringify(after));
@@ -636,6 +645,11 @@ try {
     await writeFile(join(source, "big.txt"), randomBytes(300_000).toString("base64"));
     git(source, "add", "-A");
     git(source, "commit", "-q", "-m", "one");
+    // Two stashes: both travel, in order (only the newest is a ref).
+    await writeFile(join(source, "big.txt"), "stashed first\n");
+    git(source, "stash", "push", "-q", "-m", "older idea");
+    await writeFile(join(source, "big.txt"), "stashed second\n");
+    git(source, "stash", "push", "-q", "-m", "newer idea");
     await writeFile(join(source, "note.txt"), "uncommitted\n");
     await desk.call("workspace_open", { path: source });
     const first = await desk.sync("snapshot_create", {
@@ -660,6 +674,12 @@ try {
     check(
       git(target, "log", "--format=%H %s") === git(source, "log", "--format=%H %s"),
       "the same history",
+    );
+    check(
+      git(target, "stash", "list", "--format=%gs") ===
+        git(source, "stash", "list", "--format=%gs") &&
+        git(target, "stash", "list").includes("older idea"),
+      `stashes: ${git(target, "stash", "list")}`,
     );
     check(
       JSON.stringify(await tree(target)) === JSON.stringify(await tree(source)),
@@ -693,8 +713,10 @@ try {
     );
     check(git(target, "status", "--porcelain") === "", "clean, as on the desk");
     check(
-      git(target, "stash", "list") === "",
-      "the first snapshot's changes were replaced, not stashed",
+      !git(target, "stash", "list").includes("Before continuing") &&
+        git(target, "stash", "list", "--format=%gs") ===
+          git(source, "stash", "list", "--format=%gs"),
+      "the first snapshot's changes were replaced, not stashed; the desk's stashes are the only ones",
     );
     // The laptop holds the desk's state: it stores nothing of its own until something changes.
     const own = await laptop.sync("snapshot_create", {

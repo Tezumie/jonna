@@ -85,6 +85,9 @@ pub struct GitState {
     pub bundles: Vec<Bundle>,
     /// `git diff --cached --binary` against the commit: what was staged.
     pub staged: Option<Stored>,
+    /// Every stash, newest first: its commit (carried by the bundles) and its message.
+    #[serde(default)]
+    pub stashes: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -308,6 +311,7 @@ pub fn fingerprint(root: &Path) -> Result<String> {
             ],
         )?);
         hash.update(git(root, &["diff", "--cached", "--raw", "--no-renames"]).unwrap_or_default());
+        hash.update(git(root, &["stash", "list", "--format=%H"]).unwrap_or_default());
         for (path, _) in git_changes(root)? {
             note(&mut hash, root, &path);
         }
@@ -383,6 +387,18 @@ impl Capture<'_> {
     }
 }
 
+/// The stashes, newest first: (commit, message).
+fn stashes(root: &Path) -> Vec<(String, String)> {
+    git(root, &["stash", "list", "--format=%H %gs"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let (sha, message) = line.split_once(' ')?;
+            Some((sha.to_string(), message.to_string()))
+        })
+        .collect()
+}
+
 fn ref_tips(root: &Path) -> Vec<String> {
     let mut tips: Vec<String> = git(
         root,
@@ -398,6 +414,8 @@ fn ref_tips(root: &Path) -> Vec<String> {
     .lines()
     .map(str::to_string)
     .collect();
+    // Only the newest stash is a ref; the older ones are named here so a bundle carries them.
+    tips.extend(stashes(root).into_iter().map(|(sha, _)| sha));
     tips.sort();
     tips.dedup();
     tips
@@ -440,6 +458,8 @@ async fn bundles(
     let file = scratch_file(data, "bundle")?;
     let file_text = file.to_string_lossy().to_string();
     let mut args: Vec<String> = vec!["bundle".into(), "create".into(), file_text, "--all".into()];
+    // Older stashes have no ref of their own: named by commit, they go into the pack too.
+    args.extend(stashes(root).into_iter().map(|(sha, _)| sha));
     let mut not: Vec<String> = Vec::new();
     if has_remote && !everything {
         not.push("--remotes".into());
@@ -597,6 +617,7 @@ async fn create_once(
             remote,
             bundles: chain,
             staged,
+            stashes: stashes(root),
         });
     } else {
         for path in folder_files(root) {
@@ -845,6 +866,20 @@ pub async fn restore(
             );
             let _ = std::fs::remove_file(&file);
             fetched?;
+        }
+        // The stashes the other computer had, oldest first, so the list ends in its order.
+        let here = stashes(root);
+        for (sha, message) in state.stashes.iter().rev() {
+            let safe = sha.len() >= 40 && sha.chars().all(|c| c.is_ascii_hexdigit());
+            if !safe || here.iter().any(|(have, _)| have == sha) {
+                continue;
+            }
+            if git(root, &["cat-file", "-e", &format!("{sha}^{{commit}}")]).is_err()
+                || git(root, &["stash", "store", "-m", message, sha]).is_err()
+            {
+                done.notes
+                    .push(format!("A stash couldn't be brought over: {message}"));
+            }
         }
         if let Some(head) = &state.head {
             let present =

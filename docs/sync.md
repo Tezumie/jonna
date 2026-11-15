@@ -11,6 +11,17 @@ The service stores it, counts its bytes and deletes what nothing refers to. It c
 The cost of that promise: without one of the account's computers or the recovery key, nobody
 can read the synced copy, the user included.
 
+**What the service can see** (so the account page and the app can say what is synced): each
+record's label, which the app leaves readable on purpose. A project's name; for a snapshot its
+date, computer, branch, number of files and size; for a chat when it changed and its size;
+for one of the user's files its name and size; how many settings there are; the computers'
+names. Never file contents, chats, chat titles, settings' names or values, or the text of the
+user's files. A label is never trusted by the app for a decision: it is for display.
+
+**The service trusts no client.** The app is open source and anyone can call the service with
+an account. Who owns what, who has sync, how much is stored and who may do what are decided on
+the service. Being signed in is not being a device: see "Proof" below.
+
 ## Keys
 
 Rust: `src-tauri/src/sync/crypto.rs`. Every piece is a well-known construction from a
@@ -21,7 +32,8 @@ maintained library (RustCrypto).
 | Device key | An X25519 key pair made on each computer. The private half stays in the OS keychain (the profile's `secrets.json` when there is none). |
 | Keyring | The account's secret: one random 32-byte key per generation, and a key for naming chunks. A generation is added when a device is removed. |
 | Wrap | The keyring sealed to a device's public key: a sealed box (libsodium's `crypto_box_seal`). The service stores one per device. |
-| Recovery key | One more X25519 private key, shown once as 14 groups of four characters (Crockford base 32 with a checksum). The service stores the keyring sealed to its public half, so any device can re-wrap for it without knowing it. |
+| Recovery key | One more X25519 private key, shown once as 14 groups of four characters (Crockford base 32 with a checksum). The service stores the keyring sealed to its public half, followed by an HMAC under a second key derived from the recovery key (HKDF). The account's devices keep the public half and that second key in their sealed list, so any of them can re-wrap for the recovery key, and a computer that joins by recovery key can tell a wrap its account's devices made from one the service made up. |
+| Proof | To show it holds a private key, a client answers the service's challenge: the service sends a one-time X25519 public key and a nonce, and the client returns HMAC-SHA256 of the nonce under the secret the two keys share. A challenge works once and for two minutes. |
 | Content | XChaCha20-Poly1305 with a random 24-byte nonce, under a key derived from a generation's key with HKDF-SHA256 (one per purpose: records, chunks). The item's name is the associated data, so one item can't be passed off as another. Deflated first when that is smaller. |
 | Chunk id | HMAC-SHA256 of the content under the keyring's id key, first 16 bytes. The same content has the same id; the id says nothing about the content. |
 
@@ -33,15 +45,25 @@ content stays readable after new keys.
 - **The first device** makes its key pair, the keyring and a recovery key in memory
   (`sync_prepare`), shows the recovery key, and sends nothing until the key (or its last group)
   is typed back (`sync_setup`).
-- **Another device** registers its public key and waits (`sync_join`). Both computers show six
-  digits derived from that public key. A device that syncs approves it by sealing the keyring
-  to the key it sees (`sync_approve`): the person compares the digits, which is what stops the
-  service from swapping in a key of its own.
-- **Or by recovery key** (`sync_join_recovery`): the device opens the recovery wrap and stores
-  a wrap for itself.
+- **A session is tied to a device only by proof** of that device's private key, when it
+  registers and whenever a new sign-in says which device it is. Reading or writing records and
+  chunks, approving, making new keys and removing other devices all need a session tied to an
+  approved device. The account page (a fresh sign-in) may remove devices and reset.
+- **Another device** registers its public key and waits (`sync_join`). A device that syncs
+  starts checking it (`sync_review_device`): it fixes the public key it sees, picks a random
+  value and publishes it; both computers then show six digits made from that key and that
+  value. Because the value is chosen after the key is fixed, a key can't be picked to fit a
+  code. The person compares the digits and approves, and the keyring is sealed to the key that
+  was fixed (`sync_approve`).
+- **Or by recovery key** (`sync_join_recovery`): the device proves to the service that it
+  holds the recovery key, opens the recovery wrap (checking its tag), stores a wrap for itself,
+  and then requires the account's sealed list to open with those keys and to name this
+  recovery key; otherwise it leaves again.
 - **The trusted list:** a sealed record (`sys/devices`) of the devices the account's own
-  devices approved. New keys are wrapped only for devices on it; a device the service lists
-  that isn't on it is removed instead.
+  devices approved, the recovery key they wrap to (never the one the service names), and a
+  counter that only goes up. New keys are wrapped only for devices on it; a device the service
+  lists that isn't on it is removed instead. A list that is missing, unreadable or older than
+  one the device has seen stops the device from changing anything.
 - **Removing a device** deletes its wrap and its sessions, and asks for new keys: the next
   device to check in adds a generation and wraps the keyring for every remaining device and the
   recovery key. What is synced from then on can't be read with the removed device's copy.
@@ -62,7 +84,9 @@ sign-in). All under `/api/sync/`, JSON unless said.
 |---|---|
 | `GET state` | The vault: epoch, key version, devices (a device reads only its own wrap), recovery key's public half, bytes used and allowed. |
 | `POST setup` | The first device makes the vault. |
-| `POST devices` | A device asks to join, or says which device this session is. |
+| `POST challenge` | A challenge for the holder of a public key's private half. |
+| `POST devices` | A device asks to join, or says which device this session is; with proof of its key. |
+| `POST devices/{id}/code` | An approved device publishes the random part of the code for a waiting one. |
 | `POST devices/{id}/approve` | An approved device stores the wrap for a waiting one. |
 | `DELETE devices/{id}` | Removes a device and ends its sessions. |
 | `GET recovery`, `PUT recovery` | The recovery wrap; a new recovery key. |
@@ -72,7 +96,8 @@ sign-in). All under `/api/sync/`, JSON unless said.
 | `GET`, `PUT records/{collection}/{id}` | One record. A write names the version it was made from; another version there answers 409 with the current record. |
 | `POST blobs/have` | Which of these chunks are stored. |
 | `POST blobs`, `POST blobs/get` | Upload and download chunks, framed: a 22-byte id, a 4-byte length, the bytes. |
-| `POST gc` | Removes chunks nothing refers to and recounts the bytes used. |
+| `POST gc` | Removes chunks nothing refers to and recounts the bytes used. An approved device, at most once a minute. |
+| `GET overview` | What is stored, by its labels: no content. For the account page. |
 
 - **A record** is small (400 KB sealed at most), has a version the service counts, and may
   name the chunks it needs. The service keeps a chunk while a record names it. A deleted record
@@ -83,6 +108,12 @@ sign-in). All under `/api/sync/`, JSON unless said.
 - **An epoch** is one life of the vault. A reset ends it; the next setup has a later one, and
   devices drop what they kept for the earlier one.
 - **Storage full** refuses new chunks (507); records keep being written while they fit.
+- **What counts toward storage:** a chunk's bytes plus a fixed part per chunk; a record's
+  content, its list of chunks and a fixed part per record. Room for an upload is taken before a
+  byte is written. An account holds at most 100,000 records; a record names at most 200,000
+  chunks; empty chunks are refused.
+- **A brake on request rates** per account, and limits on every list and body size.
+- **A record may carry a label** (`info`: a small flat object) that the service can read.
 
 ## What syncs
 
@@ -137,8 +168,11 @@ asked, and nothing is written inside `.git` to make one.
   days are kept, every snapshot of the latest day and the last one of each earlier day. A
   pinned snapshot is never removed.
 
-Not yet: older stashes (only the latest travels), symbolic links, submodules, the "also
-include" list for ignored files.
+- **Every stash travels** (their commits in the bundles) and is put back in the stash list.
+- **A restore writes only inside the project:** a snapshot's path can't name `.git` at any
+  depth (nor a spelling Windows reads as it), climb out, or pass through a link.
+
+Not yet: symbolic links, submodules, the "also include" list for ignored files.
 
 ## Tests
 
