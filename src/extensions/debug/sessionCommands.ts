@@ -43,7 +43,14 @@ export function registerSessionCommands(
   /** Throws (offering the install) when the configuration's debug adapter isn't installed. */
   checkAdapter(config: LaunchConfig, user: boolean): Promise<void>;
 } {
-  const { dispatcher, quickInput, notifications, settings, dock, platform } = services;
+  const {
+    dispatcher,
+    quickInput,
+    notifications,
+    settings,
+    dock,
+    backendPlatform: platform,
+  } = services;
   const register: typeof dispatcher.register = (c) =>
     sub.add(dispatcher.register({ category: "Debug", ...c }));
   const sessionInput = s
@@ -656,7 +663,7 @@ export function registerSessionCommands(
     when: "workspaceOpen",
     agent: "discoverable",
     run: async ({ tab, folder }) => {
-      if (platform !== "windows")
+      if (services.screenPlatform !== "windows")
         throw new Error(
           'Only on Windows: WebView2 can open a debugging port; WebKitGTK (Linux) and WKWebView (macOS) can\'t. Debug the page in Chrome or Edge instead (a "chrome" or "msedge" configuration).',
         );

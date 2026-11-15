@@ -676,9 +676,9 @@ export class ExtensionRuntime implements Disposable {
             displayName: this.manifest.displayName,
             path: this.root,
             platform:
-              this.services.platform === "mac"
+              this.services.backendPlatform === "mac"
                 ? "macos"
-                : this.services.platform === "windows"
+                : this.services.backendPlatform === "windows"
                   ? "windows"
                   : "linux",
             appName: product.nameShort,

@@ -124,7 +124,7 @@ export const tasksExtension: BuiltinExtension<WorkbenchServices> = {
         workspaceFolder: folder,
         folders,
         ...(file && { file }),
-        pathSeparator: services.platform === "windows" ? "\\" : "/",
+        pathSeparator: services.backendPlatform === "windows" ? "\\" : "/",
         config: (key: string) => settings.peekAt(key, folder),
       });
       const out: TaskDefinition[] = [];
@@ -164,7 +164,7 @@ export const tasksExtension: BuiltinExtension<WorkbenchServices> = {
           source,
           vars(folder.path),
           // A WSL folder's tasks run in Linux: its `linux` blocks apply (m7.12, VS Code's WSL).
-          taskPlatform(services.platform, folder.path),
+          taskPlatform(services.backendPlatform, folder.path),
           services.taskTerminals.automationShell?.(folder.path),
         ))
           add(
@@ -190,7 +190,7 @@ export const tasksExtension: BuiltinExtension<WorkbenchServices> = {
         // Build files (tsc, Make, Cargo, Gradle, Maven, gulp, grunt; detectFolders.ts). Make
         // reads a Makefile (`make -p`, which may run its `$(shell …)`) only in a trusted folder.
         if (settings.peekAt<string>("task.autoDetect", folder.path) === "off") continue;
-        const platform = taskPlatform(services.platform, folder.path);
+        const platform = taskPlatform(services.backendPlatform, folder.path);
         for (const t of await detectedTasks(
           folder.path,
           entries,
@@ -198,7 +198,7 @@ export const tasksExtension: BuiltinExtension<WorkbenchServices> = {
             platform,
             taskShellKind(
               services.taskTerminals.automationShell?.(folder.path) ?? undefined,
-              services.platform,
+              services.backendPlatform,
             ),
           ),
           detectDepth(settings.peekAt<number>("task.autoDetectDepth", folder.path)),

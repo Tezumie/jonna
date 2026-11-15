@@ -46,9 +46,9 @@ export function registerTaskTerminals(
   // one, the default terminal profile's shell, arguments and env (VS Code's rule); without that
   // either, the IDE's own default shell. A WSL folder's tasks run in Linux: the linux automation
   // profile there, else bash (Rust), never a Windows profile.
-  const platform = profilePlatform(services.platform);
+  const platform = profilePlatform(services.backendPlatform);
   const automationFor = (folder: string | undefined) => {
-    const wsl = services.platform === "windows" && !!folder && !!parseWslPath(folder);
+    const wsl = services.backendPlatform === "windows" && !!folder && !!parseWslPath(folder);
     const shell = parseAutomationProfile(
       services.settings.peek<unknown>(`terminal.automationProfile.${wsl ? "linux" : platform}`),
     );

@@ -9,7 +9,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 
 export function registerWslCommands(sub: DisposableStore, services: WorkbenchServices): void {
   const { dispatcher, quickInput, statusBar, workspace, notifications } = services;
-  const windows = services.platform === "windows";
+  const windows = services.backendPlatform === "windows";
   // Registered everywhere (the extension's manifest lists it), usable on Windows only.
   sub.add(
     dispatcher.register({

@@ -94,7 +94,7 @@ async function bundledDebugpy(services: WorkbenchServices): Promise<string | nul
     ? list.find((e) => e.id === DEBUGPY_EXTENSION && e.status !== "disabled")
     : undefined;
   if (!ext || typeof ext.root !== "string") return null;
-  const sep = isWindows(services.platform) ? "\\" : "/";
+  const sep = isWindows(services.backendPlatform) ? "\\" : "/";
   const libs = `${ext.root.replace(/[\\/]+$/, "")}${sep}bundled${sep}libs`;
   return (await exists(`${libs}${sep}debugpy`)) ? libs : null;
 }
@@ -108,7 +108,7 @@ export async function builtInPythonSetup(
   config: LaunchConfig,
   fallback: string,
 ): Promise<{ python: string; config: LaunchConfig; adapterEnv?: Record<string, string> }> {
-  const { settings, platform } = services;
+  const { settings, backendPlatform: platform } = services;
   const folder = config.workspaceFolder ?? services.workspace.root.peek() ?? "";
   const venvs: string[] = [];
   if (folder && services.trust.trusted)

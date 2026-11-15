@@ -63,7 +63,7 @@ export function registerTerminalProfiles(
   host: ProfileCommandHost,
 ): TerminalProfiles {
   const { dispatcher, settings, quickInput } = services;
-  const platform = profilePlatform(services.platform);
+  const platform = profilePlatform(services.backendPlatform);
   const profilesKey = `terminal.profiles.${platform}`;
   const defaultKey = `terminal.defaultProfile.${platform}`;
 

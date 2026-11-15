@@ -140,10 +140,10 @@ export class SessionLaunchers {
             kind: "shell",
             command: shellLine(
               [cmd.command, ...cmd.args],
-              this.services.platform === "windows",
+              this.services.backendPlatform === "windows",
               taskShellKind(
                 this.services.taskTerminals.automationShell?.(config.workspaceFolder) ?? undefined,
-                this.services.platform,
+                this.services.backendPlatform,
               ),
             ),
             env,
@@ -241,7 +241,7 @@ export class SessionLaunchers {
   }
 
   node(config: LaunchConfig, setup: SessionSetup, target: LaunchTarget): DebugSession {
-    const { platform } = this.services;
+    const { backendPlatform: platform } = this.services;
     const id = nextId();
     return new CdpSession(
       {
@@ -338,7 +338,7 @@ export class SessionLaunchers {
 
   /** A Node process that registered through the bootloader (a child process, a terminal's). */
   registered(reg: Registration, setup: SessionSetup): DebugSession {
-    const { platform } = this.services;
+    const { backendPlatform: platform } = this.services;
     return new CdpSession(
       {
         windows: platform === "windows",
@@ -355,7 +355,7 @@ export class SessionLaunchers {
 
   /** A worker thread, through its parent's inspector. */
   worker(child: ChildTarget, setup: SessionSetup): DebugSession {
-    const { platform } = this.services;
+    const { backendPlatform: platform } = this.services;
     return new CdpSession(
       {
         windows: platform === "windows",
@@ -437,7 +437,7 @@ export class SessionLaunchers {
     root: string,
     target: LaunchTarget,
   ): DebugSession {
-    const { platform } = this.services;
+    const { backendPlatform: platform } = this.services;
     const raw = config.raw;
     const windows = platform === "windows";
     const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
