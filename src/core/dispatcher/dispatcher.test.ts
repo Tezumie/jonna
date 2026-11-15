@@ -231,3 +231,79 @@ test("a policy or confirm message that throws is a typed, audited failure", asyn
   await assert.rejects(other.dispatcher.execute("test.confirmed", { name: "a" }), CommandError);
   assert.equal(other.executed[0]?.status, "denied");
 });
+
+test("without a screen: marked commands are refused, and a reach for the page fails readably", async () => {
+  const context = new ContextKeyService();
+  const events = new EventBus<DispatcherEvents>();
+  const executed: CommandExecutedEvent[] = [];
+  events.on("command.executed", (e) => executed.push(e));
+  let screen = false;
+  const dispatcher = new Dispatcher({
+    context,
+    permissions: ALLOW_ALL,
+    events,
+    audit: () => {},
+    hasScreen: () => screen,
+  });
+  let ran = 0;
+  dispatcher.register({
+    id: "test.showMenu",
+    title: "Show menu",
+    description: "Opens a menu at the pointer.",
+    input: s.empty(),
+    effects: [],
+    needsScreen: true,
+    run: () => {
+      ran++;
+    },
+  });
+  dispatcher.register({
+    id: "test.measure",
+    title: "Measure",
+    description: "Reads the page without saying it needs one.",
+    input: s.empty(),
+    effects: [],
+    run: () => {
+      throw new ReferenceError("document is not defined");
+    },
+  });
+  dispatcher.register({
+    id: "test.broken",
+    title: "Broken",
+    description: "Fails for a reason of its own.",
+    input: s.empty(),
+    effects: [],
+    run: () => {
+      throw new ReferenceError("total is not defined");
+    },
+  });
+  // The mark is in the command's info only when set (listings of other commands don't change).
+  assert.equal(dispatcher.info("test.showMenu")?.needsScreen, true);
+  assert.equal("needsScreen" in (dispatcher.info("test.measure") ?? {}), false);
+
+  await assert.rejects(
+    dispatcher.execute("test.showMenu"),
+    (err: unknown) =>
+      err instanceof CommandError && err.code === "Disabled" && /needs a screen/.test(err.message),
+  );
+  assert.equal(ran, 0);
+  assert.equal(executed[0]?.status, "disabled");
+  await assert.rejects(
+    dispatcher.execute("test.measure"),
+    (err: unknown) =>
+      err instanceof CommandError &&
+      err.code === "Failed" &&
+      /"test\.measure" needs a screen.*document is not defined/.test(err.message),
+  );
+  // Any other failure keeps its own message.
+  await assert.rejects(dispatcher.execute("test.broken"), /^CommandError: total is not defined$/);
+
+  // With a screen, nothing is refused or reworded.
+  screen = true;
+  await dispatcher.execute("test.showMenu");
+  assert.equal(ran, 1);
+  await assert.rejects(
+    dispatcher.execute("test.measure"),
+    /^CommandError: document is not defined$/,
+  );
+});

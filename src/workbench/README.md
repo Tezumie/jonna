@@ -14,6 +14,36 @@ resolves tokens to colors for Monaco and the terminal), `WorkspaceService` (+ re
 `PersistenceService`, `SettingsService` (`settings.ts`: registry + layered values, user and
 workspace settings.json, live reload, writes that keep comments).
 
+## One service set for every entry
+
+`createServices.ts` builds `WorkbenchServices` from a set of implementations
+(`ServiceImplementations`): the logic services (dispatcher, context, state, events, layout model,
+view registry, dock model, persistence, workspace, trust, keyboard rules, the registries) are
+built there, the same way for every entry; what a screen draws or asks is passed in. The window's
+entry (`main.ts`) passes the classes of this folder and `src/ui`; a screenless entry
+(`src/headless`) passes its own. In `services.ts` the services a screen draws are typed by what
+extensions may use of them, not by their classes: `NotificationService`, `QuickInputService`,
+`StatusBarService`, `ThemeApi`, `AuxWindows`, `IframeHost`.
+
+- `hasScreen`: whether the session has a window to draw in. Code that runs at activation checks it
+  before it reaches for the page (`window` listeners, `document`, measuring); views never need
+  to, they are only made on a screen.
+- `screenPlatform` / `backendPlatform`: the machine the screen is on (key labels, modifier keys,
+  the web view under the shell) and the machine the backend is on (path separators, shells, line
+  endings, programs). The same value in the desktop app. `platform` is the old name for both:
+  new code doesn't read it.
+- What logic services used to reach the screen for is passed in: trust's questions
+  (`TrustPrompts`; the window's dialogs are `trustDialogs.ts`), the keyboard's "a modal dialog is
+  open" check, the file decorations' frame scheduler, the settings' first-paint cache
+  (`FirstPaintCache`, `localStorageFirstPaintCache`), where saved state is read and written
+  (`StateBackend`). `viewRegistry.ts` (the registry and its types) is apart from `views.ts`
+  (the container that mounts views), `riskyOpenDialog.ts` from `riskyFolders.ts`, and
+  `agentPermission.ts` (the handler the agent extension sets) from `permissionPrompts.ts` (the
+  MCP dialog), so the logic side imports no view code. The built-in extensions' list is
+  `src/extensions/builtins.ts`.
+
+## The shell and the shared services
+
 `dock/` is everything else on screen: see its README. `services.ts` defines `WorkbenchServices`,
 what built-in extensions receive, plus the shared services that connect extensions: file
 decorations, quick diff, language clients, viewers (`ViewerRegistry`) and open documents' live
@@ -54,7 +84,7 @@ string setting a runtime dropdown (themes); `getForLanguage` / `peekForLanguage`
 folder opens, with "trust the parent folder", `askOnOpen`, D200), `trustModel.ts` (tested) which
 decision applies (the folder's own, else a trusted parent's; a risky folder only its own, D213);
 `riskyFolders.ts` (D213) knows where the user's Downloads, Desktop, temp and home folders are
-(`trust.risky`, from Rust's app info) and shows the caution before one opens (`askRiskyOpen`;
+(`trust.risky`, from Rust's app info); `riskyOpenDialog.ts` shows the caution before one opens (`askRiskyOpen`;
 `workspace.setOpenGuard` is the hook before every open); `contributions.ts`
 holds what third-party extensions add declaratively (languages, grammars, snippets, color themes,
 D102); `fileIcons.ts` draws file and folder icons from the active file icon theme (`icon("fi:file:…")`,
