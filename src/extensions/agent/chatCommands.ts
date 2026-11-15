@@ -12,6 +12,7 @@ import { isThisWorkspace } from "./chatWorkspace";
 import { memberInfo } from "./groupChat";
 import { newId } from "./ids";
 import { showMoreMenu } from "./menus";
+import { updateSavedMeta } from "./sessionStore";
 import type { SessionManager } from "./sessions";
 import { subagentRuns } from "./subagentRuns";
 import { messageReveal } from "./threadTabs";
@@ -57,13 +58,7 @@ export function registerChatCommands(
       return meta;
     }
     if (!session) throw new Error("No agent session.");
-    const text = await agentStoreIpc.load(session);
-    if (!text) throw new Error("That chat no longer exists.");
-    const saved = JSON.parse(text) as { meta?: ChatMeta };
-    const meta = { ...saved.meta };
-    change(meta);
-    saved.meta = meta;
-    await agentStoreIpc.save(session, JSON.stringify(saved));
+    const meta = await updateSavedMeta<ChatMeta>(session, change);
     sessions.changed();
     return meta;
   };

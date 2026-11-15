@@ -4,7 +4,7 @@ import type { Item } from "../../core/agent/conversation";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { signal } from "../../core/reactive/index";
 import type { AgentSession } from "./session";
-import { loadSaved, saveSessionNow } from "./sessionStore";
+import { loadSaved, saveSessionNow, updateSavedMeta } from "./sessionStore";
 
 /** What loadSaved touches of a session (no Tauri, no workbench in tests). */
 function fakeSession() {
@@ -146,6 +146,37 @@ test("saveSessionNow: a chat opened by an id nobody had saved doesn't replace on
     await saveSessionNow(first as unknown as AgentSession);
     assert.equal(first.conflict.peek(), false);
     assert.match(store.files.get("s-test")?.json ?? "", /more/);
+  } finally {
+    store.restore();
+  }
+});
+
+test("updateSavedMeta: a rename doesn't put an older transcript back over a turn saved meanwhile", async () => {
+  const store = fakeStore();
+  try {
+    await agentStoreIpc.save("c1", JSON.stringify({ meta: { title: "Old" }, items: ["one"] }));
+    // Another process saves its turn between this one's read and its write.
+    const load = agentStoreIpc.load;
+    let raced = false;
+    agentStoreIpc.load = async (id) => {
+      const text = await load(id);
+      if (!raced) {
+        raced = true;
+        await agentStoreIpc.save(
+          id,
+          JSON.stringify({ meta: { title: "Old" }, items: ["one", "two"] }),
+        );
+      }
+      return text;
+    };
+    const meta = await updateSavedMeta<{ title?: string }>("c1", (m) => {
+      m.title = "New";
+    });
+    assert.equal(meta.title, "New");
+    assert.deepEqual(JSON.parse(store.files.get("c1")?.json ?? "{}"), {
+      meta: { title: "New" },
+      items: ["one", "two"],
+    });
   } finally {
     store.restore();
   }
