@@ -130,15 +130,61 @@ function deniedCommandRule(list: readonly string[], line: string): string | unde
   })?.entry;
 }
 
-/** The command line a tool call runs, when it is one that runs a command line. */
-function commandLineOf(name: string, args: Record<string, unknown>): string | null {
-  if (name !== "run_command") return null;
-  return typeof args.command === "string" ? args.command : null;
+/** IDE commands that run a command line in a shell: the input field holding it. */
+export const SHELL_LINE_INPUT: Readonly<Record<string, string>> = {
+  "terminal.sendText": "text",
+  "terminal.runCommand": "command",
+  "terminal.start": "command",
+};
+
+/**
+ * IDE commands that run a command line this policy cannot read: it comes from a file the agent
+ * may have written (a task, a launch configuration), not from the call. With command patterns
+ * on the deny list they go ahead only by an allow entry naming them or by the person's answer.
+ */
+const INDIRECT_LINE_COMMANDS: ReadonlySet<string> = new Set([
+  "tasks.run",
+  "tasks.runBuild",
+  "tasks.runTest",
+  "tasks.rerun",
+  "tasks.restart",
+  "debug.start",
+  "debug.runWithoutDebugging",
+  "debug.restart",
+]);
+
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+
+/** The IDE command a `call_command` call names. */
+const ideCommandOf = (name: string, args: Record<string, unknown>): string | null =>
+  name === "call_command" && typeof args.id === "string" ? args.id : null;
+
+/**
+ * The command line a tool call runs, when it is one that runs a command line: `run_command`,
+ * `monitor`, and `call_command` on an IDE command that types one into a shell.
+ */
+export function commandLineOf(name: string, args: Record<string, unknown>): string | null {
+  if (name === "run_command" || name === "monitor")
+    return typeof args.command === "string" ? args.command : null;
+  const id = ideCommandOf(name, args);
+  const field = id === null ? undefined : SHELL_LINE_INPUT[id];
+  if (!field) return null;
+  const line = record(args.input)?.[field];
+  return typeof line === "string" ? line : null;
 }
 
 /**
- * The deny entry that refuses tool call `name` with `args` (its name, or the command line it
- * runs), or null when the policy lets it be decided as usual.
+ * Whether the policy has to be asked about IDE command `id` whatever the mode: it runs a command
+ * line from a file, and the deny list names command lines the policy could not check there.
+ */
+export function asksForIndirectLine(policy: UnattendedPolicy | null, id: string): boolean {
+  return INDIRECT_LINE_COMMANDS.has(id) && commandPatterns(policy?.deny ?? []).length > 0;
+}
+
+/**
+ * The deny entry that refuses tool call `name` with `args` (its name, the IDE command it calls,
+ * or the command line it runs), or null when the policy lets it be decided as usual.
  */
 export function deniedCall(
   policy: UnattendedPolicy | null,
@@ -149,6 +195,9 @@ export function deniedCall(
   if (!deny.length) return null;
   const byName = toolRule(deny, name);
   if (byName) return byName;
+  const id = ideCommandOf(name, args);
+  const byId = id === null ? undefined : toolRule(deny, id);
+  if (byId) return byId;
   const line = commandLineOf(name, args);
   return (line && deniedCommandRule(deny, line)) || null;
 }
@@ -175,9 +224,13 @@ export function listDecision(
   // request) its title, which is the command it wants to run.
   const subject = request.code ?? (request.kind === "agent" ? request.title : undefined);
   const isLine = request.kind === "command" || request.kind === "agent";
+  // The command line of the call behind it (an IDE command that types one into a shell): read
+  // as `run_command`'s is.
+  const line = call ? commandLineOf(call.name, call.args) : null;
   if (deny.length) {
     const rule =
       (call && toolRule(deny, call.name)) ||
+      (line && deniedCommandRule(deny, line)) ||
       (subject && isLine && deniedCommandRule(deny, subject)) ||
       (subject && request.kind === "ide" && toolRule(deny, subject)) ||
       undefined;
@@ -186,6 +239,7 @@ export function listDecision(
   if (allow.length) {
     const rule =
       (call && toolRule(allow, call.name)) ||
+      (line && allowedCommandRule(allow, line)) ||
       (subject && isLine && allowedCommandRule(allow, subject)) ||
       (subject && request.kind === "ide" && toolRule(allow, subject)) ||
       undefined;

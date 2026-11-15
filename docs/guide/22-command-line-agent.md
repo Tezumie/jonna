@@ -100,6 +100,11 @@ Without the flag, your settings decide, as in the IDE.
   whatever the mode. Both can be repeated. A pattern is a tool's name (`write_file`,
   `mcp__github__*`) or the start of a command line (`"npm test"` allows `npm test -- --watch`).
   Every part of a chained command has to be allowed; one denied part refuses the line.
+  A denied command line is refused wherever the agent types it: its own command tool, a
+  monitor, or a terminal of the IDE. A task or a launch configuration runs a line from a file,
+  which the list can't read: once you deny a command line, those run only with
+  `--allow tasks.run` (the command's id) or your answer. The list is a guard against the
+  expected, not a sandbox: it doesn't see what a script, a test or a notebook cell runs.
 - `--mode plan` and `--mode ask` are read-only: the agent researches and plans, or answers.
 - `--max-steps`, `--max-cost` and `--timeout` (seconds) stop a run that goes on too long.
 

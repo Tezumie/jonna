@@ -76,7 +76,7 @@ import {
 } from "./sessionUsage";
 import { agentExternalModel } from "./subagents";
 import { runToolGate } from "./toolGate";
-import { deniedCall } from "./unattended";
+import { commandLineOf, deniedCall } from "./unattended";
 import { priceOf } from "./usage";
 import { recordUsage } from "./usageLog";
 
@@ -661,10 +661,11 @@ async function sendTurn(
       // A run with nobody at the window (unattended.ts): its deny list refuses the call outright.
       const refused = deniedCall(agentHost(session.services).permissions ?? null, call.name, args);
       if (refused) {
+        const deniedLine = commandLineOf(call.name, args);
         session.toldDecision({
           title: call.name,
           kind: "tool",
-          ...(typeof args.command === "string" && { code: args.command }),
+          ...(deniedLine !== null && { code: deniedLine }),
           tool: call.name,
           answer: "deny",
           by: "policy",

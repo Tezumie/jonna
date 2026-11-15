@@ -1727,7 +1727,18 @@ backend, the services a turn needs, no `document` or `window`), and
   (`ask`, `accept-edits`, `auto`, `full-access`; `modeSettings` gives the settings the window's
   menu writes and whether edits apply, which a host applies for the run only). `deny` refuses a
   tool call before it runs (`sessionTurn.ts`: by the tool's name, or a command line by its
-  words) and a question before it is shown; `allow` answers a question (a tool's name, a
+  words) and a question before it is shown. A command line is read wherever a call carries one
+  (`commandLineOf`): `run_command`, `monitor`, and `call_command` on an IDE command that types
+  one into a shell (`SHELL_LINE_INPUT`: `terminal.runCommand`, `terminal.sendText`,
+  `terminal.start`); an IDE command is also refused by its id. The agent's permission handler
+  (`core.ts`) reads the deny list again before any of its shortcuts (an external agent's calls
+  come only there), passes the call into the question so the allow list reads the line as
+  `run_command`'s, and never grants such a command "for this session" under a policy. Commands
+  whose line comes from a file the agent can write (`tasks.run` and its kin, `debug.start`,
+  `debug.runWithoutDebugging`, `debug.restart`) can't be held against command patterns: once
+  the deny list has one, they ask whatever the mode (`asksForIndirectLine`), so an allow entry
+  naming the command or the person decides. Not covered, and said in the guide: test runs,
+  notebook cells, formatters and what a script the agent wrote does. `allow` answers a question (a tool's name, a
   command pattern as in `agent.allowedCommands`, an IDE command's id; `tool:` / `cmd:` say
   which), also one that asks whatever the mode. Order in `AgentSession.askBeforeSend`: deny
   list, allow list, full access, then `otherwise`: `deny` (the default: refused at once) or
