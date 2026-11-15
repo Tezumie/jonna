@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -17,7 +18,7 @@ use tauri::host::{ChannelSink, CommandEntry, CommandFuture, Invocation, Reply, S
 use tauri::ipc::{InvokeBody, InvokeResponseBody};
 use tauri::AppHandle;
 
-use super::frame::{read_frame, write_frame, Frame};
+use super::frame::{read_frame, read_frame_within, write_frame, Frame, MAX_FIRST_HEADER};
 
 /// The wire contract's version.
 pub const PROTOCOL: u64 = 1;
@@ -35,6 +36,10 @@ const FRAMES_AHEAD: usize = 16;
 /// Requests running at once; more wait unread on the stream.
 const MAX_RUNNING: usize = 1024;
 
+/// How long a TCP client has to say `$/hello`, whole: a connection that says nothing would
+/// hold the host's one place for a client.
+const HELLO_WITHIN: Duration = Duration::from_secs(5);
+
 /// The two ends of a client's byte stream.
 pub struct Carrier {
     pub reader: Box<dyn Read + Send>,
@@ -50,6 +55,14 @@ pub enum Ended {
     Shutdown,
     /// The stream ended, or broke the protocol.
     Closed,
+}
+
+/// A served connection: how it ended, and whether its client ever said a `$/hello` the host
+/// accepted (one that didn't was never the host's client).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Served {
+    pub ended: Ended,
+    pub greeted: bool,
 }
 
 enum Outgoing {
@@ -179,6 +192,7 @@ pub struct Server {
     /// The commands' names, as `$/hello` lists them.
     names: Vec<&'static str>,
     version: String,
+    hello_within: Duration,
 }
 
 impl Server {
@@ -188,12 +202,21 @@ impl Server {
             commands: table.iter().map(|entry| (entry.name, entry.run)).collect(),
             names: table.iter().map(|entry| entry.name).collect(),
             version: version.to_string(),
+            hello_within: HELLO_WITHIN,
         }
     }
 
+    /// A shorter wait, for tests of what happens when it passes.
+    #[cfg(test)]
+    pub fn with_waits(mut self, hello_within: Duration) -> Self {
+        self.hello_within = hello_within;
+        self
+    }
+
     /// Serves one client until its stream ends or it asks for shutdown. `token`: what
-    /// `$/hello` must carry (a TCP client), `None` for the process's own pipes.
-    pub async fn serve(&self, carrier: Carrier, token: Option<&str>) -> Ended {
+    /// `$/hello` must carry (a TCP client, which must also say it in time), `None` for the
+    /// process's own pipes.
+    pub async fn serve(&self, carrier: Carrier, token: Option<&str>) -> Served {
         let Carrier {
             reader,
             writer,
@@ -213,18 +236,33 @@ impl Server {
         };
         let (frames, mut incoming) = tokio::sync::mpsc::channel(FRAMES_AHEAD);
         let running = Arc::new(tokio::sync::Semaphore::new(MAX_RUNNING));
+        // Told once `$/hello` was accepted: nothing behind it is read before that.
+        let (greet, accepted) = tokio::sync::oneshot::channel::<()>();
+        let mut greet = Some(greet);
         let reading = std::thread::Builder::new()
             .name("host-reader".into())
-            .spawn(move || read_loop(reader, frames));
+            .spawn(move || read_loop(reader, frames, accepted));
+        let mut greeted = false;
         let ended = match (&writing, &reading, SyncQueue::new()) {
             (Ok(_), Ok(_), Ok(ordered)) => {
-                let mut greeted = false;
                 loop {
                     // A place for the next request first: none is read while all are taken.
                     let Ok(place) = running.clone().acquire_owned().await else {
                         break Ended::Closed;
                     };
-                    let frame = match incoming.recv().await {
+                    let next = if greeted || token.is_none() {
+                        incoming.recv().await
+                    } else {
+                        // The whole frame in time: one that trickles in is no better than none.
+                        match tokio::time::timeout(self.hello_within, incoming.recv()).await {
+                            Ok(next) => next,
+                            Err(_) => {
+                                eprintln!("host: a client said no $/hello in time");
+                                break Ended::Closed;
+                            }
+                        }
+                    };
+                    let frame = match next {
                         Some(Ok(Some(frame))) => frame,
                         // The stream ended between frames.
                         Some(Ok(None)) | None => break Ended::Closed,
@@ -236,6 +274,11 @@ impl Server {
                     match self.handle(&connection, &ordered, frame, &mut greeted, token, place) {
                         Next::Continue => {}
                         Next::End(ended) => break ended,
+                    }
+                    if greeted {
+                        if let Some(greet) = greet.take() {
+                            let _ = greet.send(());
+                        }
                     }
                 }
             }
@@ -251,7 +294,7 @@ impl Server {
         }
         connection.alive.store(false, Ordering::SeqCst);
         hang_up();
-        ended
+        Served { ended, greeted }
     }
 
     /// One frame from the client.
@@ -413,8 +456,19 @@ enum Next {
 
 type ReadResult = std::io::Result<Option<Frame>>;
 
-fn read_loop(reader: Box<dyn Read + Send>, frames: tokio::sync::mpsc::Sender<ReadResult>) {
+fn read_loop(
+    reader: Box<dyn Read + Send>,
+    frames: tokio::sync::mpsc::Sender<ReadResult>,
+    accepted: tokio::sync::oneshot::Receiver<()>,
+) {
     let mut reader = BufReader::with_capacity(64 * 1024, reader);
+    // The first frame is `$/hello`, from a client that hasn't shown its token yet: small, and
+    // nothing more is read (or kept) for a client until the host accepted it.
+    let first = read_frame_within(&mut reader, MAX_FIRST_HEADER, 0);
+    let last = !matches!(first, Ok(Some(_)));
+    if frames.blocking_send(first).is_err() || last || accepted.blocking_recv().is_err() {
+        return;
+    }
     loop {
         let frame = read_frame(&mut reader);
         let last = !matches!(frame, Ok(Some(_)));

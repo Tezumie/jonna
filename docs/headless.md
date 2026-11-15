@@ -39,6 +39,11 @@ Every message, both directions:
   - `$/hello` first, before anything else: `{ "id": 1, "method": "$/hello", "params": { "protocol": 1, "client": "<kind>", "token": "<string, TCP only>" } }`
     -> `{ "id": 1, "result": { "protocol": 1, "version": "<app version>", "os": "windows|macos|linux", "pid": <n>, "commands": ["...every command the host answers..."] } }`
     A wrong protocol or token answers an error and closes.
+    The first frame of a connection has a header of at most 64 KiB and no body (a larger one
+    closes the connection), and the host reads nothing behind it until it accepted the hello.
+    Over TCP the whole `$/hello` must arrive within 5 seconds of connecting, else the host
+    closes the connection: its one place is free for another client. A connection that never
+    said an accepted `$/hello` doesn't count as the host's client for `--linger`.
   - `$/shutdown`: the host answers `{ "id", "result": null }`, runs its shutdown (kills children,
     flushes stores) and exits 0. End of stdin does the same without an answer.
 

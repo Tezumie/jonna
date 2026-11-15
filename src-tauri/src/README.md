@@ -44,7 +44,8 @@ product.json's identifier; the session log; `AppState`), serving, and the exit (
 the end of stdin, Ctrl+C or SIGTERM: `AppState::shutdown`, exit 0). `frame.rs`: the wire's
 frame (two little-endian u32 lengths, a JSON header, a raw body; 64 MiB / 1 GiB limits).
 `server.rs`: one client's connection: `$/hello` first (protocol 1, the token over TCP, the list
-of commands), requests run as tasks (at most 1024 at once, 16 frames read ahead: beyond that the
+of commands; the first frame is at most 64 KiB with no body, nothing behind it is read before
+it is accepted, and a TCP client has 5 s to send it), requests run as tasks (at most 1024 at once, 16 frames read ahead: beyond that the
 host stops reading and the stream pushes back; sync commands one at a time on the connection's
 own thread, in the order their requests arrived, as the desktop runs them: the shim's
 `SyncQueue`), answers in any order through one writer thread,
@@ -55,7 +56,8 @@ process's stdin and stdout are the client's stream, so they are taken out of the
 handles first (stdin becomes the null device, stdout becomes stderr, the pipes aren't
 inherited): a stray print or a started program can't corrupt the stream. Over TCP (loopback
 only) one client is served at a time, others are closed at once; when the client goes, the host
-waits `--linger` seconds (60) for it to come back, then exits. The port is printed on stderr
+waits `--linger` seconds (60) for it to come back, then exits (a connection that never said an
+accepted `$/hello` is no client: it neither starts that wait nor makes it longer). The port is printed on stderr
 (`host: listening on 127.0.0.1:<port>`). The program answers the same helper starts as the
 desktop one first (the remote relay, git's prompt, the MCP stdio proxy, the Ctrl+C helper).
 Tests: `server_tests.rs` (a socket pair and a small command table), `shim_tests.rs` (the

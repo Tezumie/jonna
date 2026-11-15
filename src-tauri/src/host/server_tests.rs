@@ -105,6 +105,11 @@ struct Client {
 }
 
 fn connect(token: Option<&'static str>) -> Client {
+    connect_with(token, None)
+}
+
+/// `waits`: how long the host waits for `$/hello`.
+fn connect_with(token: Option<&'static str>, waits: Option<Duration>) -> Client {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     stream
@@ -123,7 +128,11 @@ fn connect(token: Option<&'static str>) -> Client {
                 let _ = accepted.shutdown(std::net::Shutdown::Both);
             }),
         };
-        tauri::async_runtime::block_on(server.serve(carrier, token))
+        let server = match waits {
+            Some(hello) => server.with_waits(hello),
+            None => server,
+        };
+        tauri::async_runtime::block_on(server.serve(carrier, token)).ended
     });
     Client { stream, served }
 }
@@ -163,6 +172,19 @@ impl Client {
     fn call(&mut self, id: u64, method: &str, params: Value) -> Value {
         self.send(json!({ "id": id, "method": method, "params": params }), b"");
         self.answer(id, &mut Vec::new()).0
+    }
+
+    /// How the connection ended, when it did within `wait`.
+    fn ended_within(self, wait: Duration) -> Option<Ended> {
+        let Client { stream, served } = self;
+        let (done, ended) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(served.join().unwrap());
+        });
+        let ended = ended.recv_timeout(wait).ok();
+        // The client's end stays open until here: the host ended by itself.
+        drop(stream);
+        ended
     }
 
     /// True when the host has closed the connection.
@@ -445,4 +467,79 @@ fn a_broken_frame_closes_the_connection() {
     write_frame(&mut client.stream, b"not json", b"").unwrap();
     assert!(client.closed());
     assert_eq!(client.served.join().unwrap(), Ended::Closed);
+}
+
+#[test]
+fn a_client_that_says_nothing_is_dropped() {
+    let waits = Some(Duration::from_millis(300));
+    // Nothing at all.
+    let client = connect_with(Some("secret"), waits);
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+    // A frame that never comes whole.
+    let mut client = connect_with(Some("secret"), waits);
+    client.stream.write_all(&[40, 0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(8)),
+        Some(Ended::Closed)
+    );
+}
+
+#[test]
+fn the_first_frame_is_small_and_has_no_body() {
+    // A header past the first frame's limit: refused on its length alone, none of it awaited.
+    let mut client = connect(Some("secret"));
+    let mut prefix = (64 * 1024 + 1u32).to_le_bytes().to_vec();
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    client.stream.write_all(&prefix).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(3)),
+        Some(Ended::Closed)
+    );
+    // A body, of any size.
+    let mut client = connect(Some("secret"));
+    let mut prefix = 20u32.to_le_bytes().to_vec();
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    client.stream.write_all(&prefix).unwrap();
+    assert_eq!(
+        client.ended_within(Duration::from_secs(3)),
+        Some(Ended::Closed)
+    );
+    // After `$/hello`, a frame may be larger than the first one.
+    let mut client = connect(Some("secret"));
+    client.send(
+        json!({ "id": 1, "method": "$/hello", "params": { "protocol": 1, "token": "secret" } }),
+        b"",
+    );
+    assert_eq!(client.next().0["result"]["protocol"], 1);
+    let text = "x".repeat(100 * 1024);
+    assert_eq!(
+        client.call(2, "echo", json!({ "text": text }))["result"],
+        text
+    );
+}
+
+#[test]
+fn frames_sent_behind_the_hello_are_read_once_it_is_accepted() {
+    let mut client = connect(Some("secret"));
+    client.send(
+        json!({ "id": 1, "method": "$/hello", "params": { "protocol": 1, "token": "secret" } }),
+        b"",
+    );
+    client.send(
+        json!({ "id": 2, "method": "echo", "params": { "text": "x".repeat(100 * 1024) } }),
+        b"",
+    );
+    assert_eq!(client.next().0["result"]["protocol"], 1);
+    assert_eq!(client.next().0["id"], 2);
+}
+
+#[test]
+fn the_processs_own_pipes_have_no_deadline() {
+    // No token: the stream is the host's own stdin, whose other end started the host.
+    let mut client = connect_with(None, Some(Duration::from_millis(100)));
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(client.hello()["result"]["protocol"], 1);
 }
