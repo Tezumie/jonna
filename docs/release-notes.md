@@ -3,6 +3,23 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.7
+
+The agent can run without the window, and a round of fixes.
+
+- **The agent at the command line** (build it yourself for now). The same agent, with your
+  settings, keys and chats, runs in a terminal: a session you type into, one-shot runs for
+  scripts and CI, and a mode other editors can drive. It isn't in the installers yet; the
+  repository's README says how to build it. Nothing about the app's own agent changes.
+- **A menu's button closes it on a second click,** also for a tab's ⋯, a sidebar view's ⋯ and
+  the terminal's profiles. They used to close and open again.
+- **The details panel reads like the Chats list:** the same text size, icons and row height.
+- **An external agent can't reach outside the folder with `..`** in a file request.
+- **A click the agent makes in the browser pane lands** on a page that has only just loaded.
+- **A tab moved into its own window** is ready for clicks as soon as it shows.
+- **A notebook doesn't open again by itself** after its folder is closed.
+- **Linux:** widgets in a chat draw (their scripts were refused there).
+
 ## 0.1.6
 
 More room for the conversation, and two fixes.
