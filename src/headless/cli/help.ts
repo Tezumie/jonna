@@ -89,6 +89,8 @@ Usage:
 
 Listens on 127.0.0.1 and prints one line of JSON when ready:
   {"type":"listening","host":"127.0.0.1","port":<n>,"token":"<secret>"}
+The token is in that line only when this program made it up: one you chose (--token, or
+IDE_SERVE_TOKEN in the environment, which keeps it out of the process list) is never printed.
 A client sends newline-delimited JSON requests ({"id","method","params"}): hello (with the
 token) first, then execute, state, chats, open, subscribe, send, stop, shutdown. Chat events
 arrive as {"event":{…}} lines. Permission requests wait for the client

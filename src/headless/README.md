@@ -229,7 +229,8 @@ lookup finds.
 
 `<cli> serve [--port n] [--token text]` listens on 127.0.0.1 and prints one line when ready:
 `{"type":"listening","host":"127.0.0.1","port":n,"token":"…","folder":"…"}`. The token is
-`--token`, else `IDE_SERVE_TOKEN`, else random. Messages are newline-delimited JSON, one object
+`--token`, else `IDE_SERVE_TOKEN`, else random (an empty one counts as none), and the line
+carries it only when it is the random one: a token the caller chose is never printed. Messages are newline-delimited JSON, one object
 per line, UTF-8. One client at a time (a second is answered `Busy`).
 
 - Client → server: `{ "id": n, "method": "<name>", "params": { … } }`.
