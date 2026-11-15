@@ -222,18 +222,21 @@ test("files: created, changed, deleted and in conflict", async () => {
     await engineA.tick();
   };
   await both();
-  assert.deepEqual(b.files, { "keybindings.json": "[1]", "snippets/go.json": "{}" });
+  assert.deepEqual({ ...b.files }, { "keybindings.json": "[1]", "snippets/go.json": "{}" });
 
   clock.now = 200;
   b.edit("snippets/go.json", '{"x":1}');
   b.edit("skills/review/SKILL.md", "# Review");
   a.edit("keybindings.json", null);
   await both();
-  assert.deepEqual(a.files, {
-    "snippets/go.json": '{"x":1}',
-    "skills/review/SKILL.md": "# Review",
-  });
-  assert.deepEqual(b.files, a.files);
+  assert.deepEqual(
+    { ...a.files },
+    {
+      "snippets/go.json": '{"x":1}',
+      "skills/review/SKILL.md": "# Review",
+    },
+  );
+  assert.deepEqual({ ...b.files }, a.files);
 
   // Both change the same file: the later change is the file, the other is kept beside it.
   clock.now = 300;
@@ -269,10 +272,10 @@ test("files: a kind switched off stays on this computer, and catches up when swi
   const engineB = new SyncEngine(account.backend(), memoryStore(), [filesLayer(b)]);
   await engineA.tick();
   await engineB.tick();
-  assert.deepEqual(b.files, {});
+  assert.deepEqual({ ...b.files }, {});
   b.off.clear();
   await engineB.tick();
-  assert.deepEqual(b.files, { "snippets/go.json": "{}" });
+  assert.deepEqual({ ...b.files }, { "snippets/go.json": "{}" });
 });
 
 /** A computer's chats, with the transfer done by copying between computers through the account. */
