@@ -10,7 +10,13 @@
     { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
     { "run": "settings.set", "input": { "key": "agent.runCommands", "value": "auto" } },
     { "run": "agent.send", "input": { "message": "Please start the slow job", "wait": false } },
-    { "wait": 1200 },
+    // The turn is under way (its 3 s command started) before the folder closes: on a slow
+    // machine a fixed wait ended before the turn had begun, and there was nothing to stop.
+    {
+      "state": "ide://agent/session",
+      "expect": { "status": "running", "items": { "$contains": "run_command" } },
+      "timeoutMs": 30000
+    },
     { "run": "workspace.closeFolder" },
     { "wait": 1500 },
     {

@@ -6,7 +6,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const work = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const home = join(work, "claude-home");
+// The folder as CLAUDE_CONFIG_DIR spells it, which is how Claude Code writes the paths in its
+// records. This file's own path is the long one where the temp folder's is a short name
+// (C:\Users\RUNNER~1 on CI for Windows), and the IDE reads only below the folder it was given.
+const home = process.env.CLAUDE_CONFIG_DIR || join(work, "claude-home");
 const plugin = join(home, "plugins", "cache", "pkgt-market", "pkgt-styler", "1.0.0");
 const market = join(home, "plugins", "marketplaces", "pkgt-market");
 const write = (path, text) => {
