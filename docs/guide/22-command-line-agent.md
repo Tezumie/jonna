@@ -107,6 +107,8 @@ Without the flag, your settings decide, as in the IDE.
   expected, not a sandbox: it doesn't see what a script, a test or a notebook cell runs.
 - `--mode plan` and `--mode ask` are read-only: the agent researches and plans, or answers.
 - `--max-steps`, `--max-cost` and `--timeout` (seconds) stop a run that goes on too long.
+  `--max-cost` counts the agent's own requests and its subagents'. It needs a model whose price
+  is known: with one that has none, the run tells you once that the limit can't be enforced.
 
 ### Trust
 

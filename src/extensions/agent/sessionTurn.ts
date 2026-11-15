@@ -69,6 +69,7 @@ import { compactWith } from "./sessionSummaries";
 import { allModeRules, MODE_RULES, modeRules, SMALL_CONTEXT } from "./sessionTypes";
 import {
   contextLengthFor,
+  countSideUsage,
   countUsage,
   requestOptions,
   thinkFor,
@@ -966,7 +967,7 @@ From the user's hooks: ${words}`,
                 if (event.kind === "done") {
                   if (subSystem === null) countUsage(session, event, contextLength, "chat", choice);
                   // The explore subagent on the chat's model (D127): logged, not in the meter.
-                  else
+                  else {
                     recordUsage(session.services, {
                       source: "subagent",
                       session: session.id,
@@ -974,6 +975,8 @@ From the user's hooks: ${words}`,
                       event,
                       price: session.price,
                     });
+                    countSideUsage(session, event, session.price);
+                  }
                 }
                 if (stuck) return;
                 if (event.kind === "text" || event.kind === "thinking") {

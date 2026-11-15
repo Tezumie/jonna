@@ -3,7 +3,7 @@
 // context meter and token totals, and the chat's budget (D199).
 
 import { findCustomMode } from "../../core/agent/chatModes";
-import { budgetState, formatCost } from "../../core/agent/prices";
+import { budgetState, formatCost, type ModelPrice } from "../../core/agent/prices";
 import type { ChatEvent, ChatRequest, ModelDetails } from "../../core/ipc/agent";
 import type { WorkbenchServices } from "../../workbench/services";
 import { customModes } from "./customModes";
@@ -69,6 +69,32 @@ export function requestOptions(
   // A model that draws (OpenRouter's image models) answers with images only when asked (D381).
   if (choice.info.outputImages) return { modalities: ["image", "text"] };
   return {};
+}
+
+/**
+ * A subagent's request: its cost joins the chat's side spend (not its meter, D127), so a run's
+ * cost limit counts what the chat's helpers spent too.
+ */
+export function countSideUsage(
+  session: AgentSession,
+  event: Extract<ChatEvent, { kind: "done" }>,
+  price: ModelPrice | undefined,
+): void {
+  const cached = event.cacheReadTokens ?? 0;
+  const spent =
+    typeof event.cost === "number"
+      ? event.cost
+      : costOf(
+          {
+            requests: 1,
+            input: event.inputTokens ?? 0,
+            cacheRead: cached,
+            cacheWrite: event.cacheWriteTokens ?? 0,
+            output: event.outputTokens ?? 0,
+          },
+          price,
+        );
+  if (spent !== null) session.sideCost += spent;
 }
 
 /** The context meter and the session's token totals from a request's usage. */

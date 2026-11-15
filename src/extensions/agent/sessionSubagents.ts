@@ -13,7 +13,7 @@ import { rulesFor } from "./rules";
 import type { AgentSession } from "./session";
 import { sendNow } from "./sessionTurn";
 import { RULE_TOOLS } from "./sessionTypes";
-import { contextLengthFor, requestOptions, thinkFor } from "./sessionUsage";
+import { contextLengthFor, countSideUsage, requestOptions, thinkFor } from "./sessionUsage";
 import { subagentRuns } from "./subagentRuns";
 import type { SubagentSpec } from "./tools";
 import { priceOf } from "./usage";
@@ -234,13 +234,15 @@ export function subChat(
             received = true;
             if (cancelled()) void aiIpc.cancel(id).catch(() => {});
             if (event.kind === "done") {
+              const price = priceOf(session.services, session.providers, choice.key);
               const record = recordUsage(session.services, {
                 source: "subagent",
                 session: session.id,
                 choice,
                 event,
-                price: priceOf(session.services, session.providers, choice.key),
+                price,
               });
+              countSideUsage(session, event, price);
               onUsage?.({
                 input: event.inputTokens ?? 0,
                 output: event.outputTokens ?? 0,

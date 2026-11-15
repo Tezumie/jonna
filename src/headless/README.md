@@ -119,7 +119,13 @@ is there.
   `send` goes through `agent.send` and resolves when the chat is at rest (the turn, queued
   messages, background helpers and workflows, their reports).
 - `RunLimits`: `maxSteps` (the app's `agent.maxSteps`, for the run), `maxCost` (dollars this
-  run may spend), `timeoutMs`, `signal`. Each stops the turn as Stop does.
+  run may spend), `timeoutMs`, `signal`. Each stops the turn as Stop does (`limits.ts`,
+  `RunLimiter`, tested): a limit that fires before the turn runs is remembered and stops it as
+  it starts, as it stops a turn something starts afterwards, and the chat's background commands
+  that report back (notify on exit, monitors) are ended with it. `maxCost` counts the chat's
+  requests and its subagents' (`AgentSession.sideCost`; a helper in a worktree of its own is a
+  chat of its own and is not counted). A model whose price isn't known costs nothing as far as
+  the limit can tell: the run says so once, as a `notice` event.
 - `RunResult`: `session`, `text`, `reason` (`end`, `stopped`, `max_steps`, `error`,
   `timeout`, `max_cost`, `cancelled`), `error?`, `usage`, `steps`, `cost`, `denied`
   (`PermissionDecision[]`), `pending` (files waiting for review), `command?` (a slash
