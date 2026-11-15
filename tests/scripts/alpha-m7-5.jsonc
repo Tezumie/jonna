@@ -48,7 +48,8 @@
       "state": "ide://report",
       "expect": {
         "ready": true,
-        "issueTracker": false,
+        // product.json has an issue tracker (issuesUrl) since the public releases.
+        "issueTracker": true,
         "title": "Test report",
         "screenshot": { "taken": true, "included": false },
         "body": { "$contains": "### What happened\n\nIt broke." }
@@ -150,22 +151,25 @@
     { "state": "ide://extensions", "expect": { "$not": { "$contains": "off for this session" } } },
 
     // ---- What's new ----
+    // Checked against the first public release (0.1.0), which stays in docs/release-notes.md:
+    // the newest id and the number of releases change with every release.
     {
       "run": "help.showReleaseNotes",
       "expect": {
-        "releases": [{ "id": "0.1.0" }]
+        "releases": { "$contains": "{\"id\":\"0.1.0\",\"title\":\"The first public alpha\"}" }
       }
     },
+    // A heading per release, 0.1.0 one of them.
     {
       "run": "dev.inspectDom",
-      "input": { "selector": ".release-notes-view h2", "limit": 20 },
-      "expect": { "$length": 15 },
+      "input": { "selector": ".release-notes-view h2[id^=\"010\"]" },
+      "expect": { "$length": 1 },
       "timeoutMs": 3000
     },
     {
       "run": "help.showReleaseNotes",
-      "input": { "release": "m7.4" },
-      "expect": { "markdown": { "$contains": "Jupyter" } }
+      "input": { "release": "0.1.0" },
+      "expect": { "markdown": { "$contains": "No telemetry" } }
     },
     { "run": "help.showReleaseNotes", "input": { "release": "m1" }, "expectError": "No release" },
     { "run": "settings.set", "input": { "key": "update.showReleaseNotes", "value": false } },

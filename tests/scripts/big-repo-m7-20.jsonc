@@ -5,6 +5,9 @@
 // The limits are generous: this is a measurement first, and a guard against falling off a cliff.
 {
   "name": "big-repo-m7-20",
+  // Not on CI for Windows: writing the 30 000 files takes over ten minutes on its disk (the step
+  // timed out there), so nothing would be measured. CI for Linux and a local run still do.
+  "skipOnCi": ["win32"],
   "testTimeout": 1500,
   "steps": [
     { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },

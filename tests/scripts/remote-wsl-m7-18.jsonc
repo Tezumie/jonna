@@ -4,10 +4,11 @@
 // missing, and the folder opens in WSL's /tmp: files are read and written there, listed by the
 // server's index, searched there, git runs there through the relay, a terminal and a task run
 // there in a remote pty, and a port listening there is forwarded to this machine. Windows with a
-// WSL distribution named Ubuntu (with git and python3) only.
+// WSL distribution named Ubuntu (with git and python3) only: skipped without that distribution
+// ("wsl:Ubuntu"), since wsl.exe itself is on every Windows machine, CI included.
 {
   "name": "remote-wsl-m7-18",
-  "requires": ["wsl"],
+  "requires": ["wsl:Ubuntu"],
   "platforms": ["win32"],
   "steps": [
     { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },

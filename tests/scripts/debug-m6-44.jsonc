@@ -63,11 +63,11 @@
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".code-hover-contents .monaco-tokenized-source", "html": 2000 },
-      "expect": [
-        {
-          "html": { "$contains": ">a</span><span class=\"mtk1\">: </span><span class=\"mtk7\">1<" }
-        }
-      ],
+      // Any part of the hover: the language server's own part ("(parameter) a: any") comes first
+      // when it answers in time, as on CI. Matched against the list's JSON, so quotes are escaped.
+      "expect": {
+        "$contains": ">a</span><span class=\\\"mtk1\\\">: </span><span class=\\\"mtk7\\\">1<"
+      },
       "timeoutMs": 5000
     },
 

@@ -113,6 +113,25 @@ const hasPythonModule = (module) =>
     (python) => spawnSync(python, ["-c", `import ${module}`], { stdio: "ignore" }).status === 0,
   );
 
+// `"wsl:Ubuntu"` in `"requires"`: a WSL distribution by that name. wsl.exe alone is on every
+// Windows machine (CI's too) with no distribution behind it. Listing them starts none; the list
+// is UTF-16 unless WSL_UTF8 is set.
+const hasWslDistro = (name) => {
+  if (process.platform !== "win32") return false;
+  const out = spawnSync("wsl.exe", ["-l", "-q"], { timeout: 20000 }).stdout;
+  if (!out) return false;
+  const text = out.includes(0) ? out.toString("utf16le") : out.toString("utf8");
+  return text.split(/\r?\n/).some((line) => line.trim() === name);
+};
+
+// What a `"requires"` entry needs that this machine lacks: null when it has it.
+const missingRequirement = (entry) => {
+  if (entry.startsWith("python:")) return hasPythonModule(entry.slice(7)) ? null : "not on PATH";
+  if (entry.startsWith("wsl:"))
+    return hasWslDistro(entry.slice(4)) ? null : "no such WSL distribution";
+  return onPath(entry) ? null : "not on PATH";
+};
+
 // Whether GNU make is on PATH (for `"fakeMake"` scripts).
 const hasMake = (process.env.PATH ?? process.env.Path ?? "")
   .split(delimiter)
@@ -144,8 +163,18 @@ for (const script of scripts) {
     skipped++;
     continue;
   }
+  // `"skipOnCi": ["win32"]`: not on CI's machines of those OSes (the CI variable is set there),
+  // for what only they are too slow for; the script says why.
+  const skipOnCi = /"skipOnCi"\s*:\s*\[([^\]]*)\]/.exec(
+    await readFile(join(root, "tests/scripts", script), "utf8"),
+  )?.[1];
+  if (process.env.CI && skipOnCi?.includes(`"${process.platform}"`)) {
+    console.log(`\n=== ${script}: skipped (not on CI for ${process.platform})`);
+    skipped++;
+    continue;
+  }
   // `"requires": ["pyright-langserver"]`: programs it needs on PATH (D264), skipped without them;
-  // "python:<module>" for a Python module (D400).
+  // "python:<module>" for a Python module (D400), "wsl:<name>" for a WSL distribution.
   const requires = /"requires"\s*:\s*\[([^\]]*)\]/.exec(
     await readFile(join(root, "tests/scripts", script), "utf8"),
   )?.[1];
@@ -153,11 +182,13 @@ for (const script of scripts) {
     .split(",")
     .map((x) => x.trim().replace(/^"|"$/g, ""))
     .filter(Boolean)
-    .filter((program) =>
-      program.startsWith("python:") ? !hasPythonModule(program.slice(7)) : !onPath(program),
-    );
+    .map((entry) => [entry, missingRequirement(entry)])
+    .filter(([, why]) => why !== null);
   if (missing.length) {
-    console.log(`\n=== ${script}: skipped (not on PATH: ${missing.join(", ")})`);
+    // The first missing entry's reason, with every entry that shares it.
+    const why = missing[0][1];
+    const names = missing.filter(([, w]) => w === why).map(([entry]) => entry);
+    console.log(`\n=== ${script}: skipped (${why}: ${names.join(", ")})`);
     skipped++;
     continue;
   }
