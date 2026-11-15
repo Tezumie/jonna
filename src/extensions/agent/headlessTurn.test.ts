@@ -2,7 +2,8 @@
 // searched for, a command that asks permission (answered through `agent.respondPermission`, as a
 // terminal or a remote client would), the answer, the chat saved. The backend is a fake that
 // answers the handful of commands a turn makes; the services are the ones a turn needs, the rest
-// absent.
+// absent. The same for an external agent over ACP: a fake program on the stdio host that asks
+// permission and answers.
 //
 // There is no `document` and no `window` here, and the tests say so: `window` holds the fake
 // backend's entry and nothing else, and any other member read from it fails the test.
@@ -50,6 +51,57 @@ interface Call {
 /** One answer of the fake model: a tool call, or its closing text. */
 type ModelStep = { tool: string; args: Record<string, unknown> } | { text: string };
 
+interface RpcMessage {
+  id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+  result?: unknown;
+}
+
+/**
+ * An external agent over ACP, as small as one can be: it starts a session, and answers a prompt
+ * by asking permission for a command, then saying what the person chose.
+ */
+function fakeAcpAgent(message: RpcMessage, say: (body: string) => void): void {
+  const send = (m: Record<string, unknown>) => say(JSON.stringify({ jsonrpc: "2.0", ...m }));
+  if (message.method === "initialize")
+    send({ id: message.id, result: { protocolVersion: 1, agentCapabilities: {} } });
+  else if (message.method === "session/new") send({ id: message.id, result: { sessionId: "a1" } });
+  else if (message.method === "session/prompt") {
+    promptId = message.id ?? null;
+    send({
+      id: 900,
+      method: "session/request_permission",
+      params: {
+        sessionId: "a1",
+        toolCall: { toolCallId: "t1", title: "echo ok", kind: "execute" },
+        options: [
+          { optionId: "yes", name: "Allow", kind: "allow_once" },
+          { optionId: "no", name: "Reject", kind: "reject_once" },
+        ],
+      },
+    });
+  } else if (message.id === 900) {
+    // The permission's answer: say it, and end the turn.
+    const outcome = (message.result as { outcome?: { optionId?: string } } | undefined)?.outcome;
+    send({
+      method: "session/update",
+      params: {
+        sessionId: "a1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: `You chose ${outcome?.optionId ?? "nothing"}.` },
+        },
+      },
+    });
+    send({ id: promptId, result: { stopReason: "end_turn" } });
+  } else if (message.id !== undefined && message.method)
+    // Anything else it's asked: nothing to say.
+    send({ id: message.id, result: {} });
+}
+/** The fake external agent's open prompt (its answer ends the turn). */
+let promptId: number | null = null;
+
 interface FakeChannel<T> {
   onmessage: (message: T) => void;
 }
@@ -67,6 +119,8 @@ function installFakeBackend(root: string, home: string) {
   const offered: string[][] = [];
   let steps: ModelStep[] = [];
   let callId = 0;
+  /** The programs on the stdio host, by id: how each one's output reaches the page. */
+  const programs = new Map<string, (body: string) => void>();
   const abs = (path: string) => (isAbsolute(path) ? path : join(root, path));
   const notFound = (path: string) => ({ code: "NotFound", message: `not found ${path}` });
 
@@ -168,6 +222,20 @@ function installFakeBackend(root: string, home: string) {
           .map((path) => ({ path, score: 1, positions: [] }));
         return { items, total: items.length, indexing: false, truncated: false };
       }
+      case "lsp_start": {
+        // An external agent's program: what it says goes back as messages on this channel.
+        const channel = a.onEvent as FakeChannel<unknown>;
+        programs.set(String(a.id), (body) => channel.onmessage({ kind: "message", body }));
+        return 4242;
+      }
+      case "lsp_send": {
+        const reply = programs.get(String(a.id));
+        if (reply) fakeAcpAgent(JSON.parse(String(a.body)) as RpcMessage, reply);
+        return null;
+      }
+      case "lsp_stop":
+        programs.delete(String(a.id));
+        return null;
       default:
         unanswered.add(command);
         return null;
@@ -268,6 +336,13 @@ function stubServices(root: string, settingsMap: Record<string, unknown>, used: 
     },
     extensionGate: { folders: () => [], enabledIds: signal([]) },
     codeCheck: { newErrors: async () => null },
+    // External agents also read these two: the agents extensions bring, and the installed ones.
+    extensionFeatures: { agents: signal([]) },
+    persistence: {
+      globalState: () => ({}),
+      saveGlobal: async () => {},
+      scheduleSave: () => {},
+    },
   };
   const services = new Proxy(base, {
     get(target, key) {
@@ -303,6 +378,8 @@ const SETTINGS = {
   "agent.checkEdits": false,
   "agent.verify": "off",
   "agent.autoTitle": false,
+  "agent.externalAgents": { fake: { command: "fake-agent" } },
+  "agent.externalAgents.ideTools": false,
 };
 
 /** A window-less agent: providers, the session manager, and (asked for) the agent's commands. */
@@ -481,6 +558,35 @@ test("read_file shows a PNG as it is where there is no canvas to redraw it", asy
   const read = session.items.find((i) => i.type === "tool");
   assert.equal(read?.type === "tool" ? read.status : "", "done");
   assert.equal(read?.type === "tool" ? read.summary : "", "image");
+  assert.deepEqual([...backend.windowReads], []);
+  agent.dispose();
+});
+
+test("an external agent's turn with no window: started, its permission answered, its reply shown", async () => {
+  const agent = await startAgent(true);
+  const { dispatcher, session } = agent;
+  session.model.value = "acp/fake";
+  const asked: string[] = [];
+  const answering = setInterval(() => {
+    const pending = session.permissions.peek()[0];
+    if (!pending || asked.includes(pending.id)) return;
+    asked.push(pending.id);
+    void dispatcher.execute(
+      "agent.respondPermission",
+      { session: session.id, id: pending.id, answer: "once" },
+      { kind: "test" },
+    );
+  }, 10);
+  try {
+    await inTime(session.send("run echo ok"), () => `status ${session.status.peek()}`);
+  } finally {
+    clearInterval(answering);
+  }
+  assert.equal(session.error.peek(), null);
+  assert.equal(asked.length, 1, "the agent's permission request was shown once");
+  const reply = session.items.findLast((i) => i.type === "assistant");
+  assert.equal(reply?.type === "assistant" ? reply.text : "", "You chose yes.");
+  assert.ok(backend.calls.some((c) => c.command === "lsp_start"));
   assert.deepEqual([...backend.windowReads], []);
   agent.dispose();
 });
