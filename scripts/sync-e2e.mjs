@@ -227,7 +227,10 @@ try {
     await desk.sync("setup", { typed: recoveryKey.slice(-4).toLowerCase() });
     const s = await desk.sync("status");
     check(s.state === "on" && s.exists && s.devices.length === 1, JSON.stringify(s));
-    check(s.devices[0].current && s.devices[0].name === "Desk" && s.devices[0].status === "approved", JSON.stringify(s.devices));
+    check(
+      s.devices[0].current && s.devices[0].name === "Desk" && s.devices[0].status === "approved",
+      JSON.stringify(s.devices),
+    );
     check(typeof s.recoveryCreatedAt === "number" && s.storageLimit > 0, JSON.stringify(s));
     await fails(desk.sync("setup", { typed: recoveryKey }), "Sync", "setup with nothing prepared");
   });
@@ -249,31 +252,72 @@ try {
     check(after.state === "on" && after.devices.length === 2, JSON.stringify(after));
   });
 
-  await step("a record written on one is read on the other; a stale write gets the other's", async () => {
-    const put = await desk.sync("record_put", { collection: "settings", id: "user", expect: null, text: '{"a":1}' });
-    check(put.outcome === "done" && put.version === 1, JSON.stringify(put));
-    const changes = await laptop.sync("changes", { since: 0 });
-    const mine = changes.records.find((r) => r.collection === "settings");
-    check(mine?.text === '{"a":1}' && mine.version === 1 && changes.seq >= mine.seq, JSON.stringify(changes));
-    check(!changes.records.some((r) => r.unreadable), "everything opens");
-    const clash = await laptop.sync("record_put", { collection: "settings", id: "user", expect: null, text: '{"b":2}' });
-    check(clash.outcome === "conflict" && clash.current.text === '{"a":1}', JSON.stringify(clash));
-    const ok = await laptop.sync("record_put", { collection: "settings", id: "user", expect: 1, text: '{"a":1,"b":2}' });
-    check(ok.outcome === "done" && ok.version === 2, JSON.stringify(ok));
-    const got = await desk.sync("record_get", { collection: "settings", id: "user" });
-    check(got.text === '{"a":1,"b":2}', JSON.stringify(got));
-    const none = await desk.sync("record_get", { collection: "settings", id: "nothing" });
-    check(none === null, JSON.stringify(none));
-    await fails(desk.sync("record_put", { collection: "sys", id: "devices", expect: null, text: "{}" }), "Invalid", "the backend's own collection");
-    const gone = await desk.sync("record_put", { collection: "settings", id: "user", expect: 2, text: null });
-    check(gone.outcome === "done", JSON.stringify(gone));
-    const after = await laptop.sync("changes", { since: changes.seq });
-    check(after.records.some((r) => r.collection === "settings" && r.deleted && r.text === null), JSON.stringify(after));
-  });
+  await step(
+    "a record written on one is read on the other; a stale write gets the other's",
+    async () => {
+      const put = await desk.sync("record_put", {
+        collection: "settings",
+        id: "user",
+        expect: null,
+        text: '{"a":1}',
+      });
+      check(put.outcome === "done" && put.version === 1, JSON.stringify(put));
+      const changes = await laptop.sync("changes", { since: 0 });
+      const mine = changes.records.find((r) => r.collection === "settings");
+      check(
+        mine?.text === '{"a":1}' && mine.version === 1 && changes.seq >= mine.seq,
+        JSON.stringify(changes),
+      );
+      check(!changes.records.some((r) => r.unreadable), "everything opens");
+      const clash = await laptop.sync("record_put", {
+        collection: "settings",
+        id: "user",
+        expect: null,
+        text: '{"b":2}',
+      });
+      check(
+        clash.outcome === "conflict" && clash.current.text === '{"a":1}',
+        JSON.stringify(clash),
+      );
+      const ok = await laptop.sync("record_put", {
+        collection: "settings",
+        id: "user",
+        expect: 1,
+        text: '{"a":1,"b":2}',
+      });
+      check(ok.outcome === "done" && ok.version === 2, JSON.stringify(ok));
+      const got = await desk.sync("record_get", { collection: "settings", id: "user" });
+      check(got.text === '{"a":1,"b":2}', JSON.stringify(got));
+      const none = await desk.sync("record_get", { collection: "settings", id: "nothing" });
+      check(none === null, JSON.stringify(none));
+      await fails(
+        desk.sync("record_put", { collection: "sys", id: "devices", expect: null, text: "{}" }),
+        "Invalid",
+        "the backend's own collection",
+      );
+      const gone = await desk.sync("record_put", {
+        collection: "settings",
+        id: "user",
+        expect: 2,
+        text: null,
+      });
+      check(gone.outcome === "done", JSON.stringify(gone));
+      const after = await laptop.sync("changes", { since: changes.seq });
+      check(
+        after.records.some((r) => r.collection === "settings" && r.deleted && r.text === null),
+        JSON.stringify(after),
+      );
+    },
+  );
 
   await step("a chat and its images travel, into the other computer's folder", async () => {
     const chat = {
-      meta: { title: "Plan the thing", updated: 1700000000000, workspace: "C:\\Users\\desk\\project", worktree: { path: "x" } },
+      meta: {
+        title: "Plan the thing",
+        updated: 1700000000000,
+        workspace: "C:\\Users\\desk\\project",
+        worktree: { path: "x" },
+      },
       items: [{ type: "user", id: "u1", text: "hello ".repeat(2000), turn: 1 }],
       turn: 1,
     };
@@ -285,75 +329,160 @@ try {
 
     const pushed = await desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: null });
     check(pushed?.outcome === "done" && pushed.version === 1, JSON.stringify(pushed));
-    check((await desk.sync("chat_push", { collection: "chats.p1", id: "nope", expect: null })) === null, "a chat with no file");
+    check(
+      (await desk.sync("chat_push", { collection: "chats.p1", id: "nope", expect: null })) === null,
+      "a chat with no file",
+    );
     const stale = await desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: null });
     check(stale.outcome === "conflict" && stale.current.version === 1, JSON.stringify(stale));
 
     const listed = (await laptop.sync("changes", { since: 0 })).records.find((r) => r.id === "c1");
-    check(JSON.parse(listed.text).meta.title === "Plan the thing" && listed.refs >= 3, JSON.stringify(listed));
+    check(
+      JSON.parse(listed.text).meta.title === "Plan the thing" && listed.refs >= 3,
+      JSON.stringify(listed),
+    );
 
-    const version = await laptop.sync("chat_pull", { collection: "chats.p1", id: "c1", saveAs: "c1", workspace: "/home/laptop/project" });
+    const version = await laptop.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "c1",
+      saveAs: "c1",
+      workspace: "/home/laptop/project",
+    });
     check(version === 1, String(version));
-    const got = JSON.parse(await readFile(join(laptop.data, "agent", "sessions", "c1.json"), "utf8"));
-    check(got.meta.workspace === "/home/laptop/project" && got.meta.worktree === undefined, JSON.stringify(got.meta));
-    check(got.items[0].text === chat.items[0].text && got.meta.title === chat.meta.title, "the chat's content");
+    const got = JSON.parse(
+      await readFile(join(laptop.data, "agent", "sessions", "c1.json"), "utf8"),
+    );
+    check(
+      got.meta.workspace === "/home/laptop/project" && got.meta.worktree === undefined,
+      JSON.stringify(got.meta),
+    );
+    check(
+      got.items[0].text === chat.items[0].text && got.meta.title === chat.meta.title,
+      "the chat's content",
+    );
     const gotImage = await readFile(join(laptop.data, "agent", "media", "c1", "img1.bin"));
     check(gotImage.equals(image), "the image's bytes");
 
     // A copy under another id, with no folder.
-    await laptop.sync("chat_pull", { collection: "chats.p1", id: "c1", saveAs: "c1-copy", workspace: null });
-    const copy = JSON.parse(await readFile(join(laptop.data, "agent", "sessions", "c1-copy.json"), "utf8"));
+    await laptop.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "c1",
+      saveAs: "c1-copy",
+      workspace: null,
+    });
+    const copy = JSON.parse(
+      await readFile(join(laptop.data, "agent", "sessions", "c1-copy.json"), "utf8"),
+    );
     check(copy.meta.workspace === null, JSON.stringify(copy.meta));
-    check(existsSync(join(laptop.data, "agent", "media", "c1-copy", "img1.bin")), "the copy's image");
+    check(
+      existsSync(join(laptop.data, "agent", "media", "c1-copy", "img1.bin")),
+      "the copy's image",
+    );
 
     // Changed and pushed again: only what changed uploads, and the other reads the new one.
     chat.items.push({ type: "user", id: "u2", text: "more", turn: 2 });
     await writeFile(join(desk.data, "agent", "sessions", "c1.json"), JSON.stringify(chat));
     const second = await desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: 1 });
     check(second.outcome === "done" && second.version === 2, JSON.stringify(second));
-    await laptop.sync("chat_pull", { collection: "chats.p1", id: "c1", saveAs: "c1", workspace: null });
-    const again = JSON.parse(await readFile(join(laptop.data, "agent", "sessions", "c1.json"), "utf8"));
+    await laptop.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "c1",
+      saveAs: "c1",
+      workspace: null,
+    });
+    const again = JSON.parse(
+      await readFile(join(laptop.data, "agent", "sessions", "c1.json"), "utf8"),
+    );
     check(again.items.length === 2, "the second version");
-    check((await laptop.sync("chat_pull", { collection: "chats.p1", id: "missing", saveAs: "x", workspace: null })) === null, "no such chat");
+    check(
+      (await laptop.sync("chat_pull", {
+        collection: "chats.p1",
+        id: "missing",
+        saveAs: "x",
+        workspace: null,
+      })) === null,
+      "no such chat",
+    );
   });
 
   await step("a project has one name on every computer, from any form of its address", async () => {
     const a = await desk.sync("project_name", { remote: "git@github.com:Owner/Repo.git" });
     const b = await laptop.sync("project_name", { remote: "https://github.com/Owner/Repo" });
     check(typeof a === "string" && a.length === 22 && a === b, `${a} ${b}`);
-    check((await desk.sync("project_name", { remote: "https://github.com/Owner/Other" })) !== a, "another repository");
-    check((await desk.sync("project_name", { remote: "C:\\repos\\thing" })) === null, "a local path");
+    check(
+      (await desk.sync("project_name", { remote: "https://github.com/Owner/Other" })) !== a,
+      "another repository",
+    );
+    check(
+      (await desk.sync("project_name", { remote: "C:\\repos\\thing" })) === null,
+      "a local path",
+    );
   });
 
   await step("a third computer joins with the recovery key", async () => {
     spare = await computer(account, "spare");
     hosts.push(spare);
-    await fails(spare.sync("join_recovery", { name: "Spare", key: "not a key" }), "SyncRecoveryKey", "a mistyped key");
-    await spare.sync("join_recovery", { name: "Spare", key: recoveryKey.toLowerCase().replaceAll("-", " ") });
+    await fails(
+      spare.sync("join_recovery", { name: "Spare", key: "not a key" }),
+      "SyncRecoveryKey",
+      "a mistyped key",
+    );
+    await spare.sync("join_recovery", {
+      name: "Spare",
+      key: recoveryKey.toLowerCase().replaceAll("-", " "),
+    });
     const s = await spare.sync("status");
     check(s.state === "on" && s.devices.length === 3, JSON.stringify(s));
     const changes = await spare.sync("changes", { since: 0 });
-    check(changes.records.some((r) => r.id === "c1" && r.text), "it reads what was synced before it joined");
+    check(
+      changes.records.some((r) => r.id === "c1" && r.text),
+      "it reads what was synced before it joined",
+    );
   });
 
   await step("a removed computer is locked out, and the others get new keys", async () => {
     const laptopId = (await laptop.sync("status")).deviceId;
     await desk.sync("remove_device", { device: laptopId });
     const gone = await laptop.sync("status");
-    check(gone.state === "signedOut" || (gone.state === "off" && gone.notice === "removed"), JSON.stringify(gone));
-    await fails(laptop.sync("changes", { since: 0 }), gone.state === "signedOut" ? "SyncSignedOut" : "SyncOff", "the removed computer reading");
+    check(
+      gone.state === "signedOut" || (gone.state === "off" && gone.notice === "removed"),
+      JSON.stringify(gone),
+    );
+    await fails(
+      laptop.sync("changes", { since: 0 }),
+      gone.state === "signedOut" ? "SyncSignedOut" : "SyncOff",
+      "the removed computer reading",
+    );
     // The desk made new keys; the spare picks them up at its next check and reads new content.
-    const put = await desk.sync("record_put", { collection: "settings", id: "after", expect: null, text: '"new keys"' });
+    const put = await desk.sync("record_put", {
+      collection: "settings",
+      id: "after",
+      expect: null,
+      text: '"new keys"',
+    });
     check(put.outcome === "done", JSON.stringify(put));
     const s = await spare.sync("status");
     check(s.state === "on" && s.devices.length === 2, JSON.stringify(s));
     const read = await spare.sync("record_get", { collection: "settings", id: "after" });
     check(read.text === '"new keys"' && !read.unreadable, JSON.stringify(read));
     // And what the spare writes, the desk reads.
-    await spare.sync("record_put", { collection: "settings", id: "from-spare", expect: null, text: '"hi"' });
-    check((await desk.sync("record_get", { collection: "settings", id: "from-spare" })).text === '"hi"', "the other way");
+    await spare.sync("record_put", {
+      collection: "settings",
+      id: "from-spare",
+      expect: null,
+      text: '"hi"',
+    });
+    check(
+      (await desk.sync("record_get", { collection: "settings", id: "from-spare" })).text === '"hi"',
+      "the other way",
+    );
     // The chat from before the new keys still opens.
-    const version = await spare.sync("chat_pull", { collection: "chats.p1", id: "c1", saveAs: "c1", workspace: null });
+    const version = await spare.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "c1",
+      saveAs: "c1",
+      workspace: null,
+    });
     check(version === 2, String(version));
   });
 
@@ -365,23 +494,37 @@ try {
     await rm(laptop.profile, { recursive: true, force: true });
     laptop = await computer(account, "laptop");
     hosts.push(laptop);
-    await fails(laptop.sync("join_recovery", { name: "Laptop", key: recoveryKey }), "SyncRecoveryKey", "the old key");
+    await fails(
+      laptop.sync("join_recovery", { name: "Laptop", key: recoveryKey }),
+      "SyncRecoveryKey",
+      "the old key",
+    );
     await laptop.sync("join_recovery", { name: "Laptop", key: next });
     check((await laptop.sync("status")).state === "on", "back with the new key");
-    check((await laptop.sync("record_get", { collection: "settings", id: "after" })).text === '"new keys"', "and reads");
+    check(
+      (await laptop.sync("record_get", { collection: "settings", id: "after" })).text ===
+        '"new keys"',
+      "and reads",
+    );
     recoveryKey = next;
   });
 
-  await step("a device the server calls approved, but no device of the account approved, gets no keys", async () => {
-    // The laptop joined by recovery key and is on the sealed list. Take it off that list as a
-    // dishonest server couldn't, then remove another device so new keys are made.
-    const s = await desk.sync("status");
-    const spareId = s.devices.find((d) => d.name === "Spare").id;
-    await desk.sync("remove_device", { device: spareId });
-    const after = await desk.sync("status");
-    check(after.devices.length === 2 && after.devices.every((d) => d.status === "approved"), JSON.stringify(after.devices));
-    check((await laptop.sync("status")).state === "on", "the listed device kept its place");
-  });
+  await step(
+    "a device the server calls approved, but no device of the account approved, gets no keys",
+    async () => {
+      // The laptop joined by recovery key and is on the sealed list. Take it off that list as a
+      // dishonest server couldn't, then remove another device so new keys are made.
+      const s = await desk.sync("status");
+      const spareId = s.devices.find((d) => d.name === "Spare").id;
+      await desk.sync("remove_device", { device: spareId });
+      const after = await desk.sync("status");
+      check(
+        after.devices.length === 2 && after.devices.every((d) => d.status === "approved"),
+        JSON.stringify(after.devices),
+      );
+      check((await laptop.sync("status")).state === "on", "the listed device kept its place");
+    },
+  );
 
   await step("sync reset from the account page turns it off everywhere", async () => {
     const r = await fetch(`${BASE}/api/sync/reset`, {
@@ -403,7 +546,10 @@ try {
     const pushed = await desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: null });
     check(pushed.outcome === "done" && pushed.version === 1, JSON.stringify(pushed));
     const other = await laptop.sync("status");
-    check(other.state === "off" && other.notice === "reset" && other.exists === true, JSON.stringify(other));
+    check(
+      other.state === "off" && other.notice === "reset" && other.exists === true,
+      JSON.stringify(other),
+    );
   });
 } finally {
   for (const h of hosts) h.stop();

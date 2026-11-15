@@ -189,9 +189,7 @@ export function planFiles(
 export function conflictPath(path: string): string {
   const slash = path.lastIndexOf("/");
   const dot = path.lastIndexOf(".");
-  return dot > slash + 1
-    ? `${path.slice(0, dot)}.conflict${path.slice(dot)}`
-    : `${path}.conflict`;
+  return dot > slash + 1 ? `${path.slice(0, dot)}.conflict${path.slice(dot)}` : `${path}.conflict`;
 }
 
 /** A record id for a file path: readable for ordinary names, never longer than a record id. */

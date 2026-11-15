@@ -75,7 +75,8 @@ export const syncIpc = {
     call<void>("sync_approve", { base, device }),
   removeDevice: (base: string, device: string): Promise<void> =>
     call<void>("sync_remove_device", { base, device }),
-  newRecoveryKey: (base: string): Promise<string> => call<string>("sync_new_recovery_key", { base }),
+  newRecoveryKey: (base: string): Promise<string> =>
+    call<string>("sync_new_recovery_key", { base }),
   changes: (base: string, since: number): Promise<SyncChanges> =>
     call<SyncChanges>("sync_changes", { base, since }),
   get: (base: string, collection: string, id: string): Promise<SyncRecord | null> =>

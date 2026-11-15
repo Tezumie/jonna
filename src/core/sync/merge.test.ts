@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  type FileBase,
-  type LocalFile,
-  type RemoteFile,
   canonical,
   conflictPath,
+  type FileBase,
   fileRecordId,
+  type LocalFile,
   mergeSettings,
   planFiles,
+  type RemoteFile,
 } from "./merge";
 
 const none = () => false;
