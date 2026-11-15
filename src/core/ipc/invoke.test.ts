@@ -341,14 +341,17 @@ test("in the app's window a channel is the framework's: its marker, its ordering
   assert.equal(got[2], raw);
 
   // Replacing the handler works as on the framework's own class.
-  channel.onmessage = (m) => got.push(["new", m]);
+  const later: unknown[] = [];
+  channel.onmessage = (m) => later.push(m);
   deliver({ index: 3, message: "x" });
-  assert.deepEqual(got[3], ["new", "x"]);
+  assert.equal(got.length, 3);
+  assert.equal(later.length, 1);
+  assert.equal(later[0], "x");
 
   // Closing only silences it: the framework's callback stays until Rust drops its end.
   channel.close();
   deliver({ index: 4, message: "late" });
-  assert.equal(got.length, 4);
+  assert.equal(later.length, 1);
   assert.ok(framework.callbacks.has(id));
   deliver({ index: 5, end: true });
   assert.equal(framework.callbacks.has(id), false);

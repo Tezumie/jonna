@@ -32,9 +32,21 @@ export interface ByteDuplex {
 
 export type FrameHeader = Record<string, unknown>;
 
+/**
+ * Values JSON has no form for, written the way the desktop framework writes them inside a
+ * call's args, so a command gets the same shapes on either transport: a Map as an object, bytes
+ * as an array of numbers. (A channel is handled before this, by its own `toJSON`.)
+ */
+function asDesktopJson(_key: string, value: unknown): unknown {
+  if (value instanceof Map) return Object.fromEntries(value.entries());
+  if (value instanceof Uint8Array) return Array.from(value);
+  if (value instanceof ArrayBuffer) return Array.from(new Uint8Array(value));
+  return value;
+}
+
 /** One frame as bytes: the prefix, the header's JSON, and the body if there is one. */
 export function encodeFrame(header: FrameHeader, body: Uint8Array = NO_BODY): Uint8Array {
-  const json = new TextEncoder().encode(JSON.stringify(header));
+  const json = new TextEncoder().encode(JSON.stringify(header, asDesktopJson));
   if (json.length > MAX_FRAME_HEADER) throw new Error("The frame's header is too large.");
   if (body.length > MAX_FRAME_BODY) throw new Error("The frame's body is too large.");
   const frame = new Uint8Array(PREFIX_BYTES + json.length + body.length);

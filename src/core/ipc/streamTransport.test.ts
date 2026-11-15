@@ -392,6 +392,21 @@ test("many requests at once, answered out of order, each get their own answer", 
   assert.equal(transport.state, "open");
 });
 
+test("bytes and maps inside JSON args are written as the desktop writes them", async () => {
+  const host = fakeHost({ echo: (request) => request.params });
+  setTransport(await connectStream(host.link.client));
+  assert.deepEqual(
+    await call("echo", {
+      data: new Uint8Array([1, 2, 255]),
+      buffer: new Uint8Array([7]).buffer,
+      env: new Map([["PORT", "3000"]]),
+      missing: undefined,
+      none: null,
+    }),
+    { data: [1, 2, 255], buffer: [7], env: { PORT: "3000" }, none: null },
+  );
+});
+
 test("args that can't be JSON fail that call, not the connection", async () => {
   const host = fakeHost({ echo: (request) => request.params });
   const transport = await connectStream(host.link.client);

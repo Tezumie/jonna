@@ -238,22 +238,78 @@ TextDocument per cell for its life (in `workspace.textDocuments`, with its chang
 
 ## ipc/
 
-Typed wrappers over the Rust commands — the only place that calls Tauri (`invoke.ts` holds the one
-`invoke`). Errors become `IpcError { code, message }`. One file per domain:
+Typed wrappers over the Rust commands — the only place that calls the backend (`invoke.ts` holds
+the one `call`). Errors become `IpcError { code, message }`.
+
+**What carries a call is a transport** (`transport.ts`: `request`, `requestRaw` for a raw body with
+string headers, `openChannel`, `state`, `onClose`). In the app's window it is the desktop
+framework's (`desktopTransport.ts`, chosen by itself the first time something calls, when the
+framework's globals exist); anywhere else a program installs one with `setTransport`. With none,
+every call rejects with an `IpcError` and a `Channel` is inert (nothing throws at import or at
+construction, so the wrappers load in Node).
+
+- `call(command, args?, options?)`: JSON args, or bytes as `args` with `options.headers` (the 5
+  raw-body commands); the result is JSON or an `ArrayBuffer`. Same signature on every transport.
+- `Channel<T>`: the project's own class with the framework's shape (`new Channel(handler?)`,
+  `onmessage`, passed inside args at any depth: `toJSON` gives the transport's marker), plus
+  `close()` (stop reading; a stream transport tells the host, the desktop only silences the
+  handler) and `onclose` (the connection was lost; never on the desktop). The watchers'
+  disposables call `close()`.
+- `hasBackend()`: a backend answers calls (the app's window, or a transport was installed).
+  `isDesktopShell()`: the framework's window APIs exist. Guard a call that merely needs the backend
+  with the first, anything about the native window, the plugins or desktop-only commands
+  (`app_request_attention`, `aux_window_*`, the updater, the jump list) with the second.
+- `streamTransport.ts` (DOM-free, no runtime modules): the wire contract over any byte duplex
+  (`ByteDuplex`: `write`, `onData`, `onClose`, `close`). `new StreamTransport(duplex, { client,
+  token, onHandlerError })` sends `$/hello` and queues calls until it is answered (`ready`,
+  `host`, `hasCommand`); `connectStream` awaits that. Request ids and channel ids are the
+  client's; `$/channelClose` on `close()`; raw bodies and raw results as frame bodies; when the
+  connection ends every pending call rejects (`Io`), open channels hear `onclose`, later calls
+  fail at once. A frame past the limits or a header that isn't a JSON object ends the connection.
+  `shutdown()` asks the host to exit, then closes. `encodeFrame` and `FrameParser` are exported
+  (tests write hosts with them).
+- `node/hostProcess.ts` (Node only; nothing the window's bundle imports may import it; it is
+  type-checked by `tsconfig.test.json`, which has Node's types): `spawnHost(binary, { args, cwd,
+  env, onStderr, onExit, client })` starts the host with pipes and resolves, once the handshake is
+  answered, with `{ transport, info, pid, exited, stop(), kill() }`; `connectHostSocket({ port,
+  token })` dials one that listens; `duplexFromStreams` for anything else.
+
+      const host = await spawnHost(path, { onStderr: (text) => process.stderr.write(text) });
+      setTransport(host.transport);   // before anything calls or makes a channel
+      …
+      await host.stop();
+
+**What only a window can do goes through a shell** (`shell.ts`: `Shell` = `window`, `dialog`,
+`clipboard`, `opener`, `dragDrop`). `windowIpc`, `dialogIpc`, `clipboardIpc`, `openerIpc` and
+`dragDropIpc.listen` ask `currentShell()`: the desktop framework's in the app's window
+(`desktopShell.ts`, the only file that imports the framework's window and plugin APIs), else the
+one registered with `setShell`, else the windowless default (`createWindowlessShell()`, also the
+base to spread into a shell of one's own): window controls do nothing and report "not maximized,
+not full screen, 1280×800", pickers answer null (nothing chosen), `confirm` / `ask` reject with an
+`IpcError` (`Invalid`, "There is no window here…"), `error` goes to the console, the clipboard is
+the browser's when there is one and a text buffer of the program's own otherwise, `revealInOs`
+does nothing, `openUrl` uses `window.open` in a browser tab and refuses without one.
+
+`npm run check` runs `scripts/check-ipc-names.mjs`: every command name called here is in
+`src-tauri/build.rs`'s COMMANDS, and nothing outside this folder calls `call`.
+
+One file per domain:
 
 | File | Exports | Rust commands / plugins |
 |---|---|---|
-| `invoke.ts` | `call`, `Channel`, `IpcError`, `isTauri`, `onFailedCall` (D204: the session log hears every failed call) | — |
+| `invoke.ts` | `call`, `Channel`, `IpcError`, `setTransport` / `getTransport`, `hasBackend`, `isDesktopShell`, `onFailedCall` (D204: the session log hears every failed call), `onCall` | — |
+| `transport.ts`, `desktopTransport.ts`, `streamTransport.ts`, `node/hostProcess.ts` | `Transport`, `TransportChannel`; `createDesktopTransport`; `StreamTransport`, `connectStream`, `ByteDuplex`, `encodeFrame`, `FrameParser`, `HostInfo`; `spawnHost`, `connectHostSocket`, `duplexFromStreams` | the framework's `invoke` and channel; the wire contract's frames |
+| `shell.ts`, `desktopShell.ts` | `Shell`, `setShell`, `currentShell`, `createWindowlessShell`, `noWindowError`; `desktopShell` | the framework's window, webview and dialog / clipboard / opener plugins |
 | `diagnostics.ts` | `sessionIpc`, `logIpc`, `reportIpc` | `session_info`, `app_relaunch`, `log_write` / `log_recent`, `report_save_zip` (D204) |
 | `accounts.ts` | `accountsIpc` | `accounts_*` |
 | `extensions.ts` | `extIpc` | `ext_*` (installed and unpacked extensions, files, storage, `ext_fetch`, an extension's own keychain secrets `ext_secret_get` / `ext_secret_set`, D233) |
 | `fs.ts` | `fsIpc`, `encodingIpc` (D204), `historyIpc`, `watchIpc`, `docsWatchIpc`, `indexIpc`, `searchIpc`, `dragDropIpc` | `workspace_*`, `fs_*` (raw bytes; `fs_trash` / `fs_untrash`), `history_*`, `watch_*` (Channel), `index_*`, `search_run` / `search_replace` (Channel), `fs_import_dropped`, webview drag-drop events, `encoding_encode` / `encoding_guess` |
 | `desktop.ts` | `desktopIpc` (D353) | `desktop_info`, `desktop_capture` (BGRA bytes), `desktop_window_at`, `desktop_input`, `desktop_banner`, `desktop_take_stop` |
 | `browser.ts` | `browserIpc` | `browser_proxy`, `browser_window_*`, `browser_embed_*`, `browser_download*`, the `browser_subscribe` Channel (network, bridge, window closed, download) |
-| `system.ts` | `appIpc`, `auditIpc`, `storeIpc`, `settingsIpc`, `windowIpc`, `dialogIpc`, `clipboardIpc`, `openerIpc`, `mcpIpc`, `mcpClientIpc`, `updateIpc`, `wslIpc` | `app_info`, `audit_append`, `state_load` / `state_save`, settings files, window controls, dialog / clipboard / opener plugins, `mcp_*` (the IDE's server and remote servers for the agent), `update_*`, `wsl_*` |
+| `system.ts` | `appIpc`, `auditIpc`, `storeIpc`, `settingsIpc`, `windowIpc`, `dialogIpc`, `clipboardIpc`, `openerIpc`, `mcpIpc`, `mcpClientIpc`, `updateIpc`, `wslIpc` | `app_info`, `audit_append`, `state_load` / `state_save`, settings files, window controls (through the shell; `aux_window_label` / `aux_window_close`), dialog / clipboard / opener plugins, `mcp_*` (the IDE's server and remote servers for the agent), `update_*`, `wsl_*` |
 | `remote.ts` | `remoteIpc` (D252) | `remote_connect` (Channel of `RemoteEvent`: progress, ssh's `askpass` questions, `disconnected`), `remote_askpass_answer`, `remote_disconnect`, `remote_status`, `remote_browse`, `remote_log`, `remote_hosts`, `remote_forward_port` / `remote_unforward` / `remote_forwarded`, `remote_listening` |
 | `instances.ts` | `instancesIpc` (D209) | `instances_*` (files other launches hand over — Channel, `--wait`'s done, the window with a folder, the last session's windows), `shell_command_*` |
-| `process.ts` | `ptyIpc`, `execIpc`, `formatIpc`, `lspIpc`, `debugSocketIpc`, `startStdioProcess` | `pty_*` (Channel: raw bytes + exit), `exec_run` / `exec_cancel`, `lsp_start` (Channel: messages, stderr, exit; `framing: "lsp" \| "ndjson"`), `lsp_send`, `lsp_stop` |
+| `process.ts` | `ptyIpc`, `execIpc`, `formatIpc`, `lspIpc`, `debugSocketIpc`, `startStdioProcess`, `notebookIpc` | `pty_*` (Channel: raw bytes + exit), `exec_run` / `exec_cancel`, `lsp_start` (Channel: messages, stderr, exit; `framing: "lsp" \| "ndjson"`), `lsp_send`, `lsp_stop`, `notebook_output_origin` |
 | `virtualPty.ts` | `registerVirtualPty`, `spawnVirtualPty`, `isVirtualPty` (D233) | none: an extension's pseudoterminal, answered in the page; `ptyIpc` sends a spawn with `virtual: <key>` and every id from `VIRTUAL_PTY_BASE` here |
 | `git.ts` | `gitIpc`, `githubIpc` | `git_*` (status, show, index writes, stage, commit, branches, log, remotes with progress) |
 | `agent.ts` | `aiIpc`, `agentStoreIpc`, `attachIpc` | `ai_*` (models, chat Channel, cancel, keys), `agent_session_*`, `agent_checkpoint_*` |
