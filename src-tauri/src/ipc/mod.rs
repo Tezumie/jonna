@@ -26,3 +26,4 @@ pub mod remote_image;
 pub mod settings;
 pub mod skills;
 pub mod speech;
+pub mod sync;

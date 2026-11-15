@@ -13,7 +13,7 @@
 
 mod session;
 
-pub use session::{check, profile, session_file, sign_out};
+pub use session::{access_token, check, profile, session_file, sign_out};
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener};
@@ -45,6 +45,11 @@ pub struct Profile {
     pub avatar_url: Option<String>,
     #[serde(default)]
     pub plan: Option<String>,
+    /// Whether sync is open to this account (D435), and the storage it has.
+    #[serde(default)]
+    pub sync: bool,
+    #[serde(default)]
+    pub storage_limit: u64,
 }
 
 /// A sign-in under way: the browser URL to open and what the callback must match.

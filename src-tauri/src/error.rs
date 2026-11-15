@@ -42,6 +42,10 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("{0}")]
     Tauri(#[from] tauri::Error),
+    /// Sync failed: a code the front end tells apart (offline, signed out, full, keys), and what
+    /// to show.
+    #[error("{1}")]
+    Sync(&'static str, String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -73,6 +77,7 @@ impl Error {
             Error::Exec(_) => "Exec",
             Error::Json(_) => "Json",
             Error::Tauri(_) => "Tauri",
+            Error::Sync(code, _) => code,
         }
     }
 }

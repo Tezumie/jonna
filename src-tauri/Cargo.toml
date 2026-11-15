@@ -96,6 +96,14 @@ rmcp = { version = "3.5.1", default-features = false, features = ["server", "tra
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
+# Sync (D435): keys wrapped to a device (a sealed box: X25519 and XSalsa20-Poly1305, as
+# libsodium does it), content sealed with XChaCha20-Poly1305, keys derived with HKDF, chunk ids
+# from HMAC. All RustCrypto, MIT/Apache-2.0, pure Rust.
+crypto_box = { version = "0.9.1", features = ["seal"] }
+chacha20poly1305 = "0.10.1"
+hkdf = "0.12.4"
+hmac = "0.12.1"
+sha2_10 = { package = "sha2", version = "0.10.9" }
 # ACP agents' .tar.gz / .tar.bz2 downloads (D215). MIT/Apache-2.0; already built for the
 # updater (tauri-plugin-updater), so nothing new is compiled. Entries are unpacked one by one
 # by acp_agents/archive.rs (its own path and link checks), not with `unpack_in`.

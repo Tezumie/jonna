@@ -132,6 +132,17 @@ pub fn profile(file: &Path, base: &str) -> Option<Profile> {
     (session.base == base.trim_end_matches('/')).then_some(session.profile)
 }
 
+/// The access token for requests to `base` in this account's name (sync). None when signed
+/// out, or when the keychain can't be read. A request that gets 401 calls `check` (which
+/// refreshes the tokens) and asks again.
+pub fn access_token(file: &Path, base: &str) -> Option<String> {
+    let session = read_session(file)?;
+    if session.base != base.trim_end_matches('/') {
+        return None;
+    }
+    Some(tokens_of(file, &session, vault())?.access)
+}
+
 /// Forgets the session (and tells the server, best effort: either token ends it there).
 pub async fn sign_out(file: &Path) -> Result<()> {
     let vault = vault();
@@ -312,6 +323,8 @@ mod tests {
             email: None,
             avatar_url: None,
             plan: Some("free".into()),
+            sync: false,
+            storage_limit: 0,
         }
     }
 

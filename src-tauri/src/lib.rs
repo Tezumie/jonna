@@ -54,6 +54,7 @@ mod screenshot;
 mod search;
 mod speech;
 mod store;
+mod sync;
 #[cfg(feature = "desktop")]
 mod update;
 mod url_scheme;
@@ -516,6 +517,20 @@ macro_rules! all_commands {
                 ipc::accounts::account_cancel,
                 ipc::accounts::account_sign_out,
                 ipc::accounts::account_avatar,
+                ipc::sync::sync_status,
+                ipc::sync::sync_prepare,
+                ipc::sync::sync_setup,
+                ipc::sync::sync_join,
+                ipc::sync::sync_join_recovery,
+                ipc::sync::sync_approve,
+                ipc::sync::sync_remove_device,
+                ipc::sync::sync_new_recovery_key,
+                ipc::sync::sync_changes,
+                ipc::sync::sync_record_get,
+                ipc::sync::sync_record_put,
+                ipc::sync::sync_chat_push,
+                ipc::sync::sync_chat_pull,
+                ipc::sync::sync_project_name,
                 ipc::app::state_load,
                 ipc::app::state_save,
                 ipc::app::audit_append,
