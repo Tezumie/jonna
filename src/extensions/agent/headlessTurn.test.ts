@@ -5,9 +5,8 @@
 // absent. The same for an external agent over ACP: a fake program on the stdio host that asks
 // permission and answers.
 //
-// There is no `document` and no `window` here, and the tests say so: `window` holds the fake
-// backend's entry and nothing else, and any other member read from it fails the test.
-// Once the call layer takes a transport, `installFakeBackend` becomes one, and `window` goes too.
+// There is no `document` and no `window` here, and the tests say so: the fake backend is a
+// transport installed in the call layer (`setTransport`), so nothing of a page is defined at all.
 
 import assert from "node:assert/strict";
 import {
@@ -28,6 +27,7 @@ import { ContextKeyService } from "../../core/context/index";
 import { Dispatcher } from "../../core/dispatcher/index";
 import { EventBus } from "../../core/events/index";
 import { OperationHistory } from "../../core/history/index";
+import { setTransport, type Transport } from "../../core/ipc/invoke";
 import { DisposableStore } from "../../core/lifecycle/index";
 import { ALLOW_ALL } from "../../core/permissions/index";
 import { signal } from "../../core/reactive/index";
@@ -107,14 +107,13 @@ interface FakeChannel<T> {
 }
 
 /**
- * The backend, faked at the one place the call layer reaches it. Only the entry the call layer
- * uses exists on this object; every other member read from it is recorded, and a test fails
- * when there is one (nothing may use the window).
+ * The backend, faked at the one place the call layer reaches it: a transport answered here. A
+ * channel in a call's args is the live `Channel` object, so a command pushes its messages by
+ * calling `onmessage`.
  */
 function installFakeBackend(root: string, home: string) {
   const calls: Call[] = [];
   const unanswered = new Set<string>();
-  const windowReads = new Set<string>();
   /** The tools each model request offered. */
   const offered: string[][] = [];
   let steps: ModelStep[] = [];
@@ -242,23 +241,22 @@ function installFakeBackend(root: string, home: string) {
     }
   };
 
-  const internals = { invoke, transformCallback: () => 1, unregisterCallback: () => {} };
-  const fakeWindow = new Proxy(
-    {},
-    {
-      get(_target, key) {
-        if (key === "__TAURI_INTERNALS__") return internals;
-        if (typeof key === "string") windowReads.add(key);
-        return undefined;
-      },
-      has: (_target, key) => key === "__TAURI_INTERNALS__",
+  let nextChannel = 1;
+  const transport: Transport = {
+    kind: "fake",
+    state: "open",
+    request: (command, args) => invoke(command, args),
+    requestRaw: (command, body, headers) => invoke(command, body, { headers }),
+    openChannel: () => {
+      const id = nextChannel++;
+      return { id, wire: () => ({ __channel: id }), close: () => {} };
     },
-  );
-  (globalThis as unknown as { window?: unknown }).window = fakeWindow;
+    onClose: () => () => {},
+  };
+  setTransport(transport);
   return {
     calls,
     unanswered,
-    windowReads,
     offered,
     /** What the model answers, one step per request. */
     script: (next: ModelStep[]) => {
@@ -356,10 +354,16 @@ function stubServices(root: string, settingsMap: Record<string, unknown>, used: 
 const scratch = mkdtempSync(join(tmpdir(), "agent-turn-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-// The proof that nothing here stands in for the screen: taken before the fake backend goes in
-// (which is all `window` ever holds in this file).
+// The proof that nothing here stands in for the screen: taken before the fake backend goes in,
+// and checked again after each turn (`noScreen`).
 const realm = globalThis as unknown as Record<string, unknown>;
 const cleanAtStart =
+  typeof realm.document === "undefined" &&
+  typeof realm.window === "undefined" &&
+  typeof realm.CSS === "undefined";
+
+/** Nothing of a page exists in this realm (asserted after each turn: nothing defined one). */
+const noScreen = () =>
   typeof realm.document === "undefined" &&
   typeof realm.window === "undefined" &&
   typeof realm.CSS === "undefined";
@@ -427,7 +431,7 @@ const toolRows = (items: readonly Item[]) =>
 
 test("there is no document, window or CSS in this realm", () => {
   assert.equal(cleanAtStart, true);
-  assert.equal(typeof realm.document, "undefined");
+  assert.equal(noScreen(), true);
 });
 
 test("a full turn with no window: write, read, search, a command asked for and answered, saved", async () => {
@@ -500,7 +504,7 @@ test("a full turn with no window: write, read, search, a command asked for and a
   for (const name of ["read_file", "write_file", "run_command", "search", "find_files", "notify"])
     assert.equal(offered.has(name), true, `${name} missing`);
 
-  assert.deepEqual([...backend.windowReads], [], "the window was read");
+  assert.equal(noScreen(), true, "a page was defined");
   // Of the services the stub leaves out, only notifications were used: nobody is watching, so
   // the chat said it needed an answer.
   assert.deepEqual(
@@ -529,7 +533,7 @@ test("enter_plan_mode switches the chat itself where its command isn't registere
   assert.equal(session.error.peek(), null);
   assert.deepEqual(toolRows(session.items), ["enter_plan_mode:done"]);
   assert.equal(session.chatMode.peek(), "plan");
-  assert.deepEqual([...backend.windowReads], []);
+  assert.equal(noScreen(), true);
   agent.dispose();
 });
 
@@ -558,7 +562,7 @@ test("read_file shows a PNG as it is where there is no canvas to redraw it", asy
   const read = session.items.find((i) => i.type === "tool");
   assert.equal(read?.type === "tool" ? read.status : "", "done");
   assert.equal(read?.type === "tool" ? read.summary : "", "image");
-  assert.deepEqual([...backend.windowReads], []);
+  assert.equal(noScreen(), true);
   agent.dispose();
 });
 
@@ -587,6 +591,6 @@ test("an external agent's turn with no window: started, its permission answered,
   const reply = session.items.findLast((i) => i.type === "assistant");
   assert.equal(reply?.type === "assistant" ? reply.text : "", "You chose yes.");
   assert.ok(backend.calls.some((c) => c.command === "lsp_start"));
-  assert.deepEqual([...backend.windowReads], []);
+  assert.equal(noScreen(), true);
   agent.dispose();
 });

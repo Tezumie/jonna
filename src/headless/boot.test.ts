@@ -1,6 +1,6 @@
 // The screenless entry, run where there is no page at all: Node, with no DOM shim. `document`
-// never exists; `window` exists only once a fake backend has connected, holds nothing but the
-// framework's call bridge, and records (and fails) any other use.
+// and `window` never exist: the fake backend is a transport in the call layer, so a use of
+// either fails where it is used.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -89,7 +89,7 @@ test("every built-in extension but the agent's activates with no screen", async 
   // The proof this runs without a page: there is none in this realm, and none is made.
   assert.equal(typeof document, "undefined");
   assert.equal(typeof window, "undefined");
-  const { session, backend, problems, stop } = await start();
+  const { session, problems, stop } = await start();
   try {
     assert.deepEqual(
       session.extensions.filter((e) => e.error),
@@ -97,9 +97,9 @@ test("every built-in extension but the agent's activates with no screen", async 
     );
     assert.equal(session.extensions.length, extensions().length);
     assert.ok(session.extensions.length >= 25);
-    // Nothing reached for the window (the fake's `window` records every use but the bridge's),
-    // and nothing failed for want of a page where the failure was only logged.
-    assert.deepEqual(backend.screenAccess, []);
+    // Nothing made a window, and nothing failed for want of a page where the failure was only
+    // logged.
+    assert.equal(typeof window, "undefined");
     assert.deepEqual(
       problems.filter((line) => SCREEN_FAILURE.test(line)),
       [],
@@ -121,11 +121,11 @@ test("every built-in extension but the agent's activates with no screen", async 
   }
   // Still nothing of a page after the session ended.
   assert.equal(typeof document, "undefined");
-  assert.deepEqual(backend.screenAccess, []);
+  assert.equal(typeof window, "undefined");
 });
 
 test("commands run through the dispatcher and state is read, with no screen", async () => {
-  const { session, backend, host, stop } = await start();
+  const { session, host, stop } = await start();
   const { dispatcher, state } = session.services;
   try {
     // State the workspace and the workbench extension publish.
@@ -182,7 +182,7 @@ test("commands run through the dispatcher and state is read, with no screen", as
 
     // Every command went to the audit log, as in the window.
     assert.ok(host.audit.some((entry) => entry.includes("layout.toggleSidebar")));
-    assert.deepEqual(backend.screenAccess, []);
+    assert.equal(typeof window, "undefined");
     // The open workspace's saved state (the window's layout) is never written from here.
     await session.services.persistence.flush();
     assert.equal(host.state.has("workspace"), false);

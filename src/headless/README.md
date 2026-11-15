@@ -49,8 +49,7 @@ and never made; a command that needs one fails with a message that says a screen
 
 ## fakeBackend.ts, memoryHost.ts (tests)
 
-`fakeBackend(commands)` is a `HeadlessBackend` answered by handlers in this process: it installs
-the bridge the desktop framework's `invoke` looks for and a `window` that holds nothing else and
-records any other use (`screenAccess`), so a test can assert the logic layer never touched the
-screen. `memoryHost(options)` is a small backend kept in maps (app info, saved state, settings
+`fakeBackend(commands)` is a `HeadlessBackend` answered by handlers in this process: a transport
+installed with `setTransport`, so no `window` or `document` exists and a test asserts the logic
+layer never touched the screen by their absence. `memoryHost(options)` is a small backend kept in maps (app info, saved state, settings
 files, a file tree) with the commands a session needs to start and open a folder.
