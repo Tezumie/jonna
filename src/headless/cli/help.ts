@@ -18,7 +18,8 @@ const flagLines = (command: Subcommand): string => {
 
 const EXIT_CODES = `Exit codes:
   0    the task finished
-  1    the task failed (the model or a tool failed, a step, cost or time limit)
+  1    the task failed (the model or a tool failed, a step, cost or time limit), or its
+       chat was saved elsewhere meanwhile and this turn couldn't be saved to it
   2    bad usage or configuration (an unknown option, no model, no key, no host)
   3    a permission was refused
   130  interrupted (Ctrl+C; a second Ctrl+C quits at once)`;

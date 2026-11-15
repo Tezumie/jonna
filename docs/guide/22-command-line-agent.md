@@ -54,6 +54,7 @@ Run `<cli>` in a project's folder. You get a prompt; type what you want done and
 | `/compact [focus]` | Summarizes the conversation to free context |
 | `/cost`, `/status` | Tokens and cost; the model, mode, folder and chat |
 | `/diff`, `/accept [path]`, `/reject [path]` | The changes waiting for review; keep them; put the old text back |
+| `/conflict mine`, `/conflict saved` | When the chat was saved somewhere else meanwhile (the app, another run): save this session's chat over it, or load the saved one |
 | `/key [provider]` | Stores a provider's API key (typed unseen) |
 | `/exit` | Ends the session |
 
@@ -126,7 +127,7 @@ terminal asks once.
 | Code | Meaning |
 |---|---|
 | 0 | The task finished |
-| 1 | It failed: the model or a tool failed, or a step, cost or time limit stopped it |
+| 1 | It failed: the model or a tool failed, or a step, cost or time limit stopped it. Also when the chat was saved somewhere else while the run worked (the app, another run): the saved chat is kept, this run's turn is not in it, and the JSON result has `"unsaved": true` |
 | 2 | Bad usage or setup: an unknown option, no model, no key, the host program not found |
 | 3 | A permission was refused |
 | 130 | Interrupted with Ctrl+C |

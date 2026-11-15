@@ -38,6 +38,11 @@ export const FRONT_COMMANDS: readonly FrontCommand[] = [
   { name: "diff", description: "The changes waiting for review" },
   { name: "accept", hint: "[path]", description: "Keep the changes under review" },
   { name: "reject", hint: "[path]", description: "Put back what the files held before them" },
+  {
+    name: "conflict",
+    hint: "[mine|saved]",
+    description: "A chat saved elsewhere meanwhile: keep this session's, or load the saved one",
+  },
   { name: "exit", aliases: ["quit", "q"], description: "End the session" },
 ];
 

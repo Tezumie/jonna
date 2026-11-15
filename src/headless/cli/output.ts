@@ -20,9 +20,13 @@ export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 /**
  * The exit code of a finished run. A failure or a limit: 1. Interrupted: 130. The agent answered
  * but something it asked for was refused (by the policy, the deny list or the person): 3, since
- * the task couldn't be done as asked. Else 0.
+ * the task couldn't be done as asked. An answer that couldn't be saved to its chat (`unsaved`:
+ * someone else saved the chat meanwhile): 1, since a later --resume won't have this turn. Else 0.
  */
-export function exitCodeOf(result: Pick<RunResult, "reason" | "denied">): ExitCode {
+export function exitCodeOf(
+  result: Pick<RunResult, "reason" | "denied">,
+  unsaved = false,
+): ExitCode {
   switch (result.reason) {
     case "cancelled":
       return EXIT.interrupted;
@@ -33,8 +37,17 @@ export function exitCodeOf(result: Pick<RunResult, "reason" | "denied">): ExitCo
     case "stopped":
       return EXIT.failed;
     case "end":
+      if (unsaved) return EXIT.failed;
       return result.denied.length > 0 ? EXIT.refused : EXIT.ok;
   }
+}
+
+/**
+ * What to say when the chat was saved by someone else (a window, another run) while this run
+ * worked on it: the stored chat is kept as they left it, so this run's turn is not in it.
+ */
+export function unsavedNote(session: string): string {
+  return `The chat ${session} was saved by another window or run while this one worked on it. The saved chat was kept as it is: this run's turn is NOT in it (what the run changed on disk stays). Use one chat from one place at a time, or give each run a chat of its own.`;
 }
 
 /** Why a run ended, in a sentence, when it didn't simply answer; null when it did. */
@@ -81,11 +94,13 @@ export interface ResultRecord {
   denied: PermissionDecision[];
   /** Files whose edits wait for review (`--review`). */
   pending: string[];
+  /** The turn isn't in the saved chat: someone else saved the chat while the run worked. */
+  unsaved?: true;
   durationMs: number;
 }
 
-export function resultRecord(result: RunResult, durationMs: number): ResultRecord {
-  const exitCode = exitCodeOf(result);
+export function resultRecord(result: RunResult, durationMs: number, unsaved = false): ResultRecord {
+  const exitCode = exitCodeOf(result, unsaved);
   return {
     type: "result",
     ok: exitCode === 0,
@@ -99,6 +114,7 @@ export function resultRecord(result: RunResult, durationMs: number): ResultRecor
     cost: result.cost,
     denied: result.denied,
     pending: result.pending,
+    ...(unsaved && { unsaved: true as const }),
     durationMs,
   };
 }

@@ -198,6 +198,12 @@ Decisions worth knowing when changing it:
 - **Review.** One shot accepts edits as they are made unless `--review` or `--permission-mode
   ask`; a session follows the app's own choice for the folder. Under review an edit is in the
   file, as in the app, and `/accept` keeps it or `/reject` puts the old text back.
+- **One chat, two places.** A chat's save only goes over the version this process read
+  (the app's two-window check, `sessionStore.ts`), so a window and a run on the same chat never
+  replace each other's turns: the later saver is refused and its chat stops saving. One shot
+  then exits 1 with a sentence on stderr and `"unsaved": true` in the result (the turn is not
+  in the saved chat); a session says so after the turn and `/conflict mine|saved` chooses
+  (`agent.resolveChatConflict`); `serve` and `acp` clients get the chat's own notice.
 - **Asking.** A session and `serve` leave what the policy doesn't decide waiting
   (`otherwise: "wait"`); one shot does only with a terminal on stdin and without
   `--non-interactive`.

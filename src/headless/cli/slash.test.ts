@@ -321,3 +321,11 @@ test("a one-shot run's progress leaves the answer's text out", () => {
   renderer.flush();
   assert.equal(out, "* run_command echo hi\n    hi\n  -> exit 1\n");
 });
+
+test("/conflict is the session's own: which version of a chat saved elsewhere to keep", () => {
+  assert.deepEqual(parseLine("/conflict mine"), {
+    kind: "front",
+    command: "conflict",
+    args: "mine",
+  });
+});

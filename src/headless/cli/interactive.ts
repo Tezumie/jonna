@@ -145,6 +145,20 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
     );
   };
 
+  /**
+   * The chat was saved by someone else (the app's window, another run) since this session read
+   * it: nothing is saved here until the person chooses, and the chat's own notice names buttons
+   * a terminal doesn't have.
+   */
+  const conflictNote = (): void => {
+    if (!chat.session.conflict.peek()) return;
+    say(
+      style.yellow(
+        "This chat was saved somewhere else meanwhile, so nothing more is saved from here. /conflict mine saves this session's chat over the other; /conflict saved loads the saved one (what happened here since is dropped).",
+      ),
+    );
+  };
+
   /** Sends one message and waits for the work it starts to end. */
   const runTurn = async (text: string): Promise<void> => {
     busy = true;
@@ -168,6 +182,7 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
     }
     const note = endNote({ ...result, denied: [] });
     if (note && result.reason !== "error") say(style.yellow(note));
+    conflictNote();
     pendingNote();
     say(statusLine());
   };
@@ -360,6 +375,25 @@ export async function runInteractive(args: CliArgs, io: Io): Promise<number> {
         const result = await chat.send("/clear");
         const next = result.command?.session;
         await switchTo(typeof next === "string" ? next : undefined, "New chat.");
+        return true;
+      }
+      case "conflict": {
+        if (!chat.session.conflict.peek()) {
+          say(style.dim("This chat is saved as it is here: nothing to choose."));
+          return true;
+        }
+        const keep = rest === "mine" ? "here" : rest === "saved" ? "other" : null;
+        if (!keep) {
+          conflictNote();
+          return true;
+        }
+        // The app's own command (the buttons of the chat's notice in the window).
+        await brain.execute("agent.resolveChatConflict", { session: chat.id, keep });
+        if (keep === "here") say(style.dim("Saved: this session's chat replaced the other."));
+        else {
+          say(style.dim("Loaded the saved chat."));
+          recap();
+        }
         return true;
       }
       case "compact":
