@@ -2047,6 +2047,8 @@ function demoScripted(messages, user) {
  */
 function headlessE2eScripted(messages, user) {
   if (!user.includes("headless e2e:")) return null;
+  // A summary request quotes the conversation, these phrases included: not one of these.
+  if (String(messages[0]?.content ?? "").startsWith("You compress a coding agent")) return null;
   // This turn's tool results only (after the last user message).
   const from = messages.findLastIndex((m) => m.role === "user");
   const results = messages.slice(from + 1).filter((m) => m.role === "tool");
@@ -2081,7 +2083,78 @@ function headlessE2eScripted(messages, user) {
   return null;
 }
 
+/**
+ * The command-line agent (scripts/cli-e2e.mjs). "cli e2e: context" says which markers the request
+ * holds (the rules file, memory, a skill, the agent's own instructions, piped input, a hook's
+ * context); "cli e2e: try write" calls write_file and quotes what came back (a read-only mode
+ * refuses it); "cli e2e: ask me" asks a question and says the answer; "cli e2e: delegate" runs
+ * the subagent cli-e2e-helper, whose own conversation ("cli e2e sub:") says whether it got its
+ * instructions; "cli e2e: markdown" answers with Markdown. Null: not one of these.
+ */
+function cliE2eScripted(messages, user) {
+  if (!user.includes("cli e2e")) return null;
+  // A summary request quotes the conversation, these phrases included: not one of these.
+  if (String(messages[0]?.content ?? "").startsWith("You compress a coding agent")) return null;
+  const from = messages.findLastIndex((m) => m.role === "user");
+  const results = messages.slice(from + 1).filter((m) => m.role === "tool");
+  const content = (i) =>
+    String(results[i]?.content ?? "")
+      .replace(/\s+/g, " ")
+      .slice(0, 200);
+  const all = JSON.stringify(messages);
+  const has = (marker) => (all.includes(marker) ? "yes" : "no");
+  if (user.includes("cli e2e sub:"))
+    return { text: `Sub: instructions=${has("cli-e2e-helper-marker")}` };
+  if (user.includes("cli e2e: context"))
+    return {
+      text: `Context: rules=${has("cli-e2e-rule-marker")} memory=${has("cli-e2e-memory-marker")} skill=${has("cli-e2e-skill-marker")} agent=${has("cli-e2e-agent-marker")} stdin=${has("cli-e2e-stdin-marker")} hook=${has("cli-e2e-hook-marker")}`,
+    };
+  if (user.includes("cli e2e: try write")) {
+    if (results.length === 0)
+      return {
+        tool: { name: "write_file", arguments: { path: "cli-e2e-mode.txt", content: "x\n" } },
+      };
+    return { text: `Write: ${content(0)}` };
+  }
+  if (user.includes("cli e2e: ask me")) {
+    if (results.length === 0)
+      return {
+        tool: {
+          name: "ask_user",
+          arguments: {
+            questions: [
+              {
+                question: "Which color?",
+                header: "Color",
+                options: [
+                  { label: "Red", description: "Warm" },
+                  { label: "Blue", description: "Cool" },
+                ],
+              },
+            ],
+          },
+        },
+      };
+    return { text: `Asked: ${content(0)}` };
+  }
+  if (user.includes("cli e2e: delegate")) {
+    if (results.length === 0)
+      return {
+        tool: {
+          name: "delegate",
+          arguments: { agent: "cli-e2e-helper", task: "cli e2e sub: report your instructions" },
+        },
+      };
+    return { text: `Delegated: ${content(0)}` };
+  }
+  if (user.includes("cli e2e: markdown"))
+    return { text: "# Title\n\nSome **bold** and `code`.\n\n- one\n- two\n" };
+  return null;
+}
+
 function scripted(messages) {
+  const cliE2e = cliE2eScripted(messages, lastUser(messages));
+  if (cliE2e) return cliE2e;
   const headlessE2e = headlessE2eScripted(messages, lastUser(messages));
   if (headlessE2e) return headlessE2e;
   const demo = demoScripted(messages, lastUser(messages));

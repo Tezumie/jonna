@@ -102,6 +102,13 @@ export interface OpenChatOptions {
   agentLevel?: string;
   /** agent, plan, ask or `custom:<name>` (one of the user's agents). */
   chatMode?: string;
+  /**
+   * Whether this chat's edits wait for review (true) or are written at once (false), whatever
+   * the run's access mode and the chat's saved choice say. Left out: those decide.
+   */
+  review?: boolean;
+  /** With `session`: an id nobody saved yet starts a new chat with that id. */
+  create?: boolean;
 }
 
 /** The limits of one run. Each ends the turn as Stop does, with its own reason. */
@@ -202,6 +209,11 @@ export async function startBrain(options: BrainOptions): Promise<Brain> {
     ...(options.ideServer !== true && { "mcp.enabled": false, "mcp.claudeCode.enabled": false }),
     // Fetching in the background is for a window somebody keeps open; a run fetches when asked.
     "git.autofetch": false,
+    // The agent's own upkeep (tidying its memory in a chat of its own, and suggesting it) is
+    // the app's: a run would start model work nobody asked for, and leave a chat behind that
+    // the folder's "last chat" then is.
+    "agent.memory.autoTidyUp": false,
+    "agent.memory.suggestTidyUp": false,
     ...mode?.settings,
     ...options.settings,
   };
@@ -278,13 +290,19 @@ export async function startBrain(options: BrainOptions): Promise<Brain> {
   const open = async (o: OpenChatOptions = {}): Promise<BrainChat> => {
     let id = o.session;
     if (!id && o.continue) id = (await chats()).find((c) => c.here)?.id;
-    if (id && !agent.sessions.find(id) && !(await agentStoreIpc.load(id).catch(() => null)))
+    if (
+      id &&
+      !o.create &&
+      !agent.sessions.find(id) &&
+      !(await agentStoreIpc.load(id).catch(() => null))
+    )
       throw new Error(`No saved chat with the id ${id}.`);
     const session = agent.sessions.get(id);
     await session.loaded();
     agent.sessions.active.value = session.id;
     // The run's access mode wins over what a saved chat had.
     if (mode) session.autoApply.value = mode.autoApply;
+    if (o.review !== undefined) session.autoApply.value = !o.review;
     if (o.model)
       await execute("agent.selectModel", {
         session: session.id,

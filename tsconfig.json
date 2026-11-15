@@ -26,6 +26,7 @@
     "src/core/ipc/node/**",
     "src/headless/node/**",
     "src/headless/run.ts",
+    "src/headless/cli/**",
     "src/workers/node/**"
   ]
 }

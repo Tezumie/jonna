@@ -108,6 +108,13 @@ export async function openBrain(options: OpenBrainOptions): Promise<HostedBrain>
     backend,
     workers: directory ? nodeWorkers(directory) : null,
   });
+  // The end starts here: the close then waits for what the end itself sends, not for a probe
+  // an extension started long ago (looking for a repository, the terminal's shells).
+  const dispose = brain.dispose;
+  brain.dispose = () => {
+    backend.ending();
+    return dispose();
+  };
   return Object.assign(brain, {
     host: backend.info,
     onHostExit: (listener: (code: number | null, signal: string | null) => void) => {

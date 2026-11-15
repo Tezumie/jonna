@@ -6,7 +6,7 @@
 //   node build.mjs --headless [--prod]   the brain without a window, for Node, to dist-headless/
 //                            (its own folder: dist/ and the window's bundle are not touched)
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
@@ -36,6 +36,11 @@ if (args.has("--headless")) {
  * registered and never made without a screen. Stylesheets, fonts and images are left out.
  */
 async function buildHeadless() {
+  // The command line's name: the product's short name in lower case, or `--cli-name=<name>`.
+  const productJson = JSON.parse(await readFile(join(root, "product.json"), "utf8"));
+  const cliName =
+    process.argv.find((a) => a.startsWith("--cli-name="))?.slice("--cli-name=".length) ||
+    String(productJson.nameShort).toLowerCase();
   await rm(headlessOutdir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   await mkdir(headlessOutdir, { recursive: true });
   /** @type {import("esbuild").BuildOptions} */
@@ -48,7 +53,7 @@ async function buildHeadless() {
     format: "esm",
     target: "node20",
     outExtension: { ".js": ".mjs" },
-    define: { __DEV__: JSON.stringify(devFeatures) },
+    define: { __DEV__: JSON.stringify(devFeatures), __CLI_NAME__: JSON.stringify(cliName) },
     legalComments: prod ? "external" : "inline",
     logLevel: "info",
     loader: { ".svg": "text", ".css": "empty", ".ttf": "empty", ".woff2": "empty" },
@@ -94,7 +99,9 @@ async function buildHeadless() {
   const results = await Promise.all([
     esbuild.build({
       ...node,
-      entryPoints: { brain: "src/headless/run.ts" },
+      // The brain (what a front end builds on) and the command line (src/headless/cli), which
+      // loads the brain only for the modes that need it; they share their chunks.
+      entryPoints: { brain: "src/headless/run.ts", cli: "src/headless/cli/entry.ts" },
       outdir: headlessOutdir,
       splitting: true, // what loads lazily in the window (the editor engine, grammars) stays lazy
       chunkNames: "chunks/[name]-[hash]",
@@ -107,12 +114,66 @@ async function buildHeadless() {
       outdir: headlessOutdir,
       metafile: true,
     }),
+    // The client of `serve`, on its own: a front end imports it without the brain.
+    esbuild.build({
+      ...node,
+      entryPoints: { "serve-client": "src/headless/cli/serveClient.ts" },
+      outdir: headlessOutdir,
+    }),
   ]);
+  await writeLaunchers(cliName);
   await mkdir(join(root, ".build-meta"), { recursive: true });
   await writeFile(
     join(root, ".build-meta/headless-meta.json"),
     JSON.stringify({ brain: results[0].metafile, workers: results[1].metafile }),
   );
+}
+
+/**
+ * The command line's launchers, in dist-headless/bin/, named `name` (by default product.json's
+ * short name, lower-cased): a `.cmd` for Windows (cmd.exe and PowerShell both run it; no `.ps1`,
+ * which the default execution policy refuses) and a shell script for everything else. Each
+ * starts `node` on cli.mjs one folder up and passes the arguments and the exit code through.
+ */
+async function writeLaunchers(name) {
+  const bin = join(headlessOutdir, "bin");
+  await mkdir(bin, { recursive: true });
+  const missing =
+    'Node.js 20 or newer is needed, and "node" was not found on PATH. Install it from https://nodejs.org and try again.';
+  // `where /q` looks for node without printing. The exit code is passed on by name: a script
+  // that ends on an `if` leaves 0 behind when it ran through `cmd /c`.
+  const cmd = [
+    "@echo off",
+    "setlocal",
+    "where /q node",
+    "if errorlevel 1 (",
+    `  echo ${missing.replaceAll('"', "")} 1>&2`,
+    "  exit /b 2",
+    ")",
+    'node "%~dp0..\\cli.mjs" %*',
+    "exit /b %errorlevel%",
+    "",
+  ].join("\r\n");
+  await writeFile(join(bin, `${name}.cmd`), cmd);
+  const sh = [
+    "#!/bin/sh",
+    "# Follows links to this script, so it can be linked into a folder on PATH.",
+    'self="$0"',
+    'while [ -h "$self" ]; do',
+    '  dir=$(cd -P "$(dirname "$self")" && pwd)',
+    '  self=$(readlink "$self")',
+    '  case "$self" in /*) ;; *) self="$dir/$self" ;; esac',
+    "done",
+    'dir=$(cd -P "$(dirname "$self")" && pwd)',
+    "if ! command -v node >/dev/null 2>&1; then",
+    `  echo '${missing}' >&2`,
+    "  exit 2",
+    "fi",
+    'exec node "$dir/../cli.mjs" "$@"',
+    "",
+  ].join("\n");
+  await writeFile(join(bin, name), sh);
+  await chmod(join(bin, name), 0o755);
 }
 
 // On Windows a folder something else just touched (a watcher, an antivirus scan) can fail to go

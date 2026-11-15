@@ -5,7 +5,7 @@ workspace, events and the built-in extensions' logic, started in a JavaScript ru
 page (Node), and on top of it the agent as a brain a front end drives. `boot.ts`, `services.ts`
 and `brain.ts` import no view code (`src/ui`, `core/dom`, an extension's views):
 `node scripts/check-headless-imports.mjs` and a test walk their imports and fail if one does.
-No command line here: that is built on `run.ts`.
+The command line is built on `run.ts`, in `cli/` (its own section below).
 
 | File | What |
 |---|---|
@@ -17,6 +17,7 @@ No command line here: that is built on `run.ts`.
 | `node/hostBackend.ts` (Node) | The host program as the backend. |
 | `node/workers.ts` (Node) | Worker threads for workflow scripts. |
 | `fakeBackend.ts`, `memoryHost.ts` | Tests' backends. |
+| `cli/` (Node) | The command-line agent: a session in a terminal, one-shot runs, `serve`, `acp`. |
 
 ## boot.ts
 
@@ -100,13 +101,16 @@ is there.
   `{ otherwise: "deny" }`), `settings` (for this run only), `workers`, `ideServer` (default
   false: `mcp.enabled` and `mcp.claudeCode.enabled` are held off for the run; an external agent
   of a chat still borrows the IDE's MCP server), `trustFolder`, `policy` (the services'
-  own questions). `git.autofetch` is held off.
+  own questions). `git.autofetch` and the agent's memory upkeep (`agent.memory.autoTidyUp`,
+  `agent.memory.suggestTidyUp`) are held off: a run starts no model work nobody asked for.
 - `Brain`: `services`, `boot`, `caller` (`{ kind: "frontend", name }`), `agent` (sessions,
   providers), `prompts` (waiting host prompts), `execute(command, input)` (as the front end),
   `state(path)`, `override(settings)`, `chats()` (`SavedChat[]`, newest first), `open(options)`,
   `dispose()` (stops and saves every chat, then ends the backend).
-- `open({ session?, continue?, model?, agentModel?, agentLevel?, chatMode? }) → BrainChat`:
-  a saved chat, the folder's newest, or a new one; the model is this chat's only.
+- `open({ session?, continue?, model?, agentModel?, agentLevel?, chatMode?, review?, create? })
+  → BrainChat`: a saved chat, the folder's newest, or a new one; the model is this chat's only.
+  `review`: this chat's edits stay under review (true) or are accepted as made (false), whatever
+  the access mode says. `create`: a `session` id nobody saved yet starts a new chat with it.
 - `BrainChat`: `id`, `session`, `onEvent(listener)` (`SessionEvent`s,
   extensions/agent/sessionEvents.ts), `send(prompt, limits?) → RunResult`, `stop(reason?)`.
   `send` goes through `agent.send` and resolves when the chat is at rest (the turn, queued
@@ -148,6 +152,123 @@ permission refused by policy and by the deny list, a saved chat continued in a s
 a front end answering a question as the person, an external agent over ACP with the IDE's
 tools, an MCP tool, a workflow script, a time limit, and a failure to start. Each scenario's
 process must end by itself.
+
+## cli/ (Node only): the command-line agent
+
+Excluded from `tsconfig.json` and checked by `tsconfig.test.json`, like `run.ts`. No terminal
+library: Node's `readline`, ANSI escapes and the modules below. The product's name is never
+written: the command is called what the build names its launcher (product.json's short name in
+lower case, or `node build.mjs --headless --cli-name=<name>`), read through `name.ts`.
+
+| File | What |
+|---|---|
+| `entry.ts` | What the launcher starts: checks the Node version, then loads `main.ts`. |
+| `main.ts` | Reads the arguments, answers `--help` / `--version` without starting anything, runs the mode. The brain is loaded only by the modes that need it. |
+| `args.ts` | The flag table and the parser (`parseArgs`, `UsageError` with the nearest flag), `decideMode` (a session at a terminal, one shot otherwise), `mayAsk`. Pure. |
+| `help.ts` | The help texts, built from the flag table. Pure. |
+| `config.ts` | Flags → the permission policy, review or not, limits, model / agent / effort; `composePrompt`. Precedence: a flag, then `--settings`, then the user's and the folder's settings. Pure. |
+| `launch.ts` | Finds the host program, starts the brain (`start`), opens the chat the flags name (`openChat`), `ConfigError` (exit 2) with what to do. |
+| `oneShot.ts` | `-p`, `exec`, piped input: the answer on stdout, progress on stderr. |
+| `interactive.ts` | The session: prompt, streamed answer, questions inline, slash commands, Ctrl+C. |
+| `prompter.ts` | Reading lines and asking questions over `readline`, on a terminal or a pipe. |
+| `asks.ts` | A permission, the agent's questions, host prompts, the services' pickers: asked at the terminal, answered through the commands any front end uses. |
+| `render.ts`, `markdown.ts`, `style.ts`, `diffText.ts` | Events as text; Markdown styled as it streams; colour (`NO_COLOR`, `FORCE_COLOR`, `--color`) and glyphs; unified diffs. Pure. Text from the model is stripped of escape sequences before it is printed. |
+| `slash.ts` | The session's own slash commands and the line parser. Pure. |
+| `output.ts` | Exit codes, the `json` result record, `stream-json` lines. Pure. |
+| `sessionsCommand.ts` | `sessions list` / `show`. |
+| `serve.ts`, `serveClient.ts` | `serve` and its client (bundled alone as `serve-client.mjs`). |
+| `acpAgent.ts` | `acp`: the Agent Client Protocol's agent side. |
+
+### Modes and exit codes
+
+`<cli>` at a terminal: the session. `-p`, `exec`, `--prompt-file`, `-`, or input / output that
+isn't a terminal: one shot. `sessions list|show`, `serve`, `acp`. Exit codes: 0 done; 1 the task
+failed or a limit stopped it (also: the host went away); 2 bad usage or setup; 3 a permission
+was refused (by the policy, a `--deny` entry or the person) though the agent answered; 130
+interrupted. `--help` has every flag; `docs/guide/22-command-line-agent.md` is the user's page.
+
+Decisions worth knowing when changing it:
+
+- **Trust.** A folder nobody decided about stays undecided for the run (as the window before its
+  question is answered: its hooks, MCP servers, tasks and restricted settings are off) and the
+  run says so on stderr; `--trust` trusts it and remembers; the session at a terminal asks once.
+- **Review.** One shot accepts edits as they are made unless `--review` or `--permission-mode
+  ask`; a session follows the app's own choice for the folder. Under review an edit is in the
+  file, as in the app, and `/accept` keeps it or `/reject` puts the old text back.
+- **Asking.** A session and `serve` leave what the policy doesn't decide waiting
+  (`otherwise: "wait"`); one shot does only with a terminal on stdin and without
+  `--non-interactive`.
+- **Standard output** carries the answer (or JSON) and nothing else; notes, progress and errors
+  go to stderr.
+
+### The launcher and where the pieces go
+
+`node build.mjs --headless` writes, beside `brain.mjs`: `cli.mjs` (the entry; its code is in the
+shared chunks), `serve-client.mjs`, and `bin/<name>.cmd` (Windows: cmd.exe and PowerShell both
+run it; no `.ps1`, which the default execution policy refuses) and `bin/<name>` (a shell
+script). Each starts `node` on `../cli.mjs` and passes the arguments and the exit code through;
+with no `node` on PATH it says what to install and exits 2.
+
+The host program is looked for in this order: `--host`, `IDE_HOST_PATH`, beside the bundle, one
+and two folders above it, then a checkout's `$CARGO_TARGET_DIR` and `src-tauri/target`
+(`release`, then `debug`). Installed with the desktop app (not done yet; the installer isn't
+changed here), the plan is: `ide-host` beside the app's own program, and the bundle in
+`<app folder>/resources/cli/` with `bin/` on the user's PATH, which the "two folders above"
+lookup finds.
+
+### serve: the protocol
+
+`<cli> serve [--port n] [--token text]` listens on 127.0.0.1 and prints one line when ready:
+`{"type":"listening","host":"127.0.0.1","port":n,"token":"…","folder":"…"}`. The token is
+`--token`, else `IDE_SERVE_TOKEN`, else random. Messages are newline-delimited JSON, one object
+per line, UTF-8. One client at a time (a second is answered `Busy`).
+
+- Client → server: `{ "id": n, "method": "<name>", "params": { … } }`.
+- Server → client: `{ "id": n, "result": … }` or `{ "id": n, "error": { "code", "message" } }`
+  (`Unauthorized`, `Busy`, `Invalid`, `Failed`); `{ "event": <SessionEvent> }` for the chats
+  subscribed to; `{ "notify": "hostPrompts", "params": [ … ] }` when the waiting host prompts
+  change (the value of `ide://agent/hostPrompts`).
+
+| Method | Params | Result |
+|---|---|---|
+| `hello` (first) | `token`, `client?` | `protocol` (1), `version`, `folder`, `host`, `caller` |
+| `execute` | `command`, `input?` | The command's result, run as the front end (the person's rights) |
+| `state` | `path`, `budget?` | The value at an `ide://` path |
+| `chats` | | `SavedChat[]`, newest first |
+| `open` | `session?`, `continue?`, `create?`, `model?`, `agentModel?`, `agentLevel?`, `chatMode?`, `review?` | `session`, `title`, `model`, `items` |
+| `subscribe` / `unsubscribe` | `session` | Events of that chat follow as `{ "event" }` lines (the first is `session`) |
+| `send` | `session`, `prompt`, `maxSteps?`, `maxCost?`, `timeoutMs?` | The `RunResult`, when the work has ended |
+| `stop` | `session`, `reason?` | |
+| `shutdown` | | The server ends in order (so does Ctrl+C) |
+
+What waits for an answer is answered with `execute`: `agent.respondPermission`, `agent.answer`,
+`agent.answerHostPrompt`. `serveClient.ts` (`connectServe({ port, token })` → `request`,
+`onEvent`, `onNotify`, `close`) is the client the test uses.
+
+### acp: the agent side
+
+Protocol version 1 over stdio, newline-delimited JSON-RPC (the version and shapes of the IDE's
+own client, `src/core/acp/client.ts`). `initialize` (loadSession, embedded context, HTTP MCP
+servers); `session/new` and `session/load` (the saved chat is replayed as updates) answer with
+`modes` (ask, accept-edits, auto, full-access, plan) and `configOptions` (model, reasoning
+effort); `session/prompt` streams `agent_message_chunk`, `agent_thought_chunk`, `tool_call` and
+`tool_call_update` (status, the result's text, a `diff` for each file an edit changed) and
+answers with the stop reason and the turn's tokens; `session/request_permission` is sent for a
+permission (allow once / always / reject), for the agent's own questions (its choices as
+options) and, in the ask mode, for each file held for review at the end of the turn (with its
+diff: apply or discard); `session/cancel`; `session/set_mode`, `session/set_config_option`,
+`session/set_model`; `available_commands_update` with the app's slash commands. MCP servers the
+editor hands over join the run's. One process serves one folder (the first session's `cwd`).
+
+### Its tests
+
+Unit tests beside the modules (`*.test.ts`: the parser, precedence, formats, exit codes, the
+Markdown renderer, slash commands, the event renderer, diffs). `node scripts/cli-e2e.mjs
+[--host <ide-host>] [filter]` runs the real launcher over the real host against the fixtures'
+model server: every mode and flag, the session over a pipe (Ctrl+C as its byte), `serve` with
+the client, `acp` by a scripted exchange and by the IDE's own ACP client (this tool as an
+external agent of itself), a host killed mid-turn, a reader that leaves early, two runs at once,
+and a last check that no process is left behind.
 
 ## fakeBackend.ts, memoryHost.ts (tests)
 

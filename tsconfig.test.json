@@ -8,6 +8,7 @@
     "src/core/ipc/node/**/*.ts",
     "src/headless/node/**/*.ts",
     "src/headless/run.ts",
+    "src/headless/cli/**/*.ts",
     "src/workers/node/**/*.ts",
     "src/globals.d.ts",
     "src/assets.d.ts"
