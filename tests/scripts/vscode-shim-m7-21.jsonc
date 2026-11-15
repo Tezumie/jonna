@@ -20,7 +20,9 @@
       "input": { "id": "acme.vscode-hello", "grant": true },
       "expect": { "granted": true }
     },
-    // VS Code's "vscode-hello.info" is the IDE's vscodeHello.info.
+    // VS Code's "vscode-hello.info" is the IDE's vscodeHello.info. `version` is VSCODE_VERSION
+    // (src/core/extensions/vscode/version.ts): when it's raised, raise it here too. A mismatch
+    // makes this step retry, and every retry is a run, so "runs: 2" below fails with it.
     {
       "state": "ide://extensions",
       "expect": { "$contains": "vscodeHello.info" }
@@ -31,7 +33,7 @@
       "expect": {
         "result": {
           "greeting": "Hello from the settings",
-          "version": "1.106.0",
+          "version": "1.146.0",
           "runs": 1,
           "firstLine": "# Sample workspace",
           "word": "Sample",

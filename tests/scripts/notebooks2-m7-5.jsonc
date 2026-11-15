@@ -8,6 +8,10 @@
   "name": "notebooks2-m7-5",
   "steps": [
     { "run": "workspace.setTrust", "input": { "trusted": true } },
+    // The terminal for `cat` below, started before the notebook opens: a folder opens without
+    // one since 0.1.5, and a terminal started later takes the focus from the notebook's tab,
+    // which the source toggle then reads as "the active tab".
+    { "run": "terminal.create", "expect": { "id": { "$gte": 1 } }, "timeoutMs": 20000 },
     // Built in: the IDE's own format, the Jupyter extension still off.
     {
       "state": "ide://notebook",
