@@ -34,6 +34,7 @@ unless noted.
 | · Sync: keys only from a computer the person checked, a loop that can't lose data, large projects | D437 |
 | · Sync: projects as folders, a project that can be stopped and renamed, a computer's name | D438 |
 | · The Documentation tab on the Settings tab's frame, with search | D439 |
+| · Sync as a subscription: an offer, a subscription that ended, a purchase seen without a restart | D440 |
 
 ## Seeded from PLAN §19
 
@@ -15597,3 +15598,30 @@ sidebar.
   `help.readDocs {query}` gives an agent the same results as data, so "how do I…" can be
   answered from the right section instead of a whole page.
 - The tab remembers a search that was on show (`query` in its saved state).
+
+## D440 — Sync as a subscription: an offer, a subscription that ended, a purchase seen without a restart
+
+Sync is about to be sold (the accounts service takes the payments, through Stripe; its side
+is in the website's repository). The IDE never handles a payment: it shows where things
+stand and opens the website's plan page in the browser.
+
+- **What the service says** (`docs/sync.md`): `/api/me` gains `syncState` ("on", "lapsed",
+  "off"), `syncUntil`, `syncOffered` and `supporter`; `GET state` gains `lapsedUntil`; a
+  write after the subscription ended is refused with 402 `sync_lapsed`. An older server sends
+  none of these and everything behaves as before.
+- **An offer, only where Sync is on sale to the account** (`syncOffered`): the Sync tab's one
+  pane says what Sync does, with "See plans" and "I already subscribed". Where it isn't on
+  sale, an account without sync still sees nothing about it (D435's rule).
+- **A subscription that ended is not an error.** What is synced stays readable for 30 days,
+  so the IDE keeps reading (the account's contents, snapshots to restore) and writes nothing:
+  no layer runs, no snapshot is taken, named or pruned. It says so once, with the date after
+  which the synced copy is deleted, and offers Renew and Check again; everything that would
+  write is disabled with that reason. The loop doesn't hold its claim meanwhile.
+- **A purchase shows without a restart:** coming back to the window while offered or lapsed
+  reads the account again (at most every 30 seconds, never during a pass), and
+  `sync.checkPlan` does it on demand.
+- **Commands:** `sync.managePlan` (opens the plan page), `sync.checkPlan`. State:
+  `ide://sync` gains `offered` and `lapsedUntil`, and the activity state "lapsed".
+- **Not here:** prices (the website shows what Stripe says), teams (a subscription is a
+  number of people, and the storage follows it, but there is no way to add a person yet), a
+  free tier of sync for settings alone (the plan allows for it; nothing is built).

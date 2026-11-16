@@ -21,6 +21,8 @@ export const STANDING_CODES: readonly string[] = [
   "SyncNotApproved",
   "SyncReset",
   "SyncOff",
+  // The subscription ended: every write is refused until it is renewed.
+  "SyncLapsed",
 ];
 
 /**

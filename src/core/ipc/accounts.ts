@@ -11,6 +11,15 @@ export interface AccountProfile {
   /** Whether sync is open to this account (D435), and the storage it has. */
   sync?: boolean;
   storageLimit?: number;
+  /**
+   * Where the sync subscription stands. "lapsed": it ended; `sync` stays true, `storageLimit`
+   * is 0, and what is synced can be read until `syncUntil` (ms), then it is deleted.
+   */
+  syncState?: "on" | "lapsed" | "off" | null;
+  syncUntil?: number | null;
+  /** Sync is on sale to this account and it doesn't have it: an offer may be shown. */
+  syncOffered?: boolean;
+  supporter?: boolean;
 }
 
 export const accountsIpc = {

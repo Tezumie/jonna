@@ -50,6 +50,29 @@ pub struct Profile {
     pub sync: bool,
     #[serde(default)]
     pub storage_limit: u64,
+    /// Where the account's sync subscription stands: "on", "lapsed" (it ended; what is synced
+    /// can still be read until `sync_until`) or "off". A server that doesn't say is read from
+    /// `sync` (`with_defaults`).
+    #[serde(default)]
+    pub sync_state: Option<String>,
+    /// While lapsed: when what is synced is deleted, in ms.
+    #[serde(default)]
+    pub sync_until: Option<u64>,
+    /// Sync is on sale to this account and it doesn't have it.
+    #[serde(default)]
+    pub sync_offered: bool,
+    #[serde(default)]
+    pub supporter: bool,
+}
+
+impl Profile {
+    /// The profile with what an older server leaves out filled in: the sync state from `sync`.
+    pub fn with_defaults(mut self) -> Self {
+        if self.sync_state.is_none() {
+            self.sync_state = Some(if self.sync { "on" } else { "off" }.into());
+        }
+        self
+    }
 }
 
 /// A sign-in under way: the browser URL to open and what the callback must match.
@@ -361,6 +384,40 @@ mod tests {
         );
         assert_eq!(base64url(b"f"), "Zg");
         assert_eq!(base64url(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn a_profile_reads_the_plan_fields_and_defaults_them() {
+        // An older server: none of the new fields. The state follows `sync`.
+        let old: Profile =
+            serde_json::from_str(r#"{"id":"u1","name":"Ada","sync":true,"storageLimit":5}"#)
+                .unwrap();
+        assert_eq!(old.sync_state, None);
+        assert!(!old.sync_offered && !old.supporter);
+        let old = old.with_defaults();
+        assert_eq!(old.sync_state.as_deref(), Some("on"));
+        assert_eq!(old.sync_until, None);
+        let none: Profile = serde_json::from_str(r#"{"id":"u1","name":"Ada"}"#).unwrap();
+        assert_eq!(none.with_defaults().sync_state.as_deref(), Some("off"));
+        // A lapsed account: still `sync`, no storage, and the date what is synced goes.
+        let lapsed: Profile = serde_json::from_str(
+            r#"{"id":"u1","name":"Ada","sync":true,"storageLimit":0,"syncState":"lapsed",
+                "syncUntil":1800000000000,"syncOffered":false,"supporter":true}"#,
+        )
+        .unwrap();
+        let lapsed = lapsed.with_defaults();
+        assert_eq!(lapsed.sync_state.as_deref(), Some("lapsed"));
+        assert_eq!(lapsed.sync_until, Some(1_800_000_000_000));
+        assert!(lapsed.supporter);
+        let json = serde_json::to_value(&lapsed).unwrap();
+        assert_eq!(json["syncState"], "lapsed");
+        assert_eq!(json["syncOffered"], false);
+        // A null date reads as none.
+        let offered: Profile = serde_json::from_str(
+            r#"{"id":"u1","name":"Ada","syncState":"off","syncUntil":null,"syncOffered":true}"#,
+        )
+        .unwrap();
+        assert!(offered.sync_offered && offered.sync_until.is_none());
     }
 
     #[test]

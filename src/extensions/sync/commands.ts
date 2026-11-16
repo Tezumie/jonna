@@ -17,6 +17,10 @@ import {
   estimateWarning,
   folderName,
   formatSize,
+  LAPSED_REASON,
+  lapsedUntil,
+  planSituation,
+  planUrl,
   projectCounts,
   SYNC_PAGE_IDS,
   snapshotFacts,
@@ -81,6 +85,19 @@ export function registerSyncCommands(
     const base = await open();
     if ((await standing()).state !== "on")
       throw new Error("Sync is off on this computer. Turn it on in the Sync tab first.");
+    return base;
+  };
+
+  /** Refuses what writes to the account while its subscription is ended. */
+  const refuseLapsed = (): void => {
+    if (planSituation(session.profile.peek(), sync().status.peek()) === "lapsed")
+      throw new Error(LAPSED_REASON);
+  };
+
+  /** The accounts server, once sync is on here and the account can be written to. */
+  const whenWritable = async (): Promise<string> => {
+    const base = await whenOn();
+    refuseLapsed();
     return base;
   };
 
@@ -249,6 +266,7 @@ export function registerSyncCommands(
         const base = await open();
         const status = await standing();
         if (status.state === "on") throw new Error("Sync is already on on this computer.");
+        refuseLapsed();
         const step = session.step.peek();
         const typed = step.step === "key" && step.purpose === "setup" ? session.take() : null;
         if (typed !== null) {
@@ -294,6 +312,7 @@ export function registerSyncCommands(
         const base = await open();
         const status = await standing();
         if (status.state === "on") throw new Error("Sync is already on on this computer.");
+        refuseLapsed();
         if (status.state !== "pending") {
           if (!status.exists)
             throw new Error("This account doesn't sync yet: turn sync on from this computer.");
@@ -323,6 +342,7 @@ export function registerSyncCommands(
         const base = await open();
         const status = await standing();
         if (status.state === "on") throw new Error("Sync is already on on this computer.");
+        refuseLapsed();
         if (!status.exists)
           throw new Error("This account doesn't sync yet: turn sync on from this computer.");
         const key = session.step.peek().step === "recovery" ? session.take() : null;
@@ -379,7 +399,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "hidden",
       run: async ({ device }) => {
-        await whenOn();
+        await whenWritable();
         const waiting = sync()
           .status.peek()
           ?.devices.find((d) => d.id === device && d.status === "pending");
@@ -405,7 +425,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "hidden",
       run: async ({ device }) => {
-        const base = await whenOn();
+        const base = await whenWritable();
         const waiting = sync()
           .status.peek()
           ?.devices.find((d) => d.id === device && d.status === "pending");
@@ -437,6 +457,7 @@ export function registerSyncCommands(
         const status = await standing();
         if (!status.deviceId || (status.state !== "on" && status.state !== "pending"))
           throw new Error("Sync is off on this computer. Turn it on in the Sync tab first.");
+        refuseLapsed();
         let wanted = name;
         if (wanted === undefined) {
           wanted = await quickInput.prompt({
@@ -502,7 +523,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "hidden",
       run: async () => {
-        const base = await whenOn();
+        const base = await whenWritable();
         const ok = await confirmAction(
           "Make a new recovery key?",
           "The old recovery key stops working. The new one is shown once: keep it somewhere safe.",
@@ -525,7 +546,7 @@ export function registerSyncCommands(
       title: "Sync now",
       category: CATEGORY,
       description:
-        "Runs one sync pass now (settings, the user's own files, chats, the open project's snapshot) and returns how it went.",
+        "Runs one sync pass now (settings, the user's own files, chats, the open project's snapshot) and returns how it went. While the account's subscription is ended the pass only reads the account and the state is \"lapsed\".",
       input: s.empty(),
       effects: ["network"],
       agent: "discoverable",
@@ -551,7 +572,8 @@ export function registerSyncCommands(
   };
 
   const projectSync = async (on: boolean) => {
-    await whenOn();
+    // Stopping only changes this computer's note; starting writes to the account.
+    await (on ? whenWritable() : whenOn());
     if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
     if (services.workspace.remote.peek())
       throw new Error("Only folders on this computer can sync.");
@@ -673,7 +695,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "discoverable",
       run: async ({ id, name }) => {
-        await whenOn();
+        await whenWritable();
         const project = accountProject(id);
         let wanted = name;
         if (wanted === undefined) {
@@ -726,7 +748,7 @@ export function registerSyncCommands(
       effects: ["write", "network"],
       agent: "hidden",
       run: async ({ id }) => {
-        await whenOn();
+        await whenWritable();
         if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
         if (services.workspace.remote.peek())
           throw new Error("Only folders on this computer can sync.");
@@ -783,7 +805,7 @@ export function registerSyncCommands(
       effects: ["write", "network"],
       agent: "hidden",
       run: async ({ id }) => {
-        await whenOn();
+        await whenWritable();
         const project = accountProject(id);
         const open = sync().project.peek();
         const isOpen = !!open?.on && open.id === id;
@@ -826,7 +848,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "discoverable",
       run: async () => {
-        await whenOn();
+        await whenWritable();
         const created = await sync().snapshotNow();
         if (!created) return { created: false };
         notifications.show(
@@ -934,7 +956,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "discoverable",
       run: async ({ id, name }) => {
-        await whenOn();
+        await whenWritable();
         const row = snapshot(id);
         let pinned: string | null | undefined = name;
         if (pinned === undefined) {
@@ -964,7 +986,7 @@ export function registerSyncCommands(
       effects: ["network"],
       agent: "hidden",
       run: async ({ id }) => {
-        await whenOn();
+        await whenWritable();
         const row = snapshot(id);
         const ok = await confirmAction(
           "Delete this snapshot?",
@@ -994,6 +1016,62 @@ export function registerSyncCommands(
         if (!base) throw new Error("This build has no accounts service.");
         await openerIpc.openUrl(`${base}/account`);
         return { opened: true };
+      },
+    }),
+  );
+
+  /** The accounts server and the signed-in account, as saved (`fresh`: as the server has it). */
+  const account = async (fresh: boolean) => {
+    const base = sync().base();
+    if (!base) throw new Error("Sync needs an account, and this build has no accounts service.");
+    const saved = () => accountsIpc.profile(base).catch(() => null);
+    // A server that can't be reached answers with the saved profile; so does a failed call.
+    const profile = fresh ? await accountsIpc.check(base).catch(saved) : await saved();
+    if (JSON.stringify(profile) !== JSON.stringify(session.profile.peek()))
+      session.profile.value = profile;
+    if (!profile) throw new Error("Sign in to your account to use sync.");
+    return { base, profile };
+  };
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.managePlan",
+      title: "Manage plan…",
+      category: CATEGORY,
+      description:
+        "Opens the account page's plan section in the browser: subscribing to Sync or renewing it, cancelling, cards, invoices and more storage. Payment happens only on that page, never in the IDE. Afterwards sync.checkPlan reads the account again (coming back to the window does too).",
+      input: s.empty(),
+      effects: [],
+      agent: "hidden",
+      run: async () => {
+        const { base } = await account(false);
+        await openerIpc.openUrl(planUrl(base));
+        return { opened: true };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.checkPlan",
+      title: "Check plan again",
+      category: CATEGORY,
+      description:
+        'Reads the account and where sync stands again now, so a subscription bought or renewed in the browser shows without a restart. Returns `plan`: "on" (the account has sync), "lapsed" (its subscription ended; `lapsedUntil` is when what is synced is deleted, in ms), "offered" (it could subscribe) or "none"; and `state`, where sync stands on this computer (ide://sync).',
+      input: s.empty(),
+      effects: ["network"],
+      agent: "discoverable",
+      run: async () => {
+        const { profile } = await account(true);
+        // Reads the status (and syncs, when the account can be written to again).
+        await sync().recheck();
+        const status = sync().status.peek();
+        const plan = planSituation(profile, status);
+        return {
+          plan,
+          state: status?.state ?? "off",
+          lapsedUntil: plan === "lapsed" ? lapsedUntil(profile, status) : null,
+        };
       },
     }),
   );

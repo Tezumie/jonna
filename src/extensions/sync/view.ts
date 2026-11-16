@@ -24,8 +24,17 @@ import type { DockView, DockViewDescriptor } from "../../workbench/dock/views";
 import type { WorkbenchServices } from "../../workbench/services";
 import { SYNC_VIEW } from "./commands";
 import type { SyncController } from "./controller";
-import { isSyncPage, PRIVACY_NOTE, pageByKey, SYNC_PAGES, type SyncPageId } from "./model";
-import { drawPage, type PageKit, RESET_NOTE } from "./pages";
+import {
+  isSyncPage,
+  lapsedUntil,
+  PRIVACY_NOTE,
+  pageByKey,
+  planSituation,
+  SYNC_BENEFITS,
+  SYNC_PAGES,
+  type SyncPageId,
+} from "./model";
+import { drawPage, lapsedCallout, type PageKit, RESET_NOTE } from "./pages";
 import { DEFAULT_DEVICE_NAME, type SyncSession, type SyncStep } from "./session";
 
 /** How often a computer waiting to be approved asks whether it has been. */
@@ -41,15 +50,8 @@ const PAGE_ICONS: Record<SyncPageId, IconName> = {
   activity: "history",
 };
 
-/** What sync brings, said before it is on. */
-const BENEFITS: readonly (readonly [IconName, string])[] = [
-  [
-    "sliders-horizontal",
-    "Your settings, keyboard shortcuts, and your own rules, skills and agents.",
-  ],
-  ["message-square", "The chats of the projects you choose to sync."],
-  ["history", "Snapshots of unfinished work in those projects, with a history."],
-];
+/** The icons of what sync brings (`SYNC_BENEFITS`, in its order). */
+const BENEFIT_ICONS: readonly IconName[] = ["sliders-horizontal", "message-square", "history"];
 
 class SyncView implements DockView, PageKit {
   readonly element: HTMLElement;
@@ -168,6 +170,23 @@ class SyncView implements DockView, PageKit {
   }
 
   // ------------------------------------------------------------ the kit (pages.ts builds with it)
+
+  get lapsed(): boolean {
+    return this.controller.isLapsed();
+  }
+
+  async checkPlan(): Promise<void> {
+    const result = await this.run("sync.checkPlan");
+    const plan = result && typeof result === "object" && "plan" in result ? result.plan : undefined;
+    // A change shows by itself (the tab draws what the account has now); no change is said.
+    const words =
+      plan === "lapsed"
+        ? "The subscription hasn't been renewed yet. A payment can take a moment to arrive: check again shortly."
+        : plan === "offered" || plan === "none"
+          ? "This account has no Sync subscription yet. A purchase can take a moment to arrive: check again shortly."
+          : null;
+    if (words) this.services.notifications.show("info", words, { title: "Sync" });
+  }
 
   run(id: string, input: unknown = {}): Promise<unknown> {
     const { session, services } = this;
@@ -469,25 +488,75 @@ class SyncView implements DockView, PageKit {
           ),
         ),
       ];
+    const plan = planSituation(profile, status);
+    // Sync is on sale to this account, which doesn't have it.
+    if (plan === "offered") return this.offer();
     if (profile.sync !== true || status?.state === "unavailable")
       return [this.panel(null, this.text("Sync isn't open to this account yet."))];
     if (!status) return [this.panel(null, this.text("Checking where sync stands…", true))];
     const step = session.step.peek();
     if (step.step === "key") return this.keyStep(step.purpose, step.error);
+    // The subscription ended and sync isn't on here: turning it on or joining would write.
+    if (plan === "lapsed")
+      return [
+        lapsedCallout(this, lapsedUntil(profile, status)),
+        this.text(
+          status.state === "pending"
+            ? "This computer's request to join waits until the subscription is renewed."
+            : "Sync can be turned on for this computer once the subscription is renewed.",
+          true,
+        ),
+        status.state === "pending"
+          ? this.buttonRow(
+              this.button("Withdraw the request", () => this.run("sync.turnOff"), "ghost"),
+            )
+          : null,
+      ];
     if (status.state === "pending") return this.whenPending(status, step);
     return status.exists ? this.join(step) : this.turnOn();
+  }
+
+  /** What sync brings: an icon and a line each. */
+  private benefits(): HTMLElement {
+    return h(
+      "ul",
+      { class: "sync-benefits" },
+      ...SYNC_BENEFITS.map((words, index) =>
+        h(
+          "li",
+          { class: "sync-benefit" },
+          icon(BENEFIT_ICONS[index] ?? "refresh-cw"),
+          h("span", null, words),
+        ),
+      ),
+    );
+  }
+
+  /** Sync is on sale to this account: what it does, and the way to the plans. */
+  private offer(): (Node | null)[] {
+    return [
+      this.benefits(),
+      h(
+        "section",
+        { class: "settings-card sync-card sync-panel", "data-plan": "offered" },
+        h("h2", { class: "sync-panel-title" }, "Sync is a subscription"),
+        this.text(
+          "Plans and payment are on your account page, which opens in the browser. Come back here afterwards: sync turns on from this tab.",
+          true,
+        ),
+        this.buttonRow(
+          this.button("See plans", () => this.run("sync.managePlan"), "primary", "external-link"),
+          this.button("I already subscribed", () => this.checkPlan()),
+        ),
+      ),
+      this.text(PRIVACY_NOTE, true),
+    ];
   }
 
   private turnOn(): (Node | null)[] {
     const start = () => this.run("sync.turnOn", { name: this.name() });
     return [
-      h(
-        "ul",
-        { class: "sync-benefits" },
-        ...BENEFITS.map(([glyph, words]) =>
-          h("li", { class: "sync-benefit" }, icon(glyph), h("span", null, words)),
-        ),
-      ),
+      this.benefits(),
       this.panel(
         "Turn on sync",
         this.text(

@@ -103,6 +103,17 @@ accounts whose profile says `sync: true`. Window only: a screenless session does
   200 MB, or more than a snapshot holds) is confirmed first, with Choose what to leave out.
 - After Check code, the status is asked for every 2 s (3 minutes at most) until the waiting
   computer's code is there; Approve shows only then.
+- The plan (`planSituation` in `model.ts`, from the profile and the status): "offered" (the
+  profile's `syncOffered`: the setup pane is an offer, See plans / I already subscribed),
+  "lapsed" (the status's `lapsedUntil`, or the profile's `syncState` before the status was
+  read) and "on"; "none" is as it was before sync was sold. While lapsed the pass only reads
+  (`readOnlyPass`: no claim on the loop, no layer, snapshot, name or pruning), the activity is
+  "lapsed" and is said once in the log, the tab shows the callout (Renew / Check again) and
+  disables what writes with the reason; restoring a snapshot stays. A write the service
+  refuses with `SyncLapsed`, from any call, reads the status again (`onSyncFailure`).
+- Payment is never in the IDE: `sync.managePlan` opens `<accounts server>/account#plan` in the
+  browser. Coming back to the window while offered or lapsed runs `sync.checkPlan` (30 s apart
+  at most, never while a pass runs), which asks the server for the profile and reads the status.
 
 **Exports:** `syncExtension` (`index.ts`), `SyncController` (`controller.ts`).
 
@@ -123,21 +134,28 @@ snapshots and its chats' synced copies leave the account; nothing on a computer 
 `sync.snapshot.create`, `sync.snapshot.continue`, `sync.snapshot.restore {id}`,
 `sync.snapshot.restoreFile {id, path?}` (without `path`: pick one of the snapshot's files),
 `sync.snapshot.pin {id, name?}` (`name` null unpins; without it, asks), `sync.snapshot.delete
-{id}`, `sync.openAccountPage`. Each fails with one sentence when nobody is signed in or sync isn't
-open to the account. None takes or returns a recovery key or a verification code.
+{id}`, `sync.openAccountPage`, `sync.managePlan` (opens the account page's plan section in the
+browser: subscribing, renewing, cancelling, cards, invoices, storage), `sync.checkPlan` (reads the
+profile from the server and the status again; returns `{plan, state, lapsedUntil}`, `plan`: on,
+lapsed, offered, none). Each fails with one sentence when nobody is signed in or sync isn't
+open to the account (the two plan commands need only an account). What writes to the account
+fails with one sentence while the subscription is ended. None takes or returns a recovery key or
+a verification code.
 
 **Status bar:** `sync.status` (right): Synced / Syncing… / Offline / Sync (another window is
 syncing, or before the first pass) / Sync error (the reason is the tooltip; the only colored
-state) / Waiting (for approval). Absent unless sync is open to the account and on or pending
-here. Runs `sync.show {page: "overview"}`.
+state) / Waiting (for approval) / Sync ended (the subscription ended; not colored). Absent
+unless sync is open to the account and on or pending here. Runs `sync.show {page: "overview"}`.
 
 **Settings:** `sync.settings`, `sync.keybindings`, `sync.snippets`, `sync.rules`, `sync.agents`,
 `sync.commands`, `sync.outputStyles`, `sync.skills`, `sync.chats`, `sync.snapshots` (what syncs,
 all on), `sync.ignoredSettings`, `sync.historyDays` (30; days the project was worked on, 0 keeps
 everything), `sync.snapshotScope` (`remote` | `everything`), `sync.projects` (managed by the IDE).
 
-**State:** `ide://sync` — `available`, `state`, `device`, `devices` (a waiting one's
-`codeChecked`, never its code), `recoveryKeySet`, `usageBytes`, `storageLimit`, `activity`, `page` (the page the tab shows while sync is on),
+**State:** `ide://sync` — `available`, `offered` (the account could subscribe), `lapsedUntil`
+(null, or when what is synced is deleted once the subscription ended, in ms), `state`, `device`,
+`devices` (a waiting one's `codeChecked`, never its code), `recoveryKeySet`, `usageBytes`,
+`storageLimit`, `activity` (its `state` is "lapsed" while the subscription is ended), `page` (the page the tab shows while sync is on),
 `overview` (`settings {count, updatedAt}`, `files [{path, bytes, updatedAt}]`, `accountChats`,
 `projects [{id, name, chats, snapshots, snapshotBytes (the latest snapshot's), lastChange,
 lastComputer, here, folder}]`), `recent` (`[{at, text, error}]`), `project`, `snapshots`. Never

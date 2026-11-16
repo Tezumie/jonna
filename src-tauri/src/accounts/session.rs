@@ -325,6 +325,10 @@ mod tests {
             plan: Some("free".into()),
             sync: false,
             storage_limit: 0,
+            sync_state: None,
+            sync_until: None,
+            sync_offered: false,
+            supporter: false,
         }
     }
 

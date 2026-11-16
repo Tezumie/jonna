@@ -4,6 +4,7 @@
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import {
+  onSyncFailure,
   type SnapshotCreated,
   type SnapshotEstimate,
   type SnapshotFile,
@@ -38,6 +39,7 @@ import {
   countOf,
   EMPTY_OVERVIEW,
   folderName,
+  LAPSED_ACTIVITY,
   passSentence,
   type SyncEvent,
   type SyncOverview,
@@ -78,8 +80,9 @@ export interface SyncActivity {
   /**
    * "other": another window of this profile runs the loop. "blocked": the account holds
    * something sealed with keys this computer doesn't have yet; nothing syncs until it does.
+   * "lapsed": the account's subscription ended; the account is read, nothing is written.
    */
-  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked";
+  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked" | "lapsed";
   message: string | null;
   /** When the last pass finished well, in ms. */
   at: number | null;
@@ -179,7 +182,8 @@ export class SyncController implements Disposable {
       name: layer.name,
       // Only the window that holds the claim writes; the others just read the account. A
       // layer switched off doesn't run at all: what it kept of its last sync stays as it is.
-      run: (ctx) => (this.leader && on() ? layer.run(ctx) : Promise.resolve()),
+      // Nor does any while the subscription is ended: a layer writes.
+      run: (ctx) => (this.leader && !this.isLapsed() && on() ? layer.run(ctx) : Promise.resolve()),
     });
     this.engine = new SyncEngine(
       backend,
@@ -217,6 +221,45 @@ export class SyncController implements Disposable {
       }
     }, WAITING_MS);
     this.store.add({ dispose: () => clearInterval(waiting) });
+    // A write refused because the subscription ended, whichever call met it: where things
+    // stand is read again (a pass that is running does that itself).
+    this.store.add(
+      onSyncFailure((code) => {
+        if (code !== "SyncLapsed" || this.disposed || this.passing || this.isLapsed()) return;
+        void this.refreshStatus().catch(() => null);
+      }),
+    );
+  }
+
+  /**
+   * Whether the account's subscription ended while sync is on here: what is synced can be read
+   * (snapshots listed and restored), and nothing is written until it is renewed.
+   */
+  isLapsed(): boolean {
+    const status = this.status.peek();
+    return status?.state === "on" && typeof status.lapsedUntil === "number";
+  }
+
+  /** Whether a pass is running now. */
+  busy(): boolean {
+    return this.passing !== null;
+  }
+
+  /**
+   * Reads where sync stands again and passes, after the pass under way (which may have read
+   * the status before whatever changed).
+   */
+  async recheck(): Promise<void> {
+    if (this.passing) await this.passing.catch(() => {});
+    await this.pass(true);
+  }
+
+  /** Says that the subscription ended: as the activity, and once in the log. */
+  private showLapsed(): void {
+    const now = this.activity.peek();
+    if (now.state === "lapsed") return;
+    this.activity.value = { state: "lapsed", message: LAPSED_ACTIVITY, at: now.at };
+    this.note(LAPSED_ACTIVITY);
   }
 
   /** The accounts server ("" when the build has none). */
@@ -384,7 +427,7 @@ export class SyncController implements Disposable {
    * projects by that label. Tried again at most every ten minutes.
    */
   private async nameProject(): Promise<void> {
-    if (!this.leader) return;
+    if (!this.leader || this.isLapsed()) return;
     const open = this.project.peek();
     const seen = new Set<string>();
     if (open?.on && open.id) {
@@ -497,7 +540,14 @@ export class SyncController implements Disposable {
       if (before?.state === "on") this.engine.reset();
       this.activity.value = { state: "off", message: null, at: null };
       this.readOverview();
+    } else if (typeof status.lapsedUntil === "number") {
+      // Nothing to warn about or to approve: neither can be acted on until it is renewed.
+      this.showLapsed();
     } else {
+      // Renewed: the next pass says how it went.
+      const now = this.activity.peek();
+      if (now.state === "lapsed")
+        this.activity.value = { state: "idle", message: null, at: now.at };
       this.warnStorage(status);
       this.announceWaiting(status);
     }
@@ -582,6 +632,10 @@ export class SyncController implements Disposable {
       const waiting = this.status.peek()?.state === "pending";
       if (force || waiting || Date.now() - this.statusAt > STATUS_MS) await this.refreshStatus();
       if (this.status.peek()?.state !== "on") return;
+      if (this.isLapsed()) {
+        await this.readOnlyPass();
+        return;
+      }
       const leader = await syncIpc.lease(this.owner);
       // Taking the loop over from another window: its saved bases are newer than this
       // window's copy. What was read of the account stays.
@@ -629,11 +683,13 @@ export class SyncController implements Disposable {
       if (this.leaseLost) this.leader = false;
       this.failures = 0;
       this.nextPassAt = 0;
-      this.activity.value = {
-        state: this.leader ? "idle" : "other",
-        message: null,
-        at: Date.now(),
-      };
+      // (The subscription may have ended while the pass ran: that stays said.)
+      if (!this.isLapsed())
+        this.activity.value = {
+          state: this.leader ? "idle" : "other",
+          message: null,
+          at: Date.now(),
+        };
     } catch (err) {
       const code = codeOf(err);
       if (code === "SyncOffline" || isRateLimited(err)) {
@@ -653,8 +709,9 @@ export class SyncController implements Disposable {
       } else if (STANDING_CODES.includes(code)) {
         // Something changed elsewhere (or this computer's keys are gone): where things stand
         // is read again. Still "on" afterwards, the failure is said as it is.
+        // An ended subscription isn't an error: reading the status said so (`showLapsed`).
         const status = await this.refreshStatus().catch(() => null);
-        if (status?.state === "on") {
+        if (status?.state === "on" && !this.isLapsed()) {
           this.activity.value = { ...before, state: "error", message: messageOf(err) };
           this.note(messageOf(err), true);
         }
@@ -672,6 +729,25 @@ export class SyncController implements Disposable {
           : { state: "off", message: null, at: null };
       }
     }
+  }
+
+  /**
+   * The pass while the subscription is ended: the account is read (so its snapshots can be
+   * listed and restored, and the tab shows what it holds) and nothing is written: no layer, no
+   * snapshot, no name, no pruning. The claim on the loop isn't needed and is given up.
+   */
+  private async readOnlyPass(): Promise<void> {
+    if (this.leader) {
+      this.leader = false;
+      void syncIpc.leaseRelease(this.owner).catch(() => {});
+    }
+    await this.refreshProject();
+    await this.tick();
+    this.readSnapshots();
+    this.readOverview();
+    this.failures = 0;
+    this.nextPassAt = 0;
+    this.showLapsed();
   }
 
   /** Looks, now and then, whether the folders that sync from here are still on this computer. */
@@ -902,7 +978,7 @@ export class SyncController implements Disposable {
   private async takeSnapshot(force: boolean): Promise<SnapshotCreated | null> {
     const collection = this.collection();
     const project = this.project.peek();
-    if (!collection || !project || !this.on("snapshots")) return null;
+    if (!collection || !project || !this.on("snapshots") || this.isLapsed()) return null;
     if (!force && Date.now() - this.snapshotAt < this.snapshotGap) return null;
     this.snapshotAt = Date.now();
     const everything =
@@ -952,7 +1028,7 @@ export class SyncController implements Disposable {
   async snapshotOnClose(): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      if (this.disposed || this.status.peek()?.state !== "on") return;
+      if (this.disposed || this.status.peek()?.state !== "on" || this.isLapsed()) return;
       if (!this.collection() || !this.on("snapshots")) return;
       this.snapshotAt = 0;
       const waited = new Promise<void>((resolve) => {
@@ -1065,7 +1141,7 @@ export class SyncController implements Disposable {
   /** Removes the snapshots history no longer keeps, then frees what only they used. */
   private async prune(): Promise<void> {
     const collection = this.collection();
-    if (!collection) return;
+    if (!collection || this.isLapsed()) return;
     const days = this.services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
     const rows = this.snapshots.peek();
     const remove = planPrune(

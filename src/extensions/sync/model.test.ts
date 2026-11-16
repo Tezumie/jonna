@@ -19,14 +19,21 @@ import {
   groupFiles,
   heldSummary,
   isSyncPage,
+  LAPSED_ACTIVITY,
   LOG_LIMIT,
+  lapsedSentence,
+  lapsedUntil,
   type OverviewRecord,
   overviewTiles,
   pageByKey,
   passSentence,
+  planSituation,
+  planUrl,
   platformLabel,
   projectCounts,
+  retentionDate,
   retentionText,
+  SYNC_BENEFITS,
   SYNC_PAGE_IDS,
   SYNC_PAGES,
   type SyncOverview,
@@ -295,6 +302,113 @@ test("sync: the status bar item", () => {
   assert.equal(failed?.error, true);
   assert.equal(failed?.tooltip, "Sync: Storage is full.");
   assert.equal(statusBarWords(true, "on", idle)?.error, false);
+});
+
+test("sync: which situation an account is in with the subscription", () => {
+  const on = { state: "on", lapsedUntil: null };
+  // Nobody signed in: nothing to say.
+  assert.equal(planSituation(null, null), "none");
+  assert.equal(planSituation(null, on), "none");
+  // An account without sync that isn't offered it: as before sync was sold.
+  assert.equal(planSituation({ sync: false }, null), "none");
+  assert.equal(planSituation({}, { state: "unavailable" }), "none");
+  assert.equal(planSituation({ sync: false, syncOffered: false, syncState: "off" }, null), "none");
+  // Sync is on sale to it.
+  assert.equal(planSituation({ sync: false, syncOffered: true }, null), "offered");
+  assert.equal(planSituation({ syncOffered: true }, { state: "unavailable" }), "offered");
+  // It has sync (an older server sends no state).
+  assert.equal(planSituation({ sync: true }, null), "on");
+  assert.equal(planSituation({ sync: true, syncState: "on" }, on), "on");
+  assert.equal(planSituation({ sync: true }, { state: "off" }), "on");
+  // Having it wins over an offer that was left set.
+  assert.equal(planSituation({ sync: true, syncOffered: true }, on), "on");
+  // Lapsed: the profile says so until the sync service was asked; then its word counts.
+  const lapsed = { sync: true, syncState: "lapsed", syncUntil: 2_000_000_000_000 } as const;
+  assert.equal(planSituation(lapsed, null), "lapsed");
+  assert.equal(planSituation(lapsed, { state: "signedOut" }), "lapsed");
+  assert.equal(planSituation(lapsed, { state: "on", lapsedUntil: 2_000_000_000_000 }), "lapsed");
+  assert.equal(planSituation(lapsed, { state: "off", lapsedUntil: 2_000_000_000_000 }), "lapsed");
+  // The profile is older than the status: it lapsed since,
+  assert.equal(
+    planSituation({ sync: true, syncState: "on" }, { state: "on", lapsedUntil: 5e12 }),
+    "lapsed",
+  );
+  // or it was renewed since.
+  assert.equal(planSituation(lapsed, on), "on");
+  // A status from before the field existed has none.
+  assert.equal(planSituation({ sync: true }, { state: "on" }), "on");
+  // The sync service not open to the account ends it, whatever the profile said.
+  assert.equal(planSituation(lapsed, { state: "unavailable" }), "none");
+
+  // When what is synced is deleted: the status's date first, then the profile's.
+  assert.equal(lapsedUntil(lapsed, { state: "on", lapsedUntil: 1_900_000_000_000 }), 1.9e12);
+  assert.equal(lapsedUntil(lapsed, null), 2e12);
+  assert.equal(lapsedUntil(lapsed, { state: "signedOut", lapsedUntil: 5 }), 2e12);
+  assert.equal(lapsedUntil({ sync: true }, on), null);
+  assert.equal(lapsedUntil(null, null), null);
+  // A time in seconds is one in ms.
+  assert.equal(lapsedUntil({ syncUntil: 1_900_000_000 }, null), 1.9e12);
+});
+
+test("sync: what a lapsed account is told", () => {
+  const now = new Date(2026, 10, 15, 12).getTime();
+  const until = new Date(2026, 11, 14, 9).getTime();
+  const date = new Date(until).toLocaleDateString(undefined, { day: "numeric", month: "long" });
+  assert.equal(retentionDate(until, now), date);
+  assert.doesNotMatch(retentionDate(until, now), /2026/);
+  // Another year says its year.
+  assert.match(retentionDate(new Date(2027, 0, 14, 9).getTime(), now), /2027/);
+  assert.equal(
+    lapsedSentence(until, now),
+    `Your Sync subscription ended. What is synced stays readable until ${date}, then it is deleted. Your computers keep their own files and chats.`,
+  );
+  // No date known: no date made up.
+  assert.equal(
+    lapsedSentence(null, now),
+    "Your Sync subscription ended. What is synced stays readable for a while, then it is deleted. Your computers keep their own files and chats.",
+  );
+  // The date has passed and the copy is still there.
+  assert.match(lapsedSentence(now - 1, now), /is about to be deleted\. Your computers keep/);
+
+  // The status line, the status bar (quiet: not an error) and what needs attention.
+  const lapsed = { state: "lapsed", message: LAPSED_ACTIVITY, at: 5 } as const;
+  assert.deepEqual(activityLine(lapsed), {
+    text: "Sync ended: nothing syncs until you renew",
+    time: null,
+  });
+  const idle = { state: "idle", message: null, at: 5 } as const;
+  for (const words of [
+    statusBarWords(true, "on", lapsed),
+    statusBarWords(true, "on", idle, true),
+  ]) {
+    assert.equal(words?.text, "$(cloud) Sync ended");
+    assert.equal(words?.error, false);
+    assert.match(words?.tooltip ?? "", /subscription ended/);
+  }
+  // Not on here: no item, lapsed or not.
+  assert.equal(statusBarWords(true, "off", idle, true), null);
+  assert.equal(statusBarWords(false, "on", idle, true), null);
+  assert.equal(statusBarWords(true, "on", idle, false)?.text, "$(cloud) Synced");
+  const input = {
+    waiting: [{ name: "Laptop" }],
+    usage: 99,
+    limit: 100,
+    activity: idle,
+    project: { name: "site", on: false },
+  };
+  assert.equal(attentionItems(input).length, 3);
+  // Nothing of it can be acted on while lapsed: the callout is what there is.
+  assert.deepEqual(attentionItems({ ...input, lapsed: true }), []);
+
+  assert.equal(SYNC_BENEFITS.length, 3);
+  assert.equal(
+    planUrl("https://accounts.example.com"),
+    "https://accounts.example.com/account#plan",
+  );
+  assert.equal(
+    planUrl("https://accounts.example.com/"),
+    "https://accounts.example.com/account#plan",
+  );
 });
 
 test("sync: recent activity", () => {

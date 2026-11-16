@@ -21,6 +21,9 @@ import {
   formatSize,
   groupByDay,
   heldSummary,
+  LAPSED_REASON,
+  lapsedSentence,
+  lapsedUntil,
   type OverviewProject,
   overviewTiles,
   platformLabel,
@@ -47,8 +50,14 @@ export interface PageKit {
   readonly session: SyncSession;
   /** The listeners of what is drawn now. */
   readonly drawn: DisposableStore;
+  /**
+   * The account's subscription ended: what writes to the account is disabled, with the reason.
+   */
+  readonly lapsed: boolean;
   /** Runs a command; a failure is shown as a notification. */
   run(id: string, input?: unknown): Promise<unknown>;
+  /** Reads the account's plan again (`sync.checkPlan`) and says when nothing changed. */
+  checkPlan(): Promise<void>;
   /** Shows another page of the tab (and, on Projects, a project's detail; null: the list). */
   go(page: SyncPageId, project?: string | null): void;
   button(
@@ -180,6 +189,43 @@ function logRows(kit: PageKit, log: readonly SyncEvent[]): HTMLElement[] {
   );
 }
 
+/**
+ * A button for something that writes to the account: while the subscription is ended it is
+ * there and disabled, and says why.
+ */
+function writeButton(
+  kit: PageKit,
+  label: string,
+  click: () => unknown,
+  kind: "primary" | "secondary" | "danger" | "ghost" = "secondary",
+  glyph: IconName | null = null,
+): HTMLButtonElement {
+  const el = kit.button(label, click, kind, glyph);
+  if (kit.lapsed) {
+    el.disabled = true;
+    el.title = LAPSED_REASON;
+  }
+  return el;
+}
+
+/**
+ * The subscription ended: what that means, until when what is synced can be read, and the two
+ * things to do about it. `until`: when the synced copy is deleted, in ms (null: not known).
+ */
+export function lapsedCallout(kit: PageKit, until: number | null): HTMLElement {
+  return h(
+    "div",
+    { class: "settings-card sync-card sync-callout sync-lapsed", role: "status" },
+    h("div", { class: "sync-item-main" }, kit.text(lapsedSentence(until))),
+    h(
+      "div",
+      { class: "sync-item-actions" },
+      kit.button("Renew", () => kit.run("sync.managePlan"), "primary"),
+      kit.button("Check again", () => kit.checkPlan()),
+    ),
+  );
+}
+
 /** "Continue from <computer>": another computer has newer work on the open project. */
 function continueCallout(kit: PageKit): HTMLElement | null {
   const other = kit.controller.continueFrom();
@@ -226,6 +272,8 @@ function statusCard(kit: PageKit): HTMLElement {
         : activity.state === "blocked"
           ? "key-round"
           : "cloud";
+  // While the subscription is ended a pass only reads: the callout above has what to do.
+  const lapsed = kit.lapsed || activity.state === "lapsed";
   // The time of the last good pass stays in sight while something else is said.
   const earlier = line.time === null && activity.at !== null ? activity.at : null;
   return h(
@@ -250,12 +298,14 @@ function statusCard(kit: PageKit): HTMLElement {
         ? null
         : h("div", { class: "sync-item-detail" }, "Last synced ", kit.when(earlier)),
     ),
-    kit.button(
-      failed ? "Retry" : "Sync now",
-      () => kit.run("sync.syncNow"),
-      "secondary",
-      "refresh-cw",
-    ),
+    lapsed
+      ? null
+      : kit.button(
+          failed ? "Retry" : "Sync now",
+          () => kit.run("sync.syncNow"),
+          "secondary",
+          "refresh-cw",
+        ),
   );
 }
 
@@ -317,6 +367,7 @@ function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
     limit,
     activity: controller.activity.peek(),
     project: project ? { name: folderName(project.root), on: project.on } : null,
+    lapsed: kit.lapsed,
     // The status card right above says an error, with Retry: not said twice.
   }).filter((entry) => entry.kind !== "error");
 
@@ -390,14 +441,16 @@ function notSyncedCard(kit: PageKit, root: string, known: boolean): HTMLElement 
       tags: ["Not synced"],
       details: [
         `When it syncs, its chats travel with you, and snapshots of unfinished work are taken automatically, with a history.${known ? " Another of your computers already syncs it." : ""}`,
-        linkable
+        linkable && !kit.lapsed
           ? kit.link("This folder is one of my synced projects…", () =>
               kit.run("sync.project.link"),
             )
           : null,
       ],
       attrs: { "data-open-project": "off" },
-      actions: [kit.button("Sync this project", () => kit.run("sync.project.enable"), "primary")],
+      actions: [
+        writeButton(kit, "Sync this project", () => kit.run("sync.project.enable"), "primary"),
+      ],
     }),
   );
 }
@@ -418,6 +471,12 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
   );
   const togglePin = () =>
     kit.run("sync.snapshot.pin", pinned ? { id: row.id, name: null } : { id: row.id });
+  // Pinning and deleting write to the account; restoring and listing files only read.
+  const { lapsed } = kit;
+  if (lapsed) {
+    pin.disabled = true;
+    pin.title = LAPSED_REASON;
+  }
   kit.drawn.add(on(pin, "click", () => void togglePin()));
   const items: MenuItem[] = [
     {
@@ -433,6 +492,7 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
     {
       label: pinned ? "Unpin" : "Pin…",
       icon: pinned ? "pin-off" : "pin",
+      disabled: lapsed,
       run: () => void togglePin(),
     },
     {
@@ -440,6 +500,7 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
       icon: "trash-2",
       destructive: true,
       separatorBefore: true,
+      disabled: lapsed,
       run: () => void kit.run("sync.snapshot.delete", { id: row.id }),
     },
   ];
@@ -477,6 +538,8 @@ function placeTag(project: OverviewProject): string {
 function projectMenu(kit: PageKit, project: OverviewProject, inside: boolean): MenuItem[] {
   const open = kit.controller.project.peek();
   const isOpen = !!open?.on && open.id === project.id;
+  // What writes to the account is there and disabled while the subscription is ended.
+  const { lapsed } = kit;
   return [
     ...(inside
       ? []
@@ -492,6 +555,7 @@ function projectMenu(kit: PageKit, project: OverviewProject, inside: boolean): M
           {
             label: "Snapshot now",
             icon: "camera" as const,
+            disabled: lapsed,
             run: () => void kit.run("sync.snapshot.create"),
           },
         ]
@@ -499,6 +563,7 @@ function projectMenu(kit: PageKit, project: OverviewProject, inside: boolean): M
     {
       label: "Rename…",
       separatorBefore: !inside || isOpen,
+      disabled: lapsed,
       run: () => void kit.run("sync.project.rename", { id: project.id }),
     },
     ...(isOpen
@@ -526,6 +591,7 @@ function projectMenu(kit: PageKit, project: OverviewProject, inside: boolean): M
       icon: "trash-2",
       destructive: true,
       separatorBefore: true,
+      disabled: lapsed,
       run: () => void kit.run("sync.project.deleteFromAccount", { id: project.id }),
     },
   ];
@@ -562,7 +628,8 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
         "div",
         { class: "sync-item-actions" },
         isOpen
-          ? kit.button(
+          ? writeButton(
+              kit,
               "Snapshot now",
               () => kit.run("sync.snapshot.create"),
               // Continue is the page's one primary button when it is on offer.
@@ -647,7 +714,7 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
         ? h(
             "div",
             { class: "sync-actions" },
-            kit.button(`The open folder is ${project.name}`, () =>
+            writeButton(kit, `The open folder is ${project.name}`, () =>
               kit.run("sync.project.link", { id: project.id }),
             ),
           )
@@ -888,21 +955,23 @@ function deviceRow(kit: PageKit, device: SyncDevice): HTMLElement {
       : [],
     actions: [
       waiting && !checking && !asked
-        ? kit.button(
+        ? writeButton(
+            kit,
             "Check code",
             () => kit.run("sync.reviewDevice", { device: device.id }),
             "primary",
           )
         : null,
       checking
-        ? kit.button(
+        ? writeButton(
+            kit,
             "Approve",
             () => kit.run("sync.approveDevice", { device: device.id }),
             "primary",
           )
         : null,
       device.current
-        ? kit.button("Rename", () => kit.run("sync.renameDevice"))
+        ? writeButton(kit, "Rename", () => kit.run("sync.renameDevice"))
         : kit.button("Remove", () => kit.run("sync.removeDevice", { device: device.id })),
     ],
   });
@@ -968,7 +1037,9 @@ function securityPage(kit: PageKit, status: SyncStatus): Child[] {
             "Lets a new computer join without another computer's approval, and is the only way back to the synced copy when no computer that syncs is left. It is shown once, when it is made.",
             made === null ? null : ["Made ", kit.when(made), "."],
           ],
-          actions: [kit.button("Make a new recovery key", () => kit.run("sync.newRecoveryKey"))],
+          actions: [
+            writeButton(kit, "Make a new recovery key", () => kit.run("sync.newRecoveryKey")),
+          ],
         }),
       ),
     ),
@@ -1034,6 +1105,24 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
           limit > 0 ? meter(storageShare(used, limit), notice !== null) : null,
           notice ? h("p", { class: "sync-text sync-storage-notice" }, notice.text) : null,
         ),
+        // Only for an account that has sync: the plan is where storage comes from.
+        kit.session.profile.peek()?.sync === true
+          ? item({
+              title: "Your plan",
+              details: [
+                "More storage, billing, invoices and cancelling are on your account page, which opens in the browser.",
+              ],
+              attrs: { "data-plan": "manage" },
+              actions: [
+                kit.button(
+                  "Manage plan",
+                  () => kit.run("sync.managePlan"),
+                  "secondary",
+                  "external-link",
+                ),
+              ],
+            })
+          : null,
       ),
     ),
     section(
@@ -1119,8 +1208,24 @@ function activityPage(kit: PageKit): Child[] {
   ];
 }
 
+/** The pages with something that writes to the account: they say why it can't be done. */
+const LAPSED_PAGES: readonly SyncPageId[] = [
+  "overview",
+  "projects",
+  "computers",
+  "security",
+  "storage",
+];
+
 /** A page's content: sections of cards under the page's title. */
 export function drawPage(kit: PageKit, page: SyncPageId, status: SyncStatus): Child[] {
+  const content = pageContent(kit, page, status);
+  if (!kit.lapsed || !LAPSED_PAGES.includes(page)) return content;
+  const until = lapsedUntil(kit.session.profile.peek(), status);
+  return [section(null, lapsedCallout(kit, until)), ...content];
+}
+
+function pageContent(kit: PageKit, page: SyncPageId, status: SyncStatus): Child[] {
   switch (page) {
     case "projects":
       return projectsPage(kit, status);

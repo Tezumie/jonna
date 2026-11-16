@@ -117,6 +117,9 @@ pub struct Status {
     pub usage_bytes: u64,
     pub storage_limit: u64,
     pub epoch: u64,
+    /// The account's subscription ended: until then (ms) what is synced can still be read, and
+    /// nothing can be written. None while the subscription runs.
+    pub lapsed_until: Option<u64>,
 }
 
 /// What `prepare` made and `setup` sends: nothing reaches the server until the recovery key
@@ -352,6 +355,7 @@ impl Vault {
         }
         let exists = server["exists"].as_bool().unwrap_or(false);
         let epoch = server["epoch"].as_u64().unwrap_or(0);
+        let lapsed_until = server["lapsedUntil"].as_u64();
         let find = |server: &Value, id: &str| {
             server["devices"]
                 .as_array()
@@ -412,9 +416,10 @@ impl Vault {
                         }
                     }
                 }
-            } else {
+            } else if lapsed_until.is_none() {
                 own_code = self.pairing(&mut local, &key, &mine).await?;
             }
+            // (An ended subscription takes no writes: a waiting computer's answer waits too.)
         }
 
         let own_public = if local.device_id.is_empty() {
@@ -435,6 +440,7 @@ impl Vault {
             usage_bytes: server["usageBytes"].as_u64().unwrap_or(0),
             storage_limit: server["storageLimit"].as_u64().unwrap_or(0),
             epoch,
+            lapsed_until,
         })
     }
 
@@ -547,6 +553,11 @@ impl Vault {
     /// reads the list, and makes new keys when a device was removed. Each is best effort: the
     /// next check tries again.
     async fn catch_up(&self, local: &mut Local, ring: &Keyring, server: &Value) {
+        // An ended subscription takes no writes: what is owed stays owed, and the list is read.
+        if server["lapsedUntil"].as_u64().is_some() {
+            let _ = self.trusted(local, ring).await;
+            return;
+        }
         let owed = std::mem::take(&mut local.pending_trust);
         for change in owed {
             if self.write_trust(local, ring, &change).await.is_err() {

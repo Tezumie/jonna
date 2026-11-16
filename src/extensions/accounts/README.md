@@ -5,7 +5,8 @@ product.json's `accountsUrl`, or `accounts.serverUrl` while developing the servi
 is re-read from the server at startup and at most hourly, D414; Rust `src-tauri/src/accounts`, endpoints in docs/accounts.md), GitHub through the
 GitHub CLI (`gh auth status` / `gh auth login` in a terminal), a model provider shortcut and
 settings backup (profile export / import; "Sync…" opens the Sync tab, `extensions/sync`, when the
-profile says `sync: true`, D435), and extensions' authentication
+profile says `sync: true`, D435, or `syncOffered: true`: sync is on sale to the account; after
+`sync.checkPlan` asked the server, the saved profile is read again), and extensions' authentication
 providers' accounts (D234: Sign out, or Sign in with… when none; `extensions.authSignIn` /
 `authSignOut`). `model.ts` is DOM-free and tested.
 

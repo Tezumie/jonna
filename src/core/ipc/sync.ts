@@ -1,6 +1,34 @@
 // Sync (Rust: src-tauri/src/sync, D435). `base` is the accounts server, as for the account.
 // Everything stored is sealed on this computer; these calls hand over and get back plain text.
-import { call } from "./invoke";
+import { call as invoke } from "./invoke";
+
+/** Hears the code of every sync call that failed ("" when the failure has none). */
+let failureListener: ((code: string) => void) | null = null;
+
+/**
+ * One listener for the codes of failed sync calls (the sync controller): a code that says where
+ * sync stands changed (`SyncLapsed`) is acted on whichever call met it. Returns how to stop.
+ */
+export function onSyncFailure(listener: (code: string) => void): { dispose(): void } {
+  failureListener = listener;
+  return {
+    dispose: () => {
+      if (failureListener === listener) failureListener = null;
+    },
+  };
+}
+
+/** A sync call; its failure is passed on as it is, after the listener heard its code. */
+function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invoke<T>(command, args).catch((err: unknown) => {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code: unknown }).code)
+        : "";
+    failureListener?.(code);
+    throw err;
+  });
+}
 
 export interface SyncDevice {
   id: string;
@@ -35,6 +63,11 @@ export interface SyncStatus {
   usageBytes: number;
   storageLimit: number;
   epoch: number;
+  /**
+   * The account's subscription ended: until then (ms) what is synced can still be read, and
+   * every write is refused (`SyncLapsed`). Null while the subscription runs.
+   */
+  lapsedUntil: number | null;
 }
 
 export interface SyncRecord {

@@ -12,12 +12,17 @@ import type { WorkbenchServices } from "../../workbench/services";
 import { registerSyncCommands } from "./commands";
 import { SyncController } from "./controller";
 import manifest from "./extension.json";
-import { statusBarWords } from "./model";
+import { lapsedUntil, planSituation, statusBarWords } from "./model";
 import { SyncSession } from "./session";
 import { syncViewDescriptor } from "./view";
 
 /** Coming back to the window starts a pass at most this often. */
 const FOCUS_PASS_MS = 2 * 60_000;
+/**
+ * Coming back to the window while the account could buy sync, or its subscription ended, reads
+ * the account's plan again at most this often: a purchase in the browser shows without a restart.
+ */
+const FOCUS_PLAN_MS = 30_000;
 
 export const syncExtension: BuiltinExtension<WorkbenchServices> = {
   manifest,
@@ -40,11 +45,24 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
 
     /** Reads who is signed in, then where sync stands (and syncs, when it is on). */
     let passedAt = 0;
+    /** Whether the server was asked for the profile since this window started. */
+    let asked = false;
     const refresh = async () => {
       if (disposed) return;
       passedAt = Date.now();
       const base = controller.base();
-      const profile = base ? await accountsIpc.profile(base).catch(() => null) : null;
+      // The first time, the server is asked: the profile saved here may be from before the
+      // account's plan changed, or from a version that didn't know of plans (an offer would
+      // not show, a subscription that ended would look like one that never was). After that
+      // the saved one is read; the accounts extension keeps it fresh.
+      const saved = () => accountsIpc.profile(base).catch(() => null);
+      const first = !asked;
+      asked = true;
+      const profile = !base
+        ? null
+        : first
+          ? await accountsIpc.check(base).catch(saved)
+          : await saved();
       if (disposed) return;
       if (JSON.stringify(profile) !== JSON.stringify(session.profile.peek()))
         session.profile.value = profile;
@@ -69,6 +87,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
         !!controller.base() && session.profile.value?.sync === true,
         controller.status.value?.state ?? null,
         controller.activity.value,
+        planSituation(session.profile.value, controller.status.value) === "lapsed",
       );
     sub.add(
       services.statusBar.add({
@@ -99,7 +118,21 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
       .then(refresh)
       .catch(() => {});
 
+    let planCheckedAt = 0;
     const onFocus = () => {
+      const plan = planSituation(session.profile.peek(), controller.status.peek());
+      // Back from the browser, perhaps from paying: the same command as "Check again", so the
+      // account's menu hears of it too. Never while a pass runs.
+      if (
+        (plan === "offered" || plan === "lapsed") &&
+        !controller.busy() &&
+        Date.now() - planCheckedAt >= FOCUS_PLAN_MS
+      ) {
+        planCheckedAt = Date.now();
+        passedAt = planCheckedAt;
+        void services.dispatcher.execute("sync.checkPlan", {}).catch(() => {});
+        return;
+      }
       if (Date.now() - passedAt >= FOCUS_PASS_MS) void refresh().catch(() => {});
     };
     window.addEventListener("focus", onFocus);
@@ -144,13 +177,17 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), where it stands here (`state`: signedOut, unavailable, off, pending, on), this account's computers, storage, the last pass (`activity`), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), this account's computers, storage, the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
           const project = controller.project.peek();
+          const profile = session.profile.peek();
+          const plan = controller.base() ? planSituation(profile, status) : "none";
           return {
             available: !!controller.base() && session.available(),
+            offered: plan === "offered",
+            lapsedUntil: plan === "lapsed" ? lapsedUntil(profile, status) : null,
             state: status?.state ?? (session.profile.peek() ? "off" : "signedOut"),
             device:
               status?.deviceId && status.state !== "off"

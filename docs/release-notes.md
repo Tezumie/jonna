@@ -3,6 +3,25 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.8
+
+Sync: your settings, chats and unfinished work on every computer.
+
+- **Sync** (a paid add-on; the editor stays free). Sign in, turn it on, and your settings,
+  keyboard shortcuts, rules, skills and chats follow you to your other computers. Turn it on
+  for a project and its chats travel too, with **snapshots** of unfinished work: commits you
+  haven't pushed, staged and unstaged changes, stashes, or the whole folder when there is no
+  git. Continue on another computer from the latest one, or go back to any of the last 30
+  days you worked on it.
+- **Encrypted before it leaves.** What you sync is encrypted on your computer with keys we
+  never have. A second computer joins by showing the same six digits as one that already
+  syncs, or with the recovery key you are shown once. Keep that key: without it or one of
+  your computers, nobody can open the synced copy.
+- **The Sync tab** (Accounts menu → Sync): what is in your account, your projects as folders,
+  your computers, storage and recent activity. The website's account page shows the same.
+- **The Documentation tab has search,** and looks like Settings: pages with icons on the
+  left, the open page's sections under its name, Previous and Next at the end of a page.
+
 ## 0.1.7
 
 The agent can run without the window, and a round of fixes.

@@ -10,17 +10,21 @@ use crate::AppState;
 /// The signed-in profile for `base`, or null.
 #[tauri::command]
 pub async fn account_profile(state: State<'_, AppState>, base: String) -> Result<Option<Profile>> {
-    Ok(accounts::profile(
-        &accounts::session_file(&state.dirs.data),
-        &base,
-    ))
+    Ok(
+        accounts::profile(&accounts::session_file(&state.dirs.data), &base)
+            .map(Profile::with_defaults),
+    )
 }
 
 /// The profile as the server has it now (D414): re-read, with the tokens refreshed when they've
 /// run out; null when the server ended the session; the saved one when it can't be reached.
 #[tauri::command]
 pub async fn account_check(state: State<'_, AppState>, base: String) -> Result<Option<Profile>> {
-    accounts::check(&accounts::session_file(&state.dirs.data), &base).await
+    Ok(
+        accounts::check(&accounts::session_file(&state.dirs.data), &base)
+            .await?
+            .map(Profile::with_defaults),
+    )
 }
 
 /// Signs in through the browser: `on_url` gets the page to open; resolves with the profile.
@@ -40,7 +44,11 @@ pub async fn account_sign_in(
     })
     .await
     .map_err(|e| Error::Invalid(e.to_string()))?;
-    accounts::finish(&pending, &code?, &accounts::session_file(&state.dirs.data)).await
+    Ok(
+        accounts::finish(&pending, &code?, &accounts::session_file(&state.dirs.data))
+            .await?
+            .with_defaults(),
+    )
 }
 
 /// Stops waiting for a browser sign-in.

@@ -56,6 +56,8 @@
       "state": "ide://sync",
       "expect": {
         "available": false,
+        "offered": false,
+        "lapsedUntil": null,
         "state": "signedOut",
         "device": null,
         "devices": { "$length": 0 },
@@ -118,6 +120,9 @@
       "input": { "id": "none" },
       "expectError": "Sign in to your account to use sync."
     },
+    // The plan (the subscription) is the account's: nothing to open or to read signed out.
+    { "run": "sync.managePlan", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.checkPlan", "expectError": "Sign in to your account to use sync." },
 
     // Its settings are known ones (a value that fits the schema is taken).
     { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },

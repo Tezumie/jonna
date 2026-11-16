@@ -104,6 +104,21 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
     };
     sub.add({ dispose: () => avatarBlob && URL.revokeObjectURL(avatarBlob) });
     void refreshIfStale(0);
+    // The Sync tab asked the server for the profile again (a plan bought or renewed in the
+    // browser): what it saved is the profile now, so the menu's Sync entry follows.
+    sub.add(
+      services.events.on("command.executed", (event) => {
+        if (event.status !== "ok" || event.id !== "sync.checkPlan") return;
+        const base = server();
+        if (!base) return;
+        void accountsIpc
+          .profile(base)
+          .then((p) => {
+            if (JSON.stringify(p) !== JSON.stringify(profile.peek())) profile.value = p;
+          })
+          .catch(() => {});
+      }),
+    );
     // Coming back to the window: signed in or out in the browser meanwhile, perhaps.
     if (services.hasScreen) {
       const onFocus = () => void refreshIfStale(5 * 60_000);
@@ -246,8 +261,9 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               icon: "agent",
               run: run("agent.showSetup"),
             });
-          // Sync (D435), once it is open to the account.
-          const syncOpen = p?.sync === true && dispatcher.has("sync.show");
+          // Sync (D435), once it is open to the account, or on sale to it.
+          const syncOpen =
+            (p?.sync === true || p?.syncOffered === true) && dispatcher.has("sync.show");
           if (syncOpen)
             items.push({
               label: "Sync…",
@@ -370,7 +386,9 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
         effects: [],
         agent: "hidden",
         run: async () => {
-          const syncOpen = profile.peek()?.sync === true && dispatcher.has("sync.show");
+          const p = profile.peek();
+          const syncOpen =
+            (p?.sync === true || p?.syncOffered === true) && dispatcher.has("sync.show");
           const choice = await showDialog<"export" | "import" | "sync" | "cancel">({
             title: "Backup and sync settings",
             message: syncOpen

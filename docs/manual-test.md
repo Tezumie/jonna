@@ -4326,3 +4326,20 @@ on again from the computer that has the data.
 5. Make the tab narrow (under about 640 px): the navigation is a rail of icons with tooltips,
    and the search box sits above the page.
 6. Links in a page still work: another page, a heading, a web page, a command link.
+
+## D440 — Sync as a subscription
+Needs the accounts service with billing set up (Stripe's test mode).
+1. An account without Sync, where Sync is on sale: the Accounts menu has Sync; the Sync tab
+   says what it does, with "See plans" (opens the website's plan page in the browser) and
+   "I already subscribed".
+2. Buy Sync on the website with a test card, come back to the IDE's window: within a few
+   seconds the offer becomes the steps to turn sync on. No restart.
+3. An account where Sync isn't on sale and that doesn't have it: no Sync entry anywhere.
+4. Cancel the subscription at once in Stripe's dashboard, come back to the window: the status
+   bar says "Sync ended"; Overview says until when the synced copy is kept, with Renew and
+   Check again; Snapshot now, Sync this project, rename and the like are disabled with the
+   reason; a snapshot can still be restored. Nothing is logged as an error.
+5. Renew on the website, come back: sync resumes, and what was synced before is there.
+6. Sync, Storage, Manage plan: the website's plan page opens.
+7. Add a storage block on the website: Sync, Storage shows the larger limit after the next
+   status check (at most five minutes, or Sync now).

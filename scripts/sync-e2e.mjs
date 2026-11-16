@@ -162,6 +162,32 @@ async function giveSync(account) {
   });
 }
 
+/**
+ * Ends the account's subscription, or brings it back (the billing webhook's job; here the test
+ * plays it): the plan, and when the subscription that gave access stopped.
+ */
+async function setSubscription(account, active) {
+  const patch = (path, mask, fields) =>
+    fetch(`${FIRESTORE}/${path}?${mask.map((m) => `updateMask.fieldPaths=${m}`).join("&")}`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    });
+  await patch(`users/${account.uid}`, ["plan"], {
+    plan: { stringValue: active ? "sync" : "free" },
+  });
+  await patch(
+    `billing/${account.uid}`,
+    ["status", "lapsedAt"],
+    active
+      ? { status: { stringValue: "active" } }
+      : {
+          status: { stringValue: "canceled" },
+          lapsedAt: { timestampValue: new Date().toISOString() },
+        },
+  );
+}
+
 /** Signs a profile folder in as the account: what the app's browser sign-in leaves behind. */
 async function signIn(account, profile) {
   const verifier = b64(32);
@@ -1027,6 +1053,50 @@ try {
       check((await laptop.sync("status")).state === "on", "the listed device kept its place");
     },
   );
+
+  await step("a subscription that ended: what is synced is read, nothing is written", async () => {
+    await desk.sync("record_put", {
+      collection: "settings",
+      id: "kept",
+      expect: null,
+      text: '"x"',
+    });
+    await setSubscription(account, false);
+    const s = await desk.sync("status");
+    check(
+      s.state === "on" && typeof s.lapsedUntil === "number" && s.lapsedUntil > Date.now(),
+      JSON.stringify(s),
+    );
+    // Reading still works: a record, the changes, the chunks of a chat.
+    check(
+      (await desk.sync("record_get", { collection: "settings", id: "kept" })).text === '"x"',
+      "a record is read",
+    );
+    check((await desk.sync("changes", { since: 0 })).records.length > 0, "the changes are read");
+    await fails(
+      desk.sync("record_put", { collection: "settings", id: "kept", expect: 1, text: '"y"' }),
+      "SyncLapsed",
+      "writing after the subscription ended",
+    );
+    await fails(
+      desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: null }),
+      "SyncLapsed",
+      "uploading after the subscription ended",
+    );
+    // The other computer is told the same, and loses nothing it has.
+    check(typeof (await laptop.sync("status")).lapsedUntil === "number", "the other computer too");
+    // Renewed in time: everything is where it was.
+    await setSubscription(account, true);
+    const back = await desk.sync("status");
+    check(back.state === "on" && back.lapsedUntil === null, JSON.stringify(back));
+    const put = await desk.sync("record_put", {
+      collection: "settings",
+      id: "kept",
+      expect: 1,
+      text: '"y"',
+    });
+    check(put.outcome === "done", JSON.stringify(put));
+  });
 
   await step("sync reset from the account page turns it off everywhere", async () => {
     const r = await fetch(`${BASE}/api/sync/reset`, {

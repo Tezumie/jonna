@@ -69,6 +69,8 @@ fn refusal(status: u16, json: &Value) -> Error {
     match (status, code) {
         (401, _) => Error::Sync("SyncSignedOut", "Sign in again to keep syncing.".into()),
         (403, "sync_unavailable") => Error::Sync("SyncUnavailable", text),
+        // The subscription ended: what is synced can be read, nothing can be written.
+        (402, "sync_lapsed") => Error::Sync("SyncLapsed", text),
         (403, "not_approved" | "not_a_device") => Error::Sync("SyncNotApproved", text),
         (409, "no_vault") => Error::Sync("SyncReset", text),
         // Stored data is being cleaned up: the same request works a moment later.
@@ -208,5 +210,31 @@ impl Api {
             return Err(refusal(status, &json));
         }
         Ok(reply.bytes().await.map_err(offline)?.to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_write_refused_for_an_ended_subscription_has_its_own_code() {
+        let json = serde_json::json!({
+            "error": "sync_lapsed",
+            "error_description": "The Sync subscription ended.",
+            "until": 1_800_000_000_000u64,
+        });
+        match refusal(402, &json) {
+            Error::Sync(code, text) => {
+                assert_eq!(code, "SyncLapsed");
+                assert_eq!(text, "The Sync subscription ended.");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        // Another 402 stays a plain refusal.
+        assert!(matches!(
+            refusal(402, &serde_json::json!({ "error": "other" })),
+            Error::Sync("Sync", _)
+        ));
     }
 }

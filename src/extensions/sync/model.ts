@@ -1,7 +1,7 @@
 // Sync, DOM-free (D435): the words the Sync tab and the commands share.
 
 export interface ActivityLike {
-  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked";
+  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked" | "lapsed";
   message: string | null;
   at: number | null;
 }
@@ -49,6 +49,8 @@ export function activityLine(activity: ActivityLike): { text: string; time: numb
       return { text: "Another window is syncing", time: null };
     case "blocked":
       return { text: "Waiting for this computer's keys to catch up", time: null };
+    case "lapsed":
+      return { text: "Sync ended: nothing syncs until you renew", time: null };
     case "error":
       return { text: activity.message ?? "Sync ran into a problem.", time: null };
     default:
@@ -391,11 +393,20 @@ export function statusBarWords(
   available: boolean,
   state: string | null,
   activity: ActivityLike,
+  /** The subscription ended (`planSituation` says "lapsed"). */
+  lapsed = false,
 ): StatusBarWords | null {
   if (!available) return null;
   if (state === "pending")
     return { text: "$(cloud) Waiting", tooltip: "Sync: waiting for approval", error: false };
   if (state !== "on") return null;
+  // Said quietly: the Sync tab has the rest, and the way to renew.
+  if (lapsed || activity.state === "lapsed")
+    return {
+      text: "$(cloud) Sync ended",
+      tooltip: "Sync: your subscription ended. Nothing syncs until you renew it.",
+      error: false,
+    };
   switch (activity.state) {
     case "syncing":
       return { text: "$(refresh-cw) Syncing…", tooltip: "Sync: syncing…", error: false };
@@ -420,6 +431,95 @@ export function statusBarWords(
         ? { text: "$(cloud) Sync", tooltip: "Sync: waiting for the first sync", error: false }
         : { text: "$(cloud) Synced", tooltip: "Sync: everything is synced", error: false };
   }
+}
+
+// ------------------------------------------------------------ the plan (the subscription)
+
+/** What the plan needs of the account's profile (`AccountProfile` fits). */
+export interface PlanProfile {
+  sync?: boolean;
+  syncState?: "on" | "lapsed" | "off" | null;
+  syncUntil?: number | null;
+  syncOffered?: boolean;
+}
+
+/** What the plan needs of where sync stands (`SyncStatus` fits). */
+export interface PlanStatus {
+  state: string;
+  lapsedUntil?: number | null;
+}
+
+/**
+ * Where the account stands with the subscription. "none": nothing to say about sync (signed
+ * out, or sync is neither had nor on sale). "offered": it could buy sync. "lapsed": its
+ * subscription ended; what is synced can be read, nothing written. "on": it has sync.
+ */
+export type PlanSituation = "none" | "offered" | "lapsed" | "on";
+
+/** Whether a status was read from the sync service itself (not "nobody" or "not for you"). */
+const statusKnown = (status: PlanStatus | null): status is PlanStatus =>
+  !!status && status.state !== "signedOut" && status.state !== "unavailable";
+
+/**
+ * Which situation a profile and a status are. The sync service's own word on "lapsed" counts
+ * once it was read (it is asked more often than the profile); before that, the profile's.
+ */
+export function planSituation(
+  profile: PlanProfile | null,
+  status: PlanStatus | null,
+): PlanSituation {
+  if (!profile) return "none";
+  if (profile.sync !== true || status?.state === "unavailable")
+    return profile.syncOffered === true ? "offered" : "none";
+  const lapsed = statusKnown(status)
+    ? typeof status.lapsedUntil === "number"
+    : profile.syncState === "lapsed";
+  return lapsed ? "lapsed" : "on";
+}
+
+/** When what is synced is deleted, in ms, for a lapsed account; null when it isn't known. */
+export function lapsedUntil(profile: PlanProfile | null, status: PlanStatus | null): number | null {
+  const fromStatus = statusKnown(status) ? serviceTime(status.lapsedUntil ?? null) : null;
+  return fromStatus ?? serviceTime(profile?.syncUntil ?? null);
+}
+
+/** A date as the lapsed callout says it: "3 March", with the year when it isn't this one. */
+export function retentionDate(time: number, now = Date.now()): string {
+  const day = new Date(time);
+  return day.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "long",
+    ...(day.getFullYear() !== new Date(now).getFullYear() && { year: "numeric" }),
+  });
+}
+
+/** What a lapsed account is told, with the date what is synced is deleted when it is known. */
+export function lapsedSentence(until: number | null, now = Date.now()): string {
+  const kept =
+    until === null
+      ? "What is synced stays readable for a while, then it is deleted."
+      : until <= now
+        ? "What is synced is about to be deleted."
+        : `What is synced stays readable until ${retentionDate(until, now)}, then it is deleted.`;
+  return `Your Sync subscription ended. ${kept} Your computers keep their own files and chats.`;
+}
+
+/** The pass's sentence while lapsed (the activity's message, and said once in the log). */
+export const LAPSED_ACTIVITY = "Your Sync subscription ended. Nothing syncs until you renew it.";
+
+/** Why something that writes to the account can't be done while lapsed. */
+export const LAPSED_REASON = "Your Sync subscription ended. Renew it to do this.";
+
+/** What Sync does, in three short lines (the offer, and before sync is turned on). */
+export const SYNC_BENEFITS: readonly string[] = [
+  "Your settings, keyboard shortcuts, and your own rules, skills and agents.",
+  "The chats of the projects you choose to sync.",
+  "Snapshots of unfinished work in those projects, with a history.",
+];
+
+/** The account page's plan section (buying, renewing, cards, invoices, storage). */
+export function planUrl(base: string): string {
+  return `${base.replace(/\/+$/, "")}/account#plan`;
 }
 
 // ------------------------------------------------------------ recent activity
@@ -601,8 +701,12 @@ export function attentionItems(input: {
   activity: ActivityLike;
   /** The open folder, when one is open on this computer. */
   project: { name: string; on: boolean } | null;
+  /** The subscription ended: what would need a write isn't asked for. */
+  lapsed?: boolean;
 }): AttentionItem[] {
   const items: AttentionItem[] = [];
+  // The lapsed callout says what there is to do; nothing else can be done about the rest.
+  if (input.lapsed) return items;
   if (input.activity.state === "error")
     items.push({
       kind: "error",

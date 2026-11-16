@@ -254,6 +254,18 @@
     gap: var(--space-5);
     padding: var(--space-5) var(--space-6);
   }
+  /* The subscription ended: three sentences and two buttons. A plain card (no color: the words
+     say it); the buttons go under the text as soon as the text would get narrow. */
+  .sync-lapsed {
+    flex-wrap: wrap;
+    row-gap: var(--space-4);
+  }
+  .sync-lapsed .sync-item-main {
+    flex-basis: 280px;
+  }
+  .sync-lapsed .sync-item-actions {
+    flex-wrap: wrap;
+  }
   /* Status, counts, storage: three cards of one width, one under the other. */
   .sync-stack {
     display: flex;
@@ -967,6 +979,10 @@
     .sync-status .sync-item-main,
     .sync-callout .sync-item-main {
       flex-basis: 140px;
+    }
+    /* Three sentences take the row; Renew and Check again go under them. */
+    .sync-lapsed .sync-item-main {
+      flex-basis: 100%;
     }
     /* Four stats: two by two in the same card. Three stay in a row, a size smaller. */
     .sync-stats:not([data-count="3"]) {

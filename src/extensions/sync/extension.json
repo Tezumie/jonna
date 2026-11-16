@@ -136,6 +136,16 @@
         "id": "sync.openAccountPage",
         "title": "Open the account page",
         "category": "Sync"
+      },
+      {
+        "id": "sync.managePlan",
+        "title": "Manage plan…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.checkPlan",
+        "title": "Check plan again",
+        "category": "Sync"
       }
     ],
     "settings": {

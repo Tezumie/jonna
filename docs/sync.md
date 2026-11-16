@@ -5,6 +5,15 @@ hardened in D436 and D437).
 The service's code is in the website's repository; this is the contract and the design both
 sides follow. Sync is open only to accounts the service allows (`/api/me` says `"sync": true`).
 
+Sync is a subscription. `/api/me` also says `syncState` ("on", "lapsed", "off"; `sync` is true
+for the first two), `syncUntil` (while lapsed: when what is synced is deleted, in ms),
+`syncOffered` (sync is on sale to this account and it doesn't have it) and `supporter`; an older
+server sends none of them, and the state is then read from `sync`. `GET state` says
+`lapsedUntil` (ms, or null). Buying, renewing, cancelling, cards, invoices and more storage are
+on the website (`<accounts server>/account#plan`), which the IDE opens in the browser
+(`sync.managePlan`) and never handles itself; `sync.checkPlan`, and coming back to the window
+while offered or lapsed, read the account again.
+
 ## The promise
 
 What is synced is encrypted on the computer before it leaves, with keys the service never has.
@@ -126,6 +135,12 @@ sign-in). All under `/api/sync/`, JSON unless said.
 - **An epoch** is one life of the vault. A reset ends it; the next setup has a later one, and
   devices drop what they kept for the earlier one.
 - **Storage full** refuses new chunks (507); records keep being written while they fit.
+- **A lapsed subscription** (it ended; `storageLimit` is 0) still answers every read: the
+  state, records, chunk downloads, a device saying which one it is, removing a device. Every
+  write is refused with 402 `sync_lapsed` (and `until`). The IDE then reads the account and
+  writes nothing: no layer runs, no snapshot is taken, named or pruned, the trusted list and
+  new keys wait; snapshots can still be listed and restored. It says so once ("lapsed", not an
+  error) with the date, and offers Renew and Check again.
 - **What counts toward storage:** a chunk's bytes plus a fixed part per chunk; a record's
   content, its list of chunks and a fixed part per record. Room for an upload is taken before a
   byte is written. An account holds at most 100,000 records; a record names at most 200,000
