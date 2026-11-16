@@ -120,7 +120,7 @@ export function registerTeamPageCommands(
     settings.registry
       .all()
       .map((info) => ({ key: info.key, value: settings.model.inspect(info.key, "user") }))
-      .filter(({ key, value }) => value !== undefined && teamMaySet(key, known))
+      .filter(({ key, value }) => value !== undefined && teamMaySet(key, known, value))
       .sort((a, b) => a.key.localeCompare(b.key))
       .map(({ key, value }) => ({ path: key, label: key, description: valueWords(value) }));
 

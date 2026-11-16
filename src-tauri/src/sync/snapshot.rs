@@ -157,6 +157,26 @@ fn rel(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+/// Whether one part of a synced path is a name some computer reads as something else: a
+/// device's name on Windows, a name with a stream or a trailing dot or space, a repository's
+/// own folder.
+pub(super) fn unsafe_name(text: &str) -> bool {
+    // Windows drops trailing dots and spaces and reads short names and streams:
+    // ".git.", ".git ", "GIT~1" and ".git::$INDEX_ALLOCATION" are all .git there.
+    // No repository's own folder at any depth, either.
+    let plain = text.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+    let stem = plain.split('.').next().unwrap_or("");
+    let reserved = matches!(stem, "con" | "prn" | "aux" | "nul")
+        || (stem.len() == 4
+            && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && stem.ends_with(|c: char| c.is_ascii_digit()));
+    plain == ".git"
+        || reserved
+        || plain.starts_with("git~")
+        || text.contains(':')
+        || text.ends_with(['.', ' '])
+}
+
 /// A manifest's path as a place under `root`; refuses anything that climbs out or into `.git`.
 fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
     let path = Path::new(relative);
@@ -166,21 +186,7 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
         match part {
             Component::Normal(name) => {
                 let text = name.to_string_lossy();
-                // Windows drops trailing dots and spaces and reads short names and streams:
-                // ".git.", ".git ", "GIT~1" and ".git::$INDEX_ALLOCATION" are all .git there.
-                // No repository's own folder at any depth, either.
-                let plain = text.trim_end_matches(['.', ' ']).to_ascii_lowercase();
-                let stem = plain.split('.').next().unwrap_or("");
-                let reserved = matches!(stem, "con" | "prn" | "aux" | "nul")
-                    || (stem.len() == 4
-                        && (stem.starts_with("com") || stem.starts_with("lpt"))
-                        && stem.ends_with(|c: char| c.is_ascii_digit()));
-                if plain == ".git"
-                    || reserved
-                    || plain.starts_with("git~")
-                    || text.contains(':')
-                    || text.ends_with(['.', ' '])
-                {
+                if unsafe_name(&text) {
                     return Err(sync_error(format!(
                         "a snapshot may not write there: {relative}"
                     )));
@@ -456,6 +462,147 @@ fn stashes(root: &Path) -> Vec<(String, String)> {
             Some((sha.to_string(), message.to_string()))
         })
         .collect()
+}
+
+/// The newest stash's commit, when there is a stash.
+fn stash_tip(root: &Path) -> Option<String> {
+    git(root, &["rev-parse", "-q", "--verify", "refs/stash"])
+        .ok()
+        .map(|sha| sha.trim().to_string())
+        .filter(|sha| !sha.is_empty())
+}
+
+/// Puts exactly `paths` (changed, new or deleted files) into a stash, and nothing else: what
+/// the project's `.syncignore` names is never in that list, and stays in the folder as it is.
+/// The new stash's commit, or None when git had nothing to save (then there is no new stash,
+/// and the newest one is still the user's own).
+fn stash_paths(root: &Path, paths: &[String], message: Option<&str>) -> Result<Option<String>> {
+    // A folder that is a repository of its own is listed as `name/`: git can't stash it.
+    let paths: Vec<&String> = paths.iter().filter(|p| !p.ends_with('/')).collect();
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    let before = stash_tip(root);
+    // The names go in on stdin, taken as they are written: a list of any length (a command
+    // line has a limit, a short one on Windows), and no name read as a pattern.
+    let mut list = Vec::new();
+    for path in paths {
+        list.extend_from_slice(path.as_bytes());
+        list.push(0);
+    }
+    let mut args = vec![
+        "--literal-pathspecs",
+        "stash",
+        "push",
+        "--include-untracked",
+        "-q",
+    ];
+    if let Some(message) = message {
+        args.extend(["-m", message]);
+    }
+    args.extend(["--pathspec-from-file=-", "--pathspec-file-nul"]);
+    crate::git::run(root, &args, Some(&list))?;
+    Ok(stash_tip(root).filter(|now| before.as_ref() != Some(now)))
+}
+
+/// What a restore set aside of the folder's own before it changed anything: said with any
+/// error that comes after, so the work never just looks gone.
+enum Aside {
+    /// A git stash: its message and its commit.
+    Stash { name: String, commit: String },
+    /// A folder the replaced files were copied to.
+    Folder(PathBuf),
+}
+
+impl Aside {
+    fn describe(&self, root: &Path) -> String {
+        match self {
+            Aside::Stash { name, commit } => {
+                // The other computer's stashes may have been put on top of it since.
+                match stashes(root).iter().position(|(sha, _)| sha == commit) {
+                    Some(n) => format!(
+                        "Your own changes are safe in the git stash \"{name}\": bring them back with `git stash pop stash@{{{n}}}`."
+                    ),
+                    None => format!(
+                        "Your own changes are safe in the git stash \"{name}\": see `git stash list`."
+                    ),
+                }
+            }
+            Aside::Folder(dir) => format!(
+                "The files of this folder that differed were copied to {} first.",
+                dir.display()
+            ),
+        }
+    }
+}
+
+/// `error`, saying as well where the folder's own changes were put.
+fn with_aside(error: Error, note: &str) -> Error {
+    match error {
+        Error::Sync(code, text) => Error::Sync(code, format!("{text} {note}")),
+        Error::Git(text) => Error::Git(format!("{text}\n{note}")),
+        Error::GitSettingsChanged(text) => Error::GitSettingsChanged(format!("{text}\n{note}")),
+        other => Error::Sync("Sync", format!("{other}. {note}")),
+    }
+}
+
+/// Reads until `buf` is full or the file ends; how much was read.
+fn fill(file: &mut impl std::io::Read, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut at = 0;
+    while at < buf.len() {
+        match file.read(&mut buf[at..]) {
+            Ok(0) => break,
+            Ok(n) => at += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(at)
+}
+
+/// Whether `file` holds the content `stored` names, read a chunk at a time (`piece` is the
+/// room for one chunk): a large file is never in memory whole.
+fn same_content(
+    ring: &Keyring,
+    file: &mut impl std::io::Read,
+    stored: &Stored,
+    piece: &mut [u8],
+) -> Result<bool> {
+    let mut ids = stored.chunks.iter();
+    loop {
+        let n = fill(file, piece)?;
+        if n == 0 {
+            return Ok(ids.next().is_none());
+        }
+        match ids.next() {
+            Some(id) if *id == ring.chunk_id(&piece[..n])? => {}
+            _ => return Ok(false),
+        }
+        if n < piece.len() {
+            return Ok(ids.next().is_none());
+        }
+    }
+}
+
+/// A new folder `parent/name`, or `parent/name-1`, `-2`… when that one is taken: never one
+/// something else already uses.
+fn fresh_dir(parent: &Path, name: &str) -> Result<PathBuf> {
+    std::fs::create_dir_all(parent)?;
+    for n in 0..10_000 {
+        let dir = if n == 0 {
+            parent.join(name)
+        } else {
+            parent.join(format!("{name}-{n}"))
+        };
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(sync_error(
+        "No folder could be made for the replaced files.",
+    ))
 }
 
 fn ref_tips(root: &Path) -> Vec<String> {
@@ -1025,6 +1172,37 @@ pub async fn restore(
     options: RestoreOptions<'_>,
 ) -> Result<Restored> {
     let mut done = Restored::default();
+    let mut aside = None;
+    match restore_steps(
+        api,
+        ring,
+        data,
+        root,
+        manifest,
+        options,
+        (&mut done, &mut aside),
+    )
+    .await
+    {
+        Ok(()) => Ok(done),
+        // The folder's own changes were set aside and the restore then failed (offline, a
+        // commit that can't be fetched, a locked file): the error says where they are.
+        Err(e) => Err(match aside {
+            Some(aside) => with_aside(e, &aside.describe(root)),
+            None => e,
+        }),
+    }
+}
+
+async fn restore_steps(
+    api: &Api,
+    ring: &Keyring,
+    data: &Path,
+    root: &Path,
+    manifest: &Manifest,
+    options: RestoreOptions<'_>,
+    (done, aside): (&mut Restored, &mut Option<Aside>),
+) -> Result<()> {
     std::fs::create_dir_all(root)?;
     if let Some(state) = &manifest.git {
         if !is_git(root) {
@@ -1041,9 +1219,12 @@ pub async fn restore(
         }
         let dirty = local_changes(root)?;
         if !dirty.is_empty() && options.as_restored {
-            // Through a stash, so git itself puts the folder back to the commit.
-            git(root, &["stash", "push", "--include-untracked", "-q"])?;
-            let _ = git(root, &["stash", "drop", "-q"]);
+            // Through a stash, so git itself puts the folder back to the commit: of the files
+            // an earlier restore wrote only, and dropped only when one was really made (with
+            // nothing saved, the newest stash is the user's own).
+            if stash_paths(root, &dirty, None)?.is_some() {
+                let _ = git(root, &["stash", "drop", "-q"]);
+            }
         } else if !dirty.is_empty() {
             if !options.stash {
                 return Err(Error::Sync(
@@ -1055,8 +1236,13 @@ pub async fn restore(
                 ));
             }
             let name = format!("Before continuing from {}", options.from);
-            git(root, &["stash", "push", "--include-untracked", "-m", &name])?;
-            done.stashed = Some(name);
+            if let Some(commit) = stash_paths(root, &dirty, Some(&name))? {
+                *aside = Some(Aside::Stash {
+                    name: name.clone(),
+                    commit,
+                });
+                done.stashed = Some(name);
+            }
         }
         // What the bundles build on may be on the remote and not here yet (this computer's
         // copy is behind): asked for first. It needs the network and the user's git access;
@@ -1166,20 +1352,36 @@ pub async fn restore(
     if manifest.git.is_none() && !options.as_restored {
         // No git to ask or to stash into: files here that differ from the snapshot's are this
         // computer's own. They are replaced only when asked, and kept in a folder of their own.
-        let mut differing = Vec::new();
+        // Only their names are kept: the files are read a chunk at a time, and copied later.
+        let mut differing: Vec<&str> = Vec::new();
+        let mut piece = Vec::new();
         for entry in &manifest.files {
             let target = safe_join(root, &entry.p)?;
-            let Ok(bytes) = std::fs::read(&target) else {
+            let Ok(mut file) = std::fs::File::open(&target) else {
                 continue;
             };
-            let mut ids = Vec::new();
-            for piece in bytes.chunks(chunks::CHUNK_BYTES) {
-                ids.push(ring.chunk_id(piece)?);
+            let Ok(meta) = file.metadata() else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
             }
-            if ids != entry.s.chunks {
-                differing.push((entry.p.clone(), bytes));
+            let same = meta.len() == entry.s.size && {
+                if piece.is_empty() {
+                    piece = vec![0u8; chunks::CHUNK_BYTES];
+                }
+                match same_content(ring, &mut file, &entry.s, &mut piece) {
+                    Ok(same) => same,
+                    // Not readable to its end: not known to be the snapshot's, so kept.
+                    Err(Error::Io(_)) => false,
+                    Err(e) => return Err(e),
+                }
+            };
+            if !same {
+                differing.push(&entry.p);
             }
         }
+        drop(piece);
         if !differing.is_empty() {
             if !options.stash {
                 return Err(Error::Sync(
@@ -1193,13 +1395,17 @@ pub async fn restore(
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs());
-            let keep = data.join("sync-replaced").join(stamp.to_string());
-            for (path, bytes) in &differing {
+            // A folder of this restore's own: two in the same second never share one.
+            let keep = fresh_dir(&data.join("sync-replaced"), &stamp.to_string())?;
+            *aside = Some(Aside::Folder(keep.clone()));
+            for path in &differing {
                 let target = safe_join(&keep, path)?;
                 if let Some(dir) = target.parent() {
                     std::fs::create_dir_all(dir)?;
                 }
-                atomic_write(&target, bytes)?;
+                // Copied, not read: a large file is never in memory. Nothing of the folder
+                // is replaced before every copy is made.
+                std::fs::copy(safe_join(root, path)?, &target)?;
             }
             done.notes.push(format!(
                 "{} file(s) of this folder were replaced; their earlier versions are in {}.",
@@ -1229,7 +1435,7 @@ pub async fn restore(
         done.notes
             .push(format!("{path} wasn't in the snapshot ({why})."));
     }
-    Ok(done)
+    Ok(())
 }
 
 /// Writes a snapshot's record again with other text, still naming the same chunks.
@@ -1352,6 +1558,177 @@ mod tests {
         let estimate = estimate(&dir).unwrap();
         assert_eq!((estimate.kind.as_str(), estimate.files), ("folder", 4));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A git repository of its own under the system's temp folder, with one commit.
+    fn repo(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sync-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        git(&dir, &["init", "-q"]).unwrap();
+        for (key, value) in [
+            ("user.name", "Test"),
+            ("user.email", "test@example.com"),
+            ("core.autocrlf", "false"),
+            ("commit.gpgsign", "false"),
+        ] {
+            git(&dir, &["config", key, value]).unwrap();
+        }
+        for (file, text) in files {
+            let path = dir.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        git(&dir, &["add", "-A"]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "first"]).unwrap();
+        dir
+    }
+
+    fn text(dir: &Path, file: &str) -> String {
+        std::fs::read_to_string(dir.join(file)).unwrap()
+    }
+
+    #[test]
+    fn a_stash_takes_the_listed_files_and_leaves_what_syncignore_names() {
+        let dir = repo(
+            "stash-paths",
+            &[
+                ("a.txt", "a"),
+                ("gone.txt", "gone"),
+                ("local.cfg", "committed"),
+                (".syncignore", "local.cfg\ndata/\n"),
+            ],
+        );
+        // The user's own stash, made before: it must still be there afterwards.
+        std::fs::write(dir.join("a.txt"), "earlier work").unwrap();
+        git(&dir, &["stash", "push", "-q", "-m", "mine"]).unwrap();
+        let mine = stashes(&dir);
+        assert_eq!(mine.len(), 1);
+
+        std::fs::write(dir.join("a.txt"), "changed").unwrap();
+        std::fs::remove_file(dir.join("gone.txt")).unwrap();
+        std::fs::write(dir.join("new file.txt"), "new").unwrap();
+        std::fs::write(dir.join("*.txt"), "odd name").ok();
+        std::fs::write(dir.join("local.cfg"), "edited here").unwrap();
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("data").join("x.bin"), "data").unwrap();
+
+        let dirty = local_changes(&dir).unwrap();
+        assert!(dirty.contains(&"a.txt".to_string()), "{dirty:?}");
+        assert!(dirty.contains(&"new file.txt".to_string()), "{dirty:?}");
+        assert!(!dirty
+            .iter()
+            .any(|p| p == "local.cfg" || p.starts_with("data")));
+
+        let made = stash_paths(&dir, &dirty, None).unwrap();
+        assert!(made.is_some());
+        assert_eq!(stashes(&dir).len(), 2);
+        // The listed files are back at the commit.
+        assert_eq!(text(&dir, "a.txt"), "a");
+        assert_eq!(text(&dir, "gone.txt"), "gone");
+        assert!(!dir.join("new file.txt").exists());
+        // What .syncignore names is exactly as it was.
+        assert_eq!(text(&dir, "local.cfg"), "edited here");
+        assert_eq!(text(&dir, "data/x.bin"), "data");
+        assert!(local_changes(&dir).unwrap().is_empty());
+
+        git(&dir, &["stash", "drop", "-q"]).unwrap();
+        assert_eq!(stashes(&dir), mine);
+
+        // Nothing to save: no stash is made, so there is none to drop.
+        assert_eq!(
+            stash_paths(&dir, &["a.txt".to_string()], None).unwrap(),
+            None
+        );
+        assert_eq!(stash_paths(&dir, &[], None).unwrap(), None);
+        assert_eq!(stashes(&dir), mine);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_error_after_a_stash_says_where_the_changes_are() {
+        let dir = repo("stash-named", &[("a.txt", "a")]);
+        std::fs::write(dir.join("a.txt"), "work").unwrap();
+        let name = "Before continuing from the laptop";
+        let commit = stash_paths(&dir, &["a.txt".to_string()], Some(name))
+            .unwrap()
+            .unwrap();
+        // Another stash put on top (the other computer's): the name still finds the right one.
+        std::fs::write(dir.join("a.txt"), "other").unwrap();
+        git(&dir, &["stash", "push", "-q", "-m", "theirs"]).unwrap();
+        let aside = Aside::Stash {
+            name: name.to_string(),
+            commit,
+        };
+        let note = aside.describe(&dir);
+        assert!(note.contains(name) && note.contains("stash@{1}"), "{note}");
+        match with_aside(Error::Sync("SyncMissing", "Part is missing.".into()), &note) {
+            Error::Sync("SyncMissing", text) => {
+                assert!(text.starts_with("Part is missing. ") && text.contains("stash@{1}"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            with_aside(Error::Git("checkout failed".into()), &note),
+            Error::Git(text) if text.contains("checkout failed") && text.contains(name)
+        ));
+        let io = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "locked");
+        assert!(matches!(
+            with_aside(Error::Io(io), &note),
+            Error::Sync("Sync", text) if text.contains("locked") && text.contains(name)
+        ));
+        git(&dir, &["stash", "pop", "-q", "stash@{1}"]).ok();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_is_compared_a_chunk_at_a_time() {
+        let ring = Keyring::generate().unwrap();
+        let stored = |data: &[u8]| Stored {
+            chunks: data
+                .chunks(8)
+                .map(|piece| ring.chunk_id(piece).unwrap())
+                .collect(),
+            size: data.len() as u64,
+        };
+        let same = |data: &[u8], with: &Stored| {
+            // One byte at a time: a short read is not the end of a chunk.
+            struct Slow<'a>(&'a [u8]);
+            impl std::io::Read for Slow<'_> {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    let n = self.0.len().min(buf.len()).min(1);
+                    buf[..n].copy_from_slice(&self.0[..n]);
+                    self.0 = &self.0[n..];
+                    Ok(n)
+                }
+            }
+            same_content(&ring, &mut Slow(data), with, &mut [0u8; 8]).unwrap()
+        };
+        for data in [&b""[..], b"short", b"exactly8", b"more than one chunk here"] {
+            assert!(same(data, &stored(data)), "{data:?}");
+        }
+        assert!(!same(
+            b"more than one chunk here",
+            &stored(b"more than one chunk HERE")
+        ));
+        assert!(!same(b"exactly8", &stored(b"exactly8 and more")));
+        assert!(!same(b"exactly8 and more", &stored(b"exactly8")));
+        assert!(!same(b"", &stored(b"x")));
+        assert!(!same(b"x", &stored(b"")));
+    }
+
+    #[test]
+    fn the_folder_for_replaced_files_is_never_shared() {
+        let parent = std::env::temp_dir().join(format!("sync-replaced-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&parent);
+        let first = fresh_dir(&parent, "1700000000").unwrap();
+        let second = fresh_dir(&parent, "1700000000").unwrap();
+        let third = fresh_dir(&parent, "1700000000").unwrap();
+        assert_eq!(first, parent.join("1700000000"));
+        assert_eq!(second, parent.join("1700000000-1"));
+        assert_eq!(third, parent.join("1700000000-2"));
+        assert!(first.is_dir() && second.is_dir() && third.is_dir());
+        let _ = std::fs::remove_dir_all(&parent);
     }
 
     #[test]

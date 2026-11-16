@@ -60,6 +60,15 @@ fn offline(e: reqwest::Error) -> Error {
     )
 }
 
+/// A success whose body isn't what it should be (cut off, a proxy's page): the same as not
+/// reaching the service, so the caller tries again later and decides nothing from it.
+pub fn unreadable() -> Error {
+    Error::Sync(
+        "SyncOffline",
+        "The sync service gave an answer that couldn't be read; trying again later.".into(),
+    )
+}
+
 /// What a refusal means to the person using it.
 fn refusal(status: u16, json: &Value) -> Error {
     let code = json.get("error").and_then(Value::as_str).unwrap_or("");

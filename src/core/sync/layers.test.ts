@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SyncChanges, SyncPut, SyncRecord, SyncUserFile } from "../ipc/sync";
 import { type SyncBackend, SyncEngine, type SyncNote, type SyncStore } from "./engine";
+import { codeOf } from "./errors";
 import {
   type ChatsPort,
   chatsLayer,
@@ -331,7 +332,10 @@ function chatsPort(name: string, account: FakeAccount, contents: Map<string, str
     pushes: Map<string, number>;
     /** Runs right before a fetch lands (a chat saved meanwhile). */
     beforePull: (() => void) | null;
+    /** What every upload fails with (the account has no room), when set. */
+    pushError: (() => unknown) | null;
   } = {
+    pushError: null,
     chats,
     /** Folder to collection for the projects that sync here. */
     projects: new Map(),
@@ -371,6 +375,7 @@ function chatsPort(name: string, account: FakeAccount, contents: Map<string, str
       port.pushes.set(id, (port.pushes.get(id) ?? 0) + 1);
       if (port.hangPush.has(id)) return new Promise<never>(() => {});
       if (port.failPush.has(id)) throw new Error("the upload failed");
+      if (port.pushError) throw port.pushError();
       const result = account.put(
         collection,
         id,
@@ -911,4 +916,389 @@ test("engine: a record this computer can't read yet stops the reading, and isn't
   assert.equal(b.files["snippets/go.json"], "{}");
   assert.equal(b.files["AGENTS.md"], "B's rules", "the later change is the file");
   assert.equal(b.files["AGENTS.conflict.md"], "A's new rules", "and A's is kept beside it");
+});
+
+// ---------------------------------------------------------------- settings: whose change is later
+
+const offlineError = () => Object.assign(new Error("No connection."), { code: "SyncOffline" });
+
+test("settings: an old change here doesn't win because the file was rewritten since", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = settingsPort({ tabSize: 4 }, clock);
+  const b = settingsPort({}, clock);
+  const inner = account.backend();
+  let offline = false;
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(a)]);
+  const engineB = new SyncEngine(
+    {
+      changes: async (since) => {
+        if (offline) throw offlineError();
+        return inner.changes(since);
+      },
+      put: inner.put,
+    },
+    memoryStore(),
+    [settingsLayer(b)],
+  );
+  await engineA.tick();
+  await engineB.tick();
+  assert.equal(b.values.tabSize, 4);
+
+  // B, offline, changes the setting at 200: the pass fails, and still notes when.
+  offline = true;
+  b.values.tabSize = 2;
+  b.mtimeMs = 200;
+  await assert.rejects(engineB.tick(), /No connection/);
+  // A changes it later, at 300.
+  a.values.tabSize = 8;
+  a.mtimeMs = 300;
+  await engineA.tick();
+  // B's settings file is written again at 400 for a reason of the app's own.
+  b.mtimeMs = 400;
+  await assert.rejects(engineB.tick(), /No connection/);
+  offline = false;
+  await engineB.tick();
+  assert.equal(b.values.tabSize, 8, "A's later change stands");
+  await engineA.tick();
+  assert.equal(a.values.tabSize, 8);
+
+  // And a change here that is the later one still wins, with its own date.
+  b.values.tabSize = 3;
+  b.mtimeMs = 500;
+  a.values.tabSize = 9;
+  a.mtimeMs = 450;
+  await engineA.tick();
+  await engineB.tick();
+  await engineA.tick();
+  assert.equal(a.values.tabSize, 3);
+  const record = JSON.parse(account.records.get("settings/user")?.text ?? "{}");
+  assert.equal(record.keys.tabSize.t, 500);
+});
+
+test("settings: a computer that joins takes the account's values where they differ, and says so", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = settingsPort({ theme: "dark", tabSize: 4 }, clock);
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(a)]);
+  await engineA.tick();
+  // B's file is the newer one, which says nothing about which value is newer.
+  clock.now = 900;
+  const b = settingsPort({ theme: "light", tabSize: 4, own: 1 }, clock);
+  const notes: SyncNote[] = [];
+  const engineB = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(b)], {
+    note: (event) => notes.push(event),
+  });
+  await engineB.tick();
+  assert.deepEqual({ ...b.values }, { theme: "dark", tabSize: 4, own: 1 });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0]?.kind, "conflict");
+  assert.match(notes[0]?.text ?? "", /the account's were kept: theme \(was "light"\)\.$/);
+  await engineA.tick();
+  assert.deepEqual({ ...a.values }, { theme: "dark", tabSize: 4, own: 1 });
+  // From here on B remembers its sync: its own changes win as any computer's do.
+  b.values.theme = "solarized";
+  b.mtimeMs = 950;
+  await engineB.tick();
+  await engineA.tick();
+  assert.equal(a.values.theme, "solarized");
+  assert.equal(notes.length, 1, "said once");
+});
+
+test("settings: a computer that lost what it kept doesn't bring back a setting removed elsewhere", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = settingsPort({ old: "x", keep: 1 }, clock);
+  const b = settingsPort({}, clock);
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(a)]);
+  await engineA.tick();
+  await new SyncEngine(account.backend(), memoryStore(), [settingsLayer(b)]).tick();
+  assert.deepEqual({ ...b.values }, { old: "x", keep: 1 });
+  delete a.values.old;
+  a.mtimeMs = 200;
+  await engineA.tick();
+  // B starts again with nothing kept (its state file is gone) and a newer settings file.
+  b.mtimeMs = 900;
+  const notes: SyncNote[] = [];
+  const again = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(b)], {
+    note: (event) => notes.push(event),
+  });
+  const writes = account.seq;
+  await again.tick();
+  assert.deepEqual({ ...b.values }, { keep: 1 });
+  assert.equal(account.seq, writes, "nothing told to the account");
+  assert.match(notes[0]?.text ?? "", /old \(was "x"\)/);
+  await engineA.tick();
+  assert.equal("old" in a.values, false, "and it stays removed on A");
+});
+
+// ---------------------------------------------------------------- files: conflict copies
+
+test("files: a second conflict keeps the first copy", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = filesPort({ "AGENTS.md": "one" }, clock);
+  const b = filesPort({}, clock);
+  const notes: SyncNote[] = [];
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [filesLayer(a)]);
+  const engineB = new SyncEngine(account.backend(), memoryStore(), [filesLayer(b)], {
+    note: (event) => notes.push(event),
+  });
+  await engineA.tick();
+  await engineB.tick();
+  const clash = async (at: number, mine: string, theirs: string) => {
+    clock.now = at;
+    a.edit("AGENTS.md", theirs);
+    clock.now = at + 10;
+    b.edit("AGENTS.md", mine);
+    await engineA.tick();
+    await engineB.tick();
+    await engineA.tick();
+  };
+  await clash(200, "B's first", "A's first");
+  await clash(300, "B's second", "A's second");
+  await clash(400, "B's third", "A's third");
+  assert.equal(b.files["AGENTS.conflict.md"], "A's first", "not written over");
+  assert.equal(b.files["AGENTS.conflict-2.md"], "A's second");
+  assert.equal(b.files["AGENTS.conflict-3.md"], "A's third");
+  assert.match(notes[1]?.text ?? "", /kept as AGENTS\.conflict-2\.md\.$/);
+  // The copies stay on the computer that made them.
+  assert.deepEqual(Object.keys(a.files), ["AGENTS.md"]);
+  assert.deepEqual([...account.records.keys()], ["files/AGENTS.md"]);
+  // The same losing text again takes no new name.
+  clock.now = 500;
+  a.edit("AGENTS.md", "A's first");
+  clock.now = 510;
+  b.edit("AGENTS.md", "B's fourth");
+  await engineA.tick();
+  await engineB.tick();
+  assert.equal(b.files["AGENTS.conflict-4.md"], undefined);
+  assert.match(notes[3]?.text ?? "", /kept as AGENTS\.conflict\.md\.$/);
+});
+
+test("files: a conflict copy the scan or the account lists is never synced", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = filesPort({ "snippets/go.json": "{}" }, clock);
+  const b = filesPort({}, clock);
+  // A scan that doesn't know the numbered names lists them as files.
+  const scan = a.scan;
+  a.scan = async () => {
+    const found = await scan();
+    const extra = Object.keys(a.files)
+      .filter((p) => p.includes(".conflict"))
+      .map((path) => ({ path, hash: hashOf(a.files[path] ?? ""), mtimeMs: 1 }));
+    return { ...found, files: [...found.files, ...extra] };
+  };
+  a.files["snippets/go.conflict-2.json"] = "{ old }";
+  a.files["snippets/go.conflict.json"] = "{ older }";
+  await new SyncEngine(account.backend(), memoryStore(), [filesLayer(a)]).tick();
+  assert.deepEqual([...account.records.keys()], ["files/snippets__go.json"]);
+  // One that reached the account anyway (an older build) isn't fetched.
+  account.put(
+    "files",
+    "snippets__go.conflict-3.json",
+    null,
+    JSON.stringify({ path: "snippets/go.conflict-3.json", text: "x", hash: "h", mtimeMs: 1 }),
+  );
+  await new SyncEngine(account.backend(), memoryStore(), [filesLayer(b)]).tick();
+  assert.deepEqual(Object.keys(b.files), ["snippets/go.json"]);
+});
+
+test("files: where only the first conflict name can be written, the copy goes there", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = filesPort({ "AGENTS.md": "one" }, clock);
+  const b = filesPort({}, clock);
+  const read = b.read;
+  b.read = async (path) => {
+    if (/\.conflict-\d+/.test(path)) throw new Error(`not a synced file: ${path}`);
+    return read(path);
+  };
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [filesLayer(a)]);
+  const engineB = new SyncEngine(account.backend(), memoryStore(), [filesLayer(b)]);
+  await engineA.tick();
+  await engineB.tick();
+  for (const [at, text] of [
+    [200, "first"],
+    [300, "second"],
+  ] as const) {
+    clock.now = at;
+    a.edit("AGENTS.md", `A's ${text}`);
+    clock.now = at + 10;
+    b.edit("AGENTS.md", `B's ${text}`);
+    await engineA.tick();
+    await engineB.tick();
+    await engineA.tick();
+  }
+  assert.equal(b.files["AGENTS.md"], "B's second", "the conflict still settles");
+  assert.equal(b.files["AGENTS.conflict.md"], "A's second");
+});
+
+// ---------------------------------------------------------------- the engine's reading
+
+test("engine: an answer with no epoch is not a reset: nothing is forgotten", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = filesPort({ "AGENTS.md": "rules" }, clock);
+  const store = memoryStore();
+  const inner = account.backend();
+  let answer: "good" | "zero" | "none" | "null" | "noRecords" | "text" = "good";
+  const engine = new SyncEngine(
+    {
+      changes: async (since) => {
+        const page = await inner.changes(since);
+        const odd: Record<typeof answer, unknown> = {
+          good: page,
+          zero: { ...page, epoch: 0 },
+          none: { seq: page.seq, gcEpoch: 0, more: false, records: [] },
+          null: null,
+          noRecords: { ...page, records: undefined },
+          text: { ...page, epoch: "2" },
+        };
+        return odd[answer] as SyncChanges;
+      },
+      put: inner.put,
+    },
+    store,
+    [filesLayer(a)],
+  );
+  await engine.tick();
+  const saved = store.text;
+  const writes = account.seq;
+  for (const bad of ["zero", "none", "null", "noRecords", "text"] as const) {
+    answer = bad;
+    await assert.rejects(engine.tick(), /couldn't be read/, bad);
+    assert.equal(engine.records("files").length, 1, `${bad}: what was read is kept`);
+    assert.equal(store.text, saved, `${bad}: and what was kept on disk`);
+  }
+  answer = "good";
+  await engine.tick();
+  assert.equal(account.seq, writes, "nothing sent again");
+  assert.equal(JSON.parse(store.text ?? "{}").epoch, 1);
+  // A real reset (another epoch, a positive number) is still believed.
+  account.reset();
+  await engine.tick();
+  assert.equal(account.records.size, 1, "uploaded again");
+  assert.equal(JSON.parse(store.text ?? "{}").epoch, 2);
+});
+
+test("engine: 'more' without moving on ends the pass instead of asking for ever", async () => {
+  const account = new FakeAccount();
+  for (const id of ["a", "b", "c"]) account.put("notes", id, null, id);
+  const inner = account.backend();
+  let asked = 0;
+  let stuck = true;
+  const engine = new SyncEngine(
+    {
+      changes: async (since) => {
+        asked++;
+        const page = await inner.changes(since);
+        // A page at a time; stuck, the same empty page with "more" every time.
+        return stuck
+          ? { ...page, more: true, records: [] }
+          : { ...page, more: page.records.length > 1, records: page.records.slice(0, 1) };
+      },
+      put: inner.put,
+    },
+    memoryStore(),
+    [],
+  );
+  await assert.rejects(engine.tick(), /didn't move on/);
+  assert.equal(asked, 1);
+  // Pages that do move on are all read.
+  stuck = false;
+  await engine.tick();
+  assert.deepEqual(
+    engine.records("notes").map((r) => r.id),
+    ["a", "b", "c"],
+  );
+  assert.equal(asked, 4);
+});
+
+// ---------------------------------------------------------------- an account with no room
+
+const fullError = () => Object.assign(new Error("Storage is full."), { code: "SyncFull" });
+
+test("chats: with no room, one upload is tried a pass, nothing is said per chat, and chats still arrive", async () => {
+  const account = new FakeAccount();
+  const contents = new Map<string, string>();
+  const a = chatsPort("a", account, contents);
+  const b = chatsPort("b", account, contents);
+  b.chats.set("z-from-b", { workspace: null, text: "from B", updated: 5 });
+  await new SyncEngine(account.backend(), memoryStore(), [chatsLayer(b)]).tick();
+  for (const id of ["c1", "c2", "c3"]) a.chats.set(id, { workspace: null, text: id, updated: 10 });
+  const notes: SyncNote[] = [];
+  let known = false;
+  const engine = new SyncEngine(account.backend(), memoryStore(), [chatsLayer(a)], {
+    note: (event) => notes.push(event),
+    full: () => known,
+  });
+  const pushes = () => [...a.pushes.values()].reduce((sum, n) => sum + n, 0);
+
+  a.pushError = fullError;
+  await assert.rejects(engine.tick(), (err) => codeOf(err) === "SyncFull");
+  assert.equal(pushes(), 1, "not one refused upload per chat");
+  assert.deepEqual(notes, [], "the pass says it once, by failing with it");
+  assert.equal(a.chats.get("z-from-b")?.text, "from B", "being full doesn't stop reading");
+
+  // Known to be full (the status says so): nothing is sealed and sent at all, and the pass
+  // itself goes through.
+  known = true;
+  await engine.tick();
+  await engine.tick();
+  assert.equal(pushes(), 1);
+  // B's chat changes meanwhile: it still arrives.
+  b.chats.set("z-from-b", { workspace: null, text: "from B, more", updated: 6 });
+  await new SyncEngine(account.backend(), memoryStore(), [chatsLayer(b)]).tick();
+  await engine.tick();
+  assert.equal(a.chats.get("z-from-b")?.text, "from B, more");
+  assert.equal(pushes(), 1);
+  assert.deepEqual(notes, []);
+
+  // Room again: everything that waited is sent.
+  known = false;
+  a.pushError = null;
+  await engine.tick();
+  assert.equal(account.records.size, 4);
+  assert.equal(pushes(), 4);
+});
+
+test("files and settings: a write refused for want of room ends the sending, not the fetching", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const b = filesPort({ "agents/z.md": "from B" }, clock);
+  await new SyncEngine(account.backend(), memoryStore(), [filesLayer(b)]).tick();
+  const a = filesPort({ "agents/a.md": "A", "agents/b.md": "B", "agents/c.md": "C" }, clock);
+  const settings = settingsPort({ theme: "dark" }, clock);
+  const inner = account.backend();
+  let room = false;
+  let refusals = 0;
+  const notes: SyncNote[] = [];
+  const engine = new SyncEngine(
+    {
+      changes: inner.changes,
+      put: async (collection, id, expect, text) => {
+        // Removing a record takes no room; anything else is refused.
+        if (!room && text !== null) {
+          refusals++;
+          throw fullError();
+        }
+        return inner.put(collection, id, expect, text);
+      },
+    },
+    memoryStore(),
+    [settingsLayer(settings), filesLayer(a)],
+    { note: (event) => notes.push(event) },
+  );
+  await assert.rejects(engine.tick(), (err) => codeOf(err) === "SyncFull");
+  assert.equal(refusals, 1, "asked once a pass, not once per item");
+  assert.deepEqual(notes, []);
+  assert.equal(a.files["agents/z.md"], "from B", "what the account holds still arrives");
+  assert.equal(account.records.size, 1);
+  await assert.rejects(engine.tick(), (err) => codeOf(err) === "SyncFull");
+  assert.equal(refusals, 2);
+  room = true;
+  await engine.tick();
+  assert.equal(account.records.size, 5, "the settings and the three files, once there is room");
 });

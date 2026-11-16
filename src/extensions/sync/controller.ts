@@ -20,7 +20,7 @@ import { product } from "../../core/product";
 import { type Signal, signal } from "../../core/reactive/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { type SyncBackend, SyncEngine, type SyncLayer } from "../../core/sync/engine";
-import { codeOf, isRateLimited, messageOf, STANDING_CODES } from "../../core/sync/errors";
+import { codeOf, isFull, isRateLimited, messageOf, STANDING_CODES } from "../../core/sync/errors";
 import { planPrune } from "../../core/sync/history";
 import {
   type ChatsPort,
@@ -75,6 +75,8 @@ const REVIEW_POLL_MS = 2_000;
 const REVIEW_POLL_FOR_MS = 3 * 60_000;
 
 const KEYS_WAIT = "Waiting for this computer's keys to catch up";
+const FULL_ACTIVITY =
+  "Storage is full: nothing new is sent to the account until there is room. What it holds still arrives here.";
 
 export interface SyncActivity {
   /**
@@ -147,6 +149,12 @@ export class SyncController implements Disposable {
   /** A renewal of the claim came back "no": the pass ends after the action under way. */
   private leaseLost = false;
   private statusAt = 0;
+  /** How often the status was read (to tell "since the last read"). */
+  private statusReads = 0;
+  /** The status read during which the service refused a write for want of room (-1: none). */
+  private refusedAtRead = -1;
+  /** Whether "storage is full" was said in the log since the account last had room. */
+  private fullSaid = false;
   private snapshotAt = 0;
   /** How long to leave between two looks for something to snapshot. */
   private snapshotGap = SNAPSHOT_MS;
@@ -178,13 +186,18 @@ export class SyncController implements Disposable {
       put: (collection, id, expect, text, info) =>
         syncIpc.put(this.base(), collection, id, expect, text, info ?? null),
     };
-    const led = (layer: SyncLayer, on: () => boolean = () => true): SyncLayer => ({
-      name: layer.name,
+    const led = (layer: SyncLayer, on: () => boolean = () => true): SyncLayer => {
       // Only the window that holds the claim writes; the others just read the account. A
       // layer switched off doesn't run at all: what it kept of its last sync stays as it is.
       // Nor does any while the subscription is ended: a layer writes.
-      run: (ctx) => (this.leader && !this.isLapsed() && on() ? layer.run(ctx) : Promise.resolve()),
-    });
+      const runs = () => this.leader && !this.isLapsed() && on();
+      const observe = layer.observe?.bind(layer);
+      return {
+        name: layer.name,
+        ...(observe && { observe: (ctx) => (runs() ? observe(ctx) : Promise.resolve()) }),
+        run: (ctx) => (runs() ? layer.run(ctx) : Promise.resolve()),
+      };
+    };
     this.engine = new SyncEngine(
       backend,
       {
@@ -201,6 +214,7 @@ export class SyncController implements Disposable {
         // What the layers report: a conflict kept aside, one item that couldn't sync.
         note: (event) => this.note(event.text, event.kind === "failure"),
         stopped: () => this.leaseLost || this.disposed,
+        full: () => this.storageFull(),
       },
     );
     const timer = setInterval(() => {
@@ -238,6 +252,34 @@ export class SyncController implements Disposable {
   isLapsed(): boolean {
     const status = this.status.peek();
     return status?.state === "on" && typeof status.lapsedUntil === "number";
+  }
+
+  /**
+   * Whether the account has no room, as far as this computer knows: its usage is at its limit,
+   * or the service refused a write for want of room and the status wasn't read again since.
+   * Nothing new is sent meanwhile (no chat sealed and posted every minute only to be refused,
+   * no snapshot); what the account holds is still read and still arrives here.
+   */
+  private storageFull(): boolean {
+    const status = this.status.peek();
+    if (status?.state !== "on") return false;
+    if (status.storageLimit > 0 && status.usageBytes >= status.storageLimit) return true;
+    return this.refusedAtRead === this.statusReads;
+  }
+
+  /** The service refused a write for want of room: held until the status is read again. */
+  private noteRefused(): void {
+    this.refusedAtRead = this.statusReads;
+    // Read again at the next pass: it says whether there is room by then.
+    this.statusAt = 0;
+  }
+
+  /** Says that the account is full: as the activity, and once in the log until it has room. */
+  private showFull(at: number | null): void {
+    this.activity.value = { state: "error", message: FULL_ACTIVITY, at };
+    if (this.fullSaid) return;
+    this.fullSaid = true;
+    this.note(FULL_ACTIVITY, true);
   }
 
   /** Whether a pass is running now. */
@@ -323,6 +365,7 @@ export class SyncController implements Disposable {
         const ignored = settings.peek<unknown>("sync.ignoredSettings");
         return Array.isArray(ignored) && ignored.includes(key);
       },
+      now: () => Date.now(),
     };
   }
 
@@ -530,6 +573,7 @@ export class SyncController implements Disposable {
     }
     const status = await syncIpc.status(base);
     this.statusAt = Date.now();
+    this.statusReads++;
     const before = this.status.peek();
     this.status.value = status;
     if (status.state !== "on") {
@@ -681,15 +725,28 @@ export class SyncController implements Disposable {
       this.failures = 0;
       this.nextPassAt = 0;
       // (The subscription may have ended while the pass ran: that stays said.)
-      if (!this.isLapsed())
-        this.activity.value = {
-          state: this.leader ? "idle" : "other",
-          message: null,
-          at: Date.now(),
-        };
+      if (this.isLapsed()) return;
+      if (this.leader && this.storageFull()) {
+        // Read and fetched; nothing sent, for want of room. Said until there is room.
+        this.showFull(Date.now());
+        return;
+      }
+      this.fullSaid = false;
+      this.activity.value = {
+        state: this.leader ? "idle" : "other",
+        message: null,
+        at: Date.now(),
+      };
     } catch (err) {
       const code = codeOf(err);
-      if (code === "SyncOffline" || isRateLimited(err)) {
+      if (isFull(err)) {
+        // The account has no room. What it holds was still read and fetched; sending waits,
+        // and is tried again later, and later still each time: 1, 2, 5, 10 minutes.
+        this.failures++;
+        this.nextPassAt = Date.now() + backoffMs(this.failures);
+        this.noteRefused();
+        this.showFull(before.at);
+      } else if (code === "SyncOffline" || isRateLimited(err)) {
         // Tried again later, and later still each time it fails: 1, 2, 5, 10 minutes.
         this.failures++;
         this.nextPassAt = Date.now() + backoffMs(this.failures);
@@ -977,6 +1034,14 @@ export class SyncController implements Disposable {
     const project = this.project.peek();
     if (!collection || !project || !this.on("snapshots") || this.isLapsed()) return null;
     if (!force && Date.now() - this.snapshotAt < this.snapshotGap) return null;
+    // No room in the account: the folder isn't walked and sealed every few minutes only to be
+    // refused. One asked for by hand is still tried (and says why it failed).
+    // The snapshots history no longer keeps are still removed, which may make room.
+    if (!force && this.storageFull()) {
+      this.snapshotAt = Date.now();
+      await this.prune().catch(() => {});
+      return null;
+    }
     this.snapshotAt = Date.now();
     const everything =
       this.services.settings.peek<string | undefined>("sync.snapshotScope") === "everything";
@@ -997,8 +1062,12 @@ export class SyncController implements Disposable {
         baseline,
       );
     } catch (err) {
-      // No room: the snapshots history no longer keeps are removed, which may make some.
-      if (codeOf(err) === "SyncFull") await this.prune().catch(() => {});
+      // No room: the snapshots history no longer keeps are removed, which may make some. No
+      // other is tried until the status was read again.
+      if (isFull(err)) {
+        this.noteRefused();
+        await this.prune().catch(() => {});
+      }
       throw err;
     }
     if (!created) {

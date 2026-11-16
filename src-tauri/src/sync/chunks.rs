@@ -222,6 +222,28 @@ impl<'a> Uploader<'a> {
     }
 }
 
+/// The frames of a reply that are chunks still waited for. A reply with none of them (empty,
+/// or only chunks nobody asked for) is an error: asking again would never end.
+fn asked_for<'a>(
+    wanted: &[String],
+    frames: Vec<(String, &'a [u8])>,
+) -> Result<Vec<(String, &'a [u8])>> {
+    if frames.is_empty() {
+        return Err(Error::Sync("Sync", "A download came back empty.".into()));
+    }
+    let asked: Vec<(String, &[u8])> = frames
+        .into_iter()
+        .filter(|(id, _)| wanted.contains(id))
+        .collect();
+    if asked.is_empty() {
+        return Err(Error::Sync(
+            "Sync",
+            "A download brought back something other than what was asked for.".into(),
+        ));
+    }
+    Ok(asked)
+}
+
 /// Downloads and opens chunks. Returns them by id; a chunk the server lacks is an error.
 pub async fn fetch(api: &Api, ring: &Keyring, ids: &[String]) -> Result<HashMap<String, Vec<u8>>> {
     let mut out = HashMap::new();
@@ -234,10 +256,7 @@ pub async fn fetch(api: &Api, ring: &Keyring, ids: &[String]) -> Result<HashMap<
     while !wanted.is_empty() {
         let batch: Vec<String> = wanted.iter().take(HAVE_MAX).cloned().collect();
         let reply = api.download(&batch).await?;
-        let frames = unframe(&reply)?;
-        if frames.is_empty() {
-            return Err(Error::Sync("Sync", "A download came back empty.".into()));
-        }
+        let frames = asked_for(&wanted, unframe(&reply)?)?;
         for (id, sealed) in frames {
             if sealed.is_empty() {
                 return Err(Error::Sync(
@@ -290,5 +309,21 @@ mod tests {
         assert_eq!(got, vec![(a, &b"hello"[..]), (b, &b""[..])]);
         assert!(unframe(&buf[..buf.len() - 3]).is_err());
         assert!(unframe(&buf[..10]).is_err());
+    }
+
+    #[test]
+    fn a_reply_without_what_was_asked_for_is_an_error() {
+        let (a, b, c) = ("a".repeat(ID_LEN), "b".repeat(ID_LEN), "c".repeat(ID_LEN));
+        let wanted = vec![a.clone(), b.clone()];
+        // Only what is waited for is taken; the rest is left out.
+        let got = asked_for(
+            &wanted,
+            vec![(c.clone(), &b"x"[..]), (a.clone(), &b"y"[..])],
+        )
+        .unwrap();
+        assert_eq!(got, vec![(a, &b"y"[..])]);
+        // Nothing asked for among the frames: the loop that asks again must stop.
+        assert!(asked_for(&wanted, vec![(c, &b"x"[..])]).is_err());
+        assert!(asked_for(&wanted, Vec::new()).is_err());
     }
 }

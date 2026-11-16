@@ -127,14 +127,7 @@ test("team settings: a team never lowers a protection, approves for someone, or 
     assert.equal(teamMaySet(key, known), false, key);
   }
   // What a team is for: how the editor and the agent behave, not what they are allowed.
-  for (const key of [
-    "editor.tabSize",
-    "editor.formatOnSave",
-    "agent.model",
-    "files.exclude",
-    "git.blame.editorDecoration.enabled",
-    "editor.minimap.enabled",
-  ]) {
+  for (const key of ["editor.tabSize", "editor.formatOnSave", "agent.model", "files.exclude"]) {
     assert.equal(lowersGuard(key), false, key);
     assert.equal(teamMaySet(key, known), true, key);
   }
@@ -148,4 +141,172 @@ test("team settings: a team never lowers a protection, approves for someone, or 
   );
   assert.deepEqual(values, { "editor.tabSize": 2 });
   assert.deepEqual(refused.sort(), ["agent.deleteProtection", "editor.inlineCompletions.enabled"]);
+});
+
+test("team settings: a team never opens a server, the network, or a model to extensions", () => {
+  const known = () => true;
+  const refusedWhateverTheValue = [
+    // The IDE's own server, which lets agents outside it drive it.
+    "mcp.enabled",
+    "mcp.claudeCode.enabled",
+    "mcp.anythingToCome",
+    // Extensions calling a model, installing or updating by themselves.
+    "extensions.languageModelAccess",
+    "extensions.languageModelAllowed",
+    "extensions.autoUpdate",
+    "extensions.updateDelayHours",
+    "extensions.store.enabled",
+    // The shield over .env and key files, and what the agent may only read.
+    "agent.ignoreDefaults",
+    "agent.ignoreFiles",
+    "agent.readOnlyPaths",
+    // What is fetched from the network.
+    "markdown.preview.remoteImages",
+    "agent.docs.sources",
+    "agent.docs.renderJavaScript",
+    "agent.docs.maxPages",
+    "agent.webSearch.provider",
+    "agent.webFetch.model",
+    "agent.voice.provider",
+    "browser.embedSites",
+    "git.autofetch",
+    "git.autofetchPeriod",
+    // Other agents on this computer.
+    "agent.externalAgents.ideTools",
+    "agent.externalAgentChoices",
+    // The build this computer runs.
+    "update.channel",
+    "update.mode",
+    // Tasks, trust, confirmations, secrets.
+    "task.autoDetect",
+    "task.allowAutomaticTasks",
+    "browser.trustedInput",
+    "terminal.multiLinePasteWarning",
+    "explorer.confirmUndo",
+    "editor.secretFiles",
+    "files.readonlyFromPermissions",
+    "some.area.sandboxMode",
+    "telemetry.level",
+    "some.area.telemetryLevel",
+    // Programs, command lines, ports, places.
+    "git.path",
+    "some.tool.command",
+    "some.tool.executable",
+    "some.tool.args",
+    "some.tool.setupScript",
+    "http.proxy",
+    "some.service.endpoint",
+    "some.service.url",
+    "some.service.allowedHosts",
+    "some.area.hooks",
+    "debug.browserPane.debuggingPort",
+    "git.defaultCloneDirectory",
+    "agent.projectsFolder",
+    "terminal.env.windows",
+    "terminal.shell",
+    "terminal.shellArgs.linux",
+    "terminal.cwd",
+    "git.alwaysSignOff",
+    "debug.javascript.autoAttachFilter",
+  ];
+  for (const key of refusedWhateverTheValue) {
+    for (const value of [true, false, "x", [], undefined]) {
+      assert.equal(lowersGuard(key, value), true, `${key} = ${String(value)}`);
+      assert.equal(teamMaySet(key, known, value), false, `${key} = ${String(value)}`);
+    }
+  }
+  // Not fooled by "import".
+  assert.equal(lowersGuard("editor.updateImportsOnFileMove", "prompt"), false);
+  assert.equal(lowersGuard("some.area.autoImport", true), false);
+});
+
+test("team settings: a team may switch a feature off, never on", () => {
+  const known = () => true;
+  const switches = [
+    "editor.minimap.enabled",
+    "git.blame.editorDecoration.enabled",
+    "git.aiCommitMessage.enabled",
+    "lsp.enabled",
+    "notebook.languageServer.enabled",
+    "terminal.shellIntegration.enabled",
+    "testing.coverageToolbarEnabled",
+    "git.enableCommitSigning",
+    "terminal.enablePersistentSessions",
+    "some.new.feature.enabled",
+  ];
+  for (const key of switches) {
+    assert.equal(teamMaySet(key, known, false), true, `${key} off`);
+    assert.equal(teamMaySet(key, known, "off"), true, `${key} "off"`);
+    // On, anything that isn't plainly off, and a value nobody gave: not the team's.
+    for (const value of [true, "on", "true", 1, null, {}, undefined])
+      assert.equal(teamMaySet(key, known, value), false, `${key} = ${String(value)}`);
+    assert.equal(teamMaySet(key, known), false, `${key} with no value`);
+  }
+  // A model-calling feature's switch isn't the team's either way.
+  for (const key of ["agent.memory.enabled", "editor.inlineEdit.enabled", "ai.thing.enabled"])
+    assert.equal(teamMaySet(key, known, false), false, key);
+  // Ordinary preferences, whatever their value.
+  for (const [key, value] of [
+    ["editor.tabSize", 2],
+    ["editor.formatOnSave", true],
+    ["editor.wordWrap", "on"],
+    ["editor.rulers", [100]],
+    ["editor.codeActionsOnSave", { "source.organizeImports": true }],
+    ["editor.updateImportsOnFileMove", "always"],
+    ["files.exclude", { "**/dist": true }],
+    ["files.insertFinalNewline", true],
+    ["files.autoSave", "afterDelay"],
+    ["workbench.colorTheme", "Light+"],
+    ["workbench.iconTheme", "x"],
+    ["search.exclude", {}],
+    ["explorer.compactFolders", false],
+    ["terminal.fontSize", 12],
+    ["terminal.highlightCommands", true],
+    ["agent.model", "m"],
+    ["agent.maxSteps", 50],
+    ["editor.inlineCompletions.maxTokens", 64],
+  ] as const)
+    assert.equal(teamMaySet(key, known, value), true, key);
+});
+
+test("team settings: the filter reads the value, in language blocks and when publishing too", () => {
+  const known = () => true;
+  const { values, refused } = teamSettings(
+    {
+      "editor.minimap.enabled": false,
+      "lsp.enabled": true,
+      "mcp.enabled": true,
+      "mcp.claudeCode.enabled": false,
+      "extensions.languageModelAccess": true,
+      "agent.ignoreDefaults": false,
+      "agent.readOnlyPaths": [],
+      "markdown.preview.remoteImages": true,
+      "agent.docs.sources": [{ url: "https://evil.example" }],
+      "[python]": { "editor.minimap.enabled": true, "editor.stickyScroll.enabled": false },
+    },
+    known,
+  );
+  assert.deepEqual(values, {
+    "editor.minimap.enabled": false,
+    "[python]": { "editor.stickyScroll.enabled": false },
+  });
+  assert.deepEqual(refused.sort(), [
+    "[python].editor.minimap.enabled",
+    "agent.docs.sources",
+    "agent.ignoreDefaults",
+    "agent.readOnlyPaths",
+    "extensions.languageModelAccess",
+    "lsp.enabled",
+    "markdown.preview.remoteImages",
+    "mcp.claudeCode.enabled",
+    "mcp.enabled",
+  ]);
+  // A file published before this rule: what it may no longer hold goes at the next publish.
+  const merged = mergeTeamSettings(
+    JSON.stringify({ "mcp.enabled": true, "editor.tabSize": 2 }),
+    { "lsp.enabled": false, "git.graph.enabled": true },
+    known,
+  );
+  assert.deepEqual(JSON.parse(merged.text), { "editor.tabSize": 2, "lsp.enabled": false });
+  assert.deepEqual(merged.refused, ["git.graph.enabled"]);
 });

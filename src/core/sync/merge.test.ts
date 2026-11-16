@@ -5,10 +5,12 @@ import {
   conflictPath,
   type FileBase,
   fileRecordId,
+  isConflictCopy,
   type LocalFile,
   mergeSettings,
   planFiles,
   type RemoteFile,
+  stampSettings,
 } from "./merge";
 
 const none = () => false;
@@ -123,6 +125,124 @@ test("mergeSettings: nothing changed is nothing to do, and skipped settings stay
   assert.deepEqual(r.record.keys["accounts.serverUrl"], { v: "x", t: 1 }, "left as it was");
 });
 
+test("mergeSettings: with no memory of a sync, the account's value stands where the two differ", () => {
+  const remote = { keys: { theme: { v: "dark", t: 10 }, same: { v: 1, t: 10 } } };
+  // This computer's file is the newer one: that says nothing about which value is newer.
+  const r = mergeSettings({
+    local: { theme: "light", same: 1, mine: true },
+    base: {},
+    remote,
+    localTime: 999,
+    skip: none,
+  });
+  assert.deepEqual(r.apply, [{ key: "theme", value: "dark" }]);
+  assert.deepEqual(r.replaced, [{ key: "theme", value: "light" }], "and it is said");
+  assert.deepEqual(r.record.keys.theme, { v: "dark", t: 10 }, "the account's is left as it was");
+  assert.deepEqual(r.record.keys.mine, { v: true, t: 999 }, "what only this computer has is sent");
+  assert.deepEqual(r.base, { theme: '"dark"', same: "1", mine: "true" });
+  // The same with a memory of a sync that held nothing (said by `hasBase`): the later wins.
+  const known = mergeSettings({
+    local: { theme: "light" },
+    base: {},
+    hasBase: true,
+    remote,
+    localTime: 999,
+    skip: none,
+  });
+  assert.deepEqual(known.record.keys.theme, { v: "light", t: 999 });
+  assert.deepEqual(known.replaced, []);
+});
+
+test("mergeSettings: a setting removed elsewhere isn't brought back by a computer with no memory", () => {
+  const remote = { keys: { gone: { d: true as const, t: 5 }, kept: { v: 1, t: 5 } } };
+  const r = mergeSettings({
+    local: { gone: "old value", kept: 1 },
+    base: {},
+    remote,
+    localTime: 999,
+    skip: none,
+  });
+  assert.deepEqual(r.apply, [{ key: "gone", value: undefined }]);
+  assert.deepEqual(r.replaced, [{ key: "gone", value: "old value" }]);
+  assert.equal(r.recordChanged, false, "nothing is told to the account");
+  assert.deepEqual(r.record.keys.gone, { d: true, t: 5 });
+  assert.deepEqual(r.base, { kept: "1" });
+  // A computer that remembers its sync and sets the setting anew does send it.
+  const again = mergeSettings({
+    local: { gone: "set again", kept: 1 },
+    base: { kept: "1" },
+    remote,
+    localTime: 999,
+    skip: none,
+  });
+  assert.deepEqual(again.record.keys.gone, { v: "set again", t: 999 });
+  assert.deepEqual(again.apply, []);
+});
+
+test("mergeSettings: a change is dated by when it was seen, not by the file's time", () => {
+  const base = { a: "1", b: "1" };
+  const remote = { keys: { a: { v: 3, t: 200 }, b: { v: 3, t: 200 } } };
+  // Both changed here at 100 (a) and 250 (b); the file was rewritten at 900 for another reason.
+  const r = mergeSettings({
+    local: { a: 2, b: 2 },
+    base,
+    remote,
+    localTime: 900,
+    localTimes: { a: 100, b: 250 },
+    skip: none,
+  });
+  assert.deepEqual(r.apply, [{ key: "a", value: 3 }], "the older change here gives way");
+  assert.deepEqual(r.record.keys.b, { v: 2, t: 250 }, "the newer one wins, with its own date");
+  assert.deepEqual(r.base, { a: "3", b: "2" });
+  // A change only this computer made is sent with its own date too.
+  const sent = mergeSettings({
+    local: { a: 2 },
+    base: { a: "1" },
+    remote: { keys: { a: { v: 1, t: 1 } } },
+    localTime: 900,
+    localTimes: { a: 100 },
+    skip: none,
+  });
+  assert.deepEqual(sent.record.keys.a, { v: 2, t: 100 });
+});
+
+test("stampSettings: a change keeps the date it was first seen at", () => {
+  const skip = (key: string) => key === "sync.projects";
+  const first = stampSettings({
+    local: { a: 2, same: 1, added: true, "sync.projects": { x: 1 } },
+    base: { a: "1", same: "1", removed: '"x"' },
+    stamps: {},
+    seenAt: 100,
+    skip,
+  });
+  assert.equal(first.changed, true);
+  assert.deepEqual(first.stamps, {
+    a: { c: "2", t: 100 },
+    added: { c: "true", t: 100 },
+    removed: { c: "", t: 100 },
+  });
+  // Seen again later (the file was rewritten since): the dates stay.
+  const again = stampSettings({
+    local: { a: 2, same: 1, added: true, "sync.projects": { x: 2 } },
+    base: { a: "1", same: "1", removed: '"x"' },
+    stamps: first.stamps,
+    seenAt: 900,
+    skip,
+  });
+  assert.equal(again.changed, false);
+  assert.deepEqual(again.stamps, first.stamps);
+  // Changed once more: dated anew. Back as it was synced, or synced: no date any more.
+  const moved = stampSettings({
+    local: { a: 5, same: 1, removed: "x" },
+    base: { a: "1", same: "1", removed: '"x"', added: "true" },
+    stamps: first.stamps,
+    seenAt: 900,
+    skip,
+  });
+  assert.equal(moved.changed, true);
+  assert.deepEqual(moved.stamps, { a: { c: "5", t: 900 }, added: { c: "", t: 900 } });
+});
+
 const files = (o: Record<string, LocalFile>) => new Map(Object.entries(o));
 const remotes = (o: Record<string, RemoteFile>) => new Map(Object.entries(o));
 
@@ -211,6 +331,21 @@ test("conflictPath and fileRecordId", () => {
   assert.equal(conflictPath("skills/a.b/SKILL.md"), "skills/a.b/SKILL.conflict.md");
   assert.equal(conflictPath("agents/README"), "agents/README.conflict");
   assert.equal(conflictPath("x/.hidden"), "x/.hidden.conflict");
+  // The copies after the first are numbered, so none is written over.
+  assert.equal(conflictPath("keybindings.json", 1), "keybindings.conflict.json");
+  assert.equal(conflictPath("keybindings.json", 2), "keybindings.conflict-2.json");
+  assert.equal(conflictPath("skills/a.b/SKILL.md", 12), "skills/a.b/SKILL.conflict-12.md");
+  assert.equal(conflictPath("agents/README", 3), "agents/README.conflict-3");
+  for (const copy of [
+    "keybindings.conflict.json",
+    "keybindings.conflict-2.json",
+    "skills/a.b/SKILL.conflict-12.md",
+    "agents/README.conflict",
+    "agents/README.conflict-3",
+  ])
+    assert.equal(isConflictCopy(copy), true, copy);
+  for (const plain of ["keybindings.json", "agents/conflict.md", "skills/x.conflicts/SKILL.md"])
+    assert.equal(isConflictCopy(plain), false, plain);
   assert.equal(fileRecordId("snippets/my snippets.json"), "snippets__my_20_snippets.json");
   const long = `skills/${"a".repeat(100)}/SKILL.md`;
   const other = `skills/${"a".repeat(101)}/SKILL.md`;

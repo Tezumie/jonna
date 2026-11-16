@@ -26,6 +26,15 @@ export const STANDING_CODES: readonly string[] = [
 ];
 
 /**
+ * The account has no room left (507). Not about the one item either, but it doesn't end the
+ * pass where it stands: nothing more is sent, what the account holds is still fetched, and the
+ * pass then ends as failed with it (see `LayerContext.noRoom`).
+ */
+export function isFull(err: unknown): boolean {
+  return codeOf(err) === "SyncFull";
+}
+
+/**
  * An error that isn't about the one item being synced: no connection, the service asking to
  * slow down, sync gone off. Trying the next item would only fail the same way, so the pass
  * ends and reports it.

@@ -59,7 +59,11 @@ function quiet(code: string): boolean {
 }
 
 function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (err instanceof Error) return err.message;
+  // An IPC error is a plain object with a message.
+  return err && typeof err === "object" && "message" in err
+    ? String((err as { message: unknown }).message)
+    : String(err);
 }
 
 /** The team a profile names, when it is one this code can read. */
@@ -95,6 +99,8 @@ export class TeamController implements Disposable {
   private disposed = false;
   /** Everything that touches the cache, one after the other. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** The last refresh failed on this computer (not for want of a connection): the next asks again. */
+  private retry = false;
   /** The refresh under way: asked again meanwhile, it is the one returned. */
   private refreshing: Promise<RefreshResult> | null = null;
 
@@ -193,18 +199,30 @@ export class TeamController implements Disposable {
       this.deactivate();
     }
     this.team.value = { id: team.id, name: team.name, role: team.role, publisher: team.publisher };
-    // What is here applies first, before the service is asked (and when it can't be).
-    const kept = await teamIpc.cache(team.id);
-    this.take(kept);
-    await this.materialize(team.id);
-
-    const wanted = itemsToFetch(this.items.peek(), this.cached).length > 0;
-    const moved = team.rev !== this.rev || kept.fetchedAt === 0;
-    if (!options.force && !moved && !wanted) return this.result();
-
     let fetched = 0;
     let failed = 0;
+    /** Why what is on this computer couldn't be applied (null: it was). */
+    let applyFailure: unknown = null;
     try {
+      // What is here applies first, before the service is asked (and when it can't be). Inside
+      // the try: a cache that can't be read or applied is a stated problem, not a refresh
+      // that fails with nothing said, time after time.
+      const kept = await teamIpc.cache(team.id);
+      this.take(kept);
+      try {
+        await this.materialize(team.id);
+      } catch (err) {
+        // The service is still asked: a fresh copy of the library may be what mends it, and
+        // applying that one says what is wrong if it fails too.
+        applyFailure = err;
+      }
+
+      const wanted = itemsToFetch(this.items.peek(), this.cached).length > 0;
+      const moved = team.rev !== this.rev || kept.fetchedAt === 0;
+      // (After a refresh that failed on this computer, the service is asked again though
+      // nothing moved: what it stated stays stated until a refresh goes through.)
+      if (!options.force && !moved && !wanted && !applyFailure && !this.retry) return this.result();
+
       const listed = await teamIpc.library(base, team.rev);
       if (!listed) {
         // The service says the account is in no team (the profile here is older).
@@ -227,6 +245,7 @@ export class TeamController implements Disposable {
         this.take(await teamIpc.cache(id));
       }
       await this.materialize(id);
+      this.retry = false;
       batch(() => {
         this.lastRefresh.value = Date.now();
         this.problem.value = failed
@@ -239,7 +258,14 @@ export class TeamController implements Disposable {
         await this.leave();
         return this.result();
       }
+      if (applyFailure && quiet(code)) {
+        // Not reachable, and what is here couldn't be applied either: that is the thing to say.
+        this.retry = true;
+        this.problem.value = `The team's library couldn't be applied on this computer: ${messageOf(applyFailure)}`;
+        return this.result(fetched, failed);
+      }
       // Kept quiet: the cache keeps applying, and the next refresh tries again.
+      this.retry = !quiet(code);
       this.problem.value = quiet(code)
         ? code.endsWith("SignedOut")
           ? "Sign in again to read your team's library; what is on this computer keeps applying."

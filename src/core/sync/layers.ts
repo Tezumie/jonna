@@ -7,16 +7,19 @@
 // chats names it.
 import type { SyncPut, SyncUserFile, SyncUserFiles } from "../ipc/sync";
 import type { LayerContext, SyncLayer } from "./engine";
-import { messageOf, stopsPass } from "./errors";
+import { isFull, messageOf, stopsPass } from "./errors";
 import {
   conflictPath,
   type FileBase,
   fileRecordId,
+  isConflictCopy,
   type LocalFile,
   mergeSettings,
   planFiles,
   type RemoteFile,
+  type SettingStamp,
   type SettingsRecord,
+  stampSettings,
 } from "./merge";
 
 // ---------------------------------------------------------------- settings
@@ -32,11 +35,62 @@ export interface SettingsPort {
   apply(edits: { key: string; value: unknown }[]): Promise<void>;
   /** Settings that stay on this computer. */
   skip(key: string): boolean;
+  /** The time now, in ms (absent: the clock's). */
+  now?(): number;
+}
+
+/** What this computer keeps of its settings' last sync. */
+interface SettingsBase {
+  /** Key to the canonical JSON of its value at the last sync. */
+  keys: Record<string, string>;
+  /** This computer has synced its settings: an empty `keys` then says "none", not "never". */
+  synced?: true;
+  /** When each setting changed here since then was first seen changed. */
+  stamps?: Record<string, SettingStamp>;
+}
+
+type LocalSettings = { values: Record<string, unknown>; mtimeMs: number; missing?: boolean };
+
+/** The sentence for settings here that gave way to the account's with no history to go by. */
+function replacedSentence(replaced: readonly { key: string; value: unknown }[]): string {
+  const shown = replaced.slice(0, 8).map(({ key, value }) => {
+    const was = JSON.stringify(value) ?? "";
+    return was.length <= 40 ? `${key} (was ${was})` : key;
+  });
+  const more = replaced.length - shown.length;
+  return `This computer had no record of an earlier sync, so where its settings differed from the account's, the account's were kept: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`;
 }
 
 export function settingsLayer(port: SettingsPort): SyncLayer {
+  const baseOf = (ctx: LayerContext) => ctx.base<SettingsBase>("settings", () => ({ keys: {} }));
+  /**
+   * Dates what changed here since the last sync, the first time it is seen changed. The
+   * settings file's own time isn't a change's time: the app writes the file too.
+   */
+  const stamp = (ctx: LayerContext, local: LocalSettings): SettingsBase => {
+    const base = baseOf(ctx);
+    // No file has no opinion, and so nothing to date.
+    if (local.missing) return base;
+    const now = port.now?.() ?? Date.now();
+    const next = stampSettings({
+      local: local.values,
+      base: base.keys,
+      stamps: base.stamps ?? {},
+      seenAt: local.mtimeMs > 0 && local.mtimeMs <= now ? local.mtimeMs : now,
+      skip: port.skip,
+    });
+    if (next.changed) {
+      base.stamps = next.stamps;
+      ctx.changed();
+    }
+    return base;
+  };
   return {
     name: "settings",
+    async observe(ctx) {
+      const local = await port.read();
+      if (local) stamp(ctx, local);
+    },
     async run(ctx) {
       const record = ctx.record("settings", "user");
       if (record?.unreadable) return;
@@ -47,7 +101,9 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
         const parsed = JSON.parse(record.text) as Partial<SettingsRecord>;
         if (parsed.keys && typeof parsed.keys === "object") remote = { keys: parsed.keys };
       }
-      const base = ctx.base<{ keys: Record<string, string> }>("settings", () => ({ keys: {} }));
+      const base = stamp(ctx, local);
+      const localTimes: Record<string, number> = {};
+      for (const [key, seen] of Object.entries(base.stamps ?? {})) localTimes[key] = seen.t;
       const result = mergeSettings({
         local: local.missing ? {} : local.values,
         // No file: what was synced before says nothing about now (compared with it, every
@@ -55,9 +111,14 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
         base: local.missing ? {} : base.keys,
         remote,
         localTime: local.mtimeMs,
+        localTimes,
+        hasBase: !local.missing && (base.synced === true || Object.keys(base.keys).length > 0),
         skip: port.skip,
       });
       if (result.apply.length > 0) await port.apply(result.apply);
+      // Said once: after this pass the two agree, and there is a record of a sync.
+      if (result.replaced.length > 0)
+        ctx.note({ kind: "conflict", text: replacedSentence(result.replaced) });
       if (result.recordChanged) {
         // Readable by the service: how many settings, not which.
         const count = Object.values(result.record.keys).filter((k) => !k.d).length;
@@ -67,8 +128,9 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
         // Someone wrote first: merged again at the next pass, against theirs.
         if (version === null) return;
       }
-      if (JSON.stringify(base.keys) !== JSON.stringify(result.base)) {
+      if (JSON.stringify(base.keys) !== JSON.stringify(result.base) || base.synced !== true) {
         base.keys = result.base;
+        base.synced = true;
         ctx.changed();
       }
     },
@@ -100,6 +162,8 @@ interface FileRecord {
 }
 
 const FILES = "files";
+/** Past this many conflict copies of one file, the last one is written over. */
+const MAX_CONFLICT_COPIES = 99;
 
 export function filesLayer(port: FilesPort): SyncLayer {
   return {
@@ -110,7 +174,9 @@ export function filesLayer(port: FilesPort): SyncLayer {
       // now): present and unchanged as far as sync goes. Nothing is done with it, and what was
       // synced of it before stays as it is.
       const kept = new Set(scan.kept);
-      const out = (path: string) => kept.has(path) || !port.include(path);
+      // A conflict copy stays beside its file on the computer that made it, whatever the scan
+      // or the account lists.
+      const out = (path: string) => kept.has(path) || isConflictCopy(path) || !port.include(path);
       const local = new Map<string, LocalFile>();
       for (const f of scan.files) {
         if (!out(f.path)) local.set(f.path, { hash: f.hash, mtimeMs: f.mtimeMs });
@@ -155,10 +221,45 @@ export function filesLayer(port: FilesPort): SyncLayer {
         const written = await port.write(path, there.text);
         base.files[path] = { hash: written?.hash ?? there.hash, version };
       };
+      /**
+       * Keeps the losing side of a conflict beside the file, under the first conflict name
+       * that is free (or already holds this very text), so an earlier copy is never written
+       * over. Returns the name.
+       */
+      const keepAside = async (path: string, text: string): Promise<string> => {
+        const first = conflictPath(path);
+        let aside = first;
+        for (let copy = 1; copy <= MAX_CONFLICT_COPIES; copy++) {
+          aside = conflictPath(path, copy);
+          let there: string | null;
+          try {
+            there = await port.read(aside);
+          } catch (err) {
+            // A backend that knows only the first name (it refuses the numbered ones): the
+            // copy goes there, as it did before copies were numbered.
+            if (copy > 1 && /not a synced file/i.test(messageOf(err))) {
+              aside = first;
+              break;
+            }
+            throw err;
+          }
+          if (there === text) return aside;
+          if (there === null) break;
+        }
+        await port.write(aside, text);
+        return aside;
+      };
 
       for (const action of planFiles(local, known, remote)) {
         if (ctx.stopped()) break;
         const path = action.path;
+        // No room in the account: nothing is sent (it waits for a later pass), and what the
+        // account holds still arrives.
+        if (
+          ctx.full() &&
+          (action.kind === "upload" || (action.kind === "conflict" && action.winner === "local"))
+        )
+          continue;
         // A scan that didn't see everything can't say a file is gone, and a file it didn't
         // see isn't removed on the account's word either: both wait for a whole scan.
         if (!scan.complete && (action.kind === "deleteRemote" || action.kind === "deleteLocal"))
@@ -192,14 +293,14 @@ export function filesLayer(port: FilesPort): SyncLayer {
               break;
             case "conflict": {
               // The side that loses is kept beside the file, never thrown away.
-              const aside = conflictPath(path);
+              let aside = conflictPath(path);
               if (action.winner === "local") {
                 const theirs = contents.get(path)?.text;
-                if (theirs !== undefined) await port.write(aside, theirs);
+                if (theirs !== undefined) aside = await keepAside(path, theirs);
                 await upload(path);
               } else {
                 const mine = await port.read(path);
-                if (mine !== null) await port.write(aside, mine);
+                if (mine !== null) aside = await keepAside(path, mine);
                 await download(path);
               }
               ctx.note({
@@ -211,6 +312,10 @@ export function filesLayer(port: FilesPort): SyncLayer {
           }
           ctx.changed();
         } catch (err) {
+          if (isFull(err)) {
+            ctx.noRoom(err);
+            continue;
+          }
           if (stopsPass(err)) throw err;
           // One file that can't sync doesn't hold up the rest.
           ctx.note({ kind: "failure", text: `${path} couldn't sync: ${messageOf(err)}` });
@@ -325,6 +430,8 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
       const upload = async (id: string, expect: number | null): Promise<void> => {
         const chat = chats.get(id);
         if (!chat) return;
+        // No room in the account: a chat isn't sealed and sent only to be refused. It waits.
+        if (ctx.full()) return;
         // Only a chat whose folder syncs from this computer (or one with no folder) is sent:
         // a project that stopped syncing here, or was deleted from the account, isn't
         // uploaded again behind the person's back.
@@ -459,6 +566,11 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
             }
           }
         } catch (err) {
+          // No room: said once by the pass, not once per chat; the chats still to fetch are.
+          if (isFull(err)) {
+            ctx.noRoom(err);
+            continue;
+          }
           if (stopsPass(err)) throw err;
           // One chat that can't sync doesn't hold up the rest.
           ctx.note({ kind: "failure", text: `A chat couldn't sync: ${messageOf(err)}` });

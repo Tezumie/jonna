@@ -3,7 +3,9 @@
 // has, and says what to send, what to apply here, and the new base.
 //
 // - Settings merge by key: two different settings changed on two computers both survive; the
-//   same one changed on both takes the later change.
+//   same one changed on both takes the later change (each change dated when it was first seen,
+//   not by the file's time). A computer with no memory of a sync takes the account's word
+//   where the two differ.
 // - Files (keybindings, rules, snippets, skills...) are whole: changed on one side, that side's
 //   version is taken; changed on both, the later one wins and the other is kept beside it.
 
@@ -43,8 +45,20 @@ export interface SettingsMergeInput {
   /** Key to the canonical JSON of its value at the last sync (absent: it wasn't set). */
   base: Record<string, string>;
   remote: SettingsRecord | null;
-  /** When the settings file last changed (its changes are dated by it). */
+  /**
+   * When the settings file last changed: the date of a change here that has none of its own
+   * in `localTimes`. The file is also written for reasons that aren't the person's (the app's
+   * own notes in it), so this alone can make an old change look new.
+   */
   localTime: number;
+  /** When each setting changed here was first seen changed (`stampSettings`), by key. */
+  localTimes?: Readonly<Record<string, number>>;
+  /**
+   * Whether this computer remembers a sync (absent: whether `base` has anything). Without one
+   * (a computer joining, or one that lost what it kept) nothing says which side changed, so
+   * the account's word is taken where the two differ.
+   */
+  hasBase?: boolean;
   /** Settings that stay on this computer. */
   skip: (key: string) => boolean;
 }
@@ -56,12 +70,54 @@ export interface SettingsMergeResult {
   /** What to change in the settings file here; `value` undefined removes the key. */
   apply: { key: string; value: unknown }[];
   base: Record<string, string>;
+  /**
+   * Values this computer had that gave way to the account's with no history to go by (each is
+   * in `apply` too): to be said, so they aren't lost unseen.
+   */
+  replaced: { key: string; value: unknown }[];
+}
+
+/** When a setting changed here was first seen changed: the value it had then, and the time. */
+export interface SettingStamp {
+  /** The value's canonical JSON ("" when the setting was removed). */
+  c: string;
+  /** In ms. */
+  t: number;
+}
+
+/**
+ * Dates the settings changed here since the last sync, each at the moment it is first seen to
+ * differ from the base (called at every pass, also the ones that can't reach the account).
+ * `seenAt` is the settings file's time when that is known and not in the future, else now: the
+ * file's time can only be later than the change, never earlier, and a stamp, once made, stays
+ * while the value does. So a later rewrite of the file (the app noting something of its own in
+ * it) no longer makes an old change look new. Returns the stamps to keep; `changed` says
+ * whether they differ from `stamps`.
+ */
+export function stampSettings(input: {
+  local: Record<string, unknown>;
+  base: Readonly<Record<string, string>>;
+  stamps: Readonly<Record<string, SettingStamp>>;
+  seenAt: number;
+  skip: (key: string) => boolean;
+}): { stamps: Record<string, SettingStamp>; changed: boolean } {
+  const stamps: Record<string, SettingStamp> = {};
+  for (const key of new Set([...Object.keys(input.local), ...Object.keys(input.base)])) {
+    if (key === "__proto__" || input.skip(key)) continue;
+    const now = Object.hasOwn(input.local, key) ? canonical(input.local[key]) : undefined;
+    if (now === (Object.hasOwn(input.base, key) ? input.base[key] : undefined)) continue;
+    const before = Object.hasOwn(input.stamps, key) ? input.stamps[key] : undefined;
+    stamps[key] = before && before.c === (now ?? "") ? before : { c: now ?? "", t: input.seenAt };
+  }
+  return { stamps, changed: canonical(stamps) !== canonical(input.stamps) };
 }
 
 export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
   const record: SettingsRecord = { keys: { ...(input.remote?.keys ?? {}) } };
   const base: Record<string, string> = {};
   const apply: { key: string; value: unknown }[] = [];
+  const replaced: { key: string; value: unknown }[] = [];
+  const hasBase = input.hasBase ?? Object.keys(input.base).length > 0;
   let recordChanged = false;
   const keys = new Set([
     ...Object.keys(input.local),
@@ -77,11 +133,11 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
     const remote = entry ? (entry.d ? undefined : canonical(entry.v)) : before;
     const localChanged = local !== before;
     const remoteChanged = entry !== undefined && remote !== before;
+    // When the change here was made: its own date when it has one, else the file's.
+    const localTime = input.localTimes?.[key] ?? input.localTime;
     const takeLocal = () => {
       record.keys[key] =
-        local === undefined
-          ? { d: true, t: input.localTime }
-          : { v: input.local[key], t: input.localTime };
+        local === undefined ? { d: true, t: localTime } : { v: input.local[key], t: localTime };
       recordChanged = true;
       if (local !== undefined) base[key] = local;
     };
@@ -89,16 +145,22 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
       apply.push({ key, value: entry?.d ? undefined : entry?.v });
       if (remote !== undefined) base[key] = remote;
     };
-    if (localChanged && remoteChanged) {
+    if (!hasBase && entry !== undefined && local !== undefined && local !== remote) {
+      // No memory of a sync, and the two differ (the account has another value, or says the
+      // setting was removed): nothing tells an old value here from a new one, so the account's
+      // stands, and a setting removed elsewhere isn't brought back.
+      replaced.push({ key, value: input.local[key] });
+      takeRemote();
+    } else if (localChanged && remoteChanged) {
       if (local === remote) {
         if (local !== undefined) base[key] = local;
-      } else if ((entry?.t ?? 0) > input.localTime) takeRemote();
+      } else if ((entry?.t ?? 0) > localTime) takeRemote();
       else takeLocal();
     } else if (localChanged) takeLocal();
     else if (remoteChanged) takeRemote();
     else if (before !== undefined) base[key] = before;
   }
-  return { record, recordChanged, apply, base };
+  return { record, recordChanged, apply, base, replaced };
 }
 
 // ---------------------------------------------------------------- files
@@ -185,11 +247,22 @@ export function planFiles(
   return actions;
 }
 
-/** Where the losing side of a conflict is kept: `name.conflict.ext`, beside the file. */
-export function conflictPath(path: string): string {
+/**
+ * Where the losing side of a conflict is kept, beside the file: `name.conflict.ext`, and for
+ * the ones after it (`copy` 2, 3...) `name.conflict-2.ext`, so an earlier copy isn't written
+ * over.
+ */
+export function conflictPath(path: string, copy = 1): string {
   const slash = path.lastIndexOf("/");
   const dot = path.lastIndexOf(".");
-  return dot > slash + 1 ? `${path.slice(0, dot)}.conflict${path.slice(dot)}` : `${path}.conflict`;
+  const mark = copy > 1 ? `.conflict-${Math.floor(copy)}` : ".conflict";
+  return dot > slash + 1 ? `${path.slice(0, dot)}${mark}${path.slice(dot)}` : `${path}${mark}`;
+}
+
+/** Whether a name is a conflict copy (`conflictPath`): kept beside its file, never synced. */
+export function isConflictCopy(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return /\.conflict(-\d+)?(\.|$)/.test(name);
 }
 
 /** A record id for a file path: readable for ordinary names, never longer than a record id. */

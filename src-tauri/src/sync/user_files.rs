@@ -2,6 +2,7 @@
 //! subagents, commands, output styles and skills. Each has a stable name (`snippets/x.json`,
 //! `skills/review/SKILL.md`) that is the same on every computer, whatever folder it is in here.
 
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
@@ -54,13 +55,67 @@ const FOLDERS: &[(&str, &[&str])] = &[
     ("output-styles", &[".md"]),
 ];
 
+/// Where a conflict copy's mark is in a name: `.conflict`, or `.conflict-2` and so on for a
+/// later copy, before the ending or at the name's end.
+fn conflict_mark(name: &str) -> Option<std::ops::Range<usize>> {
+    const MARK: &str = ".conflict";
+    let mut from = 0;
+    while let Some(at) = name.get(from..).and_then(|rest| rest.find(MARK)) {
+        let start = from + at;
+        let mut end = start + MARK.len();
+        if let Some(digits) = name.get(end..).and_then(|rest| rest.strip_prefix('-')) {
+            let count = digits.bytes().take_while(u8::is_ascii_digit).count();
+            if count > 0 {
+                end += 1 + count;
+            }
+        }
+        if end == name.len() || name.get(end..).is_some_and(|rest| rest.starts_with('.')) {
+            return Some(start..end);
+        }
+        from = start + 1;
+    }
+    None
+}
+
 /// A file kept beside the one it lost to; never synced itself.
 fn is_conflict_copy(name: &str) -> bool {
-    name.contains(".conflict.") || name.ends_with(".conflict")
+    conflict_mark(name).is_some()
 }
 
 fn hash(bytes: &[u8]) -> String {
     super::crypto::b64(&Sha256::digest(bytes)[..16])
+}
+
+/// Names that were refused here because, on this file system, they are another file's name
+/// in other letter case (the place each stands for, and the name): listed as kept by the next
+/// scans while that is still so, so they are neither asked for again nor taken to be deleted.
+static OTHER_CASE: std::sync::Mutex<BTreeSet<(PathBuf, String)>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Whether `file` (somewhere under `base`) is there only under a name in other letter case:
+/// a file system that doesn't tell `Review` from `review` finds it, and its folder lists no
+/// such name. Writing it would write the other file; removing it would remove the other file.
+fn other_case(base: &Path, file: &Path) -> bool {
+    let Ok(rest) = file.strip_prefix(base) else {
+        return false;
+    };
+    let mut at = base.to_path_buf();
+    for part in rest.components() {
+        let name = part.as_os_str();
+        let next = at.join(name);
+        // Nothing there under any spelling: a new name.
+        if std::fs::symlink_metadata(&next).is_err() {
+            return false;
+        }
+        let Ok(entries) = std::fs::read_dir(&at) else {
+            return false;
+        };
+        if !entries.flatten().any(|e| e.file_name() == name) {
+            return true;
+        }
+        at = next;
+    }
+    false
 }
 
 fn mtime(meta: &std::fs::Metadata) -> u64 {
@@ -81,14 +136,19 @@ impl Roots {
                     || !matches!(Path::new(p).components().next(), Some(Component::Normal(_)))
                     || Path::new(p).components().count() != 1
                     || p.contains('\\')
-                    || p.contains(':')
+                    // A device's name on Windows, a trailing dot or space, a stream: a file
+                    // of that name can't be written there as it is (the snapshots' own check).
+                    || super::snapshot::unsafe_name(p)
             })
         {
             return Err(refused());
         }
-        // A conflict copy (`name.conflict.ext`) lives where its file does.
+        // A conflict copy (`name.conflict.ext`, `name.conflict-2.ext`) lives where its file does.
         let name = parts.last().copied().unwrap_or("");
-        let plain = name.replacen(".conflict", "", 1);
+        let plain = match conflict_mark(name) {
+            Some(mark) => format!("{}{}", &name[..mark.start], &name[mark.end..]),
+            None => name.to_string(),
+        };
         match parts.as_slice() {
             [single] if FILES.contains(&plain.as_str()) => Ok(self.config.join(single)),
             [folder, file] if *folder != "skills" => {
@@ -110,6 +170,43 @@ impl Roots {
         }
     }
 
+    /// The folder a resolved place is under: the skills folder or the config folder.
+    fn base_of(&self, file: &Path) -> &Path {
+        match &self.skills {
+            Some(skills) if file.starts_with(skills) => skills,
+            _ => &self.config,
+        }
+    }
+
+    /// `resolve`, with whether the name is another file's in other letter case here; such a
+    /// name is remembered, for the scans to list as kept.
+    fn place(&self, path: &str) -> Result<(PathBuf, bool)> {
+        let file = self.resolve(path)?;
+        let clash = other_case(self.base_of(&file), &file);
+        if clash {
+            OTHER_CASE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert((file.clone(), path.to_string()));
+        }
+        Ok((file, clash))
+    }
+
+    /// The names refused for their letter case that still can't be told apart here.
+    fn kept_for_case(&self, out: &mut Scan) {
+        let mut names = OTHER_CASE.lock().unwrap_or_else(|e| e.into_inner());
+        let mine = |file: &Path| {
+            file.starts_with(&self.config)
+                || self.skills.as_ref().is_some_and(|s| file.starts_with(s))
+        };
+        names.retain(|(file, _)| !mine(file) || other_case(self.base_of(file), file));
+        for (file, name) in names.iter() {
+            if mine(file) && !out.kept.contains(name) {
+                out.kept.push(name.clone());
+            }
+        }
+    }
+
     fn note(&self, out: &mut Scan, name: String, file: &Path) {
         if out.files.len() >= MAX_FILES {
             out.complete = false;
@@ -127,7 +224,9 @@ impl Roots {
         if !meta.is_file() {
             return;
         }
-        if meta.len() > MAX_BYTES {
+        // Too large, or a name that can't be a synced file's (one no Windows computer could
+        // write, say): there, and left alone on both sides.
+        if meta.len() > MAX_BYTES || self.resolve(&name).is_err() {
             out.kept.push(name);
             return;
         }
@@ -217,11 +316,17 @@ impl Roots {
             // No home folder to look in: the skills aren't known to be gone.
             None => out.complete = false,
         }
+        self.kept_for_case(&mut out);
         out
     }
 
     pub fn read(&self, path: &str) -> Result<Option<String>> {
-        match std::fs::read_to_string(self.resolve(path)?) {
+        let (file, clash) = self.place(path)?;
+        // Another file's name in other letter case: this one isn't here.
+        if clash {
+            return Ok(None);
+        }
+        match std::fs::read_to_string(file) {
             Ok(text) => Ok(Some(text)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
@@ -230,7 +335,17 @@ impl Roots {
 
     /// Writes a synced file (`text` None removes it). Returns its new entry.
     pub fn write(&self, path: &str, text: Option<&str>) -> Result<Option<UserFile>> {
-        let file = self.resolve(path)?;
+        let (file, clash) = self.place(path)?;
+        if clash {
+            // Removing it would remove the other file; writing it would replace the other's
+            // text. Neither: the two names can't both be here.
+            return match text {
+                None => Ok(None),
+                Some(_) => Err(Error::Invalid(format!(
+                    "another file here has this name in other letter case, so it isn't synced to this computer: {path}"
+                ))),
+            };
+        }
         let Some(text) = text else {
             return match std::fs::remove_file(&file) {
                 Ok(()) => Ok(None),
@@ -325,9 +440,87 @@ mod tests {
             "",
             "memory/a.md",
             "skills/a/b/c/d/e/f/g.md",
+            // Names a Windows computer can't write as they are.
+            "snippets/nul.json",
+            "skills/review/AUX.md",
+            "skills/com1/SKILL.md",
+            "skills/review./SKILL.md",
+            "skills/review/notes.md ",
+            "agents/x.md.",
         ] {
             assert!(roots.resolve(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_name_no_synced_file_may_have_is_kept_not_sent() {
+        let (_dir, roots) = roots();
+        roots
+            .write("skills/review/SKILL.md", Some("# Review"))
+            .unwrap();
+        // Made outside the app. (Windows itself refuses such a name: then there is nothing
+        // to keep.)
+        let odd = roots.skills.as_ref().unwrap().join("review").join("aux.md");
+        let made = std::fs::write(&odd, "x").is_ok() && odd.is_file();
+        let scan = roots.scan();
+        assert!(scan.complete);
+        let names: Vec<&str> = scan.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(names, ["skills/review/SKILL.md"]);
+        if made {
+            assert_eq!(scan.kept, ["skills/review/aux.md"]);
+        }
+    }
+
+    #[test]
+    fn a_name_in_other_letter_case_is_kept_not_written_over() {
+        let (_dir, roots) = roots();
+        roots
+            .write("skills/Review/SKILL.md", Some("first"))
+            .unwrap();
+        roots.write("snippets/Go.json", Some("{}")).unwrap();
+        // Whether this file system tells the two apart.
+        let folds = roots.skills.as_ref().unwrap().join("review").exists();
+        let second = roots.write("skills/review/SKILL.md", Some("second"));
+        let third = roots.write("snippets/go.json", Some("[]"));
+        if !folds {
+            // Both names fit here: both are files and both sync.
+            assert!(second.is_ok() && third.is_ok());
+            assert_eq!(roots.scan().files.len(), 4);
+            assert!(roots.scan().kept.is_empty());
+            return;
+        }
+        assert!(matches!(second, Err(Error::Invalid(_))));
+        assert!(matches!(third, Err(Error::Invalid(_))));
+        // The file that was here first is as it was, and the other name isn't here.
+        assert_eq!(
+            roots.read("skills/Review/SKILL.md").unwrap().as_deref(),
+            Some("first")
+        );
+        assert_eq!(roots.read("skills/review/SKILL.md").unwrap(), None);
+        // Listed as kept: not sent, not asked for again, and not taken to be deleted.
+        let scan = roots.scan();
+        let names: Vec<&str> = scan.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(names, ["snippets/Go.json", "skills/Review/SKILL.md"]);
+        let mut kept = scan.kept.clone();
+        kept.sort();
+        assert_eq!(kept, ["skills/review/SKILL.md", "snippets/go.json"]);
+        // Removing the name that isn't here leaves the other file alone.
+        assert_eq!(roots.write("skills/review/SKILL.md", None).unwrap(), None);
+        assert_eq!(
+            roots.read("skills/Review/SKILL.md").unwrap().as_deref(),
+            Some("first")
+        );
+        // Once the other file is gone the name is free again.
+        roots.write("skills/Review/SKILL.md", None).unwrap();
+        std::fs::remove_dir(roots.skills.as_ref().unwrap().join("Review")).unwrap();
+        assert_eq!(roots.scan().kept, ["snippets/go.json"]);
+        roots
+            .write("skills/review/SKILL.md", Some("second"))
+            .unwrap();
+        assert_eq!(
+            roots.read("skills/review/SKILL.md").unwrap().as_deref(),
+            Some("second")
+        );
     }
 
     #[test]
@@ -393,5 +586,20 @@ mod tests {
         let a = roots.write("agents/a.md", Some("same")).unwrap().unwrap();
         let b = roots.write("commands/b.md", Some("same")).unwrap().unwrap();
         assert_eq!(a.hash, b.hash);
+    }
+
+    #[test]
+    fn a_later_conflict_copy_is_a_conflict_copy_too() {
+        assert_eq!(conflict_mark("keybindings.conflict.json"), Some(11..20));
+        assert_eq!(conflict_mark("keybindings.conflict-2.json"), Some(11..22));
+        assert_eq!(conflict_mark("AGENTS.conflict-12.md"), Some(6..18));
+        assert_eq!(conflict_mark("notes.conflict"), Some(5..14));
+        assert_eq!(conflict_mark("notes.conflict-3"), Some(5..16));
+        // Not marks: a word that only starts so, a dash with no number.
+        assert_eq!(conflict_mark("my.conflicts.md"), None);
+        assert_eq!(conflict_mark("a.conflict-.md"), None);
+        assert_eq!(conflict_mark("a.conflict-x.md"), None);
+        assert!(is_conflict_copy("go.conflict-2.json"));
+        assert!(!is_conflict_copy("conflict.json"));
     }
 }

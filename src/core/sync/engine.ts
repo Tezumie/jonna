@@ -3,6 +3,7 @@
 // computer has, what it had when it last synced (its base, kept on disk), and what the account
 // has (a mirror of the records, kept in memory and rebuilt from the account at each start).
 import type { SyncChanges, SyncInfo, SyncPut, SyncRecord } from "../ipc/sync";
+import { isFull } from "./errors";
 
 /** What the engine needs of the backend (the IPC wrapper in the app; a fake in tests). */
 export interface SyncBackend {
@@ -34,6 +35,11 @@ export interface SyncEngineOptions {
   note?(event: SyncNote): void;
   /** True once this pass should end early (the claim on the loop was lost). */
   stopped?(): boolean;
+  /**
+   * True while the account is known to have no room (its usage is at its limit): content isn't
+   * sent, so nothing is sealed and posted only to be refused. Reading goes on.
+   */
+  full?(): boolean;
 }
 
 export interface LayerContext {
@@ -75,10 +81,26 @@ export interface LayerContext {
   note(event: SyncNote): void;
   /** Whether the pass should end after the action under way. */
   stopped(): boolean;
+  /**
+   * Whether the account has no room: known before the pass, or said by the service during it.
+   * A layer sends nothing more while it is true, and goes on fetching.
+   */
+  full(): boolean;
+  /**
+   * The service refused a write for want of room (`err`): nothing more is sent this pass, and
+   * the pass ends as failed with that error, once, after everything else was done.
+   */
+  noRoom(err: unknown): void;
 }
 
 export interface SyncLayer {
   name: string;
+  /**
+   * Looks at this computer only, before the account is read, so it runs (and what it notes in
+   * its base is saved) also when the account can't be reached: when a setting was changed here
+   * is noted while it is still known.
+   */
+  observe?(ctx: LayerContext): Promise<void>;
   run(ctx: LayerContext): Promise<void>;
 }
 
@@ -102,6 +124,8 @@ export class SyncEngine {
   private dirty = false;
   private running: Promise<void> | null = null;
   private waitingForKeys = false;
+  /** The service's "no room" of the pass under way (null: it had room). */
+  private refused: unknown = null;
 
   constructor(
     private readonly backend: SyncBackend,
@@ -181,14 +205,31 @@ export class SyncEngine {
 
   private async pull(stored: Stored): Promise<void> {
     this.waitingForKeys = false;
+    let wasReset = false;
     for (;;) {
-      const page = await this.backend.changes(this.cursor);
-      if (stored.epoch !== page.epoch) {
+      const from = this.cursor;
+      const page: SyncChanges | null | undefined = await this.backend.changes(from);
+      // An answer that isn't one (no epoch, no list of records) says nothing about the account:
+      // least of all that it was reset. The pass fails and is tried again; nothing is forgotten.
+      const epoch = page?.epoch;
+      if (
+        !page ||
+        typeof epoch !== "number" ||
+        !Number.isFinite(epoch) ||
+        epoch <= 0 ||
+        !Array.isArray(page.records)
+      ) {
+        throw new Error("The account's answer couldn't be read. Sync will try again.");
+      }
+      if (stored.epoch !== epoch) {
+        // A second reset within one reading is an answer that can't be trusted either.
+        if (wasReset) throw new Error("The account's answer kept changing. Sync will try again.");
+        wasReset = true;
         // The account's sync was reset and set up again: nothing kept refers to it.
         this.mirror.clear();
         const fresh = this.cursor === 0;
         this.cursor = 0;
-        stored.epoch = page.epoch;
+        stored.epoch = epoch;
         stored.bases = {};
         this.dirty = true;
         if (!fresh) continue;
@@ -204,16 +245,55 @@ export class SyncEngine {
         this.cursor = Math.max(this.cursor, record.seq);
       }
       if (!page.more) return;
+      // "There is more" with nothing new to ask from: asking again would get the same page,
+      // for ever. The pass fails here and is tried again later.
+      if (this.cursor <= from) {
+        throw new Error("The account's changes didn't move on. Sync will try again.");
+      }
     }
   }
 
   private async pass(): Promise<void> {
     const stored = await this.load();
+    this.refused = null;
+    const ctx = this.context(stored);
+    // What each layer notes of this computer, kept whether or not the account answers.
+    for (const layer of this.layers) {
+      if (!layer.observe || ctx.stopped()) continue;
+      try {
+        await layer.observe(ctx);
+      } catch {
+        // Not noted this time: the layer's run does without.
+      }
+    }
+    try {
+      await this.save(stored);
+    } catch {
+      // Saved with the rest at the end of the pass.
+      this.dirty = true;
+    }
     await this.pull(stored);
     if (this.waitingForKeys) {
       await this.save(stored);
       return;
     }
+    let failure: unknown = null;
+    for (const layer of this.layers) {
+      if (ctx.stopped()) break;
+      try {
+        await layer.run(ctx);
+      } catch (error) {
+        // One layer failing doesn't stop the others; the pass still reports it.
+        failure ??= error;
+      }
+    }
+    await this.save(stored);
+    if (failure) throw failure;
+    // No room in the account: everything that could be done was, and the pass says so once.
+    if (this.refused) throw this.refused;
+  }
+
+  private context(stored: Stored): LayerContext {
     const ctx: LayerContext = {
       records: (collection) => this.records(collection),
       collections: (prefix) => [
@@ -226,13 +306,24 @@ export class SyncEngine {
         const now = this.mirror.get(key(collection, id));
         // Never over what this computer can't read: it would replace someone's change unseen.
         if (now?.unreadable) return null;
-        const result = await this.backend.put(
-          collection,
-          id,
-          now ? now.version : null,
-          text,
-          info ?? null,
-        );
+        // The service said "no room" a moment ago: not asked again and again within the pass.
+        // (Removing a record takes no room.)
+        if (this.refused && text !== null) return null;
+        let result: SyncPut;
+        try {
+          result = await this.backend.put(
+            collection,
+            id,
+            now ? now.version : null,
+            text,
+            info ?? null,
+          );
+        } catch (err) {
+          if (!isFull(err)) throw err;
+          // Not written: tried again at a later pass, like a write that lost a race.
+          this.refused ??= err;
+          return null;
+        }
         if (result.outcome === "done") {
           ctx.wrote(collection, id, result.version, text, info ?? null);
           return result.version;
@@ -271,18 +362,11 @@ export class SyncEngine {
       flush: () => this.save(stored),
       note: (event) => this.options.note?.(event),
       stopped: () => this.options.stopped?.() === true,
+      full: () => this.refused !== null || this.options.full?.() === true,
+      noRoom: (err) => {
+        this.refused ??= err;
+      },
     };
-    let failure: unknown = null;
-    for (const layer of this.layers) {
-      if (ctx.stopped()) break;
-      try {
-        await layer.run(ctx);
-      } catch (error) {
-        // One layer failing doesn't stop the others; the pass still reports it.
-        failure ??= error;
-      }
-    }
-    await this.save(stored);
-    if (failure) throw failure;
+    return ctx;
   }
 }

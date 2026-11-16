@@ -1074,6 +1074,27 @@ impl Vault {
         let (recovery, recovery_auth) = trusted.recovery.clone().ok_or_else(|| {
             keys_error("This account's recovery key needs replacing: make a new recovery key.")
         })?;
+        // A device that joined moments ago is approved before the list names it (the write
+        // that adds it is still owed, here or on the computer that approved it). New keys wait
+        // for that write: made now they would leave it out, and it would be taken off. Nothing
+        // is handed to it meanwhile; the next check makes the keys.
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        let joining = server["devices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|d| d["status"].as_str() == Some("approved"))
+            .filter(|d| {
+                let id = d["id"].as_str().unwrap_or("");
+                let public = d["publicKey"].as_str().unwrap_or("");
+                !trusted.devices.iter().any(|(t, k)| t == id && k == public)
+            })
+            .any(|d| may_be_joining(d, &local.pending_trust, now_ms));
+        if joining {
+            return Ok(());
+        }
         let next = ring.rotated()?;
         let bytes = next.to_bytes()?;
         let mut wraps = serde_json::Map::new();
@@ -1114,6 +1135,25 @@ impl Vault {
         let _ = self.trusted(&mut local, &next).await;
         Ok(())
     }
+}
+
+/// How long after a device was added it may be approved and not yet on the trusted list
+/// without being taken for one the account's devices never approved.
+const JOIN_GRACE_MS: u64 = 10 * 60 * 1000;
+
+/// Whether an approved device the trusted list doesn't name may only be new: this computer
+/// still owes the write that adds it, or the service says it was added within the last minutes
+/// (approved on another computer, or joined with the recovery key, whose write is on its way).
+/// The time is the service's word, which is fine here: it only makes new keys wait, and never
+/// gets a device any keys.
+fn may_be_joining(device: &Value, owed: &[TrustChange], now_ms: u64) -> bool {
+    let id = device["id"].as_str().unwrap_or("");
+    let public = device["publicKey"].as_str().unwrap_or("");
+    owed.iter()
+        .any(|change| change.add.iter().any(|(a, k)| a == id && k == public))
+        || device["createdAt"]
+            .as_u64()
+            .is_some_and(|at| now_ms.abs_diff(at) <= JOIN_GRACE_MS)
 }
 
 fn parse_trusted(text: Option<&str>) -> Option<Trusted> {
@@ -1157,6 +1197,35 @@ fn recovery_confirmed(key: &str, typed: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_that_just_joined_is_not_taken_for_an_unapproved_one() {
+        let now = 1_800_000_000_000u64;
+        let device = |created: u64| json!({ "id": "d2", "publicKey": "key2", "status": "approved", "createdAt": created });
+        // Added within the last minutes (or a little ahead, by the clocks): new keys wait.
+        assert!(may_be_joining(&device(now - 60_000), &[], now));
+        assert!(may_be_joining(&device(now + 30_000), &[], now));
+        // Long there and still on no list: not new.
+        assert!(!may_be_joining(&device(now - JOIN_GRACE_MS - 1), &[], now));
+        assert!(!may_be_joining(&device(now + JOIN_GRACE_MS + 1), &[], now));
+        assert!(!may_be_joining(
+            &json!({ "id": "d2", "publicKey": "key2" }),
+            &[],
+            now
+        ));
+        // This computer approved it and still owes the list's write, however long ago.
+        let owed = [TrustChange {
+            add: vec![("d2".into(), "key2".into())],
+            ..Default::default()
+        }];
+        assert!(may_be_joining(&device(1), &owed, now));
+        // Owed for another key: not this device.
+        let other = [TrustChange {
+            add: vec![("d2".into(), "another".into())],
+            ..Default::default()
+        }];
+        assert!(!may_be_joining(&device(1), &other, now));
+    }
 
     #[test]
     fn the_recovery_key_is_confirmed_by_its_last_group_or_all_of_it() {

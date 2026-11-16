@@ -116,7 +116,22 @@ pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Resul
     if reply.status == 404 {
         return Ok(None);
     }
-    Ok(Some(parse(ring, &reply.into_ok()?)?))
+    let v = reply.into_ok()?;
+    // A body that isn't a record must never read as "a record with no content, version 0".
+    if !v.is_object() || !v["version"].is_u64() {
+        return Err(super::api::unreadable());
+    }
+    Ok(Some(parse(ring, &v)?))
+}
+
+/// A page of changes as the service gives it, refused when it isn't in the shape a page has:
+/// a broken reply (which reads as `null`) must never look like "epoch 0", which is how an
+/// account that was reset looks.
+fn changes_page(v: &Value) -> Result<&Vec<Value>> {
+    match (v["epoch"].as_u64(), v["records"].as_array()) {
+        (Some(_), Some(records)) => Ok(records),
+        _ => Err(super::api::unreadable()),
+    }
 }
 
 /// Records changed after `since`, oldest change first. A page that left content out (the reply
@@ -124,12 +139,7 @@ pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Resul
 pub async fn changes(api: &Api, ring: &Keyring, since: u64) -> Result<Changes> {
     let v = api.get(&format!("records?since={since}")).await?;
     let mut records = Vec::new();
-    for r in v
-        .get("records")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
+    for r in changes_page(&v)? {
         let mut record = parse(ring, r)?;
         if !record.deleted && record.text.is_none() && !record.unreadable && !record.damaged {
             if let Some(full) = get(api, ring, &record.collection, &record.id).await? {
@@ -263,4 +273,31 @@ where
         "Sync",
         "A synced item kept changing; try again.".into(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_page_of_changes_must_have_its_shape() {
+        let page = json!({ "epoch": 3, "seq": 9, "gcEpoch": 1, "more": false, "records": [] });
+        assert!(changes_page(&page).is_ok_and(Vec::is_empty));
+        // A body that could not be read, or lacks the count or the list: the same as offline,
+        // never "epoch 0" (an account that was reset).
+        for broken in [
+            Value::Null,
+            json!({}),
+            json!({ "records": [] }),
+            json!({ "epoch": 3 }),
+            json!({ "epoch": "3", "records": [] }),
+            json!({ "epoch": 3, "records": {} }),
+            json!("<html>"),
+        ] {
+            match changes_page(&broken) {
+                Err(Error::Sync(code, _)) => assert_eq!(code, "SyncOffline", "{broken}"),
+                other => panic!("unexpected for {broken}: {other:?}"),
+            }
+        }
+    }
 }

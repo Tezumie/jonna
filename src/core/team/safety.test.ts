@@ -117,7 +117,7 @@ test("team safety: settings precedence is default < team < user < workspace", ()
     "editor.wordWrap": { type: "boolean", default: false, description: "" },
     "files.exclude": { type: "object", default: { ".git": true }, description: "" },
     "agent.model": { type: "string", default: "", description: "", scope: "user" },
-    "tasks.only": { type: "string", default: "d", description: "", scope: "workspace" },
+    "layout.only": { type: "string", default: "d", description: "", scope: "workspace" },
     "agent.hooks": { type: "object", default: {}, description: "" },
   });
   const model = new SettingsModel(registry);
@@ -133,7 +133,7 @@ test("team safety: settings precedence is default < team < user < workspace", ()
       "editor.wordWrap": "yes",
       "files.exclude": { dist: true },
       "agent.model": "team-model",
-      "tasks.only": "t",
+      "layout.only": "t",
       "agent.hooks": { PreToolUse: [{ command: "evil" }] },
       "[python]": { "editor.tabSize": 8 },
     },
@@ -148,7 +148,7 @@ test("team safety: settings precedence is default < team < user < workspace", ()
     "editor.tabSize",
     "editor.wordWrap",
     "files.exclude",
-    "tasks.only",
+    "layout.only",
   ];
   assert.deepEqual(changes, [reported]);
 
@@ -159,7 +159,7 @@ test("team safety: settings precedence is default < team < user < workspace", ()
   // An invalid value falls through to the default, as in any layer.
   assert.deepEqual(model.resolve("editor.wordWrap"), { value: false, source: "default" });
   // A setting only a folder sets isn't a team's.
-  assert.deepEqual(model.resolve("tasks.only"), { value: "d", source: "default" });
+  assert.deepEqual(model.resolve("layout.only"), { value: "d", source: "default" });
   // The hook the team's file named was left out by the filter: nothing of it is in effect.
   assert.deepEqual(model.resolve("agent.hooks"), { value: {}, source: "default" });
   // An object setting merges: the team's entries over the defaults.

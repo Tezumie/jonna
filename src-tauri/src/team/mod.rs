@@ -156,7 +156,8 @@ pub fn parse_listing(json: &Value) -> Option<Listing> {
         };
         // The same name twice would be one file here; names differing only by case too, on
         // the file systems that don't tell them apart.
-        let name_key = format!("{}\0{}", item.kind, item.path.to_lowercase());
+        // (Whatever its kind: the name alone says where the file goes.)
+        let name_key = item.path.to_lowercase();
         if ids.contains(&item.id) || names.contains(&name_key) {
             continue;
         }
@@ -168,6 +169,13 @@ pub fn parse_listing(json: &Value) -> Option<Listing> {
         names.insert(name_key);
         items.push(item);
     }
+    // A name that is also a folder of another item's (`skills/a/b` beside `skills/a/b/c.md`)
+    // can't be both a file and a folder here: the file is left out, like any other name that
+    // can't be used, so the rest of the library still applies.
+    items.retain(|item| {
+        let folder = format!("{}/", item.path.to_lowercase());
+        !names.iter().any(|other| other.starts_with(&folder))
+    });
     Some(Listing {
         team: TeamRef { id, name },
         state: if text_of(json, "state") == "lapsed" {
@@ -386,6 +394,29 @@ mod tests {
                 .state,
             "lapsed"
         );
+    }
+
+    #[test]
+    fn a_name_that_is_also_another_items_folder_is_left_out() {
+        let reply = json!({
+            "team": { "id": "t1" },
+            "items": [
+                // A file and a folder of the same name, in either order and in other case.
+                listed("a", "skills", "skills/review/notes"),
+                listed("b", "skills", "skills/review/notes/style.md"),
+                listed("c", "skills", "skills/Lint/Rules/deep/x.md"),
+                listed("d", "skills", "skills/lint/rules"),
+                // Only the start of a name, not a folder of it: both stay.
+                listed("e", "skills", "skills/review/notes.md"),
+                listed("f", "skills", "skills/review/SKILL.md"),
+                // The same name in other case: the first stays.
+                listed("g", "commands", "commands/Ship.md"),
+                listed("h", "commands", "commands/ship.md"),
+            ],
+        });
+        let listing = parse_listing(&reply).unwrap();
+        let ids: Vec<&str> = listing.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["b", "c", "e", "f", "g"]);
     }
 
     #[test]
