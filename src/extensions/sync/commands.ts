@@ -14,6 +14,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 import type { SnapshotRow, SyncController } from "./controller";
 import {
   countOf,
+  estimateWarning,
   folderName,
   formatSize,
   projectCounts,
@@ -373,19 +374,20 @@ export function registerSyncCommands(
       title: "Check a waiting computer's code…",
       category: CATEGORY,
       description:
-        "Starts checking a computer that asked to join: from then on this computer and the waiting one both show the same six-digit code in their Sync tabs, for the person to compare before approving. Never returns the code.",
+        "Starts checking a computer that asked to join: once the waiting computer has answered (a moment later), it and this computer both show the same six-digit code in their Sync tabs, for the person to compare before approving. Never returns the code.",
       input: s.object({ device: s.string().describe("The waiting device's id (ide://sync)") }),
       effects: ["network"],
       agent: "hidden",
       run: async ({ device }) => {
-        const base = await whenOn();
+        await whenOn();
         const waiting = sync()
           .status.peek()
           ?.devices.find((d) => d.id === device && d.status === "pending");
         if (!waiting) throw new Error("No computer with that id is waiting to join.");
-        // The code shows in the tab, from the status.
-        await syncIpc.reviewDevice(base, device);
-        await sync().refreshStatus();
+        // The code shows in the tab, from the status, once the waiting computer has answered
+        // (the controller keeps asking until it has).
+        await sync().reviewDevice(device);
+        session.page.value = "computers";
         showTab();
         return { device: waiting.name, checking: true };
       },
@@ -503,6 +505,18 @@ export function registerSyncCommands(
     }),
   );
 
+  /** Opens the open folder's list of what snapshots leave out (made when it is missing). */
+  const editIgnore = async () => {
+    const path = await sync().ignoreFile();
+    await dispatcher.execute("editor.openFile", { path });
+    notifications.show(
+      "info",
+      "One pattern a line, as in a .gitignore file: a folder (build/), a kind of file (*.mp4), a path. What matches stays out of this project's snapshots.",
+      { title: "Sync" },
+    );
+    return path;
+  };
+
   const projectSync = async (on: boolean) => {
     await whenOn();
     if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
@@ -525,6 +539,29 @@ export function registerSyncCommands(
         });
         if (answer === null) return { root: services.workspace.root.peek(), on: false };
         if (answer === "own") await sync().separateProject();
+      }
+      // A large folder without git would be stored whole: said first, with a way to leave
+      // things out. (An estimate that fails isn't a reason not to sync.)
+      const estimate = await sync()
+        .estimate()
+        .catch(() => null);
+      const warning = estimate ? estimateWarning(estimate) : null;
+      if (warning !== null) {
+        const answer = await showDialog<"sync" | "ignore" | null>({
+          title: "This is a large folder to sync",
+          message: warning,
+          actions: [
+            { label: "Cancel", value: null },
+            { label: "Choose what to leave out…", value: "ignore" },
+            { label: "Sync it", value: "sync", variant: "primary" },
+          ],
+          cancelValue: null,
+        });
+        if (answer === "ignore") {
+          await editIgnore();
+          return { root: services.workspace.root.peek(), on: false, editingIgnore: true };
+        }
+        if (answer === null) return { root: services.workspace.root.peek(), on: false };
       }
     }
     await sync().setProjectSync(on);
@@ -566,6 +603,47 @@ export function registerSyncCommands(
       effects: ["write"],
       agent: "hidden",
       run: () => projectSync(false),
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.editIgnore",
+      title: "Choose what snapshots leave out…",
+      category: CATEGORY,
+      description:
+        "Opens the open folder's .syncignore in the editor (made with an explanation when missing): patterns as in a .gitignore file for what stays out of the project's snapshots.",
+      input: s.empty(),
+      effects: ["write"],
+      agent: "discoverable",
+      run: async () => {
+        await open();
+        if (!services.workspace.root.peek()) throw new Error("Open a folder first.");
+        if (services.workspace.remote.peek())
+          throw new Error("Only folders on this computer can sync.");
+        return { path: await editIgnore() };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.forgetFolder",
+      title: "Forget a folder that synced from this computer…",
+      category: CATEGORY,
+      description:
+        "Removes this computer's note that a folder syncs from here (a folder that was moved or deleted). Nothing in the account is touched: the project, its chats and its snapshots stay.",
+      input: s.object({
+        folder: s.string().describe("The folder's path (ide://sync overview.projects[].folder)"),
+      }),
+      effects: ["write"],
+      agent: "hidden",
+      run: async ({ folder }) => {
+        await whenOn();
+        const forgotten = await sync().forgetFolder(folder);
+        if (!forgotten) throw new Error("No folder with that path syncs from this computer.");
+        return { forgotten: true, folder };
+      },
     }),
   );
 

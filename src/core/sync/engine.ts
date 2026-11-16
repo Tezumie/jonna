@@ -22,6 +22,20 @@ export interface SyncStore {
   save(text: string): Promise<void>;
 }
 
+/** Something a layer did that the person may want to know: said, not guessed from the records. */
+export interface SyncNote {
+  /** "conflict": both sides changed and one was kept aside; "failure": one item couldn't sync. */
+  kind: "conflict" | "failure";
+  text: string;
+}
+
+export interface SyncEngineOptions {
+  /** Hears what the layers report (the app's activity log). */
+  note?(event: SyncNote): void;
+  /** True once this pass should end early (the claim on the loop was lost). */
+  stopped?(): boolean;
+}
+
 export interface LayerContext {
   /** The account's records of a collection, tombstones included. */
   records(collection: string): SyncRecord[];
@@ -30,8 +44,8 @@ export interface LayerContext {
   record(collection: string, id: string): SyncRecord | undefined;
   /**
    * Writes a record over the version the mirror has (`text` null deletes it). Returns the new
-   * version, or null when someone else wrote first: the mirror then has theirs, and the layer
-   * sees it at its next run.
+   * version, or null when nothing was written: someone else wrote first (the mirror then has
+   * theirs, and the layer sees it at its next run), or the record there can't be read yet.
    */
   put(
     collection: string,
@@ -52,6 +66,15 @@ export interface LayerContext {
   /** This layer's base: an object kept on disk; call `changed()` after changing it. */
   base<T extends object>(name: string, initial: () => T): T;
   changed(): void;
+  /**
+   * Saves the bases now when they changed, not only at the end of the pass: after a transfer
+   * that must not be done again should the window close before the pass ends.
+   */
+  flush(): Promise<void>;
+  /** Reports a conflict or one item's failure. */
+  note(event: SyncNote): void;
+  /** Whether the pass should end after the action under way. */
+  stopped(): boolean;
 }
 
 export interface SyncLayer {
@@ -62,6 +85,12 @@ export interface SyncLayer {
 interface Stored {
   epoch: number;
   bases: Record<string, object>;
+  /**
+   * How far the account was read when this was saved. Kept with the bases for whoever reads the
+   * file; a start still reads the account from the beginning, since the records themselves
+   * (the mirror) are only in memory.
+   */
+  cursor?: number;
 }
 
 const key = (collection: string, id: string) => `${collection}/${id}`;
@@ -72,11 +101,13 @@ export class SyncEngine {
   private stored: Stored | null = null;
   private dirty = false;
   private running: Promise<void> | null = null;
+  private waitingForKeys = false;
 
   constructor(
     private readonly backend: SyncBackend,
     private readonly store: SyncStore,
     private readonly layers: readonly SyncLayer[],
+    private readonly options: SyncEngineOptions = {},
   ) {}
 
   /** One pass; a second call while one runs waits for it and runs nothing more. */
@@ -85,6 +116,16 @@ export class SyncEngine {
       this.running = null;
     });
     return this.running;
+  }
+
+  /**
+   * True while the account holds a record sealed with keys this computer doesn't have yet. The
+   * reading stops at that record (it is asked for again at the next pass) and the layers don't
+   * run: acting on half of what the account holds, or writing over what can't be read, is how
+   * things get lost. The device's keys catch up when its status is read.
+   */
+  get blocked(): boolean {
+    return this.waitingForKeys;
   }
 
   /** The account's records as last read (for views: snapshots, the account's projects). */
@@ -101,6 +142,17 @@ export class SyncEngine {
   reset(): void {
     this.mirror.clear();
     this.cursor = 0;
+    this.stored = null;
+    this.dirty = false;
+    this.waitingForKeys = false;
+  }
+
+  /**
+   * Reads the bases from disk again at the next pass, keeping what was read of the account:
+   * for a window that takes the loop over from another, whose saved bases are newer than this
+   * window's copy.
+   */
+  reloadBases(): void {
     this.stored = null;
     this.dirty = false;
   }
@@ -120,7 +172,15 @@ export class SyncEngine {
     return stored;
   }
 
+  private async save(stored: Stored): Promise<void> {
+    if (!this.dirty) return;
+    this.dirty = false;
+    stored.cursor = this.cursor;
+    await this.store.save(JSON.stringify(stored));
+  }
+
   private async pull(stored: Stored): Promise<void> {
+    this.waitingForKeys = false;
     for (;;) {
       const page = await this.backend.changes(this.cursor);
       if (stored.epoch !== page.epoch) {
@@ -133,8 +193,14 @@ export class SyncEngine {
         this.dirty = true;
         if (!fresh) continue;
       }
-      for (const record of page.records) {
+      for (const record of [...page.records].sort((a, b) => a.seq - b.seq)) {
         this.mirror.set(key(record.collection, record.id), record);
+        if (record.unreadable) {
+          // Not read past: it is asked for again once this computer's keys caught up. Until
+          // then the mirror says "can't be read", so nothing is written over it.
+          this.waitingForKeys = true;
+          return;
+        }
         this.cursor = Math.max(this.cursor, record.seq);
       }
       if (!page.more) return;
@@ -144,6 +210,10 @@ export class SyncEngine {
   private async pass(): Promise<void> {
     const stored = await this.load();
     await this.pull(stored);
+    if (this.waitingForKeys) {
+      await this.save(stored);
+      return;
+    }
     const ctx: LayerContext = {
       records: (collection) => this.records(collection),
       collections: (prefix) => [
@@ -154,6 +224,8 @@ export class SyncEngine {
       record: (collection, id) => this.mirror.get(key(collection, id)),
       put: async (collection, id, text, info) => {
         const now = this.mirror.get(key(collection, id));
+        // Never over what this computer can't read: it would replace someone's change unseen.
+        if (now?.unreadable) return null;
         const result = await this.backend.put(
           collection,
           id,
@@ -196,9 +268,13 @@ export class SyncEngine {
       changed: () => {
         this.dirty = true;
       },
+      flush: () => this.save(stored),
+      note: (event) => this.options.note?.(event),
+      stopped: () => this.options.stopped?.() === true,
     };
     let failure: unknown = null;
     for (const layer of this.layers) {
+      if (ctx.stopped()) break;
       try {
         await layer.run(ctx);
       } catch (error) {
@@ -206,10 +282,7 @@ export class SyncEngine {
         failure ??= error;
       }
     }
-    if (this.dirty) {
-      this.dirty = false;
-      await this.store.save(JSON.stringify(stored));
-    }
+    await this.save(stored);
     if (failure) throw failure;
   }
 }

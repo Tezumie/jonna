@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 use super::api::Api;
@@ -25,6 +26,12 @@ use crate::store::atomic_write;
 /// Files larger than this are left out (and listed as left out).
 const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_FILES: usize = 200_000;
+/// What a project lists to keep out of its snapshots, in `.gitignore` syntax.
+const IGNORE_FILE: &str = ".syncignore";
+/// About this many files to a part of the stored list.
+const SHARD_FILES: usize = 400;
+/// Files written at once on a restore.
+const WRITES_AT_ONCE: usize = 4;
 /// After this many bundles a fresh, complete one is made.
 const MAX_BUNDLE_CHAIN: usize = 24;
 /// Folders that never travel from a folder without git (dependencies, build output, caches).
@@ -102,6 +109,11 @@ pub struct Manifest {
     /// Left out, with why ("too large", "a link").
     #[serde(default)]
     pub skipped: Vec<(String, String)>,
+    /// As stored: the files in parts, by a hash of each path, so a snapshot that changed a
+    /// few files stores a few small parts again, not the whole list. (`files` is then empty
+    /// in the stored form and filled when read.)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shards: Vec<Stored>,
 }
 
 /// What a snapshot's record says without its manifest: enough to list it.
@@ -158,7 +170,13 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
                 // ".git.", ".git ", "GIT~1" and ".git::$INDEX_ALLOCATION" are all .git there.
                 // No repository's own folder at any depth, either.
                 let plain = text.trim_end_matches(['.', ' ']).to_ascii_lowercase();
+                let stem = plain.split('.').next().unwrap_or("");
+                let reserved = matches!(stem, "con" | "prn" | "aux" | "nul")
+                    || (stem.len() == 4
+                        && (stem.starts_with("com") || stem.starts_with("lpt"))
+                        && stem.ends_with(|c: char| c.is_ascii_digit()));
                 if plain == ".git"
+                    || reserved
                     || plain.starts_with("git~")
                     || text.contains(':')
                     || text.ends_with(['.', ' '])
@@ -181,6 +199,21 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
         return Err(sync_error("a snapshot names an empty path"));
     }
     Ok(out)
+}
+
+/// Whether an address from a snapshot may become a git remote: an ordinary https, ssh or git
+/// address. Not a local path, not a transport that runs a program, not an option.
+fn safe_remote(url: &str) -> bool {
+    let url = url.trim();
+    if url.starts_with('-') || url.contains("::") || url.chars().any(char::is_control) {
+        return false;
+    }
+    let scheme = ["https://", "http://", "ssh://", "git://"]
+        .iter()
+        .any(|s| url.starts_with(s));
+    // The short SSH form: user@host:path.
+    let short = !url.contains("://") && url.contains('@') && url.contains(':');
+    (scheme || short) && super::project::normalize_remote(url).is_some()
 }
 
 fn stamp(meta: &std::fs::Metadata) -> u64 {
@@ -226,6 +259,7 @@ fn git_changes(root: &Path) -> Result<Vec<(String, bool)>> {
         ],
     )?;
     let mut changes = Vec::new();
+    let ignored = sync_ignore(root);
     for entry in out.split('\0') {
         let path = match entry.as_bytes().first() {
             Some(b'?') => entry.get(2..),
@@ -248,17 +282,42 @@ fn git_changes(root: &Path) -> Result<Vec<(String, bool)>> {
         let Some(path) = path.filter(|p| !p.is_empty()) else {
             continue;
         };
+        // What the project itself keeps out of snapshots.
+        if ignored
+            .as_ref()
+            .is_some_and(|i| i.matched_path_or_any_parents(path, false).is_ignore())
+        {
+            continue;
+        }
         let exists = std::fs::symlink_metadata(root.join(path)).is_ok();
         changes.push((rel(path), exists));
     }
     Ok(changes)
 }
 
-/// Every file of a folder without git that travels.
+/// The project's own list of what stays out of snapshots (`.syncignore`, written as a
+/// `.gitignore` is), when it has one.
+fn sync_ignore(root: &Path) -> Option<ignore::gitignore::Gitignore> {
+    let file = root.join(IGNORE_FILE);
+    if !file.is_file() {
+        return None;
+    }
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
+    builder.add(file);
+    builder.build().ok()
+}
+
+/// Every file of a folder without git that travels: not the heavy folders, and not what the
+/// folder's own `.gitignore`, `.ignore` or `.syncignore` files leave out.
 fn folder_files(root: &Path) -> Vec<String> {
     let mut files = Vec::new();
     let walker = ignore::WalkBuilder::new(root)
         .standard_filters(false)
+        .git_ignore(true)
+        .require_git(false)
+        .ignore(true)
+        .parents(false)
+        .add_custom_ignore_filename(IGNORE_FILE)
         .hidden(false)
         .follow_links(false)
         .filter_entry(|e| {
@@ -416,6 +475,10 @@ fn ref_tips(root: &Path) -> Vec<String> {
     .collect();
     // Only the newest stash is a ref; the older ones are named here so a bundle carries them.
     tips.extend(stashes(root).into_iter().map(|(sha, _)| sha));
+    // A commit made with no branch (a detached HEAD, the middle of a rebase) has no ref either.
+    if let Ok(head) = git(root, &["rev-parse", "-q", "--verify", "HEAD"]) {
+        tips.push(head.trim().to_string());
+    }
     tips.sort();
     tips.dedup();
     tips
@@ -424,7 +487,8 @@ fn ref_tips(root: &Path) -> Vec<String> {
 fn scratch_file(data: &Path, name: &str) -> Result<PathBuf> {
     let dir = data.join("sync").join("tmp");
     std::fs::create_dir_all(&dir)?;
-    Ok(dir.join(format!("{name}-{}", std::process::id())))
+    // A name of its own: two snapshots at once (two windows) never share a file.
+    Ok(dir.join(format!("{name}-{}", super::crypto::new_id()?)))
 }
 
 /// The bundles a snapshot needs: the ones before (while their commits are still here) and a
@@ -457,7 +521,16 @@ async fn bundles(
     }
     let file = scratch_file(data, "bundle")?;
     let file_text = file.to_string_lossy().to_string();
-    let mut args: Vec<String> = vec!["bundle".into(), "create".into(), file_text, "--all".into()];
+    // Every ref but the ones an earlier restore put here (they are another computer's), and
+    // the commit checked out, which may have no ref.
+    let mut args: Vec<String> = vec![
+        "bundle".into(),
+        "create".into(),
+        file_text,
+        "--exclude=refs/synced/*".into(),
+        "--all".into(),
+        "HEAD".into(),
+    ];
     // Older stashes have no ref of their own: named by commit, they go into the pack too.
     args.extend(stashes(root).into_iter().map(|(sha, _)| sha));
     let mut not: Vec<String> = Vec::new();
@@ -475,6 +548,16 @@ async fn bundles(
     if !not.is_empty() {
         args.push("--not".into());
         args.extend(not);
+    }
+    // Asked first, in a way that doesn't depend on git's language: is there anything the
+    // remotes and the earlier bundles lack?
+    let mut probe: Vec<&str> = vec!["rev-list", "--max-count=1"];
+    probe.extend(args[3..].iter().map(String::as_str));
+    if git(root, &probe).is_ok_and(|out| out.trim().is_empty()) {
+        for b in &chain {
+            capture.uploader.keep(&b.file);
+        }
+        return Ok(chain);
     }
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let made = git(root, &refs);
@@ -522,7 +605,9 @@ pub async fn create(
     let mut options = options;
     for _ in 0..4 {
         match create_once(api, ring, data, root, &options).await {
-            Err(Error::Sync("SyncRetry", _)) => continue,
+            Err(Error::Sync("SyncRetry", _)) => {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
             // What the snapshot before stored is gone from the server: nothing is taken as known.
             Err(Error::Sync("SyncStale", _)) => options.before = None,
             other => return other,
@@ -604,7 +689,14 @@ async fn create_once(
             }
             None => None,
         };
-        for (path, exists) in git_changes(root)? {
+        let changes = git_changes(root)?;
+        if changes.len() > MAX_FILES {
+            capture.manifest.skipped.push((
+                format!("{} more changed files", changes.len() - MAX_FILES),
+                "more than a snapshot holds".into(),
+            ));
+        }
+        for (path, exists) in changes.into_iter().take(MAX_FILES) {
             if exists {
                 capture.file(&path).await?;
             } else {
@@ -629,7 +721,7 @@ async fn create_once(
         uploader, manifest, ..
     } = capture;
     let mut uploader = uploader;
-    let stored_manifest = uploader.add(&serde_json::to_vec(&manifest)?).await?;
+    let stored_manifest = store_manifest(&mut uploader, &manifest).await?;
     let uploaded_bytes = uploader.uploaded_bytes;
     let (refs, gc_epoch) = uploader.finish().await?;
     let summary = Summary {
@@ -699,9 +791,125 @@ pub async fn summary(api: &Api, ring: &Keyring, collection: &str, id: &str) -> R
     Ok(serde_json::from_str(&text)?)
 }
 
+/// Which part of the stored list a path is in, of `parts`.
+fn shard_of(path: &str, parts: usize) -> usize {
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in path.as_bytes() {
+        hash = (hash ^ u32::from(*byte)).wrapping_mul(0x0100_0193);
+    }
+    hash as usize % parts.max(1)
+}
+
+/// How many parts a list of `files` files is stored in: a power of two, so it changes
+/// rarely as a project grows.
+fn shard_count(files: usize) -> usize {
+    (files / SHARD_FILES).max(1).next_power_of_two().min(1024)
+}
+
+/// Stores a manifest: its files in parts (each sorted, so the same files give the same
+/// bytes), then the rest with where the parts are.
+async fn store_manifest(uploader: &mut Uploader<'_>, manifest: &Manifest) -> Result<Stored> {
+    let parts = shard_count(manifest.files.len());
+    let mut shards: Vec<Vec<&FileEntry>> = vec![Vec::new(); parts];
+    for file in &manifest.files {
+        shards[shard_of(&file.p, parts)].push(file);
+    }
+    let mut stored = Vec::with_capacity(parts);
+    for shard in &mut shards {
+        shard.sort_by(|a, b| a.p.cmp(&b.p));
+        stored.push(uploader.add(&serde_json::to_vec(shard)?).await?);
+    }
+    let index = Manifest {
+        v: 2,
+        git: manifest.git.clone(),
+        files: Vec::new(),
+        deleted: manifest.deleted.clone(),
+        skipped: manifest.skipped.clone(),
+        shards: stored,
+    };
+    uploader.add(&serde_json::to_vec(&index)?).await
+}
+
 pub async fn manifest(api: &Api, ring: &Keyring, summary: &Summary) -> Result<Manifest> {
     let bytes = chunks::read(api, ring, &summary.manifest).await?;
-    Ok(serde_json::from_slice(&bytes)?)
+    let mut manifest: Manifest = serde_json::from_slice(&bytes)?;
+    // The files, from their parts, a few at once.
+    let shards = manifest.shards.clone();
+    let mut parts = futures_util::stream::iter(shards)
+        .map(|shard| async move { chunks::read(api, ring, &shard).await })
+        .buffered(WRITES_AT_ONCE);
+    while let Some(part) = parts.next().await {
+        let files: Vec<FileEntry> = serde_json::from_slice(&part?)?;
+        manifest.files.extend(files);
+    }
+    drop(parts);
+    manifest.files.sort_by(|a, b| a.p.cmp(&b.p));
+    Ok(manifest)
+}
+
+/// What a first snapshot of a folder would take: to say so before it starts.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Estimate {
+    /// "git" (only what differs from the commit travels as files) or "folder" (every file).
+    pub kind: String,
+    pub files: usize,
+    pub bytes: u64,
+    /// Files over the size limit, which stay out.
+    pub too_large: usize,
+    /// The largest top-level folders and files: (name, bytes, files).
+    pub largest: Vec<(String, u64, usize)>,
+    /// The list was cut at the most files a snapshot holds.
+    pub truncated: bool,
+}
+
+pub fn estimate(root: &Path) -> Result<Estimate> {
+    let git = is_git(root);
+    let paths: Vec<String> = if git {
+        git_changes(root)?
+            .into_iter()
+            .filter(|(_, exists)| *exists)
+            .map(|(p, _)| p)
+            .collect()
+    } else {
+        folder_files(root)
+    };
+    let mut bytes = 0;
+    let mut too_large = 0;
+    let mut files = 0;
+    let mut tops: HashMap<String, (u64, usize)> = HashMap::new();
+    for path in &paths {
+        let Ok(meta) = std::fs::symlink_metadata(root.join(path)) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if meta.len() > MAX_FILE_BYTES {
+            too_large += 1;
+            continue;
+        }
+        files += 1;
+        bytes += meta.len();
+        let top = path.split('/').next().unwrap_or(path).to_string();
+        let entry = tops.entry(top).or_default();
+        entry.0 += meta.len();
+        entry.1 += 1;
+    }
+    let mut largest: Vec<(String, u64, usize)> = tops
+        .into_iter()
+        .map(|(name, (b, n))| (name, b, n))
+        .collect();
+    largest.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    largest.truncate(8);
+    Ok(Estimate {
+        kind: if git { "git" } else { "folder" }.to_string(),
+        files,
+        bytes,
+        too_large,
+        largest,
+        truncated: !git && paths.len() >= MAX_FILES,
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -827,7 +1035,7 @@ pub async fn restore(
                 ));
             }
             git(root, &["init", "-q"])?;
-            if let Some(url) = &state.remote {
+            if let Some(url) = state.remote.as_deref().filter(|u| safe_remote(u)) {
                 git(root, &["remote", "add", "origin", url])?;
             }
         }
@@ -849,6 +1057,12 @@ pub async fn restore(
             let name = format!("Before continuing from {}", options.from);
             git(root, &["stash", "push", "--include-untracked", "-m", &name])?;
             done.stashed = Some(name);
+        }
+        // What the bundles build on may be on the remote and not here yet (this computer's
+        // copy is behind): asked for first. It needs the network and the user's git access;
+        // when it fails the bundles say what is missing.
+        if !state.bundles.is_empty() || state.head.is_some() {
+            let _ = git(root, &["fetch", "-q", "origin"]);
         }
         for (n, bundle) in state.bundles.iter().enumerate() {
             let file = scratch_file(data, &format!("restore-{n}"))?;
@@ -886,7 +1100,7 @@ pub async fn restore(
                 |root: &Path| git(root, &["cat-file", "-e", &format!("{head}^{{commit}}")]).is_ok();
             if !present(root) && state.remote.is_some() {
                 // The commit is on the remote: this needs the network and the user's git access.
-                let _ = git(root, &["fetch", "-q", "--all"]);
+                let _ = git(root, &["fetch", "-q", "origin"]);
             }
             if !present(root) {
                 return Err(sync_error(
@@ -994,10 +1208,15 @@ pub async fn restore(
             ));
         }
     }
-    for entry in &manifest.files {
-        write_file(api, ring, root, entry).await?;
+    // A few files at once; the first failure stops the rest.
+    let mut writes = futures_util::stream::iter(manifest.files.clone())
+        .map(|entry| async move { write_file(api, ring, root, &entry).await })
+        .buffer_unordered(WRITES_AT_ONCE);
+    while let Some(written) = writes.next().await {
+        written?;
         done.files += 1;
     }
+    drop(writes);
     for path in &manifest.deleted {
         let target = safe_join(root, path)?;
         match std::fs::remove_file(&target) {
@@ -1025,6 +1244,9 @@ pub async fn rewrite(
     let summary: Summary = serde_json::from_str(text)?;
     let manifest = manifest(api, ring, &summary).await?;
     let mut refs: Vec<String> = summary.manifest.chunks.clone();
+    for shard in &manifest.shards {
+        refs.extend(shard.chunks.iter().cloned());
+    }
     for f in &manifest.files {
         refs.extend(f.s.chunks.iter().cloned());
     }
@@ -1089,6 +1311,72 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_stored_list_is_in_stable_parts() {
+        assert_eq!(shard_count(0), 1);
+        assert_eq!(shard_count(399), 1);
+        assert_eq!(shard_count(900), 2);
+        assert_eq!(shard_count(100_000), 256);
+        assert_eq!(shard_count(10_000_000), 1024);
+        // A path is always in the same part, whatever else is in the list.
+        assert_eq!(shard_of("src/main.rs", 16), shard_of("src/main.rs", 16));
+        assert!(shard_of("src/main.rs", 16) < 16);
+        let spread: std::collections::HashSet<usize> = (0..200)
+            .map(|i| shard_of(&format!("src/file{i}.rs"), 16))
+            .collect();
+        assert!(spread.len() > 8, "paths spread over the parts");
+    }
+
+    #[test]
+    fn a_folder_leaves_out_what_its_ignore_files_say() {
+        let dir = std::env::temp_dir().join(format!("sync-ignore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["src", "data", "node_modules/x", "logs"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+        }
+        for (file, text) in [
+            ("src/main.py", "print()"),
+            ("data/big.bin", "x"),
+            ("node_modules/x/index.js", "x"),
+            ("logs/today.log", "x"),
+            ("notes.txt", "x"),
+            (".syncignore", "data/\n"),
+            (".gitignore", "*.log\n"),
+        ] {
+            std::fs::write(dir.join(file), text).unwrap();
+        }
+        let files = folder_files(&dir);
+        assert_eq!(
+            files,
+            [".gitignore", ".syncignore", "notes.txt", "src/main.py"]
+        );
+        let estimate = estimate(&dir).unwrap();
+        assert_eq!((estimate.kind.as_str(), estimate.files), ("folder", 4));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_an_ordinary_address_becomes_a_remote() {
+        for ok in [
+            "https://github.com/owner/repo.git",
+            "git@github.com:owner/repo.git",
+            "ssh://git@example.com:22/a/b",
+        ] {
+            assert!(safe_remote(ok), "{ok}");
+        }
+        for bad in [
+            "ext::sh -c 'touch x'",
+            "--upload-pack=touch x",
+            "/srv/repo.git",
+            "\\\\server\\share\\repo",
+            "file:///srv/repo.git",
+            "C:\\repos\\x",
+            "",
+        ] {
+            assert!(!safe_remote(bad), "{bad}");
+        }
+    }
+
+    #[test]
     fn a_manifest_path_stays_inside_the_project() {
         let root = Path::new("/project");
         assert_eq!(
@@ -1112,6 +1400,10 @@ mod tests {
         ] {
             assert!(safe_join(root, bad).is_err(), "{bad}");
         }
+        for bad in ["NUL", "con.txt", "sub/COM1", "lpt9.log", "Aux"] {
+            assert!(safe_join(root, bad).is_err(), "{bad}");
+        }
+        assert!(safe_join(root, "console.log").is_ok());
         assert!(safe_join(root, "docs/.gitignore").is_ok());
         assert!(safe_join(root, ".github/workflows/ci.yml").is_ok());
         #[cfg(windows)]

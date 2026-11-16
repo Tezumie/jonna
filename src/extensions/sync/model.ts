@@ -1,7 +1,7 @@
 // Sync, DOM-free (D435): the words the Sync tab and the commands share.
 
 export interface ActivityLike {
-  state: "off" | "idle" | "syncing" | "offline" | "error" | "other";
+  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked";
   message: string | null;
   at: number | null;
 }
@@ -39,9 +39,16 @@ export function activityLine(activity: ActivityLike): { text: string; time: numb
     case "syncing":
       return { text: "Syncing…", time: null };
     case "offline":
-      return { text: "Offline: will retry", time: null };
+      return {
+        text: /slow down/i.test(activity.message ?? "")
+          ? "The service asked to slow down: will retry"
+          : "Offline: will retry",
+        time: null,
+      };
     case "other":
       return { text: "Another window is syncing", time: null };
+    case "blocked":
+      return { text: "Waiting for this computer's keys to catch up", time: null };
     case "error":
       return { text: activity.message ?? "Sync ran into a problem.", time: null };
     default:
@@ -116,6 +123,8 @@ export interface OverviewProject {
   /** Whether a folder on this computer syncs as this project. */
   here: boolean;
   folder: string | null;
+  /** That folder isn't on this computer any more (moved or deleted). */
+  folderMissing: boolean;
 }
 
 export interface SyncOverview {
@@ -152,14 +161,14 @@ function parsed(text: string | null): Record<string, unknown> {
 }
 
 /**
- * What the account holds, from its records: the labels (`info`) first, the text only where a
- * record has no label (one written before labels, or by this computer a moment ago).
+ * What the account holds, from its records: their sealed text, and the label (`info`) only
+ * where a record's text isn't here.
  * `devices` names the computers; `folders` are the folders that sync from this computer.
  */
 export function buildOverview(
   records: readonly OverviewRecord[],
   devices: readonly { id: string; name: string }[],
-  folders: readonly { id: string; path: string }[],
+  folders: readonly { id: string; path: string; missing?: boolean }[],
   /** This computer's device id, to tell its own changes. */
   deviceId: string | null = null,
 ): SyncOverview {
@@ -181,6 +190,7 @@ export function buildOverview(
         lastHere: false,
         here: !!folder,
         folder: folder?.path ?? null,
+        folderMissing: folder?.missing === true,
         named: false,
         latest: 0,
       };
@@ -188,67 +198,75 @@ export function buildOverview(
     }
     return entry;
   };
+  /** `device`: who made the change, from sealed content when it says (else the service's word). */
   const touched = (
     entry: OverviewProject,
     time: number | null,
-    record: OverviewRecord,
+    device: string | null,
     computer: string | null,
   ) => {
     if (time === null || (entry.lastChange !== null && time <= entry.lastChange)) return;
     entry.lastChange = time;
-    entry.lastComputer = (record.device ? computers.get(record.device) : undefined) ?? computer;
-    entry.lastHere = deviceId !== null && record.device === deviceId;
+    entry.lastComputer = (device ? computers.get(device) : undefined) ?? computer;
+    entry.lastHere = deviceId !== null && device === deviceId;
   };
 
   for (const record of records) {
     if (record.deleted) continue;
-    const info = record.info ?? {};
+    // What is shown comes from the sealed text, which only the account's computers can write.
+    // The label (`info`) is the service's to read and so to change: it stands in only for a
+    // record whose text isn't here (not loaded, or not readable yet), and never decides that
+    // something is deleted.
+    const loaded = record.text !== null && record.text !== undefined;
+    const sealed = parsed(record.text);
+    const info = loaded ? {} : (record.info ?? {});
     const updatedAt = serviceTime(record.updatedAt);
     const { collection } = record;
     if (collection === "settings") {
       if (record.id !== "user") continue;
-      let count = num(info.settings);
-      if (count === null) {
-        const keys = parsed(record.text).keys;
-        count =
-          keys && typeof keys === "object"
-            ? Object.values(keys as Record<string, { d?: unknown } | null>).filter((k) => !k?.d)
-                .length
-            : 0;
-      }
+      const keys = sealed.keys;
+      const count =
+        keys && typeof keys === "object"
+          ? Object.values(keys as Record<string, { d?: unknown } | null>).filter((k) => !k?.d)
+              .length
+          : (num(info.settings) ?? 0);
       overview.settings = { count, updatedAt };
     } else if (collection === "files") {
-      const text = str(info.path) === null ? parsed(record.text) : {};
-      const path = str(info.path) ?? str(text.path);
-      if (path === null || info.deleted === true || text.deleted === true) continue;
-      const body = typeof text.text === "string" ? text.text.length : 0;
-      overview.files.push({ path, bytes: num(info.bytes) ?? body, updatedAt });
+      const path = str(sealed.path) ?? str(info.path);
+      if (path === null || sealed.deleted === true) continue;
+      const bytes = typeof sealed.text === "string" ? sealed.text.length : (num(info.bytes) ?? 0);
+      overview.files.push({ path, bytes, updatedAt });
     } else if (collection === "projects") {
       const entry = project(record.id);
-      entry.name = str(info.name) ?? str(parsed(record.text).name) ?? "";
+      entry.name = str(sealed.name) ?? str(info.name) ?? "";
       entry.named = true;
-      touched(entry, updatedAt, record, null);
+      touched(entry, updatedAt, record.device, null);
     } else if (collection.startsWith("chats.")) {
-      // A chat deleted on another computer stays as a marker: not a chat any more.
-      if (info.deleted === true) continue;
-      if (record.info == null && parsed(record.text).deleted === true) continue;
+      // A chat deleted on another computer stays as a sealed marker: not a chat any more.
+      if (sealed.deleted === true) continue;
       if (collection === "chats.account") {
         overview.accountChats++;
         continue;
       }
       const entry = project(collection.slice("chats.".length));
       entry.chats++;
-      touched(entry, num(info.updated) ?? updatedAt, record, null);
+      const meta = sealed.meta as { updated?: unknown } | null | undefined;
+      const changed = num(meta?.updated) ?? num(info.updated) ?? updatedAt;
+      touched(entry, changed, record.device, null);
     } else if (collection.startsWith("snap.")) {
       const entry = project(collection.slice("snap.".length));
-      const summary = record.info == null ? parsed(record.text) : {};
-      const time = num(info.time) ?? num(summary.time) ?? updatedAt;
+      const time = num(sealed.time) ?? num(info.time) ?? updatedAt;
       entry.snapshots++;
       if (time !== null && time >= entry.latest) {
         entry.latest = time;
-        entry.snapshotBytes = num(info.bytes) ?? num(summary.bytes) ?? 0;
+        entry.snapshotBytes = num(sealed.bytes) ?? num(info.bytes) ?? 0;
       }
-      touched(entry, time, record, str(info.computer) ?? str(summary.deviceName));
+      touched(
+        entry,
+        time,
+        str(sealed.device) ?? record.device,
+        str(sealed.deviceName) ?? str(info.computer),
+      );
     }
   }
 
@@ -385,6 +403,12 @@ export function statusBarWords(
       return { text: "$(cloud) Offline", tooltip: "Sync: offline, will retry", error: false };
     case "other":
       return { text: "$(cloud) Sync", tooltip: "Sync: another window is syncing", error: false };
+    case "blocked":
+      return {
+        text: "$(cloud) Waiting",
+        tooltip: "Sync: waiting for this computer's keys to catch up",
+        error: false,
+      };
     case "error":
       return {
         text: "$(circle-alert) Sync error",
@@ -679,4 +703,64 @@ export function groupByDay<T>(
 /** A time of day for a row under a day's heading ("14:05" or "2:05 PM", as the system has it). */
 export function timeOfDay(time: number): string {
   return new Date(time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// ------------------------------------------------------------ the loop's timing
+
+/** How long to wait after passes that failed in a row for want of a connection: 1, 2, 5, 10 min. */
+export function backoffMs(failures: number): number {
+  const minutes = [1, 2, 5, 10];
+  const at = Math.min(Math.max(1, Math.floor(failures)), minutes.length) - 1;
+  return (minutes[at] ?? 10) * 60_000;
+}
+
+/**
+ * How long to leave before looking again for something to snapshot, given how long the look
+ * that found nothing took: at least `least`, and forty times the look, so walking a huge
+ * folder takes a small share of the time.
+ */
+export function snapshotSpacing(tookMs: number, least: number): number {
+  return Math.max(least, 40 * Math.max(0, tookMs));
+}
+
+// ------------------------------------------------------------ before a large first snapshot
+
+/** As `syncIpc.snapshotEstimate` gives it. */
+export interface EstimateLike {
+  kind: "git" | "folder";
+  files: number;
+  bytes: number;
+  tooLarge: number;
+  largest: [string, number, number][];
+  truncated: boolean;
+}
+
+/** A folder without git this large (or larger than a snapshot holds) is asked about first. */
+export const LARGE_FILES = 2_000;
+export const LARGE_BYTES = 200 * 1024 * 1024;
+
+/**
+ * What to say before syncing a large folder that has no git: its numbers, its largest parts,
+ * what is left out. Null when there is nothing to ask (a git project sends only what differs
+ * from its commit; a small folder just syncs).
+ */
+export function estimateWarning(estimate: EstimateLike): string | null {
+  if (estimate.kind !== "folder") return null;
+  const large =
+    estimate.truncated || estimate.files >= LARGE_FILES || estimate.bytes >= LARGE_BYTES;
+  if (!large) return null;
+  const lines = [
+    `This folder has no git, so a snapshot holds every file: ${countOf(estimate.files, "file")}, ${formatSize(estimate.bytes)}.`,
+  ];
+  const largest = estimate.largest.slice(0, 5);
+  if (largest.length > 0)
+    lines.push(
+      `The largest:\n${largest.map(([name, bytes, files]) => `${name}  ${formatSize(bytes)}${files > 1 ? ` (${countOf(files, "file")})` : ""}`).join("\n")}`,
+    );
+  if (estimate.truncated)
+    lines.push("That is more files than a snapshot holds: the rest would be left out.");
+  if (estimate.tooLarge > 0)
+    lines.push(`Files over 100 MB are left out (${countOf(estimate.tooLarge, "file")} here).`);
+  lines.push("You can choose what to leave out first, as in a .gitignore file.");
+  return lines.join("\n\n");
 }

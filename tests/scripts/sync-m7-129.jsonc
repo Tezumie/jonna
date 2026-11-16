@@ -97,6 +97,12 @@
       "expectError": "Sign in to your account to use sync."
     },
     { "run": "sync.project.link", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.project.editIgnore", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "sync.project.forgetFolder",
+      "input": { "folder": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
     {
       "run": "sync.project.deleteFromAccount",
       "input": { "id": "none" },

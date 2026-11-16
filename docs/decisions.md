@@ -31,6 +31,7 @@ unless noted.
 | · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit, its name and CI job | D427–D434 |
 | · Sync: devices and keys, encrypted records and chunks, snapshots | D435 |
 | · Sync hardened after a review; what is synced shown by name | D436 |
+| · Sync: keys only from a computer the person checked, a loop that can't lose data, large projects | D437 |
 
 ## Seeded from PLAN §19
 
@@ -15460,3 +15461,87 @@ and anyone can call the service, so every finding was taken as real.
   apply without a prompt on the receiving computer (they come from a holder of the keys).
   Keys, the list of extensions and a project's layout still don't sync; billing isn't built.
   The review was done by a second model, not a person.
+
+## D437 — Sync: keys only from a computer the person checked, a loop that can't lose data, large projects
+
+Two more independent reads of sync before it is offered for money: one of the keys and the
+service (as someone who controls the service, or holds only an account's sign-in), one of the
+loop for ways to lose or duplicate data. Both found real problems; all confirmed ones are fixed
+here. An account that turned sync on with an earlier build resets it first (the account page),
+because the pairing and the wraps changed.
+
+**Keys**
+
+- **A device took any keyring it could open.** The wrap was a sealed box, which anyone can
+  make for a public key, so whoever stores the wraps could hand a device a keyring of their
+  own and read what it synced from then on. Wraps are now authenticated boxes from the device
+  that hands the keys over. A waiting device opens its wrap only as coming from the computer
+  whose code it showed; after that, new keys are taken only from a device on the trusted list
+  the device already holds, and only a keyring that continues its own (`Keyring::extends`).
+- **The pairing code could be fitted by the service.** The approving device chose the code's
+  random part, and the service relayed it, so the service could try keys until the six digits
+  matched. The code is now made from both keys and a value from each side, with the waiting
+  side committed to its value before it sees the other's (commit, then reveal). Six digits are
+  enough when nobody can search: a forger gets one guess in a million, and the person sees a
+  mismatch.
+- **The trusted list's counter didn't survive a restart,** so an old list could be served
+  again. Each device keeps the last list it read and its counter on disk.
+- **Setup and a new recovery key weren't resumable.** Both now save what they made before
+  sending, so a crash between the two leaves nothing half-done.
+- **The service:** one challenge per session (no pile of open challenges), codes and reveals
+  bound to the key and commitment seen, who made each wrap recorded, new keys saying which
+  recovery key they were wrapped for, record names that can't start with a dot, "which chunks
+  are stored" refused while a sweep runs, deleted records' markers removed after 30 days, a
+  ceiling on how many chunks an account's records name, a content security policy on the
+  sign-in pages, and "Sign out everywhere" on the account page (`POST /api/sessions/revoke`).
+
+**The loop**
+
+- **Chats switched off deleted every synced chat,** and a chat merely absent from this
+  computer was deleted from the account. A deletion now needs the backend's own list of chats
+  the person deleted (`<data>/agent/deleted-chats.json`); absence says nothing.
+- **A conflict made a new copy every pass.** The copy is noted before it is uploaded, and
+  bases are saved after each transfer, so a pass cut short doesn't repeat it.
+- **Records sealed with newer keys were skipped,** and later written over. The pass now stops
+  at such a record until the keys caught up. A record no key opens is told apart (the sealed
+  header names its generation) and replaced by the next write, so one damaged record can't
+  stop sync for good.
+- **A user file the scan left out** (too large, not text, unreadable for a moment) looked
+  deleted. The scan now says which files it kept out and whether it saw everything.
+- **A chat saved while it was being downloaded** was overwritten. A pull names the version of
+  the chat it saw and gives way to a newer save.
+- **A missing settings file** removed every setting from the account. It now takes the
+  account's.
+- **The loop's claim wasn't renewed** during a long pass, so a second window could start
+  writing. Renewed every 30 seconds.
+- **Settings that could run or send something stay local** (what the agent may run without
+  asking, sandboxing, addresses prompts or code go to, paths to programs): a synced setting
+  must not be a way from one computer into another.
+- **Offline and "slow down"** back off (1, 2, 5, 10 minutes) instead of trying every minute.
+
+**Snapshots**
+
+- A snapshot's file list is stored in parts (200,000 files, not the 400 KB of one record);
+  uploads run three batches at a time, downloads are buffered, a restore writes several files
+  at once. A folder without git honours `.syncignore`, `.gitignore` and `.ignore`, and the
+  IDE says what would be uploaded before sync is turned on for a large one.
+- A detached HEAD travels; another computer's restored refs aren't bundled again; whether
+  there is anything to bundle is asked with `rev-list`, not read from git's message; scratch
+  files have random names; the remote is fetched before the bundles; a snapshot's remote
+  becomes a git remote only when it is an ordinary address (no `ext::`, no local path, no
+  option); Windows' reserved names are refused on restore; one snapshot or restore at a time.
+- Requests that carry chunks have a long timeout; a 429 is waited out; a sweep under way is a
+  short wait.
+
+**The view**
+
+- Approve shows only once the code has arrived ("waiting for the other computer…" until
+  then); a waiting computer asks every few seconds for the first fifteen minutes.
+- A synced project whose folder is gone says so and can be forgotten; a project's ignore file
+  opens from its menu (`sync.project.editIgnore`, `sync.project.forgetFolder`).
+- Conflicts and single items that couldn't sync are said in Activity.
+
+**Not done, on purpose:** uploads straight to storage with signed addresses (the function
+relays chunks; fine at this size, the next step if transfer cost matters); a server-side check
+of the commitment (the service is the party not trusted); symbolic links and submodules in
+snapshots; keys, the extension list and layouts in sync; billing.

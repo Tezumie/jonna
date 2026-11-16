@@ -69,6 +69,41 @@ accounts whose profile says `sync: true`. Window only: a screenless session does
   folder changes; the status bar item; the last snapshot on close (`workspace.onWillClose`, never
   cancels closing).
 
+**How the loop keeps things safe** (the rules are `core/sync`'s; the controller wires them):
+
+- Nothing is deleted on absence. Chats: only the ids `syncIpc.chatsDeleted()` names are deleted
+  from the account (forgotten with `chatsDeletedClear` once told); with `sync.chats` off the
+  chats layer doesn't run at all. Files: a name the scan lists as `kept` is left as it is, and a
+  scan that isn't `complete` deletes nothing either way. Settings: a missing settings file has
+  no opinion (the account's settings apply; nothing is told to the account).
+- A record sealed with keys this computer doesn't hold yet stops the reading there
+  (`engine.blocked`): the layers don't run and nothing is written over it. The controller reads
+  the status at once (that fetches keys) and reads again; still blocked, the status line says
+  "Waiting for this computer's keys to catch up".
+- A chat is fetched only over the chat as the pass saw it (`ifStamp`); a conflict asks
+  `chatSame` first, forks once (the forked version is kept in the base before the upload), and
+  each finished transfer is saved at once.
+- One window holds the loop: its claim is renewed every 30 s while a pass runs, and a renewal
+  that fails ends the pass after the action under way. A window that takes the loop over reads
+  the bases from disk again and keeps what it read of the account.
+- No connection, or the service asking to slow down: the timer waits 1, 2, 5, then 10 minutes.
+  Every way a pass ends leaves a final state (never "syncing").
+- Snapshots: one call at a time; after a look that found nothing, the next is due after
+  `max(3 min, 40 × how long the look took)`; history is pruned after a snapshot, on Snapshot
+  now, and when storage is full; an earlier day keeps each computer's last snapshot.
+- Settings that run programs or point at this computer's paths never sync
+  (`core/sync/localSettings.ts`), besides `sync.ignoredSettings`.
+- What is shown (names, counts, sizes, who changed what) comes from sealed text; a record's
+  label stands in only when its text isn't here, and never marks anything deleted.
+- The layers report conflicts (a chat forked, a file kept as `name.conflict.ext`) and items that
+  couldn't sync; they show in the activity log.
+- Folders in `sync.projects` that are gone are found every 10 minutes (`foldersExist`) and shown
+  as "Folder not found on this computer", with Forget this folder.
+- Before a folder without git syncs, `snapshotEstimate` is asked: a large one (2,000 files,
+  200 MB, or more than a snapshot holds) is confirmed first, with Choose what to leave out.
+- After Check code, the status is asked for every 2 s (3 minutes at most) until the waiting
+  computer's code is there; Approve shows only then.
+
 **Exports:** `syncExtension` (`index.ts`), `SyncController` (`controller.ts`).
 
 **Commands:** `sync.show {page?, project?}` (`page`: overview, projects, content, computers,
@@ -77,6 +112,8 @@ security, storage, activity; `project` shows that project's detail), `sync.turnO
 the code), `sync.approveDevice {device}` (only after `sync.reviewDevice`), `sync.removeDevice
 {device}`, `sync.turnOff`, `sync.newRecoveryKey`, `sync.syncNow`, `sync.project.enable` (a copied
 folder is asked about first: the same project, or one of its own), `sync.project.disable`,
+`sync.project.editIgnore` (opens the folder's `.syncignore`: what snapshots leave out),
+`sync.project.forgetFolder {folder}` (forgets a folder that is gone; the account is untouched),
 `sync.project.link {id?}` (the open folder becomes one of the account's projects that isn't on
 this computer; without `id`, pick one), `sync.project.deleteFromAccount {id}` (the project's
 snapshots and its chats' synced copies leave the account; nothing on a computer is deleted),

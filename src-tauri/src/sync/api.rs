@@ -117,9 +117,12 @@ impl Api {
             .client
             .request(method.clone(), format!("{}/api/sync/{path}", self.base))
             .bearer_auth(token);
+        // Chunks and sweeps take as long as megabytes take; everything else is quick.
+        let slow = path.starts_with("blobs") || path == "gc";
+        let wait = if slow { TRANSFER_TIMEOUT } else { TIMEOUT };
         request = match body {
-            Body::None => request.timeout(TIMEOUT),
-            Body::Json(v) => request.json(v).timeout(TIMEOUT),
+            Body::None => request.timeout(wait),
+            Body::Json(v) => request.json(v).timeout(wait),
             Body::Bytes(b) => request
                 .header("Content-Type", "application/octet-stream")
                 .body(b.clone())
@@ -135,7 +138,15 @@ impl Api {
         path: &str,
         body: Body<'_>,
     ) -> Result<reqwest::Response> {
-        let reply = self.send(&method, path, &body, &self.token()?).await?;
+        let mut reply = self.send(&method, path, &body, &self.token()?).await?;
+        // "Slow down": waited out a few times before it is an error.
+        for wait in [5, 15, 30] {
+            if reply.status().as_u16() != 429 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(wait)).await;
+            reply = self.send(&method, path, &body, &self.token()?).await?;
+        }
         if reply.status().as_u16() != 401 {
             return Ok(reply);
         }

@@ -23,6 +23,9 @@ pub struct Record {
     pub text: Option<String>,
     /// Sealed with keys this device doesn't hold yet (it catches up at the next status check).
     pub unreadable: bool,
+    /// Its content opens with no key, held or to come (cut short, altered, from a reset
+    /// account): treated as having no content, so the next write replaces it.
+    pub damaged: bool,
     /// How many chunks it names.
     pub refs: u64,
     pub device: Option<String>,
@@ -75,10 +78,15 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
     let deleted = v.get("deleted").and_then(Value::as_bool).unwrap_or(false);
     let mut text = None;
     let mut unreadable = false;
+    let mut damaged = false;
     if let Some(blob) = v.get("blob").and_then(Value::as_str) {
-        match ring.open(PURPOSE, &place(&collection, &id), &unb64(blob)?) {
-            Ok(plain) => text = Some(String::from_utf8_lossy(&plain).into_owned()),
-            Err(_) => unreadable = true,
+        match unb64(blob) {
+            Ok(sealed) => match ring.open(PURPOSE, &place(&collection, &id), &sealed) {
+                Ok(plain) => text = Some(String::from_utf8_lossy(&plain).into_owned()),
+                Err(_) if ring.awaits(&sealed) => unreadable = true,
+                Err(_) => damaged = true,
+            },
+            Err(_) => damaged = true,
         }
     }
     Ok(Record {
@@ -89,6 +97,7 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
         deleted,
         text,
         unreadable,
+        damaged,
         refs: v.get("refs").and_then(Value::as_u64).unwrap_or(0),
         device: v.get("device").and_then(Value::as_str).map(str::to_string),
         updated_at: v.get("updatedAt").and_then(Value::as_u64),
@@ -122,7 +131,7 @@ pub async fn changes(api: &Api, ring: &Keyring, since: u64) -> Result<Changes> {
         .flatten()
     {
         let mut record = parse(ring, r)?;
-        if !record.deleted && record.text.is_none() && !record.unreadable {
+        if !record.deleted && record.text.is_none() && !record.unreadable && !record.damaged {
             if let Some(full) = get(api, ring, &record.collection, &record.id).await? {
                 // Only when it is still the version this page spoke of; a later one comes later.
                 if full.version == record.version {

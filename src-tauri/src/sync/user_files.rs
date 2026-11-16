@@ -23,6 +23,19 @@ pub struct Roots {
     pub skills: Option<PathBuf>,
 }
 
+/// What a scan found.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scan {
+    pub files: Vec<UserFile>,
+    /// Names that are there but can't sync as they are (too large, not text, unreadable):
+    /// neither sent nor taken to be deleted.
+    pub kept: Vec<String>,
+    /// False when a folder couldn't be listed or the scan was cut short: then nothing that
+    /// is missing from `files` may be taken to be deleted.
+    pub complete: bool,
+}
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserFile {
@@ -97,36 +110,51 @@ impl Roots {
         }
     }
 
-    fn note(&self, out: &mut Vec<UserFile>, name: String, file: &Path) {
-        if out.len() >= MAX_FILES {
+    fn note(&self, out: &mut Scan, name: String, file: &Path) {
+        if out.files.len() >= MAX_FILES {
+            out.complete = false;
             return;
         }
-        let Ok(meta) = std::fs::metadata(file) else {
-            return;
+        let meta = match std::fs::metadata(file) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            // There, and not readable just now: kept as it is.
+            Err(_) => {
+                out.kept.push(name);
+                return;
+            }
         };
-        if !meta.is_file() || meta.len() > MAX_BYTES {
+        if !meta.is_file() {
             return;
         }
-        let Ok(bytes) = std::fs::read(file) else {
-            return;
-        };
-        // Text only: a record carries text.
-        if std::str::from_utf8(&bytes).is_err() {
+        if meta.len() > MAX_BYTES {
+            out.kept.push(name);
             return;
         }
-        out.push(UserFile {
-            path: name,
-            hash: hash(&bytes),
-            mtime_ms: mtime(&meta),
-        });
+        // Text only: a record carries text. Anything else stays where it is, on both sides.
+        match std::fs::read(file) {
+            Ok(bytes) if std::str::from_utf8(&bytes).is_ok() => out.files.push(UserFile {
+                path: name,
+                hash: hash(&bytes),
+                mtime_ms: mtime(&meta),
+            }),
+            _ => out.kept.push(name),
+        }
     }
 
-    fn walk(&self, out: &mut Vec<UserFile>, prefix: &str, dir: &Path, depth: usize) {
-        if depth > MAX_DEPTH {
+    fn walk(&self, out: &mut Scan, prefix: &str, dir: &Path, depth: usize) {
+        // As deep as a name may be (`resolve` takes `MAX_DEPTH` parts): deeper files stay local.
+        if depth >= MAX_DEPTH {
             return;
         }
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            // A folder that can't be listed: what was in it isn't known to be gone.
+            Err(_) => {
+                out.complete = false;
+                return;
+            }
         };
         let mut entries: Vec<_> = entries.flatten().collect();
         entries.sort_by_key(std::fs::DirEntry::file_name);
@@ -138,6 +166,7 @@ impl Roots {
                 continue;
             }
             let Ok(kind) = entry.file_type() else {
+                out.complete = false;
                 continue;
             };
             let path = format!("{prefix}/{name}");
@@ -149,15 +178,25 @@ impl Roots {
         }
     }
 
-    /// Every file that syncs, with its content's hash.
-    pub fn scan(&self) -> Vec<UserFile> {
-        let mut out = Vec::new();
+    /// Every file that syncs, with its content's hash; what is there and can't sync as it is;
+    /// and whether everything could be looked at.
+    pub fn scan(&self) -> Scan {
+        let mut out = Scan {
+            files: Vec::new(),
+            kept: Vec::new(),
+            complete: true,
+        };
         for name in FILES {
             self.note(&mut out, (*name).to_string(), &self.config.join(name));
         }
         for (folder, endings) in FOLDERS {
-            let Ok(entries) = std::fs::read_dir(self.config.join(folder)) else {
-                continue;
+            let entries = match std::fs::read_dir(self.config.join(folder)) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => {
+                    out.complete = false;
+                    continue;
+                }
             };
             let mut names: Vec<String> = entries
                 .flatten()
@@ -173,8 +212,10 @@ impl Roots {
                 );
             }
         }
-        if let Some(skills) = &self.skills {
-            self.walk(&mut out, "skills", skills, 1);
+        match &self.skills {
+            Some(skills) => self.walk(&mut out, "skills", skills, 1),
+            // No home folder to look in: the skills aren't known to be gone.
+            None => out.complete = false,
         }
         out
     }
@@ -321,7 +362,11 @@ mod tests {
             [0xff, 0xfe, 0x00],
         )
         .unwrap();
-        let found = roots.scan();
+        let scan = roots.scan();
+        assert!(scan.complete);
+        // Not text: there, and left alone on both sides.
+        assert_eq!(scan.kept, ["skills/review/logo.png"]);
+        let found = scan.files;
         let names: Vec<&str> = found.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
             names,
@@ -343,7 +388,7 @@ mod tests {
             None,
             "removing twice is fine"
         );
-        assert_eq!(roots.scan().len(), 2);
+        assert_eq!(roots.scan().files.len(), 2);
         // The same text has the same hash wherever it is.
         let a = roots.write("agents/a.md", Some("same")).unwrap().unwrap();
         let b = roots.write("commands/b.md", Some("same")).unwrap().unwrap();

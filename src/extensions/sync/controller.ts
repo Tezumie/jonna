@@ -5,6 +5,7 @@ import { agentStoreIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import {
   type SnapshotCreated,
+  type SnapshotEstimate,
   type SnapshotFile,
   type SnapshotRestored,
   type SnapshotSummary,
@@ -17,6 +18,7 @@ import { product } from "../../core/product";
 import { type Signal, signal } from "../../core/reactive/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { type SyncBackend, SyncEngine, type SyncLayer } from "../../core/sync/engine";
+import { codeOf, isRateLimited, messageOf, STANDING_CODES } from "../../core/sync/errors";
 import { planPrune } from "../../core/sync/history";
 import {
   type ChatsPort,
@@ -26,9 +28,11 @@ import {
   type SettingsPort,
   settingsLayer,
 } from "../../core/sync/layers";
+import { staysLocal } from "../../core/sync/localSettings";
 import type { WorkbenchServices } from "../../workbench/services";
 import { accountsServer } from "../accounts/model";
 import {
+  backoffMs,
   buildOverview,
   changedCount,
   countOf,
@@ -39,12 +43,19 @@ import {
   type SyncOverview,
   type SyncPageId,
   snapshotFacts,
+  snapshotSpacing,
   storageNotice,
   withEvent,
 } from "./model";
 
 /** How often a pass runs while the app is open. */
 const PASS_MS = 60_000;
+/**
+ * A computer waiting to be approved asks this often, for a while: its answer to the approving
+ * computer's check (and then the approval) shouldn't take a minute to show.
+ */
+const WAITING_MS = 4_000;
+const WAITING_FOR_MS = 15 * 60_000;
 /** How long a status read stays good. */
 const STATUS_MS = 5 * 60_000;
 /** A snapshot at most this often. */
@@ -53,13 +64,22 @@ const SNAPSHOT_MS = 3 * 60_000;
 const CLOSE_SNAPSHOT_MS = 4_000;
 /** A project's missing name is written again at most this often. */
 const NAME_RETRY_MS = 10 * 60_000;
+/** The claim on the loop is renewed this often while a pass runs. */
+const LEASE_RENEW_MS = 30_000;
+/** Whether the folders that sync still exist is looked at this often. */
+const FOLDERS_CHECK_MS = 10 * 60_000;
+/** After "Check code": how often the status is asked for, and for how long at most. */
+const REVIEW_POLL_MS = 2_000;
+const REVIEW_POLL_FOR_MS = 3 * 60_000;
 
-/** Settings that always stay on the computer they were set on. */
-const LOCAL_SETTINGS = ["accounts.serverUrl", "sync.projects"];
+const KEYS_WAIT = "Waiting for this computer's keys to catch up";
 
 export interface SyncActivity {
-  /** "other": another window of this profile runs the loop. */
-  state: "off" | "idle" | "syncing" | "offline" | "error" | "other";
+  /**
+   * "other": another window of this profile runs the loop. "blocked": the account holds
+   * something sealed with keys this computer doesn't have yet; nothing syncs until it does.
+   */
+  state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked";
   message: string | null;
   /** When the last pass finished well, in ms. */
   at: number | null;
@@ -81,10 +101,6 @@ export interface SnapshotRow {
   version: number;
   summary: SnapshotSummary;
 }
-
-const codeOf = (err: unknown): string =>
-  err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** A folder as a key: one spelling per folder (Windows paths don't tell case apart). */
 const pathKey = (path: string) => {
@@ -115,13 +131,33 @@ export class SyncController implements Disposable {
   readonly overview: Signal<SyncOverview> = signal<SyncOverview>(EMPTY_OVERVIEW);
   /** What sync did lately, newest first. Kept in memory only. */
   readonly log: Signal<SyncEvent[]> = signal<SyncEvent[]>([]);
+  /**
+   * Waiting computers whose code was asked for and hasn't come yet (device ids): the waiting
+   * computer answers a moment later, and the status is asked for until it has.
+   */
+  readonly reviewing: Signal<string[]> = signal<string[]>([]);
 
   private readonly store = new DisposableStore();
   private readonly engine: SyncEngine;
   private readonly owner = `w-${Math.random().toString(36).slice(2, 10)}`;
   private leader = false;
+  /** A renewal of the claim came back "no": the pass ends after the action under way. */
+  private leaseLost = false;
   private statusAt = 0;
   private snapshotAt = 0;
+  /** How long to leave between two looks for something to snapshot. */
+  private snapshotGap = SNAPSHOT_MS;
+  /** Snapshot calls run one after the other, never two at once. */
+  private snapshotQueue: Promise<unknown> = Promise.resolve();
+  /** Passes that failed in a row for want of a connection (or on the service's "slow down"). */
+  private failures = 0;
+  /** The timer starts no pass before this. */
+  private nextPassAt = 0;
+  private foldersAt = 0;
+  /** Folders that sync from here and aren't on this computer any more (folder keys). */
+  private missingFolders = new Set<string>();
+  private reviewTimer: ReturnType<typeof setInterval> | undefined;
+  private reviewUntil = 0;
   private passing: Promise<void> | null = null;
   private disposed = false;
   /** The fullest storage a notification was shown for, this run (0, 80 or 95). */
@@ -139,10 +175,11 @@ export class SyncController implements Disposable {
       put: (collection, id, expect, text, info) =>
         syncIpc.put(this.base(), collection, id, expect, text, info ?? null),
     };
-    const led = (layer: SyncLayer): SyncLayer => ({
+    const led = (layer: SyncLayer, on: () => boolean = () => true): SyncLayer => ({
       name: layer.name,
-      // Only the window that holds the claim writes; the others just read the account.
-      run: (ctx) => (this.leader ? layer.run(ctx) : Promise.resolve()),
+      // Only the window that holds the claim writes; the others just read the account. A
+      // layer switched off doesn't run at all: what it kept of its last sync stays as it is.
+      run: (ctx) => (this.leader && on() ? layer.run(ctx) : Promise.resolve()),
     });
     this.engine = new SyncEngine(
       backend,
@@ -154,11 +191,32 @@ export class SyncController implements Disposable {
       [
         led(settingsLayer(this.settingsPort())),
         led(filesLayer(this.filesPort())),
-        led(chatsLayer(this.chatsPort())),
+        led(chatsLayer(this.chatsPort()), () => this.on("chats")),
       ],
+      {
+        // What the layers report: a conflict kept aside, one item that couldn't sync.
+        note: (event) => this.note(event.text, event.kind === "failure"),
+        stopped: () => this.leaseLost || this.disposed,
+      },
     );
-    const timer = setInterval(() => void this.pass(), PASS_MS);
+    const timer = setInterval(() => {
+      // Held back after failures (no connection, the service asking to slow down).
+      if (Date.now() >= this.nextPassAt) void this.pass();
+    }, PASS_MS);
     this.store.add({ dispose: () => clearInterval(timer) });
+    let waitingSince = 0;
+    const waiting = setInterval(() => {
+      if (this.status.peek()?.state !== "pending") {
+        waitingSince = 0;
+        return;
+      }
+      waitingSince ||= Date.now();
+      // After a while the minute's pass is enough: nobody is at the other computer.
+      if (Date.now() - waitingSince < WAITING_FOR_MS && Date.now() >= this.nextPassAt) {
+        void this.pass();
+      }
+    }, WAITING_MS);
+    this.store.add({ dispose: () => clearInterval(waiting) });
   }
 
   /** The accounts server ("" when the build has none). */
@@ -209,8 +267,8 @@ export class SyncController implements Disposable {
           if (!values || typeof values !== "object" || Array.isArray(values)) return null;
           return { values: values as Record<string, unknown>, mtimeMs: stat.mtimeMs };
         } catch (err) {
-          // No settings file yet: nothing set here.
-          if (codeOf(err) === "NotFound") return { values: {}, mtimeMs: 0 };
+          // No settings file: no opinion (not "every setting removed").
+          if (codeOf(err) === "NotFound") return { values: {}, mtimeMs: 0, missing: true };
           return null;
         }
       },
@@ -220,7 +278,8 @@ export class SyncController implements Disposable {
         await settings.updateMany(values, "user");
       },
       skip: (key) => {
-        if (LOCAL_SETTINGS.includes(key)) return true;
+        // Settings that run programs or point at this computer's paths never travel.
+        if (staysLocal(key)) return true;
         const ignored = settings.peek<unknown>("sync.ignoredSettings");
         return Array.isArray(ignored) && ignored.includes(key);
       },
@@ -252,7 +311,6 @@ export class SyncController implements Disposable {
     };
     return {
       list: async () => {
-        if (!this.on("chats")) return [];
         const chats = await agentStoreIpc.list();
         const stamps = await agentStoreIpc.stamps(chats.map((c) => c.id));
         return chats.flatMap((chat, i) => {
@@ -282,8 +340,10 @@ export class SyncController implements Disposable {
         return undefined;
       },
       push: (collection, id, expect) => syncIpc.chatPush(this.base(), collection, id, expect),
-      pull: (collection, id, saveAs, workspace) =>
-        syncIpc.chatPull(this.base(), collection, id, saveAs, workspace),
+      pull: (collection, id, saveAs, workspace, ifStamp) =>
+        syncIpc.chatPull(this.base(), collection, id, saveAs, workspace, ifStamp),
+      deleted: () => syncIpc.chatsDeleted(),
+      clearDeleted: (ids) => syncIpc.chatsDeletedClear(ids),
       remove: (id) => agentStoreIpc.delete(id),
       stamp: async (id) => (await agentStoreIpc.stamps([id]))[0] ?? null,
       newId: () => `s-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
@@ -307,7 +367,11 @@ export class SyncController implements Disposable {
         ? buildOverview(
             this.engine.allRecords(),
             status.devices,
-            Object.values(this.projects()),
+            Object.entries(this.projects()).map(([folder, entry]) => ({
+              id: entry.id,
+              path: entry.path,
+              missing: this.missingFolders.has(folder),
+            })),
             status.deviceId,
           )
         : EMPTY_OVERVIEW;
@@ -423,15 +487,57 @@ export class SyncController implements Disposable {
       this.announceWaiting(status);
     }
     if (status.notice) {
-      this.services.notifications.show(
-        "warning",
+      const words =
         status.notice === "removed"
           ? "This computer was removed from sync on another one. Sync is off here; your files and chats are untouched."
-          : "Sync was reset from the account page. It is off here until you turn it on again; your files and chats are untouched.",
-        { title: "Sync" },
-      );
+          : status.notice === "keysLost"
+            ? "This computer's sync keys are gone from its keychain, so sync is off here. Your files and chats are untouched. To sync again, join from this computer."
+            : "Sync was reset from the account page. It is off here until you turn it on again; your files and chats are untouched.";
+      this.services.notifications.show("warning", words, {
+        title: "Sync",
+        actions: [{ label: "Open sync", run: () => this.showPage("overview") }],
+      });
+      this.note(words, true);
     }
     return status;
+  }
+
+  /**
+   * Starts checking a waiting computer. Its code shows once that computer has answered: the
+   * status is asked for every couple of seconds until then, whether or not the tab is open.
+   */
+  async reviewDevice(device: string): Promise<void> {
+    await syncIpc.reviewDevice(this.base(), device);
+    this.reviewing.value = [...new Set([...this.reviewing.peek(), device])];
+    this.reviewUntil = Date.now() + REVIEW_POLL_FOR_MS;
+    await this.refreshStatus();
+    this.settleReviews();
+    if (this.reviewing.peek().length === 0 || this.reviewTimer !== undefined) return;
+    this.reviewTimer = setInterval(() => {
+      if (this.disposed || Date.now() > this.reviewUntil) {
+        this.reviewing.value = [];
+        this.settleReviews();
+        return;
+      }
+      void this.refreshStatus()
+        .catch(() => null)
+        .then(() => this.settleReviews());
+    }, REVIEW_POLL_MS);
+  }
+
+  /** Drops the computers whose code has come (or that are gone); stops asking when none is left. */
+  private settleReviews(): void {
+    const devices = this.status.peek()?.devices ?? [];
+    const open = this.reviewing
+      .peek()
+      .filter((id) =>
+        devices.some((d) => d.id === id && d.status === "pending" && d.code === null),
+      );
+    if (open.length !== this.reviewing.peek().length) this.reviewing.value = open;
+    if (open.length === 0 && this.reviewTimer !== undefined) {
+      clearInterval(this.reviewTimer);
+      this.reviewTimer = undefined;
+    }
   }
 
   /** One pass now (the timer calls this too). */
@@ -442,37 +548,72 @@ export class SyncController implements Disposable {
     return this.passing;
   }
 
+  /** The engine's pass, with what was read shown whether or not a layer failed. */
+  private async tick(): Promise<void> {
+    try {
+      await this.engine.tick();
+    } finally {
+      this.readOverview();
+    }
+  }
+
   private async runPass(force: boolean): Promise<void> {
     if (this.disposed || !this.base()) return;
+    const before = this.activity.peek();
+    let renew: ReturnType<typeof setInterval> | undefined;
+    this.leaseLost = false;
     try {
       // A computer waiting for approval asks every pass, whether or not the tab is open.
       const waiting = this.status.peek()?.state === "pending";
       if (force || waiting || Date.now() - this.statusAt > STATUS_MS) await this.refreshStatus();
       if (this.status.peek()?.state !== "on") return;
       const leader = await syncIpc.lease(this.owner);
-      // Taking over (or handing over) the loop: what this window kept in memory may be older
-      // than what the window before it saved.
-      if (leader !== this.leader) this.engine.reset();
+      // Taking the loop over from another window: its saved bases are newer than this
+      // window's copy. What was read of the account stays.
+      if (leader && !this.leader) this.engine.reloadBases();
       this.leader = leader;
-      const before = this.activity.peek();
+      if (leader) {
+        // A long pass keeps its claim, so no second window starts writing meanwhile.
+        renew = setInterval(() => {
+          void syncIpc.lease(this.owner).then(
+            (still) => {
+              if (!still) this.leaseLost = true;
+            },
+            () => {},
+          );
+        }, LEASE_RENEW_MS);
+      }
       this.activity.value = { ...before, state: "syncing", message: null };
       await this.refreshProject();
       const versions = this.versions();
-      try {
-        await this.engine.tick();
-      } finally {
-        // Whatever was read shows, also when a layer failed.
-        this.readOverview();
+      await this.tick();
+      if (this.engine.blocked) {
+        // Something sealed with keys this computer doesn't hold yet: reading the status is
+        // what fetches them. Then the account is read again.
+        await this.refreshStatus();
+        if (this.status.peek()?.state !== "on") return;
+        await this.tick();
+      }
+      if (this.engine.blocked) {
+        this.activity.value = { state: "blocked", message: KEYS_WAIT, at: before.at };
+        this.note(`${KEYS_WAIT}. Nothing syncs until they have.`);
+        return;
       }
       this.readSnapshots();
-      await this.maybeSnapshot(false);
-      await this.nameProject();
+      if (!this.leaseLost) {
+        await this.maybeSnapshot(false);
+        await this.nameProject();
+        await this.checkFolders();
+      }
       this.readOverview();
       const sentence =
         before.at === null
           ? "Synced with the account."
           : passSentence(changedCount(versions, this.versions()));
       if (sentence) this.note(sentence);
+      if (this.leaseLost) this.leader = false;
+      this.failures = 0;
+      this.nextPassAt = 0;
       this.activity.value = {
         state: this.leader ? "idle" : "other",
         message: null,
@@ -480,18 +621,98 @@ export class SyncController implements Disposable {
       };
     } catch (err) {
       const code = codeOf(err);
-      const before = this.activity.peek();
-      if (code === "SyncOffline") {
-        this.activity.value = { ...before, state: "offline", message: messageOf(err) };
-        this.note("Offline: sync will retry.", true);
-      } else if (["SyncSignedOut", "SyncNotApproved", "SyncReset", "SyncOff"].includes(code)) {
-        // Something changed elsewhere: read where things stand again, quietly.
-        await this.refreshStatus().catch(() => {});
+      if (code === "SyncOffline" || isRateLimited(err)) {
+        // Tried again later, and later still each time it fails: 1, 2, 5, 10 minutes.
+        this.failures++;
+        this.nextPassAt = Date.now() + backoffMs(this.failures);
+        const slow = code !== "SyncOffline";
+        this.activity.value = {
+          ...before,
+          state: "offline",
+          message: slow ? "The service asked to slow down: will retry" : messageOf(err),
+        };
+        this.note(
+          slow ? "The service asked to slow down: sync will retry." : "Offline: sync will retry.",
+          true,
+        );
+      } else if (STANDING_CODES.includes(code)) {
+        // Something changed elsewhere (or this computer's keys are gone): where things stand
+        // is read again. Still "on" afterwards, the failure is said as it is.
+        const status = await this.refreshStatus().catch(() => null);
+        if (status?.state === "on") {
+          this.activity.value = { ...before, state: "error", message: messageOf(err) };
+          this.note(messageOf(err), true);
+        }
       } else {
         this.activity.value = { ...before, state: "error", message: messageOf(err) };
         this.note(messageOf(err), true);
       }
+    } finally {
+      clearInterval(renew);
+      // Whatever way the pass ended, it isn't "syncing" any more.
+      if (this.activity.peek().state === "syncing") {
+        const on = this.status.peek()?.state === "on";
+        this.activity.value = on
+          ? { ...before, state: before.state === "syncing" ? "idle" : before.state }
+          : { state: "off", message: null, at: null };
+      }
     }
+  }
+
+  /** Looks, now and then, whether the folders that sync from here are still on this computer. */
+  private async checkFolders(): Promise<void> {
+    if (Date.now() - this.foldersAt < FOLDERS_CHECK_MS) return;
+    this.foldersAt = Date.now();
+    const entries = Object.entries(this.projects());
+    if (entries.length === 0) {
+      this.missingFolders = new Set();
+      return;
+    }
+    const exist = await syncIpc
+      .foldersExist(entries.map(([, entry]) => entry.path))
+      .catch(() => null);
+    // Not known isn't "gone".
+    if (!exist) return;
+    this.missingFolders = new Set(
+      entries.filter((_, index) => exist[index] === false).map(([folder]) => folder),
+    );
+  }
+
+  /**
+   * Forgets a folder that synced from this computer (it was moved or deleted). Only this
+   * computer's note of it goes: nothing in the account is touched.
+   */
+  async forgetFolder(folder: string): Promise<boolean> {
+    const projects = { ...this.projects() };
+    const keys = Object.entries(projects)
+      .filter(([key, entry]) => key === pathKey(folder) || entry.path === folder)
+      .map(([key]) => key);
+    if (keys.length === 0) return false;
+    for (const key of keys) {
+      delete projects[key];
+      this.missingFolders.delete(key);
+    }
+    await this.services.settings.update("sync.projects", projects, "user");
+    await this.refreshProject();
+    this.readOverview();
+    this.note(
+      `${folderName(folder) || folder} is no longer noted as a folder that syncs from here.`,
+    );
+    return true;
+  }
+
+  /** What a first snapshot of the open folder would take. */
+  estimate(): Promise<SnapshotEstimate> {
+    const root = this.services.workspace.root.peek();
+    if (!root) return Promise.reject(new Error("Open a folder first."));
+    return syncIpc.snapshotEstimate(root);
+  }
+
+  /** The open folder's list of what snapshots leave out (made when missing); its path. */
+  ignoreFile(): Promise<string> {
+    const root = this.services.workspace.root.peek();
+    if (!root) return Promise.reject(new Error("Open a folder first."));
+    return syncIpc.ignoreFile(root);
   }
 
   // ------------------------------------------------------------ the open project
@@ -595,11 +816,18 @@ export class SyncController implements Disposable {
     this.snapshots.value = rows;
   }
 
-  private async maybeSnapshot(force: boolean): Promise<SnapshotCreated | null> {
+  /** A snapshot when one is due; calls wait for one another (never two at once). */
+  private maybeSnapshot(force: boolean): Promise<SnapshotCreated | null> {
+    const next = this.snapshotQueue.then(() => this.takeSnapshot(force));
+    this.snapshotQueue = next.catch(() => null);
+    return next;
+  }
+
+  private async takeSnapshot(force: boolean): Promise<SnapshotCreated | null> {
     const collection = this.collection();
     const project = this.project.peek();
     if (!collection || !project || !this.on("snapshots")) return null;
-    if (!force && Date.now() - this.snapshotAt < SNAPSHOT_MS) return null;
+    if (!force && Date.now() - this.snapshotAt < this.snapshotGap) return null;
     this.snapshotAt = Date.now();
     const everything =
       this.services.settings.peek<string | undefined>("sync.snapshotScope") === "everything";
@@ -608,15 +836,28 @@ export class SyncController implements Disposable {
     const mine = this.status.peek()?.deviceId;
     const rows = this.snapshots.peek();
     const baseline = rows.length > 0 && !rows.some((r) => r.summary.device === mine);
-    const created = await syncIpc.snapshotCreate(
-      this.base(),
-      project.root,
-      collection,
-      everything,
-      force,
-      baseline,
-    );
-    if (!created) return null;
+    const started = Date.now();
+    let created: SnapshotCreated | null;
+    try {
+      created = await syncIpc.snapshotCreate(
+        this.base(),
+        project.root,
+        collection,
+        everything,
+        force,
+        baseline,
+      );
+    } catch (err) {
+      // No room: the snapshots history no longer keeps are removed, which may make some.
+      if (codeOf(err) === "SyncFull") await this.prune().catch(() => {});
+      throw err;
+    }
+    if (!created) {
+      // Nothing changed. Finding that out walks the folder: a huge one isn't walked every few
+      // minutes, but in proportion to how long the walk takes.
+      this.snapshotGap = snapshotSpacing(Date.now() - started, SNAPSHOT_MS);
+      return null;
+    }
     this.note(
       `Snapshot taken: ${snapshotFacts(created.summary.files, created.summary.bytes, ", ")}.`,
     );
@@ -739,7 +980,10 @@ export class SyncController implements Disposable {
   /** A snapshot of the open project now, whether or not anything changed. */
   async snapshotNow(force = true): Promise<SnapshotCreated | null> {
     if (!this.collection()) throw new Error("Turn sync on for this project first.");
-    return this.maybeSnapshot(force);
+    const created = await this.maybeSnapshot(force);
+    // Asked for by hand: history is tidied also when nothing new was stored.
+    if (!created) await this.prune().catch(() => {});
+    return created;
   }
 
   /** Removes the snapshots history no longer keeps, then frees what only they used. */
@@ -749,7 +993,13 @@ export class SyncController implements Disposable {
     const days = this.services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
     const rows = this.snapshots.peek();
     const remove = planPrune(
-      rows.map((r) => ({ id: r.id, time: r.summary.time, pinned: !!r.summary.pinned })),
+      rows.map((r) => ({
+        id: r.id,
+        time: r.summary.time,
+        pinned: !!r.summary.pinned,
+        // An earlier day keeps each computer's last snapshot, not only the day's last.
+        device: r.summary.device,
+      })),
       days,
     );
     if (remove.length === 0) return;
@@ -840,6 +1090,7 @@ export class SyncController implements Disposable {
     this.disposed = true;
     // Another window takes the loop over at once instead of waiting the claim out.
     if (this.leader) void syncIpc.leaseRelease(this.owner).catch(() => {});
+    clearInterval(this.reviewTimer);
     this.store.dispose();
   }
 }

@@ -71,7 +71,10 @@ pub async fn push(
         }
         let (refs, gc_epoch) = match uploader.finish().await {
             Ok(done) => done,
-            Err(Error::Sync("SyncRetry", _)) => continue,
+            Err(Error::Sync("SyncRetry", _)) => {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            }
             Err(e) => return Err(e),
         };
         let entry = serde_json::to_string(&Entry {
@@ -135,6 +138,7 @@ pub async fn same(
     Ok(ids == entry.file.chunks)
 }
 
+#[allow(clippy::too_many_arguments)]
 /// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`
 /// (the same id, or a new one for a copy). `workspace` replaces the chat's project folder,
 /// which is a path on the computer that pushed it (None: a chat with no folder).
@@ -147,7 +151,26 @@ pub async fn pull(
     id: &str,
     save_as: &str,
     workspace: Option<&str>,
+    if_stamp: Option<&str>,
 ) -> Result<Option<u64>> {
+    // A name for a chat's file and folder, nothing else (it reaches paths below).
+    if save_as.is_empty()
+        || save_as.len() > 80
+        || !save_as
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(Error::Invalid(format!("bad id: {save_as}")));
+    }
+    let stamp = || {
+        agent::session_stamps(data, &[save_as.to_string()])
+            .pop()
+            .flatten()
+    };
+    // Saved here since the caller looked: left for the next pass.
+    if stamp().as_deref() != if_stamp {
+        return Ok(None);
+    }
     let Some(record) = records::get(api, ring, collection, id).await? else {
         return Ok(None);
     };
@@ -185,6 +208,10 @@ pub async fn pull(
         }
         std::fs::create_dir_all(&dir)?;
         atomic_write(&target, &chunks::read(api, ring, stored).await?)?;
+    }
+    // Again, after the downloads: a save made meanwhile wins.
+    if stamp().as_deref() != if_stamp {
+        return Ok(None);
     }
     agent::save_session_if(data, save_as, &serde_json::to_string(&chat)?, None)?;
     Ok(Some(record.version))

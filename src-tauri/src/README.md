@@ -644,30 +644,42 @@ Sync (D435, `docs/sync.md`): an account's settings, chats and unfinished work be
 computers, sealed here before anything leaves. Commands in `ipc/sync.rs` (`sync_*`), each
 taking the accounts server as `base`.
 
-- `crypto.rs` — device key pairs, the keyring and its generations, sealing to a device (a
-  sealed box) and sealing content (XChaCha20-Poly1305, HKDF), chunk ids (HMAC), the recovery
-  key as text, the six digits two computers compare. Unit tested.
+- `crypto.rs` — device key pairs, the keyring and its generations (`extends`: a new
+  keyring continues an older one), handing the keys from one device to another (`box_to` /
+  `open_from`: an authenticated box) and sealing content (XChaCha20-Poly1305, HKDF), chunk
+  ids (HMAC), the recovery key as text, the pairing code (`commitment`, `pairing_code`:
+  six digits from both keys and a value from each side). Unit tested.
 - `api.rs` — requests to the sync service with the account's token (a 401 refreshes it once);
   refusals as `Error::Sync(code, message)`: `SyncOffline`, `SyncSignedOut`,
   `SyncUnavailable`, `SyncNotApproved`, `SyncReset`, `SyncFull`, `SyncOff`,
   `SyncRecoveryKey`, `SyncDirty`.
-- `vault.rs` — this computer as a device: `status` (which also catches up: handed the keys,
-  given new ones, removed, reset), `prepare` / `setup`, `join`, `join_with_recovery`,
-  `approve`, `remove`, `new_recovery_key`, the sealed list of trusted devices, new keys
-  after a removal. State in `<data>/sync/local.json`; the device key and the keyring are
-  secrets (`sync-device-key`, `sync-keyring`).
+- `vault.rs` — this computer as a device: `status` (which also catches up: answers the
+  computer checking it, takes the keys from that computer or from a device on the list it
+  holds, removed, reset), `prepare` / `setup` (saved before sent, so it can be picked up
+  again), `join`, `review` (starts checking a waiting computer), `join_with_recovery`,
+  `approve`, `remove`, `new_recovery_key`, the sealed list of trusted devices and its
+  copy and counter kept here, new keys after a removal. State in
+  `<data>/sync/local.json`; the device key and the keyring are secrets (`sync-device-key`,
+  `sync-keyring`).
 - `records.rs` — sealed records with versions: `get`, `put` (done, conflict, or "check the
-  chunks again"), `changes`, `update`.
+  chunks again"), `changes`, `update`. A record sealed with newer keys is `unreadable`
+  (for now); one that no key opens is `damaged`.
 - `chunks.rs` — content as chunks of at most 4 MB named by their content: `Uploader` (asks
-  what is missing, sends that, remembers what a record must name), `fetch`, `read`.
+  what is missing, sends that a few batches at a time, remembers what a record must name),
+  `fetch`, `read`.
 - `chats.rs` — a chat's file and images as chunks under one record; `pull` saves it into this
-  computer's folder for the project.
+  computer's folder for the project, unless the chat here changed since the caller looked
+  (`if_stamp`). The chats the person deleted are listed by `agent::deleted_sessions`.
 - `project.rs` — a git remote's address in one form, whatever form it was written in.
-- `snapshot.rs` — a project's files as a snapshot (`create`, `fingerprint`, `manifest`,
-  `list`, `restore`, `restore_file`, `rewrite` for a pin). Asks git; writes nothing inside
-  `.git` to make one; a manifest's paths can't leave the project or enter `.git`.
+- `snapshot.rs` — a project's files as a snapshot (`create`, `estimate`, `fingerprint`,
+  `manifest`, `list`, `restore`, `restore_file`, `rewrite` for a pin). Asks git; writes
+  nothing inside `.git` to make one; the file list is stored in parts; a folder without git
+  honours `.syncignore`, `.gitignore` and `.ignore`; a manifest's paths can't leave the
+  project, enter `.git` or name what Windows reserves; a snapshot's remote is used only when
+  it is an ordinary address.
 - `user_files.rs` — the user's own files that sync, under names that are the same on every
-  computer (`scan`, `read`, `write`); only those names resolve.
+  computer (`scan`, which also says what it kept out and whether it saw everything;
+  `read`, `write`); only those names resolve.
 
 ## update/
 

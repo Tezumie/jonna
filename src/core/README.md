@@ -604,11 +604,16 @@ gives them ports.
   (whole files: upload, download, delete, adopt, conflict), `conflictPath`, `fileRecordId`,
   `canonical`.
 - `engine.ts` — `SyncEngine`: one pass reads the account's changes into a mirror, runs each
-  `SyncLayer` with a `LayerContext` (records, `put`, a base kept on disk), and saves the
-  bases. A reset account (a new epoch) starts every layer afresh.
+  `SyncLayer` with a `LayerContext` (records, `put`, a base kept on disk, `flush`, `note`,
+  `stopped`), and saves the bases. A reset account (a new epoch) starts every layer afresh.
+  A record sealed with keys this computer doesn't hold yet stops the pass there (`blocked`).
 - `layers.ts` — `settingsLayer`, `filesLayer`, `chatsLayer`, each over a port
   (`SettingsPort`, `FilesPort`, `ChatsPort`).
-- `history.ts` — `planPrune`: which snapshots history keeps, counted in days worked.
+- `history.ts` — `planPrune`: which snapshots history keeps, counted in days worked, per
+  computer.
+- `localSettings.ts` — `staysLocal`: the settings that never sync (what could make another
+  computer run or send something).
+- `errors.ts` — telling the service's refusals apart (offline, slow down, per item).
 
 ## perf.ts, product.ts
 

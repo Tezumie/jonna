@@ -221,7 +221,9 @@ function statusCard(kit: PageKit): HTMLElement {
       ? "refresh-cw"
       : activity.state === "idle" && activity.at !== null
         ? "circle-check"
-        : "cloud";
+        : activity.state === "blocked"
+          ? "key-round"
+          : "cloud";
   // The time of the last good pass stays in sight while something else is said.
   const earlier = line.time === null && activity.at !== null ? activity.at : null;
   return h(
@@ -463,6 +465,12 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
   );
 }
 
+/** Where a project is, as its one tag. */
+function placeTag(project: OverviewProject): string {
+  if (project.folderMissing) return "Folder not found on this computer";
+  return project.here ? "This computer" : "Not on this computer";
+}
+
 /** One project: its name and folder, its numbers, and (the open folder's) its history. */
 function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatus): HTMLElement {
   const { controller, services } = kit;
@@ -471,6 +479,10 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
   const menu: MenuItem[] = [
     ...(isOpen
       ? [
+          {
+            label: "Choose what snapshots leave out…",
+            run: () => void kit.run("sync.project.editIgnore"),
+          },
           {
             label: "Stop syncing this project",
             run: () => void kit.run("sync.project.disable"),
@@ -499,7 +511,7 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
           "div",
           { class: "sync-item-title" },
           h("h3", { class: "sync-detail-title", title: project.name }, project.name),
-          h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
+          h("span", { class: "ai-tag" }, placeTag(project)),
         ),
         project.folder
           ? h("div", { class: "sync-item-detail sync-path", title: project.folder }, project.folder)
@@ -561,6 +573,19 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
               card(...group.rows.map((row) => snapshotRow(kit, row, status.deviceId))),
             ),
           ),
+    ];
+  } else if (project.folderMissing && project.folder) {
+    const folder = project.folder;
+    rest = [
+      kit.text(
+        "The folder it synced from isn't on this computer any more (moved or deleted). Its chats and snapshots are still in your account. If the folder moved, open it where it is now and say it is this project.",
+        true,
+      ),
+      h(
+        "div",
+        { class: "sync-actions" },
+        kit.button("Forget this folder", () => kit.run("sync.project.forgetFolder", { folder })),
+      ),
     ];
   } else if (project.here) {
     rest = [
@@ -636,7 +661,7 @@ function projectsPage(kit: PageKit, status: SyncStatus): Child[] {
           "div",
           { class: "sync-item-title" },
           h("span", { class: "sync-item-name", title: project.name }, project.name),
-          h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
+          h("span", { class: "ai-tag" }, placeTag(project)),
         ),
         h(
           "div",
@@ -741,9 +766,8 @@ function contentPage(kit: PageKit): Child[] {
         item({
           title: "Settings that stay on this computer",
           details: [
-            kept === 0
-              ? "Every setting syncs, except the ones that never do (the account's address, which folders sync)."
-              : `${countOf(kept, "setting")} of your choice, besides the ones that never sync.`,
+            kept === 0 ? "None of your choice." : `${countOf(kept, "setting")} of your choice.`,
+            "Settings that run programs or point at paths on this computer don't sync.",
           ],
           actions: [
             kit.button("Change", () =>
@@ -767,8 +791,14 @@ function deviceRow(kit: PageKit, device: SyncDevice): HTMLElement {
   const seen = serviceTime(device.lastSeenAt);
   const waiting = device.status === "pending";
   const checking = waiting && device.code !== null;
+  // Asked for its code, which comes once the waiting computer has answered.
+  const asked =
+    waiting &&
+    !checking &&
+    (device.checking === true || kit.controller.reviewing.peek().includes(device.id));
   const detail: Child[] = [platformLabel(device.platform)];
-  if (waiting) detail.push(" · wants to join");
+  if (asked) detail.push(" · waiting for the other computer…");
+  else if (waiting) detail.push(" · wants to join");
   else if (seen !== null) detail.push(" · last seen ", kit.when(seen));
   return item({
     title: device.name,
@@ -786,7 +816,7 @@ function deviceRow(kit: PageKit, device: SyncDevice): HTMLElement {
         ]
       : [],
     actions: [
-      waiting && !checking
+      waiting && !checking && !asked
         ? kit.button(
             "Check code",
             () => kit.run("sync.reviewDevice", { device: device.id }),

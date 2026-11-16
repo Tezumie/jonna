@@ -14,6 +14,8 @@ export interface SyncDevice {
    * syncs has started checking the waiting one (`reviewDevice`).
    */
   code: string | null;
+  /** This computer started checking that waiting one; its code comes once it has answered. */
+  checking?: boolean;
   current: boolean;
 }
 
@@ -22,7 +24,7 @@ export type SyncState = "signedOut" | "unavailable" | "off" | "pending" | "on";
 export interface SyncStatus {
   state: SyncState;
   /** Why sync went off by itself, said once: the account's sync was reset, or this device removed. */
-  notice: "reset" | "removed" | null;
+  notice: "reset" | "removed" | "keysLost" | null;
   /** Whether the account has sync set up on some device. */
   exists: boolean;
   deviceId: string | null;
@@ -44,6 +46,8 @@ export interface SyncRecord {
   text: string | null;
   /** Sealed with keys this device doesn't hold yet. */
   unreadable: boolean;
+  /** Its content opens with no key at all: it counts as empty, and the next write replaces it. */
+  damaged?: boolean;
   refs: number;
   device: string | null;
   updatedAt: number | null;
@@ -107,6 +111,33 @@ export interface SnapshotRestored {
   stashed: string | null;
 }
 
+/** What a first snapshot of a folder would take. */
+export interface SnapshotEstimate {
+  /** "git": only what differs from the commit travels as files. "folder": every file. */
+  kind: "git" | "folder";
+  files: number;
+  bytes: number;
+  /** Files over the size limit, which stay out. */
+  tooLarge: number;
+  /** The largest top-level folders and files: [name, bytes, files]. */
+  largest: [string, number, number][];
+  /** More files than a snapshot holds: the rest would be left out. */
+  truncated: boolean;
+}
+
+/** The user's own files as a scan found them. */
+export interface SyncUserFiles {
+  /** The files that sync, with their content's hash. */
+  files: SyncUserFile[];
+  /**
+   * Names that are there but can't sync as they are (too large, not text, read failed): they
+   * are neither sent nor taken to be deleted.
+   */
+  kept: string[];
+  /** False when part of the scan failed or was cut short: nothing missing means "deleted". */
+  complete: boolean;
+}
+
 /** One of the user's own files that sync, under its name on every computer. */
 export interface SyncUserFile {
   path: string;
@@ -124,9 +155,12 @@ export const syncIpc = {
   setup: (base: string, typed: string): Promise<void> => call<void>("sync_setup", { base, typed }),
   /** Asks to join. The code to compare shows in the status once a computer checks this one. */
   join: (base: string, name: string): Promise<void> => call<void>("sync_join", { base, name }),
-  /** Starts checking a waiting device; the code both computers now show. */
-  reviewDevice: (base: string, device: string): Promise<string> =>
-    call<string>("sync_review_device", { base, device }),
+  /**
+   * Starts checking a waiting device. The code both computers show appears in the status a
+   * moment later, once the waiting one has answered (ask for the status again).
+   */
+  reviewDevice: (base: string, device: string): Promise<void> =>
+    call<void>("sync_review_device", { base, device }),
   joinRecovery: (base: string, name: string, key: string): Promise<void> =>
     call<void>("sync_join_recovery", { base, name, key }),
   approve: (base: string, device: string): Promise<void> =>
@@ -157,15 +191,25 @@ export const syncIpc = {
     expect: number | null,
   ): Promise<SyncPut | null> =>
     call<SyncPut | null>("sync_chat_push", { base, collection, id, expect }),
-  /** Saves a synced chat as the chat `saveAs`, in the folder `workspace`; the record's version. */
+  /**
+   * Saves a synced chat as the chat `saveAs`, in the folder `workspace`; the record's version.
+   * `ifStamp` is the stamp the local chat must still have (null: it must not exist): when it
+   * was saved meanwhile nothing is written and the result is null.
+   */
   chatPull: (
     base: string,
     collection: string,
     id: string,
     saveAs: string,
     workspace: string | null,
+    ifStamp: string | null,
   ): Promise<number | null> =>
-    call<number | null>("sync_chat_pull", { base, collection, id, saveAs, workspace }),
+    call<number | null>("sync_chat_pull", { base, collection, id, saveAs, workspace, ifStamp }),
+  /** Chats deleted on this computer since they were last asked about (ids). */
+  chatsDeleted: (): Promise<string[]> => call<string[]>("sync_chats_deleted"),
+  /** Forgets those deletions once the account knows of them. */
+  chatsDeletedClear: (ids: string[]): Promise<void> =>
+    call<void>("sync_chats_deleted_clear", { ids }),
   /** A project's name from its git remote's address; null for a local-only address. */
   projectName: (base: string, remote: string): Promise<string | null> =>
     call<string | null>("sync_project_name", { base, remote }),
@@ -216,7 +260,7 @@ export const syncIpc = {
     call<void>("sync_snapshot_pin", { base, collection, id, name }),
   /** Removes stored content nothing refers to any more; the bytes in use afterwards. */
   gc: (base: string): Promise<number | null> => call<number | null>("sync_gc", { base }),
-  userFiles: (): Promise<SyncUserFile[]> => call<SyncUserFile[]>("sync_user_files"),
+  userFiles: (): Promise<SyncUserFiles> => call<SyncUserFiles>("sync_user_files"),
   userFileRead: (path: string): Promise<string | null> =>
     call<string | null>("sync_user_file_read", { path }),
   /** Writes one of the user's synced files (`text` null removes it). */
@@ -255,6 +299,14 @@ export const syncIpc = {
   /** Gives the open folder a new identity of its own; the new id. */
   projectSeparate: (root: string, folderName: string): Promise<string> =>
     call<string>("sync_project_separate", { root, folderName }),
+  /** What a first snapshot of the open folder would take, to say before a large one starts. */
+  snapshotEstimate: (root: string): Promise<SnapshotEstimate> =>
+    call<SnapshotEstimate>("sync_snapshot_estimate", { root }),
+  /** The open folder's `.syncignore` (made with an explanation when missing); its path. */
+  ignoreFile: (root: string): Promise<string> => call<string>("sync_ignore_file", { root }),
+  /** Which of these folders exist on this computer. */
+  foldersExist: (paths: string[]): Promise<boolean[]> =>
+    call<boolean[]>("sync_folders_exist", { paths }),
   /** Claims the sync loop for this window; false while another window of the profile has it. */
   lease: (owner: string): Promise<boolean> => call<boolean>("sync_lease", { owner }),
 };

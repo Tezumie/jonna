@@ -10,6 +10,8 @@ use crate::sync::vault::{Status, Vault};
 use crate::AppState;
 
 static STEP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// One snapshot or restore at a time: two at once would read and write the same folder.
+static SNAPSHOT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn vault(state: &AppState, base: &str) -> Vault {
     Vault::new(base, &state.dirs.data)
@@ -50,13 +52,14 @@ pub async fn sync_setup(state: State<'_, AppState>, base: String, typed: String)
     vault(&state, &base).setup(&typed).await
 }
 
-/// Starts checking a waiting device; returns the code both computers now show.
+/// Starts checking a waiting device. The code both computers show appears in the status
+/// once the waiting one has answered.
 #[tauri::command]
 pub async fn sync_review_device(
     state: State<'_, AppState>,
     base: String,
     device: String,
-) -> Result<String> {
+) -> Result<()> {
     let _step = STEP.lock().await;
     vault(&state, &base).review(&device).await
 }
@@ -183,6 +186,7 @@ pub async fn sync_chat_pull(
     id: String,
     save_as: String,
     workspace: Option<String>,
+    if_stamp: Option<String>,
 ) -> Result<Option<u64>> {
     let v = vault(&state, &base);
     crate::sync::chats::pull(
@@ -193,8 +197,21 @@ pub async fn sync_chat_pull(
         &id,
         &save_as,
         workspace.as_deref(),
+        if_stamp.as_deref(),
     )
     .await
+}
+
+/// Chats deleted on this computer that sync hasn't been told about yet (ids).
+#[tauri::command]
+pub async fn sync_chats_deleted(state: State<'_, AppState>) -> Result<Vec<String>> {
+    Ok(crate::agent::deleted_sessions(&state.dirs.data))
+}
+
+/// Forgets those deletions, once the account knows of them.
+#[tauri::command]
+pub async fn sync_chats_deleted_clear(state: State<'_, AppState>, ids: Vec<String>) -> Result<()> {
+    crate::agent::forget_deleted_sessions(&state.dirs.data, &ids)
 }
 
 /// The project name a git remote's address gives (the same on every computer of the account,
@@ -281,6 +298,7 @@ pub async fn sync_snapshot_create(
 ) -> Result<Option<crate::sync::snapshot::Created>> {
     use crate::sync::snapshot;
     writable(&collection)?;
+    let _one = SNAPSHOT.lock().await;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
@@ -389,6 +407,7 @@ pub async fn sync_snapshot_restore(
     stash: bool,
 ) -> Result<crate::sync::snapshot::Restored> {
     use crate::sync::snapshot;
+    let _one = SNAPSHOT.lock().await;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
@@ -497,9 +516,7 @@ fn user_roots(state: &AppState) -> crate::sync::user_files::Roots {
 /// The user's own files that sync (keybindings, rules, snippets, subagents, commands, output
 /// styles, skills), each under a name that is the same on every computer.
 #[tauri::command]
-pub async fn sync_user_files(
-    state: State<'_, AppState>,
-) -> Result<Vec<crate::sync::user_files::UserFile>> {
+pub async fn sync_user_files(state: State<'_, AppState>) -> Result<crate::sync::user_files::Scan> {
     Ok(user_roots(&state).scan())
 }
 
@@ -745,4 +762,43 @@ pub async fn sync_project_separate(
         .as_bytes(),
     )?;
     Ok(id)
+}
+
+/// What a first snapshot of the open folder would take (files, bytes, the largest parts): to
+/// say so before a large folder starts uploading.
+#[tauri::command]
+pub async fn sync_snapshot_estimate(
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<crate::sync::snapshot::Estimate> {
+    let root = snapshot_root(&state, &root)?;
+    tokio::task::spawn_blocking(move || crate::sync::snapshot::estimate(&root))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+}
+
+/// The open folder's list of what stays out of its snapshots (`.syncignore`, written as a
+/// `.gitignore` is): made with a short explanation when it isn't there. Returns its path.
+#[tauri::command]
+pub async fn sync_ignore_file(state: State<'_, AppState>, root: String) -> Result<String> {
+    let root = snapshot_root(&state, &root)?;
+    let file = root.join(".syncignore");
+    if !file.exists() {
+        crate::store::atomic_write(
+            &file,
+            b"# Folders and files to keep out of this project's synced snapshots.\n# One pattern per line, written as in a .gitignore. For example:\n#   data/\n#   *.mp4\n",
+        )?;
+    }
+    Ok(file.to_string_lossy().to_string())
+}
+
+/// Which of these folders exist on this computer (the folders that sync from it are kept by
+/// path: one that was moved or deleted is said to be missing, not silently kept).
+#[tauri::command]
+pub async fn sync_folders_exist(paths: Vec<String>) -> Result<Vec<bool>> {
+    Ok(paths
+        .iter()
+        .take(500)
+        .map(|p| std::path::Path::new(p).is_dir())
+        .collect())
 }

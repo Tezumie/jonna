@@ -4267,3 +4267,34 @@ Reset sync on the account page first if it was turned on with an earlier build.
    the project is opened on the other computer.
 10. Fill storage past 80% (or lower the limit on a test account): a notice once, and a line by
     the meter.
+
+## D437 — Sync: pairing in two steps, nothing lost, large folders
+Reset sync on the account page first if it was turned on with an earlier build, then turn it
+on again from the computer that has the data.
+1. Second computer, Sync, Join. First computer, the waiting computer's row: Check code. The
+   row says "waiting for the other computer…" for a few seconds, then both show the same six
+   digits and Approve appears. Approve: the second computer turns on within a few seconds.
+2. Close the first computer's window right after typing the recovery key back (before "on"
+   shows), open it again: sync finishes turning on, and the recovery key written down works
+   on another computer.
+3. Settings, turn "Sync chats" off, Sync now, look at the other computer: its chats and the
+   account page's chat counts are unchanged. Turn it on again: nothing is duplicated.
+4. Delete a chat on one computer: it disappears from the other after a pass. Move a chat's
+   file out of the data folder by hand instead: the other computer keeps it.
+5. Change the same chat on both computers while offline, connect both: one extra chat appears
+   ("from the other computer"), once; further passes add no more.
+6. Set `agent.autoApprove` (or an allowed command) on one computer: the other's setting
+   doesn't change. Sync, Settings and files says which kinds of settings stay local.
+7. A folder without git, with a `.syncignore` naming a folder: Sync this project says how
+   many files and how much would be uploaded; after the snapshot, the account page's size
+   leaves the ignored folder out. The project's menu, Edit ignore file, opens it.
+8. A folder with a few thousand files: the snapshot finishes, Continue on the other computer
+   writes them all.
+9. A git project with HEAD detached on a new commit: Snapshot now, Continue on the other
+   computer: the same commit is checked out.
+10. Rename a synced project's folder outside the IDE: its row says "Folder not found" within
+    ten minutes, with Forget.
+11. Pull the network cable during a pass: the status says offline and that it will retry;
+    with the cable back it syncs without being asked (within a minute or two).
+12. The account page, Security, Sign out everywhere: asks to sign in again; afterwards the
+    app on each computer asks to sign in, and syncs again once signed in (no new approval).

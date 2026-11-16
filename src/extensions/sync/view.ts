@@ -128,6 +128,7 @@ class SyncView implements DockView, PageKit {
           controller.snapshots.value,
           controller.overview.value,
           controller.log.value,
+          controller.reviewing.value,
           session.ownName.value,
           session.profile.value,
           session.step.value,

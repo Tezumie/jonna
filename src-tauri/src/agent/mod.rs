@@ -128,6 +128,9 @@ pub fn session_stamps(data: &Path, ids: &[String]) -> Vec<Option<String>> {
 pub fn delete_session(data: &Path, id: &str) -> Result<()> {
     let id = safe_id(id)?;
     let dir = sessions_dir(data);
+    // Written down before the file goes: sync deletes a chat elsewhere only when it was
+    // deleted here on purpose, never because its file is missing.
+    note_deleted_session(data, id);
     let _ = std::fs::remove_file(dir.join(format!("{id}.json")));
     session_index::forget(&dir, id);
     let _ = std::fs::remove_dir_all(data.join("agent").join("checkpoints").join(id));
@@ -136,6 +139,43 @@ pub fn delete_session(data: &Path, id: &str) -> Result<()> {
     // Its private folder, when it ran with no folder open (D208).
     let _ = scratch::remove(data, id);
     Ok(())
+}
+
+fn deleted_log(data: &Path) -> PathBuf {
+    data.join("agent").join("deleted-chats.json")
+}
+
+static DELETED_LOG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn note_deleted_session(data: &Path, id: &str) {
+    let _guard = DELETED_LOG.lock().unwrap_or_else(|e| e.into_inner());
+    let mut ids = deleted_sessions(data);
+    if !ids.iter().any(|i| i == id) {
+        ids.push(id.to_string());
+        // The newest few thousand: a computer that never syncs doesn't grow this forever.
+        let start = ids.len().saturating_sub(5000);
+        if let Ok(bytes) = serde_json::to_vec(&ids[start..]) {
+            let _ = atomic_write(&deleted_log(data), &bytes);
+        }
+    }
+}
+
+/// The chats deleted here that sync hasn't been told about yet.
+pub fn deleted_sessions(data: &Path) -> Vec<String> {
+    std::fs::read(deleted_log(data))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Forgets deletions the account now knows of.
+pub fn forget_deleted_sessions(data: &Path, ids: &[String]) -> Result<()> {
+    let _guard = DELETED_LOG.lock().unwrap_or_else(|e| e.into_inner());
+    let left: Vec<String> = deleted_sessions(data)
+        .into_iter()
+        .filter(|id| !ids.contains(id))
+        .collect();
+    atomic_write(&deleted_log(data), &serde_json::to_vec(&left)?)
 }
 
 /// A chat's images (D381): what models and tools made, kept whole beside the chat (the chat's

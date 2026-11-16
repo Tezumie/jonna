@@ -31,6 +31,31 @@ test("planPrune: a pinned snapshot stays and doesn't count toward the days", () 
   assert.deepEqual(planPrune(mixed, 30, day), ["d1h8"]);
 });
 
+test("planPrune: an earlier day keeps each computer's last snapshot", () => {
+  const on = (d: number, hour: number, device: string): DatedSnapshot => ({
+    ...at(d, hour),
+    id: `d${d}h${hour}${device}`,
+    device,
+  });
+  // Day 1: the laptop at 9 and 10, the desk at 12 and 15. Day 2: the desk only.
+  const all = [
+    on(1, 9, "lap"),
+    on(1, 10, "lap"),
+    on(1, 12, "desk"),
+    on(1, 15, "desk"),
+    on(2, 9, "desk"),
+  ];
+  // The laptop's last of day 1 stays though the desk made snapshots later that day.
+  assert.deepEqual(planPrune(all, 30, day).sort(), ["d1h12desk", "d1h9lap"]);
+  // Past the days kept, everything of that day goes, whoever made it.
+  assert.deepEqual(planPrune(all, 1, day).sort(), [
+    "d1h10lap",
+    "d1h12desk",
+    "d1h15desk",
+    "d1h9lap",
+  ]);
+});
+
 test("planPrune: keep everything, and nothing to do", () => {
   const all = [at(1, 9), at(1, 10), at(2, 9)];
   assert.deepEqual(planPrune(all, 0, day), []);

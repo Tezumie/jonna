@@ -73,6 +73,16 @@
         "category": "Sync"
       },
       {
+        "id": "sync.project.editIgnore",
+        "title": "Choose what snapshots leave out…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.forgetFolder",
+        "title": "Forget a folder that synced from this computer…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.project.link",
         "title": "This folder is one of my synced projects…",
         "category": "Sync"

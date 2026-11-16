@@ -20,7 +20,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use crypto_box::{PublicKey, SecretKey};
+use crypto_box::{PublicKey, SalsaBox, SecretKey};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -134,6 +134,22 @@ impl PrivateKey {
         Ok(bytes.to_vec())
     }
 
+    /// Opens what `sender_public`'s holder boxed for this key (`box_to`); fails when anyone
+    /// else made it.
+    pub fn open_from(&self, sender_public: &str, boxed: &str) -> Result<Vec<u8>> {
+        let refused = || keys_error("the keys didn't come from a computer this one trusts");
+        let theirs: [u8; 32] = unb64(sender_public)?.try_into().map_err(|_| refused())?;
+        let bytes = unb64(boxed)?;
+        if bytes.len() <= NONCE_LEN {
+            return Err(refused());
+        }
+        let (nonce, sealed) = bytes.split_at(NONCE_LEN);
+        let nonce: [u8; NONCE_LEN] = nonce.try_into().map_err(|_| refused())?;
+        SalsaBox::new(&PublicKey::from(theirs), &self.0)
+            .decrypt((&nonce).into(), sealed)
+            .map_err(|_| refused())
+    }
+
     /// Opens what was sealed to this key's public half.
     pub fn open(&self, sealed: &str) -> Result<Vec<u8>> {
         self.0
@@ -166,13 +182,45 @@ pub fn recovery_wrap(public: &str, auth: &str, keyring: &[u8]) -> Result<String>
     seal_to(public, &plain)
 }
 
-/// Six digits both computers show, so the person approving sees it is the same device (and
-/// that nobody in between swapped its key). `nonce` is chosen by the approving computer after
-/// it has fixed which key it would approve, so a key can't be picked to fit a code.
-pub fn verification_code(public: &str, nonce: &str) -> String {
-    let digest = Sha256::digest(format!("{public}:{nonce}").as_bytes());
+/// A waiting computer's commitment to its part of the pairing code: published with its key,
+/// before it has seen the approving computer's part.
+pub fn commitment(public: &str, value: &str) -> String {
+    b64(&Sha256::digest(
+        format!("pair-commit:{public}:{value}").as_bytes(),
+    ))
+}
+
+/// Six digits both computers show while one approves the other, made from both computers'
+/// keys and a random value from each. The waiting computer commits to its value first, the
+/// approving one publishes its value, then the waiting one reveals: neither side, nor
+/// whoever carries the messages, can choose a value or a key to fit a code.
+pub fn pairing_code(
+    new_public: &str,
+    approver_public: &str,
+    approver_value: &str,
+    new_value: &str,
+) -> String {
+    let digest = Sha256::digest(
+        format!("pair-code:{new_public}:{approver_public}:{approver_value}:{new_value}").as_bytes(),
+    );
     let n = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
     format!("{:03} {:03}", n / 1000, n % 1000)
+}
+
+/// Seals `plain` from `sender` to the holder of `recipient_public` (NaCl's `crypto_box`): only
+/// that holder can read it, and it can tell who made it. The account's keys travel between
+/// devices this way, so a device takes keys only from a device it already trusts.
+pub fn box_to(sender: &PrivateKey, recipient_public: &str, plain: &[u8]) -> Result<String> {
+    let theirs: [u8; 32] = unb64(recipient_public)?
+        .try_into()
+        .map_err(|_| keys_error("a device's key isn't valid"))?;
+    let nonce = random::<NONCE_LEN>()?;
+    let sealed = SalsaBox::new(&PublicKey::from(theirs), &sender.0)
+        .encrypt((&nonce).into(), plain)
+        .map_err(|_| keys_error("the keys couldn't be wrapped"))?;
+    let mut out = nonce.to_vec();
+    out.extend_from_slice(&sealed);
+    Ok(b64(&out))
 }
 
 // ---------------------------------------------------------------- the recovery key as text
@@ -286,6 +334,17 @@ impl Keyring {
         Ok(next)
     }
 
+    /// Whether this keyring is `older` with nothing taken away: the same key for naming
+    /// chunks and every generation `older` has. New keys for an account only ever add.
+    pub fn extends(&self, older: &Keyring) -> bool {
+        self.id_key == older.id_key
+            && older.generations.iter().all(|g| {
+                self.generations
+                    .iter()
+                    .any(|mine| mine.generation == g.generation && mine.key == g.key)
+            })
+    }
+
     pub fn current(&self) -> u32 {
         self.generations
             .iter()
@@ -320,6 +379,15 @@ impl Keyring {
             .expand(purpose.as_bytes(), &mut out)
             .map_err(|_| keys_error("a key couldn't be derived"))?;
         Ok(out)
+    }
+
+    /// Whether `sealed` was made with keys newer than this keyring's: it will open once this
+    /// device caught up. Anything else that doesn't open is damaged and never will.
+    pub fn awaits(&self, sealed: &[u8]) -> bool {
+        if sealed.len() < HEADER_LEN + NONCE_LEN || sealed[0] != FORMAT {
+            return false;
+        }
+        u32::from_be_bytes([sealed[1], sealed[2], sealed[3], sealed[4]]) > self.current()
     }
 
     /// Seals `plain` for storing at `place` (a record's or a chunk's name).
@@ -579,15 +647,74 @@ mod tests {
     }
 
     #[test]
-    fn the_verification_code_is_six_digits() {
-        let key = PrivateKey::generate().unwrap();
-        let code = verification_code(&key.public(), "n1");
-        assert_eq!(code.len(), 7);
-        assert_eq!(code, verification_code(&key.public(), "n1"));
-        assert_ne!(
-            code,
-            verification_code(&key.public(), "another nonce, another code")
+    fn the_pairing_code_needs_both_sides() {
+        let (new, approver) = (
+            PrivateKey::generate().unwrap(),
+            PrivateKey::generate().unwrap(),
         );
+        let code = pairing_code(&new.public(), &approver.public(), "ra", "rn");
+        assert_eq!(code.len(), 7);
         assert!(code.chars().all(|c| c.is_ascii_digit() || c == ' '));
+        assert_eq!(
+            code,
+            pairing_code(&new.public(), &approver.public(), "ra", "rn")
+        );
+        // Any part changed is another code.
+        let other = PrivateKey::generate().unwrap();
+        for different in [
+            pairing_code(&other.public(), &approver.public(), "ra", "rn"),
+            pairing_code(&new.public(), &other.public(), "ra", "rn"),
+            pairing_code(&new.public(), &approver.public(), "rb", "rn"),
+            pairing_code(&new.public(), &approver.public(), "ra", "rm"),
+        ] {
+            assert_ne!(code, different);
+        }
+        assert_eq!(
+            commitment(&new.public(), "rn"),
+            commitment(&new.public(), "rn")
+        );
+        assert_ne!(
+            commitment(&new.public(), "rn"),
+            commitment(&new.public(), "rm")
+        );
+        assert_ne!(
+            commitment(&new.public(), "rn"),
+            commitment(&other.public(), "rn")
+        );
+    }
+
+    #[test]
+    fn keys_are_taken_only_from_the_computer_that_boxed_them() {
+        let (sender, recipient, stranger) = (
+            PrivateKey::generate().unwrap(),
+            PrivateKey::generate().unwrap(),
+            PrivateKey::generate().unwrap(),
+        );
+        let ring = Keyring::generate().unwrap();
+        let boxed = box_to(&sender, &recipient.public(), &ring.to_bytes().unwrap()).unwrap();
+        assert_eq!(
+            recipient.open_from(&sender.public(), &boxed).unwrap(),
+            ring.to_bytes().unwrap()
+        );
+        // Made by someone else (as the service could, with a sealed box): refused.
+        assert!(recipient.open_from(&stranger.public(), &boxed).is_err());
+        let forged = box_to(&stranger, &recipient.public(), &ring.to_bytes().unwrap()).unwrap();
+        assert!(recipient.open_from(&sender.public(), &forged).is_err());
+        let sealed = seal_to(&recipient.public(), &ring.to_bytes().unwrap()).unwrap();
+        assert!(recipient.open_from(&sender.public(), &sealed).is_err());
+        assert!(stranger.open_from(&sender.public(), &boxed).is_err());
+    }
+
+    #[test]
+    fn new_keys_only_add_to_the_old() {
+        let old = Keyring::generate().unwrap();
+        let new = old.rotated().unwrap();
+        assert!(new.extends(&old));
+        assert!(old.extends(&old));
+        assert!(!old.extends(&new), "a generation is missing");
+        assert!(
+            !Keyring::generate().unwrap().extends(&old),
+            "another account's keys"
+        );
     }
 }

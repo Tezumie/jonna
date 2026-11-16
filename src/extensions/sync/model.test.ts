@@ -3,12 +3,15 @@ import { test } from "node:test";
 import {
   activityLine,
   attentionItems,
+  backoffMs,
   buildOverview,
   changedCount,
   changedOn,
   countOf,
   dayLabel,
   EMPTY_OVERVIEW,
+  type EstimateLike,
+  estimateWarning,
   fileKind,
   folderName,
   formatSize,
@@ -29,6 +32,7 @@ import {
   type SyncOverview,
   snapshotFacts,
   snapshotSize,
+  snapshotSpacing,
   statusBarWords,
   storageByProject,
   storageNotice,
@@ -82,26 +86,40 @@ const record = (
   ...more,
 });
 
-test("sync: what the account holds, from its records' labels", () => {
+test("sync: what the account holds, from its records' sealed text", () => {
+  const text = (value: unknown) => ({ text: JSON.stringify(value) });
   const overview = buildOverview(
     [
-      record("settings", "user", { info: { settings: 42 }, updatedAt: 1_700_000_000_000 }),
-      record("files", "a", { info: { path: "snippets/go.json", bytes: 120 } }),
-      record("files", "b", { info: { path: "keybindings.json", bytes: 30 } }),
-      record("files", "c", { info: { path: "skills/old/SKILL.md", deleted: true } }),
-      record("chats.account", "c1", { info: { updated: 5, bytes: 9 } }),
-      record("chats.account", "c2", { info: { deleted: true }, text: '{"deleted":true}' }),
-      record("projects", "p1", { info: { name: "site" }, updatedAt: 1_700_000_000_000 }),
-      record("projects", "p2", { info: { name: "api" } }),
-      record("chats.p1", "c3", { info: { updated: 1_700_000_100_000, bytes: 9 }, device: "d2" }),
-      record("chats.p1", "c4", { info: { deleted: true } }),
+      record("settings", "user", {
+        ...text({ keys: { a: { v: 1 }, b: { v: 2 }, gone: { d: true } } }),
+        // A label that disagrees with the sealed text counts for nothing.
+        info: { settings: 99 },
+        updatedAt: 1_700_000_000_000,
+      }),
+      record("files", "a", text({ path: "snippets/go.json", text: "x".repeat(120) })),
+      record("files", "b", {
+        ...text({ path: "keybindings.json", text: "y".repeat(30) }),
+        // The service can't hide a file by labelling it deleted, or rename it.
+        info: { path: "something/else.json", deleted: true },
+      }),
+      record("files", "c", text({ path: "skills/old/SKILL.md", deleted: true })),
+      record("chats.account", "c1", text({ meta: { updated: 5 } })),
+      record("chats.account", "c2", text({ deleted: true })),
+      record("projects", "p1", {
+        ...text({ name: "site" }),
+        info: { name: "not the name" },
+        updatedAt: 1_700_000_000_000,
+      }),
+      record("projects", "p2", text({ name: "api" })),
+      record("chats.p1", "c3", { ...text({ meta: { updated: 1_700_000_100_000 } }), device: "d2" }),
+      record("chats.p1", "c4", text({ deleted: true })),
       record("snap.p1", "s1", {
-        info: { time: 1_700_000_200_000, computer: "Laptop", kind: "git", files: 3, bytes: 500 },
-        device: "d1",
+        ...text({ time: 1_700_000_200_000, device: "d1", deviceName: "Laptop", bytes: 500 }),
+        // The sealed summary says who made it, whatever the service says.
+        device: "d2",
+        info: { bytes: 1 },
       }),
-      record("snap.p1", "s2", {
-        info: { time: 1_700_000_050_000, computer: "Desk", kind: "git", files: 2, bytes: 900 },
-      }),
+      record("snap.p1", "s2", text({ time: 1_700_000_050_000, deviceName: "Desk", bytes: 900 })),
       record("snap.p1", "s3", { deleted: true, text: null }),
       record("sys", "devices"),
     ],
@@ -112,7 +130,7 @@ test("sync: what the account holds, from its records' labels", () => {
     [{ id: "p1", path: "C:\\work\\site" }],
     "d1",
   );
-  assert.deepEqual(overview.settings, { count: 42, updatedAt: 1_700_000_000_000 });
+  assert.deepEqual(overview.settings, { count: 2, updatedAt: 1_700_000_000_000 });
   assert.deepEqual(
     overview.files.map((f) => [f.path, f.bytes]),
     [
@@ -135,6 +153,7 @@ test("sync: what the account holds, from its records' labels", () => {
       lastHere: true,
       here: true,
       folder: "C:\\work\\site",
+      folderMissing: false,
     },
     {
       id: "p2",
@@ -147,6 +166,7 @@ test("sync: what the account holds, from its records' labels", () => {
       lastHere: false,
       here: false,
       folder: null,
+      folderMissing: false,
     },
   ]);
   assert.deepEqual(overview.projects.map(projectCounts), [
@@ -157,37 +177,43 @@ test("sync: what the account holds, from its records' labels", () => {
   assert.deepEqual(overview.projects.map(changedOn), ["on this computer", ""]);
 });
 
-test("sync: records without a label are read from their text", () => {
+test("sync: a label stands in only for a record whose text isn't here, and hides nothing", () => {
+  const unread = (collection: string, id: string, info: OverviewRecord["info"]) =>
+    record(collection, id, { text: null, info });
   const overview = buildOverview(
     [
-      record("settings", "user", {
-        text: JSON.stringify({ keys: { a: { v: 1 }, b: { d: true }, c: { v: 2 } } }),
-      }),
-      record("files", "a", { text: JSON.stringify({ path: "AGENTS.md", text: "hello" }) }),
-      record("files", "b", { text: JSON.stringify({ path: "agents/x.md", deleted: true }) }),
-      record("chats.account", "c1", { text: '{"deleted":true}' }),
-      record("chats.p9", "c2"),
-      record("snap.p9", "s1", {
-        text: JSON.stringify({ time: 7_000_000_000_000, deviceName: "Old", bytes: 64 }),
-        device: "gone",
-      }),
+      unread("settings", "user", { settings: 7 }),
+      unread("files", "a", { path: "AGENTS.md", bytes: 5 }),
+      // Labelled deleted, text not here: still listed. Only sealed content deletes.
+      unread("files", "b", { path: "agents/x.md", deleted: true }),
+      unread("chats.account", "c1", { deleted: true }),
+      unread("chats.p9", "c2", { updated: 6_000_000_000_000 }),
+      unread("snap.p9", "s1", { time: 7_000_000_000_000, computer: "Old", bytes: 64 }),
       record("projects", "p8", { text: "not json" }),
+      unread("projects", "p7", { name: "labelled" }),
     ],
     [],
-    [{ id: "p8", path: "/home/me/tool/" }],
+    [{ id: "p8", path: "/home/me/tool/", missing: true }],
   );
-  assert.equal(overview.settings?.count, 2);
-  assert.deepEqual(overview.files, [{ path: "AGENTS.md", bytes: 5, updatedAt: null }]);
-  assert.equal(overview.accountChats, 0);
-  // The folder's name stands in for a name the account doesn't have; one on this computer first.
+  assert.equal(overview.settings?.count, 7);
   assert.deepEqual(
-    overview.projects.map((p) => [p.id, p.name, p.here]),
+    overview.files.map((f) => [f.path, f.bytes]),
     [
-      ["p8", "tool", true],
-      ["p9", "Unnamed project", false],
+      ["AGENTS.md", 5],
+      ["agents/x.md", 0],
     ],
   );
-  const p9 = overview.projects[1];
+  assert.equal(overview.accountChats, 1);
+  // The folder's name stands in for a name the account doesn't have; one on this computer first.
+  assert.deepEqual(
+    overview.projects.map((p) => [p.id, p.name, p.here, p.folderMissing]),
+    [
+      ["p8", "tool", true, true],
+      ["p7", "labelled", false, false],
+      ["p9", "Unnamed project", false, false],
+    ],
+  );
+  const p9 = overview.projects[2];
   assert.equal(p9?.chats, 1);
   assert.equal(p9?.snapshotBytes, 64);
   assert.equal(p9?.lastComputer, "Old");
@@ -205,7 +231,7 @@ test("sync: where a project changed, and a snapshot without files", () => {
   assert.equal(changedOn({ lastHere: false, lastComputer: null }), "");
   // Without this computer's id, nothing is taken for its own.
   const other = buildOverview(
-    [record("snap.p1", "s1", { info: { time: 5, computer: "Desk", bytes: 0 }, device: "d1" })],
+    [record("snap.p1", "s1", { text: null, info: { time: 5, computer: "Desk" }, device: "d1" })],
     [{ id: "d1", name: "Desk" }],
     [],
   );
@@ -341,6 +367,7 @@ const held: SyncOverview = {
       lastHere: false,
       here: true,
       folder: "/work/site",
+      folderMissing: false,
     },
     {
       id: "p2",
@@ -353,6 +380,7 @@ const held: SyncOverview = {
       lastHere: false,
       here: false,
       folder: null,
+      folderMissing: false,
     },
     {
       id: "p3",
@@ -365,6 +393,7 @@ const held: SyncOverview = {
       lastHere: false,
       here: false,
       folder: null,
+      folderMissing: false,
     },
   ],
 };
@@ -472,6 +501,60 @@ test("sync: snapshots under their day", () => {
     groupByDay([], (t: number) => t, now),
     [],
   );
+});
+
+test("sync: the loop's timing, and the words while keys catch up", () => {
+  assert.deepEqual(
+    [1, 2, 3, 4, 5, 50].map((n) => backoffMs(n) / 60_000),
+    [1, 2, 5, 10, 10, 10],
+  );
+  assert.equal(backoffMs(0), 60_000);
+  const least = 3 * 60_000;
+  assert.equal(snapshotSpacing(200, least), least);
+  // A look that took 30 s (a huge folder): twenty minutes until the next.
+  assert.equal(snapshotSpacing(30_000, least), 20 * 60_000);
+  const blocked = { state: "blocked", message: null, at: 5 } as const;
+  assert.equal(activityLine(blocked).text, "Waiting for this computer's keys to catch up");
+  assert.equal(statusBarWords(true, "on", blocked)?.error, false);
+  assert.match(statusBarWords(true, "on", blocked)?.tooltip ?? "", /keys to catch up/);
+  assert.equal(
+    activityLine({ state: "offline", message: "The service asked to slow down: will retry", at: 5 })
+      .text,
+    "The service asked to slow down: will retry",
+  );
+});
+
+test("sync: a large folder without git is asked about before it syncs", () => {
+  const folder: EstimateLike = {
+    kind: "folder",
+    files: 12,
+    bytes: 4096,
+    tooLarge: 0,
+    largest: [],
+    truncated: false,
+  };
+  assert.equal(estimateWarning(folder), null);
+  // A git project sends only what differs from its commit, however large it is.
+  assert.equal(estimateWarning({ ...folder, kind: "git", files: 90_000, bytes: 9e9 }), null);
+  const large = estimateWarning({
+    ...folder,
+    files: 2_000,
+    bytes: 300 * 1024 * 1024,
+    tooLarge: 2,
+    largest: [
+      ["node_modules", 250 * 1024 * 1024, 1800],
+      ["video.mp4", 40 * 1024 * 1024, 1],
+    ],
+  });
+  assert.match(large ?? "", /2000 files, 300 MB/);
+  assert.match(large ?? "", /node_modules {2}250 MB \(1800 files\)\nvideo\.mp4 {2}40 MB/);
+  assert.match(large ?? "", /Files over 100 MB are left out \(2 files here\)/);
+  assert.doesNotMatch(large ?? "", /more files than a snapshot holds/);
+  assert.match(
+    estimateWarning({ ...folder, truncated: true }) ?? "",
+    /more files than a snapshot holds/,
+  );
+  assert.notEqual(estimateWarning({ ...folder, bytes: 200 * 1024 * 1024 }), null);
 });
 
 test("sync: small words", () => {

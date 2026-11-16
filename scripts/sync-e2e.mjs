@@ -273,14 +273,24 @@ try {
     check(waiting.state === "pending" && waiting.code === null, JSON.stringify(waiting));
     const seen = (await desk.sync("status")).devices.find((d) => d.status === "pending");
     check(seen?.name === "Laptop" && seen.code === null, JSON.stringify(seen));
-    // Not approved unseen: the desk first fixes the key and chooses the code's random part.
+    // Not approved unseen. The laptop fixed its half of the code when it asked to join; the
+    // desk now fixes the key it sees and gives its own half; only then does the laptop show
+    // its half, so neither (nor the service between them) can steer the code.
     await fails(desk.sync("approve", { device: seen.id }), "Sync", "approving unchecked");
-    const code = await desk.sync("review_device", { device: seen.id });
-    check(/^\d{3} \d{3}$/.test(code), code);
+    const started = await desk.sync("review_device", { device: seen.id });
+    check(!/d{3}/.test(JSON.stringify(started ?? null)), "the check returns no code");
+    const early = (await desk.sync("status")).devices.find((d) => d.id === seen.id);
+    check(early.code === null && early.checking === true, JSON.stringify(early));
+    await fails(desk.sync("approve", { device: seen.id }), "Sync", "approving before the answer");
+    // Reading its status is how the laptop answers.
     const shown = await laptop.sync("status");
-    check(shown.state === "pending" && shown.code === code, JSON.stringify(shown));
+    check(
+      shown.state === "pending" && /^\d{3} \d{3}$/.test(shown.code ?? ""),
+      JSON.stringify(shown),
+    );
     const listed = (await desk.sync("status")).devices.find((d) => d.id === seen.id);
-    check(listed.code === code, JSON.stringify(listed));
+    check(listed.code === shown.code, JSON.stringify(listed));
+    check((await laptop.sync("status")).code === shown.code, "the code stays the same");
     // A waiting computer can't read, write or remove anyone.
     await fails(laptop.sync("changes", { since: 0 }), "SyncOff", "a waiting computer reading");
     await desk.sync("approve", { device: seen.id });
@@ -420,12 +430,33 @@ try {
     await writeFile(join(desk.data, "agent", "sessions", "c1.json"), JSON.stringify(chat));
     const second = await desk.sync("chat_push", { collection: "chats.p1", id: "c1", expect: 1 });
     check(second.outcome === "done" && second.version === 2, JSON.stringify(second));
-    await laptop.sync("chat_pull", {
+    // Over a chat that is here already, only when it is still as the caller saw it.
+    const unseen = await laptop.sync("chat_pull", {
       collection: "chats.p1",
       id: "c1",
       saveAs: "c1",
       workspace: null,
     });
+    check(unseen === null, "a chat here isn't replaced unseen");
+    const [seenStamp] = await laptop.call("agent_session_stamps", { ids: ["c1"] });
+    const replaced = await laptop.sync("chat_pull", {
+      collection: "chats.p1",
+      id: "c1",
+      saveAs: "c1",
+      workspace: null,
+      ifStamp: seenStamp,
+    });
+    check(replaced === 2, String(replaced));
+    await fails(
+      laptop.sync("chat_pull", {
+        collection: "chats.p1",
+        id: "c1",
+        saveAs: "../c1",
+        workspace: null,
+      }),
+      "Invalid",
+      "a chat saved under a path",
+    );
     const again = JSON.parse(
       await readFile(join(laptop.data, "agent", "sessions", "c1.json"), "utf8"),
     );

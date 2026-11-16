@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -16,6 +17,9 @@ pub const CHUNK_BYTES: usize = 4 * 1024 * 1024;
 /// Sealed chunks are sent together up to this much.
 const BATCH_BYTES: usize = 12 * 1024 * 1024;
 const HAVE_MAX: usize = 2000;
+/// Upload requests in flight together, and download requests for one item.
+const UPLOADS_AT_ONCE: usize = 3;
+const DOWNLOADS_AT_ONCE: usize = 3;
 const ID_LEN: usize = 22;
 
 /// Where some content is: its chunks in order, and its length.
@@ -153,27 +157,33 @@ impl<'a> Uploader<'a> {
             .flatten()
             .filter_map(Value::as_str)
             .collect();
+        let mut batches: Vec<Vec<u8>> = Vec::new();
         let mut frames = Vec::new();
         for (id, sealed) in &pending {
             if !missing.contains(id.as_str()) {
                 continue;
             }
             if !frames.is_empty() && frames.len() + sealed.len() > BATCH_BYTES {
-                self.send(std::mem::take(&mut frames)).await?;
+                batches.push(std::mem::take(&mut frames));
             }
             frame(&mut frames, id, sealed);
         }
         if !frames.is_empty() {
-            self.send(frames).await?;
+            batches.push(frames);
+        }
+        // A few batches at once: a large first upload isn't one request after another.
+        self.uploaded_bytes += batches.iter().map(|b| b.len() as u64).sum::<u64>();
+        let api = self.api;
+        let replies: Vec<Result<Value>> = futures_util::stream::iter(batches)
+            .map(|batch| api.upload(batch))
+            .buffer_unordered(UPLOADS_AT_ONCE)
+            .collect()
+            .await;
+        for reply in replies {
+            self.note_epoch(&reply?)?;
         }
         self.present.extend(pending.into_iter().map(|(id, _)| id));
         Ok(())
-    }
-
-    async fn send(&mut self, frames: Vec<u8>) -> Result<()> {
-        self.uploaded_bytes += frames.len() as u64;
-        let reply = self.api.upload(frames).await?;
-        self.note_epoch(&reply)
     }
 
     /// Sends the rest and returns what the record must name: every chunk used, and the sweep
@@ -245,10 +255,15 @@ pub async fn fetch(api: &Api, ring: &Keyring, ids: &[String]) -> Result<HashMap<
 /// The content `stored` names, whole.
 pub async fn read(api: &Api, ring: &Keyring, stored: &Stored) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(stored.size as usize);
-    // A few chunks at a time, so a large item doesn't sit in memory twice.
-    for group in stored.chunks.chunks(3) {
-        let got = fetch(api, ring, group).await?;
-        for id in group {
+    // A few requests at once, each for a few chunks, taken in order: a large item downloads
+    // faster without sitting in memory twice.
+    let owned: Vec<Vec<String>> = stored.chunks.chunks(2).map(<[String]>::to_vec).collect();
+    let mut groups = futures_util::stream::iter(owned)
+        .map(|group| async move { fetch(api, ring, &group).await.map(|got| (group, got)) })
+        .buffered(DOWNLOADS_AT_ONCE);
+    while let Some(next) = groups.next().await {
+        let (group, got) = next?;
+        for id in &group {
             out.extend_from_slice(got.get(id).map(Vec::as_slice).unwrap_or_default());
         }
     }
