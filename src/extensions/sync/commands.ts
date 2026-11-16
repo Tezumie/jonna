@@ -8,7 +8,7 @@ import { accountsIpc } from "../../core/ipc/accounts";
 import { type SyncStatus, syncIpc } from "../../core/ipc/sync";
 import { openerIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
-import { accountPageUrl, hasPlanPage } from "../../core/ownServices";
+import { accountPageUrl, hasPlanPage, hasTeamPage, teamPageUrl } from "../../core/ownServices";
 import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -18,13 +18,14 @@ import {
   estimateWarning,
   folderName,
   formatSize,
-  LAPSED_REASON,
+  lapsedReason,
   lapsedUntil,
   planSituation,
   planUrl,
   projectCounts,
   SYNC_PAGE_IDS,
   snapshotFacts,
+  teamOf,
 } from "./model";
 import { DEFAULT_DEVICE_NAME, type SyncSession } from "./session";
 
@@ -92,7 +93,7 @@ export function registerSyncCommands(
   /** Refuses what writes to the account while its subscription is ended. */
   const refuseLapsed = (): void => {
     if (planSituation(session.profile.peek(), sync().status.peek()) === "lapsed")
-      throw new Error(LAPSED_REASON);
+      throw new Error(lapsedReason(teamOf(session.profile.peek())));
   };
 
   /** The accounts server, once sync is on here and the account can be written to. */
@@ -1048,6 +1049,25 @@ export function registerSyncCommands(
         if (!hasPlanPage()) throw new Error("This build has no plan page.");
         const { base } = await account(false);
         await openerIpc.openUrl(planUrl(base));
+        return { opened: true };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.manageTeam",
+      title: "Manage team…",
+      category: CATEGORY,
+      description:
+        "Opens the account page's team section in the browser. A subscriber invites people into a team there: each member has Sync through it, the owner pays one seat a person, and the team shares one pool of storage. Inviting, removing, leaving and seats happen only on that page, never in the IDE; ide://sync says the team the account is in (`team`). Fails when the build's service has no teams.",
+      input: s.empty(),
+      effects: [],
+      agent: "hidden",
+      run: async () => {
+        if (!hasTeamPage()) throw new Error("This build has no team page.");
+        const { base } = await account(false);
+        await openerIpc.openUrl(teamPageUrl(base));
         return { opened: true };
       },
     }),

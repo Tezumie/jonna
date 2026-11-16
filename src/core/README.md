@@ -622,6 +622,7 @@ resolves once a mark is reached (What's new waits for `workspaceRestored`, D204)
 generated from product.json by `scripts/gen.mjs`: the only source of the product's names, and of
 the online services a build uses. `ownServices.ts` (DOM-free, tested) reads those:
 `hasAccounts()`, `hasSync()`, `accountsServer(setting)` (the server in use; the
-`accounts.serverUrl` setting wins in a build that has one), `accountPageUrl(base)` and
-`planPageUrl(base)` (the pages the app opens in the browser). `docs/own-services.md` is the guide
+`accounts.serverUrl` setting wins in a build that has one), `accountPageUrl(base)`,
+`planPageUrl(base)` and `teamPageUrl(base)` (the pages the app opens in the browser;
+`hasPlanPage()` and `hasTeamPage()` say whether the service has them). `docs/own-services.md` is the guide
 to the keys.

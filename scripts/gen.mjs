@@ -94,9 +94,18 @@ for (const key of optional) {
 // - planPagePath: the page where a plan is bought, renewed or cancelled (the app has no payment
 //   code: it only opens this page). A path or a whole URL, as above. Set to "" for a service
 //   with no plans (sync that is free, or sold elsewhere): the app then shows no plan wording.
+// - teamPagePath: the page where a subscriber's team is managed (inviting people, removing
+//   them; the app only opens it). A path or a whole URL, as above. Set to "" for a service
+//   without teams: the app then shows nothing about teams.
 // - syncBuiltIn: false leaves Sync out of the build (its tab, commands, settings, status bar
 //   item and ide://sync), whatever the server offers. Sync needs an accounts server either way.
-const servicePages = { accountPagePath: "/account", planPagePath: "/account#plan" };
+const servicePages = {
+  accountPagePath: "/account",
+  planPagePath: "/account#plan",
+  teamPagePath: "/account#team",
+};
+// An empty one of these is a choice (no plans, no teams), not "the default".
+const mayBeEmpty = ["planPagePath", "teamPagePath"];
 for (const key of Object.keys(servicePages)) {
   const value = product[key];
   if (value === undefined || value === "") continue;
@@ -111,8 +120,8 @@ const services = {
   ...Object.fromEntries(
     Object.entries(servicePages).map(([key, fallback]) => [
       key,
-      // An empty plan page is a choice (no plans); an empty account page is just "the default".
-      key === "planPagePath" ? (product[key] ?? fallback) : product[key] || fallback,
+      // An empty account page is just "the default".
+      mayBeEmpty.includes(key) ? (product[key] ?? fallback) : product[key] || fallback,
     ]),
   ),
   syncBuiltIn: product.syncBuiltIn !== false,

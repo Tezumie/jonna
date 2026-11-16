@@ -6,14 +6,17 @@ import {
   hasAccounts,
   hasPlanPage,
   hasSync,
+  hasTeamPage,
   type OwnServices,
   planPageUrl,
+  teamPageUrl,
 } from "./ownServices";
 
 const config = (over: Partial<OwnServices> = {}): OwnServices => ({
   accountsUrl: "https://accounts.example.com",
   accountPagePath: "/account",
   planPagePath: "/account#plan",
+  teamPagePath: "/account#team",
   syncBuiltIn: true,
   ...over,
 });
@@ -68,10 +71,31 @@ test("own services: the pages the app opens", () => {
   assert.equal(accountPageUrl("https://a.example", elsewhere), "https://a.example/account");
 });
 
+test("own services: the team page, and a build whose service has no teams", () => {
+  assert.equal(
+    teamPageUrl("https://accounts.example.com/", config()),
+    "https://accounts.example.com/account#team",
+  );
+  assert.equal(
+    teamPageUrl("http://127.0.0.1:8787", config()),
+    "http://127.0.0.1:8787/account#team",
+  );
+  assert.equal(
+    teamPageUrl("https://a.example", config({ teamPagePath: "https://teams.example.com/mine" })),
+    "https://teams.example.com/mine",
+  );
+  assert.equal(hasTeamPage(config()), true);
+  assert.equal(hasTeamPage(config({ teamPagePath: "" })), false);
+  assert.equal(hasTeamPage(config({ teamPagePath: "  " })), false);
+  // The plan page stays when there are no teams.
+  assert.equal(hasPlanPage(config({ teamPagePath: "" })), true);
+});
+
 test("own services: a build with no plan page says nothing of plans", () => {
   const base = {
     accountsUrl: "https://example.test",
     accountPagePath: "/account",
+    teamPagePath: "/account#team",
     syncBuiltIn: true,
   };
   assert.equal(hasPlanPage({ ...base, planPagePath: "/account#plan" }), true);

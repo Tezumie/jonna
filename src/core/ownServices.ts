@@ -13,6 +13,8 @@ export interface OwnServices {
   readonly accountPagePath: string;
   /** The page where a plan is bought, renewed or cancelled: a path, or a whole URL. */
   readonly planPagePath: string;
+  /** The page where a subscriber's team is managed: a path, or a whole URL; empty: no teams. */
+  readonly teamPagePath: string;
   /** False leaves Sync out of the build. */
   readonly syncBuiltIn: boolean;
 }
@@ -42,6 +44,11 @@ export function hasPlanPage(config: OwnServices = product): boolean {
   return config.planPagePath.trim() !== "";
 }
 
+/** Whether the service has a page for teams. Without one the app says nothing about teams. */
+export function hasTeamPage(config: OwnServices = product): boolean {
+  return config.teamPagePath.trim() !== "";
+}
+
 /** A page of the service: `page` on the server `base`, or `page` itself when it is a whole URL. */
 function pageUrl(base: string, page: string): string {
   if (/^https?:\/\//i.test(page)) return page;
@@ -57,4 +64,9 @@ export function accountPageUrl(base: string, config: OwnServices = product): str
 /** The page where a plan is bought, renewed or cancelled. Payment happens there, never here. */
 export function planPageUrl(base: string, config: OwnServices = product): string {
   return pageUrl(base, config.planPagePath);
+}
+
+/** The page where a team is managed (inviting, removing, seats). Teams change there, never here. */
+export function teamPageUrl(base: string, config: OwnServices = product): string {
+  return pageUrl(base, config.teamPagePath);
 }

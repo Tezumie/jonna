@@ -18,6 +18,7 @@ holds the product's names). Nothing else in the code spells a server address or 
 | `accountsUrl` | The accounts server: sign-in, the profile, and the server Sync talks to. `https://…`, without a path. | No account in the build: see "Without accounts". |
 | `accountPagePath` | The account page the app opens in the browser (`sync.openAccountPage`: devices, storage, resetting sync). A path on the accounts server, or a whole URL when the page lives elsewhere. | `/account` |
 | `planPagePath` | The page where a plan is bought, renewed or cancelled (`sync.managePlan`). A path on the accounts server, or a whole URL (a billing portal on another host). Set it to `""` when your service has no plans (sync that is free, or sold elsewhere): the IDE then shows no "Your plan" card, no "See plans" and no "Renew". | `/account#plan` |
+| `teamPagePath` | The page where a subscriber's team is managed: inviting and removing people, seats, leaving (`sync.manageTeam`). A path on the accounts server, or a whole URL. Set it to `""` when your service has no teams: the IDE then shows nothing about teams, whatever the profile says. | `/account#team` |
 | `syncBuiltIn` | `false` leaves Sync out of the build, whatever the server offers. | `true` (Sync also needs `accountsUrl`). |
 | `updates.endpoint` | Where installed copies look for a new version (a `latest.json`). | No updates: the build never checks and never connects. |
 | `updates.betaEndpoint` | The same for the beta channel (`update.channel`). | No beta channel. |
@@ -67,6 +68,7 @@ The profile, `GET /api/me`:
 | `syncUntil` | ms, optional | While lapsed: when what is synced is deleted. |
 | `syncOffered` | boolean, optional | Sync is on sale to this account and it doesn't have it: the Sync tab shows an offer. |
 | `supporter` | boolean, optional | Read and kept; nothing shows it yet. |
+| `team` | `null` or `{ id, name, role, publisher }`, optional | The team the account is in (`role`: `"owner"` or `"member"`): see "Teams". A shape the app can't read counts as no team. |
 
 A server that sends only `id` and `name` is a complete accounts server: there is sign-in and a
 profile, and Sync stays closed to everyone.
@@ -97,6 +99,29 @@ profile: the Sync tab's Storage page has a "Your plan" card with "Manage plan" f
 account that has Sync (`src/extensions/sync/pages.ts`). Point `planPagePath` at whatever page
 fits, or set it to `""`: the card, "See plans" and "Renew" then never show, and
 `sync.managePlan` says the build has no plan page.
+
+## Teams
+
+A service may let a subscriber invite people into a team: each member has Sync because they are
+in it, the owner pays for them, and the team shares one pool of storage. Like payment, none of
+that is in the app: `sync.manageTeam` opens `teamPagePath` in the browser, and the profile's
+`team` says what the account is in. The app shows only the team's name and the account's role
+(the Sync tab, and `team` in `ide://sync`), never the other members.
+
+What the app expects of the service for an account in a team:
+
+- A member's `sync` is true and its `syncState` `"on"` while the owner pays, and `"lapsed"`
+  with `syncUntil` once the owner's subscription ended, as for an account whose own
+  subscription ended. The app then says it was the team's subscription and offers "Manage team"
+  in place of "Renew": the plan isn't the member's to renew.
+- `syncOffered` is false for a member whose team pays.
+- `storageLimit` (in the profile and in Sync's state) is what is left of the team's pool for
+  this account; it may shrink as others store more. The Storage page says that the storage is
+  shared.
+
+A member sees no "Your plan" card (there is "Manage team" instead); an owner sees both; a
+subscriber in no team sees one row, "Add people to your subscription". With `teamPagePath` set
+to `""` none of this shows, and `sync.manageTeam` says the build has no team page.
 
 ## Without Sync
 
@@ -155,7 +180,7 @@ without an account.
 
 - `product.json` → `scripts/gen.mjs` → `src/core/product.ts` (generated).
 - `src/core/ownServices.ts`: `hasAccounts`, `hasSync`, `accountsServer`, `accountPageUrl`,
-  `planPageUrl`. DOM-free, tested.
+  `planPageUrl`, `hasPlanPage`, `teamPageUrl`, `hasTeamPage`. DOM-free, tested.
 - `src/extensions/builtins.ts`: Sync is in the list only when `hasSync()`.
 - `src/extensions/accounts/index.ts` with `model.ts` (`accountsManifest`, `signInProviders`):
   what of the Accounts extension depends on `hasAccounts()`.

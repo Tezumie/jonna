@@ -120,6 +120,17 @@ built-ins only when `hasSync()` (`extensions/builtins.ts`).
 - Payment is never in the IDE: `sync.managePlan` opens `<accounts server>/account#plan` in the
   browser. Coming back to the window while offered or lapsed runs `sync.checkPlan` (30 s apart
   at most, never while a pass runs), which asks the server for the profile and reads the status.
+- Teams are never managed in the IDE either: `sync.manageTeam` opens `<accounts server>/account#team`.
+  The profile's `team` (`teamOf` in `model.ts`: its name and the account's role; null in a build
+  whose service has no teams, `teamPagePath` empty) is shown, nothing more. Overview: one muted
+  line in the status card ("Your team: <name>" for the owner, "Through <name>" for a member)
+  with Manage team, and the storage card says "Storage, shared by your team". Storage: a note
+  that the limit is what is left of the team's storage; a member has a team row with Manage
+  team and no "Your plan" (the plan is the owner's), an owner has both, and a subscriber in no
+  team has "Add people to your subscription". Lapsed as a member (`throughTeam`): the callout
+  says the team's subscription ended and offers Manage team / Check again, never Renew; the
+  status line, the status bar's tooltip and the reason on disabled buttons say the same. The
+  log's sentence (`LAPSED_ACTIVITY`) names nobody's subscription: the loop doesn't know the team.
 
 **Exports:** `syncExtension` (`index.ts`), `SyncController` (`controller.ts`).
 
@@ -141,10 +152,12 @@ snapshots and its chats' synced copies leave the account; nothing on a computer 
 `sync.snapshot.restoreFile {id, path?}` (without `path`: pick one of the snapshot's files),
 `sync.snapshot.pin {id, name?}` (`name` null unpins; without it, asks), `sync.snapshot.delete
 {id}`, `sync.openAccountPage`, `sync.managePlan` (opens the account page's plan section in the
-browser: subscribing, renewing, cancelling, cards, invoices, storage), `sync.checkPlan` (reads the
+browser: subscribing, renewing, cancelling, cards, invoices, storage), `sync.manageTeam` (opens
+the account page's team section in the browser: inviting, removing, leaving, seats; fails in a
+build whose service has no teams), `sync.checkPlan` (reads the
 profile from the server and the status again; returns `{plan, state, lapsedUntil}`, `plan`: on,
 lapsed, offered, none). Each fails with one sentence when nobody is signed in or sync isn't
-open to the account (the two plan commands need only an account). What writes to the account
+open to the account (the two plan commands and `sync.manageTeam` need only an account). What writes to the account
 fails with one sentence while the subscription is ended. None takes or returns a recovery key or
 a verification code.
 
@@ -159,7 +172,9 @@ all on), `sync.ignoredSettings`, `sync.historyDays` (30; days the project was wo
 everything), `sync.snapshotScope` (`remote` | `everything`), `sync.projects` (managed by the IDE).
 
 **State:** `ide://sync` — `available`, `offered` (the account could subscribe), `lapsedUntil`
-(null, or when what is synced is deleted once the subscription ended, in ms), `state`, `device`,
+(null, or when what is synced is deleted once the subscription ended, in ms), `team` (null, or
+`{name, role}`: the team the account is in, `role` "owner" or "member"; never its members),
+`state`, `device`,
 `devices` (a waiting one's `codeChecked`, never its code), `recoveryKeySet`, `usageBytes`,
 `storageLimit`, `activity` (its `state` is "lapsed" while the subscription is ended), `page` (the page the tab shows while sync is on),
 `overview` (`settings {count, updatedAt}`, `files [{path, bytes, updatedAt}]`, `accountChats`,

@@ -5,7 +5,7 @@
 import { type Child, h, on } from "../../core/dom/index";
 import type { SyncDevice, SyncStatus } from "../../core/ipc/sync";
 import type { DisposableStore } from "../../core/lifecycle/index";
-import { hasPlanPage } from "../../core/ownServices";
+import { hasPlanPage, hasTeamPage } from "../../core/ownServices";
 import { type IconName, icon } from "../../ui/Icon";
 import type { MenuItem } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -22,7 +22,7 @@ import {
   formatSize,
   groupByDay,
   heldSummary,
-  LAPSED_REASON,
+  lapsedReason,
   lapsedSentence,
   lapsedUntil,
   type OverviewProject,
@@ -34,12 +34,18 @@ import {
   SERVICE_CANT_READ,
   type SyncEvent,
   type SyncPageId,
+  type SyncTeam,
   serviceTime,
   snapshotFacts,
   snapshotSize,
   storageByProject,
   storageNotice,
   storageShare,
+  teamLine,
+  teamOf,
+  teamRow,
+  teamStorageNote,
+  throughTeam,
   timeOfDay,
 } from "./model";
 import type { SyncSession } from "./session";
@@ -179,6 +185,16 @@ function storageLimit(kit: PageKit, status: SyncStatus): number {
   return status.storageLimit || kit.session.profile.peek()?.storageLimit || 0;
 }
 
+/** The team the account is in; null in none, or when the build's service has no teams. */
+function teamIn(kit: PageKit): SyncTeam | null {
+  return teamOf(kit.session.profile.peek());
+}
+
+/** Opens the team page in the browser: teams are managed there, never here. */
+function manageTeam(kit: PageKit): HTMLButtonElement {
+  return kit.button("Manage team", () => kit.run("sync.manageTeam"), "secondary", "external-link");
+}
+
 function logRows(kit: PageKit, log: readonly SyncEvent[]): HTMLElement[] {
   return log.map((event) =>
     h(
@@ -204,7 +220,7 @@ function writeButton(
   const el = kit.button(label, click, kind, glyph);
   if (kit.lapsed) {
     el.disabled = true;
-    el.title = LAPSED_REASON;
+    el.title = lapsedReason(teamIn(kit));
   }
   return el;
 }
@@ -212,16 +228,28 @@ function writeButton(
 /**
  * The subscription ended: what that means, until when what is synced can be read, and the two
  * things to do about it. `until`: when the synced copy is deleted, in ms (null: not known).
+ * A team's member is told it was the team's subscription and isn't offered Renew: the plan is
+ * the owner's.
  */
 export function lapsedCallout(kit: PageKit, until: number | null): HTMLElement {
+  const team = teamIn(kit);
+  const member = throughTeam(team);
   return h(
     "div",
-    { class: "settings-card sync-card sync-callout sync-lapsed", role: "status" },
-    h("div", { class: "sync-item-main" }, kit.text(lapsedSentence(until))),
+    {
+      class: "settings-card sync-card sync-callout sync-lapsed",
+      role: "status",
+      "data-lapsed": member ? "team" : "own",
+    },
+    h("div", { class: "sync-item-main" }, kit.text(lapsedSentence(until, Date.now(), team))),
     h(
       "div",
       { class: "sync-item-actions" },
-      hasPlanPage() ? kit.button("Renew", () => kit.run("sync.managePlan"), "primary") : null,
+      member
+        ? manageTeam(kit)
+        : hasPlanPage()
+          ? kit.button("Renew", () => kit.run("sync.managePlan"), "primary")
+          : null,
       kit.button("Check again", () => kit.checkPlan()),
     ),
   );
@@ -263,7 +291,8 @@ function continueCallout(kit: PageKit): HTMLElement | null {
 function statusCard(kit: PageKit): HTMLElement {
   const activity = kit.controller.activity.peek();
   const failed = activity.state === "error";
-  const line = activityLine(activity);
+  const team = teamIn(kit);
+  const line = activityLine(activity, throughTeam(team));
   const glyph: IconName = failed
     ? "circle-alert"
     : activity.state === "syncing"
@@ -298,6 +327,15 @@ function statusCard(kit: PageKit): HTMLElement {
       earlier === null
         ? null
         : h("div", { class: "sync-item-detail" }, "Last synced ", kit.when(earlier)),
+      // In a team: whose it is, or that sync comes through it, and the way to its page.
+      team === null
+        ? null
+        : h(
+            "div",
+            { class: "sync-item-detail sync-team-line", "data-team": team.role },
+            h("span", { class: "sync-team-name" }, teamLine(team)),
+            kit.link("Manage team", () => kit.run("sync.manageTeam"), "external-link"),
+          ),
     ),
     lapsed
       ? null
@@ -392,7 +430,12 @@ function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
     h(
       "span",
       { class: "sync-storage-card-line" },
-      h("span", { class: "sync-stat-label" }, "Storage"),
+      // In a team the storage is the team's pool, not the account's own.
+      h(
+        "span",
+        { class: "sync-stat-label" },
+        teamIn(kit) === null ? "Storage" : "Storage, shared by your team",
+      ),
       h(
         "span",
         { class: "sync-storage-card-value" },
@@ -476,7 +519,7 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
   const { lapsed } = kit;
   if (lapsed) {
     pin.disabled = true;
-    pin.title = LAPSED_REASON;
+    pin.title = lapsedReason(teamIn(kit));
   }
   kit.drawn.add(on(pin, "click", () => void togglePin()));
   const items: MenuItem[] = [
@@ -1090,6 +1133,14 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
   const byProject = storageByProject(controller.overview.peek());
   const days = services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
   const scope = services.settings.peek<string | undefined>("sync.snapshotScope") ?? "remote";
+  const hasSync = kit.session.profile.peek()?.sync === true;
+  const team = teamIn(kit);
+  // A member's sync is the team's: there is no plan of its own to manage.
+  const ownPlan = hasSync && hasPlanPage() && !throughTeam(team);
+  // The team's row: for an account in a team, and (so teams can be found) for a subscriber in
+  // none, while the service has teams. Never for an account whose subscription ended.
+  const teams = team !== null || (hasSync && !kit.lapsed && hasTeamPage());
+  const row = teamRow(team);
   return [
     section(
       null,
@@ -1105,9 +1156,16 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
           ),
           limit > 0 ? meter(storageShare(used, limit), notice !== null) : null,
           notice ? h("p", { class: "sync-text sync-storage-notice" }, notice.text) : null,
+          team === null
+            ? null
+            : h(
+                "p",
+                { class: "sync-text is-quiet", "data-team-storage": team.role },
+                teamStorageNote(team, limit > 0),
+              ),
         ),
         // Only for an account that has sync: the plan is where storage comes from.
-        kit.session.profile.peek()?.sync === true && hasPlanPage()
+        ownPlan
           ? item({
               title: "Your plan",
               details: [
@@ -1122,6 +1180,14 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
                   "external-link",
                 ),
               ],
+            })
+          : null,
+        teams
+          ? item({
+              title: row.title,
+              details: [row.detail],
+              attrs: { "data-team-row": team?.role ?? "none" },
+              actions: [manageTeam(kit)],
             })
           : null,
       ),

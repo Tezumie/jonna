@@ -12,7 +12,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 import { registerSyncCommands } from "./commands";
 import { SyncController } from "./controller";
 import manifest from "./extension.json";
-import { lapsedUntil, planSituation, statusBarWords } from "./model";
+import { lapsedUntil, planSituation, statusBarWords, teamOf, throughTeam } from "./model";
 import { SyncSession } from "./session";
 import { syncViewDescriptor } from "./view";
 
@@ -88,6 +88,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
         controller.status.value?.state ?? null,
         controller.activity.value,
         planSituation(session.profile.value, controller.status.value) === "lapsed",
+        throughTeam(teamOf(session.profile.value)),
       );
     sub.add(
       services.statusBar.add({
@@ -177,7 +178,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), this account's computers, storage, the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
@@ -188,6 +189,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
             available: !!controller.base() && session.available(),
             offered: plan === "offered",
             lapsedUntil: plan === "lapsed" ? lapsedUntil(profile, status) : null,
+            team: controller.base() ? teamOf(profile) : null,
             state: status?.state ?? (session.profile.peek() ? "off" : "signedOut"),
             device:
               status?.deviceId && status.state !== "off"

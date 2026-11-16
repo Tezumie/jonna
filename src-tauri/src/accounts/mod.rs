@@ -64,6 +64,31 @@ pub struct Profile {
     pub sync_offered: bool,
     #[serde(default)]
     pub supporter: bool,
+    /// The team the account is in, if any: a member has sync because its owner pays, and the
+    /// team shares one pool of storage (`storage_limit` is then what is left of it for this
+    /// account). Teams are managed on the website, never here.
+    #[serde(default, deserialize_with = "team_or_none")]
+    pub team: Option<Team>,
+}
+
+/// The account's team, as the profile says it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+    /// "owner" (pays for the team) or "member".
+    pub role: String,
+    #[serde(default)]
+    pub publisher: bool,
+}
+
+/// A team this code can't read (a later server's shape) is no team, not a failed sign-in.
+fn team_or_none<'de, D: serde::Deserializer<'de>>(
+    de: D,
+) -> std::result::Result<Option<Team>, D::Error> {
+    let value = serde_json::Value::deserialize(de)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 impl Profile {
@@ -419,6 +444,35 @@ mod tests {
         )
         .unwrap();
         assert!(offered.sync_offered && offered.sync_until.is_none());
+    }
+
+    #[test]
+    fn a_profile_reads_its_team() {
+        // An older server says nothing of teams; null is no team either.
+        let old: Profile = serde_json::from_str(r#"{"id":"u1","name":"Ada"}"#).unwrap();
+        assert_eq!(old.team, None);
+        let none: Profile =
+            serde_json::from_str(r#"{"id":"u1","name":"Ada","team":null}"#).unwrap();
+        assert_eq!(none.team, None);
+        let member: Profile = serde_json::from_str(
+            r#"{"id":"u1","name":"Ada","sync":true,"syncState":"on","syncOffered":false,
+                "team":{"id":"t1","name":"Studio","role":"member","publisher":true}}"#,
+        )
+        .unwrap();
+        let team = member.team.clone().unwrap();
+        assert_eq!((team.id.as_str(), team.name.as_str()), ("t1", "Studio"));
+        assert_eq!(team.role, "member");
+        assert!(team.publisher);
+        let json = serde_json::to_value(&member).unwrap();
+        assert_eq!(json["team"]["role"], "member");
+        assert_eq!(json["team"]["publisher"], true);
+        // What is saved reads back the same.
+        let again: Profile = serde_json::from_value(json).unwrap();
+        assert_eq!(again, member);
+        // A shape this code doesn't know is no team; the profile is still read.
+        let odd: Profile =
+            serde_json::from_str(r#"{"id":"u1","name":"Ada","team":{"id":7}}"#).unwrap();
+        assert_eq!(odd.team, None);
     }
 
     #[test]

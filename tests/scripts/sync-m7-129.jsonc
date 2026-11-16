@@ -58,6 +58,7 @@
         "available": false,
         "offered": false,
         "lapsedUntil": null,
+        "team": null,
         "state": "signedOut",
         "device": null,
         "devices": { "$length": 0 },
@@ -122,6 +123,8 @@
     },
     // The plan (the subscription) is the account's: nothing to open or to read signed out.
     { "run": "sync.managePlan", "expectError": "Sign in to your account to use sync." },
+    // So is the team: its page isn't opened for nobody.
+    { "run": "sync.manageTeam", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.checkPlan", "expectError": "Sign in to your account to use sync." },
 
     // Its settings are known ones (a value that fits the schema is taken).

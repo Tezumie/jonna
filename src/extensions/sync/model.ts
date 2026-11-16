@@ -1,5 +1,5 @@
 // Sync, DOM-free (D435): the words the Sync tab and the commands share.
-import { planPageUrl } from "../../core/ownServices";
+import { hasTeamPage, planPageUrl } from "../../core/ownServices";
 
 export interface ActivityLike {
   state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked" | "lapsed";
@@ -35,7 +35,11 @@ export function storageShare(used: number, limit: number): number {
  * The status line's words. `time` (when there is one) is shown after `text` as a relative time
  * that stays current.
  */
-export function activityLine(activity: ActivityLike): { text: string; time: number | null } {
+export function activityLine(
+  activity: ActivityLike,
+  /** Sync comes through a team (`throughTeam`): renewing isn't this account's to do. */
+  member = false,
+): { text: string; time: number | null } {
   switch (activity.state) {
     case "syncing":
       return { text: "Syncing…", time: null };
@@ -51,7 +55,12 @@ export function activityLine(activity: ActivityLike): { text: string; time: numb
     case "blocked":
       return { text: "Waiting for this computer's keys to catch up", time: null };
     case "lapsed":
-      return { text: "Sync ended: nothing syncs until you renew", time: null };
+      return {
+        text: member
+          ? "Sync ended: nothing syncs until your team's subscription is renewed"
+          : "Sync ended: nothing syncs until you renew",
+        time: null,
+      };
     case "error":
       return { text: activity.message ?? "Sync ran into a problem.", time: null };
     default:
@@ -396,6 +405,8 @@ export function statusBarWords(
   activity: ActivityLike,
   /** The subscription ended (`planSituation` says "lapsed"). */
   lapsed = false,
+  /** Sync comes through a team (`throughTeam`): the subscription that ended is the team's. */
+  member = false,
 ): StatusBarWords | null {
   if (!available) return null;
   if (state === "pending")
@@ -405,7 +416,9 @@ export function statusBarWords(
   if (lapsed || activity.state === "lapsed")
     return {
       text: "$(cloud) Sync ended",
-      tooltip: "Sync: your subscription ended. Nothing syncs until you renew it.",
+      tooltip: member
+        ? "Sync: your team's subscription ended. Nothing syncs until the team's owner renews it."
+        : "Sync: your subscription ended. Nothing syncs until you renew it.",
       error: false,
     };
   switch (activity.state) {
@@ -494,22 +507,110 @@ export function retentionDate(time: number, now = Date.now()): string {
   });
 }
 
-/** What a lapsed account is told, with the date what is synced is deleted when it is known. */
-export function lapsedSentence(until: number | null, now = Date.now()): string {
+/**
+ * What a lapsed account is told, with the date what is synced is deleted when it is known. A
+ * team's member (`team`) is told whose subscription it was, and who can renew it.
+ */
+export function lapsedSentence(
+  until: number | null,
+  now = Date.now(),
+  team: SyncTeam | null = null,
+): string {
   const kept =
     until === null
       ? "What is synced stays readable for a while, then it is deleted."
       : until <= now
         ? "What is synced is about to be deleted."
         : `What is synced stays readable until ${retentionDate(until, now)}, then it is deleted.`;
+  if (throughTeam(team))
+    return `The Sync subscription of your team, ${team.name}, ended. ${kept} Your computers keep their own files and chats. Only the team's owner can renew it.`;
   return `Your Sync subscription ended. ${kept} Your computers keep their own files and chats.`;
 }
 
-/** The pass's sentence while lapsed (the activity's message, and said once in the log). */
-export const LAPSED_ACTIVITY = "Your Sync subscription ended. Nothing syncs until you renew it.";
+/**
+ * The pass's sentence while lapsed (the activity's message, and said once in the log). It says
+ * neither whose subscription it was nor who renews it: the loop doesn't know the account's team.
+ */
+export const LAPSED_ACTIVITY = "The Sync subscription ended. Nothing syncs until it is renewed.";
 
 /** Why something that writes to the account can't be done while lapsed. */
 export const LAPSED_REASON = "Your Sync subscription ended. Renew it to do this.";
+
+/** The same for a team's member, who can't renew it. */
+export const LAPSED_REASON_MEMBER =
+  "Your team's Sync subscription ended. This can be done once the team's owner renews it.";
+
+/** Why something that writes can't be done while lapsed, for this account (`team`: its team). */
+export function lapsedReason(team: SyncTeam | null): string {
+  return throughTeam(team) ? LAPSED_REASON_MEMBER : LAPSED_REASON;
+}
+
+// ------------------------------------------------------------ the team
+
+/** The account's team as Sync shows it: its name, and whether the account pays for it. */
+export interface SyncTeam {
+  name: string;
+  role: "owner" | "member";
+}
+
+/**
+ * The team a profile is in (`AccountProfile` fits); null when it is in none, or when the
+ * build's service has no teams (`teamPagePath` is empty: nothing about teams is shown).
+ * Anyone who isn't the owner is a member: only the owner has a plan to manage.
+ */
+export function teamOf(
+  profile: { team?: { name: string; role: string } | null } | null,
+  teams = hasTeamPage(),
+): SyncTeam | null {
+  const team = profile?.team;
+  if (!teams || !team || typeof team.name !== "string") return null;
+  return {
+    name: team.name.trim() || "Your team",
+    role: team.role === "owner" ? "owner" : "member",
+  };
+}
+
+/** Whether sync comes through a team someone else pays for. */
+export function throughTeam(team: SyncTeam | null): team is SyncTeam {
+  return team?.role === "member";
+}
+
+/** The team, in one quiet line beside the status: whose it is, or that sync comes through it. */
+export function teamLine(team: SyncTeam): string {
+  return team.role === "owner" ? `Your team: ${team.name}` : `Through ${team.name}`;
+}
+
+/**
+ * Under the storage numbers of an account in a team: whose storage this is. `limited`: a limit
+ * is shown beside what is used.
+ */
+export function teamStorageNote(team: SyncTeam, limited = true): string {
+  const shared = `Shared by your team, ${team.name}.`;
+  return limited
+    ? `${shared} The limit is what is left of the team's storage for you: it gets smaller as others store more.`
+    : shared;
+}
+
+/** The team's row on the Storage page: what the team page (in the browser) is for. */
+export function teamRow(team: SyncTeam | null): { title: string; detail: string } {
+  if (team === null)
+    return {
+      title: "Add people to your subscription",
+      detail:
+        "Invite people to a team: each has Sync on your subscription, one seat a person, and you all share one pool of storage. Teams are set up on your account page, which opens in the browser.",
+    };
+  if (team.role === "owner")
+    return {
+      title: teamLine(team),
+      detail:
+        "Inviting and removing people, seats, and how much each person stores are on your account page, which opens in the browser.",
+    };
+  return {
+    title: `Your team: ${team.name}`,
+    detail:
+      "Sync comes through this team: its owner pays for it, so there is no plan of your own to manage. Who is in the team, and leaving it, are on your account page, which opens in the browser.",
+  };
+}
 
 /** What Sync does, in three short lines (the offer, and before sync is turned on). */
 export const SYNC_BENEFITS: readonly string[] = [

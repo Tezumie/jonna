@@ -20,6 +20,20 @@ export interface AccountProfile {
   /** Sync is on sale to this account and it doesn't have it: an offer may be shown. */
   syncOffered?: boolean;
   supporter?: boolean;
+  /**
+   * The team the account is in, if any. A member has sync because the team's owner pays; the
+   * team shares one pool of storage, and `storageLimit` is then what is left of it for this
+   * account. Teams are managed on the website.
+   */
+  team?: AccountTeam | null;
+}
+
+export interface AccountTeam {
+  id: string;
+  name: string;
+  /** "owner" pays for the team; a "member" has sync through it. */
+  role: "owner" | "member";
+  publisher: boolean;
 }
 
 export const accountsIpc = {

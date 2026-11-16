@@ -111,6 +111,7 @@ A local desktop code editor in the spirit of VS Code and Cursor, minus the bloat
   "accountsUrl": "",
   "accountPagePath": "/account",
   "planPagePath": "/account#plan",
+  "teamPagePath": "/account#team",
   "syncBuiltIn": true,
   "extensionsRepo": "",
   "issuesUrl": "",

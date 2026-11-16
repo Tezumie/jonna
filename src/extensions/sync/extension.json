@@ -143,6 +143,11 @@
         "category": "Sync"
       },
       {
+        "id": "sync.manageTeam",
+        "title": "Manage team…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.checkPlan",
         "title": "Check plan again",
         "category": "Sync"

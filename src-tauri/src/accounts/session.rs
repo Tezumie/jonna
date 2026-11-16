@@ -169,7 +169,8 @@ pub async fn check(file: &Path, base: &str) -> Result<Option<Profile>> {
 }
 
 enum Me {
-    Profile(Profile),
+    // Boxed: a profile is far larger than the two cases without one.
+    Profile(Box<Profile>),
     Unauthorized,
     Unreachable,
 }
@@ -191,7 +192,7 @@ async fn fetch_me(client: &reqwest::Client, base: &str, access: &str) -> Me {
         return Me::Unreachable;
     }
     match reply.json::<Profile>().await {
-        Ok(p) => Me::Profile(p),
+        Ok(p) => Me::Profile(Box::new(p)),
         Err(_) => Me::Unreachable,
     }
 }
@@ -249,7 +250,7 @@ async fn check_with(file: &Path, base: &str, vault: Option<&dyn Vault>) -> Resul
     match fetch_me(&client, &session.base, &tokens.access).await {
         Me::Profile(p) => {
             store(file, vault, &session.base, &p, &tokens)?;
-            return Ok(Some(p));
+            return Ok(Some(*p));
         }
         Me::Unreachable => return Ok(Some(session.profile)),
         Me::Unauthorized => {}
@@ -271,7 +272,7 @@ async fn check_with(file: &Path, base: &str, vault: Option<&dyn Vault>) -> Resul
     match fetch_me(&client, &session.base, &tokens.access).await {
         Me::Profile(p) => {
             store(file, vault, &session.base, &p, &tokens)?;
-            Ok(Some(p))
+            Ok(Some(*p))
         }
         Me::Unreachable => Ok(Some(session.profile)),
         Me::Unauthorized => {
@@ -329,6 +330,7 @@ mod tests {
             sync_until: None,
             sync_offered: false,
             supporter: false,
+            team: None,
         }
     }
 

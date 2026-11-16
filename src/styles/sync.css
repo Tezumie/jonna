@@ -248,6 +248,22 @@
     overflow-wrap: anywhere;
     user-select: text;
   }
+  /* The account's team, under the status: its name (which may be long) and the way to its page.
+     Muted like the lines around it; the link goes under the name when both don't fit. */
+  .sync-team-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-4);
+    min-width: 0;
+  }
+  .sync-team-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sync-team-line .ai-link {
+    margin-top: 0;
+  }
   .sync-callout {
     display: flex;
     align-items: center;

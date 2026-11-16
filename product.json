@@ -11,6 +11,7 @@
   "accountsUrl": "https://jonna.dev",
   "accountPagePath": "/account",
   "planPagePath": "/account#plan",
+  "teamPagePath": "/account#team",
   "syncBuiltIn": true,
   "extensionsRepo": "",
   "issuesUrl": "https://github.com/Tezumie/jonna/issues",

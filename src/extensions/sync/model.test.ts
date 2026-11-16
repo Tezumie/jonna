@@ -20,7 +20,10 @@ import {
   heldSummary,
   isSyncPage,
   LAPSED_ACTIVITY,
+  LAPSED_REASON,
+  LAPSED_REASON_MEMBER,
   LOG_LIMIT,
+  lapsedReason,
   lapsedSentence,
   lapsedUntil,
   type OverviewRecord,
@@ -45,6 +48,11 @@ import {
   storageNotice,
   storageShare,
   storageText,
+  teamLine,
+  teamOf,
+  teamRow,
+  teamStorageNote,
+  throughTeam,
   withEvent,
 } from "./model";
 
@@ -677,4 +685,84 @@ test("sync: small words", () => {
   assert.equal(platformLabel("haiku"), "haiku");
   assert.equal(countOf(1, "file"), "1 file");
   assert.equal(countOf(3, "file"), "3 files");
+});
+
+test("sync: the team a profile is in", () => {
+  // No team, a server that says nothing of teams, nobody signed in.
+  assert.equal(teamOf({ team: null }, true), null);
+  assert.equal(teamOf({}, true), null);
+  assert.equal(teamOf(null, true), null);
+  const owner = { id: "t1", name: "Studio", role: "owner", publisher: false };
+  const member = { id: "t1", name: "Studio", role: "member", publisher: true };
+  // Only the name and the role: never an id, and nothing of the other members.
+  assert.deepEqual(teamOf({ team: owner }, true), { name: "Studio", role: "owner" });
+  assert.deepEqual(teamOf({ team: member }, true), { name: "Studio", role: "member" });
+  // A role this code doesn't know has no plan of its own: a member.
+  assert.equal(teamOf({ team: { name: "Studio", role: "admin" } }, true)?.role, "member");
+  assert.equal(teamOf({ team: { name: "  ", role: "owner" } }, true)?.name, "Your team");
+  // A build whose service has no teams shows nothing about them.
+  assert.equal(teamOf({ team: owner }, false), null);
+
+  assert.equal(throughTeam(teamOf({ team: member }, true)), true);
+  assert.equal(throughTeam(teamOf({ team: owner }, true)), false);
+  assert.equal(throughTeam(null), false);
+});
+
+test("sync: what is said of a team", () => {
+  const owner = { name: "Studio", role: "owner" } as const;
+  const member = { name: "Studio", role: "member" } as const;
+  assert.equal(teamLine(owner), "Your team: Studio");
+  assert.equal(teamLine(member), "Through Studio");
+  // The storage is the team's, and the limit what is left of it.
+  assert.match(teamStorageNote(member), /^Shared by your team, Studio\. The limit is what is left/);
+  assert.equal(teamStorageNote(owner, false), "Shared by your team, Studio.");
+  // The row on the Storage page: a subscriber in no team is shown that teams exist,
+  assert.equal(teamRow(null).title, "Add people to your subscription");
+  assert.match(teamRow(null).detail, /one seat a person/);
+  // an owner its team, a member that the plan isn't its own.
+  assert.equal(teamRow(owner).title, "Your team: Studio");
+  assert.equal(teamRow(member).title, "Your team: Studio");
+  assert.match(teamRow(member).detail, /its owner pays for it/);
+  assert.doesNotMatch(teamRow(owner).detail, /its owner pays/);
+});
+
+test("sync: a member is told the team's subscription ended, not its own", () => {
+  const now = new Date(2026, 10, 15, 12).getTime();
+  const until = new Date(2026, 11, 14, 9).getTime();
+  const date = retentionDate(until, now);
+  const owner = { name: "Studio", role: "owner" } as const;
+  const member = { name: "Studio", role: "member" } as const;
+  assert.equal(
+    lapsedSentence(until, now, member),
+    `The Sync subscription of your team, Studio, ended. What is synced stays readable until ${date}, then it is deleted. Your computers keep their own files and chats. Only the team's owner can renew it.`,
+  );
+  assert.doesNotMatch(lapsedSentence(null, now, member), /Your Sync subscription/);
+  // The owner's subscription is its own, as for someone in no team.
+  assert.equal(lapsedSentence(until, now, owner), lapsedSentence(until, now));
+  assert.equal(lapsedSentence(until, now, null), lapsedSentence(until, now));
+
+  // Why a write is refused: a member isn't told to renew.
+  assert.equal(lapsedReason(null), LAPSED_REASON);
+  assert.equal(lapsedReason(owner), LAPSED_REASON);
+  assert.equal(lapsedReason(member), LAPSED_REASON_MEMBER);
+  assert.doesNotMatch(LAPSED_REASON_MEMBER, /Renew it/);
+  // What the loop says knows no team: it names nobody's subscription.
+  assert.doesNotMatch(LAPSED_ACTIVITY, /you|Your/i);
+
+  // The status line and the status bar.
+  const lapsed = { state: "lapsed", message: LAPSED_ACTIVITY, at: 5 } as const;
+  assert.equal(
+    activityLine(lapsed, true).text,
+    "Sync ended: nothing syncs until your team's subscription is renewed",
+  );
+  assert.equal(activityLine(lapsed, false).text, activityLine(lapsed).text);
+  // Other states say the same in a team.
+  const idle = { state: "idle", message: null, at: 5 } as const;
+  assert.deepEqual(activityLine(idle, true), activityLine(idle));
+  const bar = statusBarWords(true, "on", lapsed, true, true);
+  assert.equal(bar?.text, "$(cloud) Sync ended");
+  assert.match(bar?.tooltip ?? "", /your team's subscription ended/);
+  assert.doesNotMatch(bar?.tooltip ?? "", /until you renew/);
+  assert.match(statusBarWords(true, "on", lapsed, true)?.tooltip ?? "", /until you renew it/);
+  assert.equal(statusBarWords(true, "on", idle, false, true)?.text, "$(cloud) Synced");
 });
