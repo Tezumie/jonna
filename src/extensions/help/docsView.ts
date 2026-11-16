@@ -52,6 +52,7 @@ const PAGE_ICONS: Record<string, IconName> = {
   "19-remote.md": "server",
   "20-workspaces.md": "folder-open",
   "21-troubleshooting.md": "message-circle-question",
+  "23-sync.md": "refresh-cw",
 };
 
 /** The pages that open a group in the navigation (a line above them). */

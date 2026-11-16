@@ -1064,7 +1064,7 @@ export function renderReply(
   const shown = withoutWrapperTags(text);
   try {
     renderMarkdown(body, shown, options);
-    // @mentions stand out (D273): a handoff to @Jonna as much as the user's @Gabby.
+    // @mentions stand out (D273): a handoff to the main agent as much as the user's @Gabby.
     markMentions(body, members);
   } catch {
     body.replaceChildren(h("p", { class: "agent-plain" }, shown));

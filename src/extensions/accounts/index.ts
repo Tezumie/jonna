@@ -9,7 +9,7 @@ import { type AccountProfile, accountsIpc } from "../../core/ipc/accounts";
 import { githubIpc } from "../../core/ipc/git";
 import { openerIpc } from "../../core/ipc/system";
 import { MutableDisposable } from "../../core/lifecycle/index";
-import { accountsServer, hasAccounts, hasSync } from "../../core/ownServices";
+import { accountsServer, hasAccounts, hasPlanPage, hasSync } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -187,7 +187,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               label: `${p.name}${p.email ? ` (${p.email})` : ""}`,
               icon: "circle-user-round",
               submenu: [
-                ...(p.plan ? [{ label: `Plan: ${p.plan}`, disabled: true }] : []),
+                ...(p.plan && hasPlanPage() ? [{ label: `Plan: ${p.plan}`, disabled: true }] : []),
                 {
                   label: "Sign out",
                   icon: "log-out",
@@ -406,8 +406,8 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               : !syncBuiltIn
                 ? "Export your settings, keybindings and snippets to a file, or import one."
                 : profile.peek()
-                  ? "Syncing with your account is coming soon. Until then, export your settings, keybindings and snippets to a file, or import one."
-                  : "Syncing needs an account (coming soon). Until then, export your settings, keybindings and snippets to a file, or import one.",
+                  ? "Sync isn't open to your account. Export your settings, keybindings and snippets to a file, or import one."
+                  : "To keep your settings the same on every computer, sign in to your account and use Sync. For a copy in a file, export your settings, keybindings and snippets, or import one.",
             actions: [
               { label: "Cancel", value: "cancel" },
               { label: "Import…", value: "import" },

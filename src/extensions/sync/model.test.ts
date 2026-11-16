@@ -49,6 +49,7 @@ import {
   storageNotice,
   storageShare,
   storageText,
+  syncManifest,
   teamLine,
   teamOf,
   teamRow,
@@ -287,7 +288,7 @@ test("sync: storage filling up, and how long history is kept", () => {
   assert.equal(storageNotice(79, 100), null);
   assert.deepEqual(storageNotice(80, 100), { level: 80, text: "Storage is 80% full." });
   assert.equal(storageNotice(96, 100)?.level, 95);
-  assert.match(storageNotice(96, 100)?.text ?? "", /^Storage is 96% full\. .*new snapshots stop/);
+  assert.match(storageNotice(96, 100)?.text ?? "", /^Storage is 96% full\. .*nothing new is sent/);
   assert.equal(storageNotice(500, 0), null);
   assert.equal(retentionText(30), "Keeps the last 30 days this project was worked on");
   assert.equal(retentionText(1), "Keeps the last day this project was worked on");
@@ -410,14 +411,37 @@ test("sync: what a lapsed account is told", () => {
   assert.deepEqual(attentionItems({ ...input, lapsed: true }), []);
 
   assert.equal(SYNC_BENEFITS.length, 3);
-  assert.equal(
-    planUrl("https://accounts.example.com"),
-    "https://accounts.example.com/account#plan",
+  // Where the plan page is comes from the build's own configuration (ownServices.test.ts has
+  // the paths); here, only that it is on the accounts server whatever the trailing slash.
+  assert.equal(planUrl("https://accounts.example.com/"), planUrl("https://accounts.example.com"));
+  assert.ok(
+    planUrl("https://accounts.example.com") === "" ||
+      planUrl("https://accounts.example.com").startsWith("https://accounts.example.com/"),
   );
-  assert.equal(
-    planUrl("https://accounts.example.com/"),
-    "https://accounts.example.com/account#plan",
-  );
+});
+
+test("syncManifest: a build without a plan page, a team page or teams doesn't list their commands", () => {
+  const manifest = {
+    name: "sync",
+    contributes: {
+      commands: ["sync.show", "sync.managePlan", "sync.manageTeam", "sync.team.publish"].map(
+        (id) => ({ id, title: id }),
+      ),
+    },
+  } as unknown as Parameters<typeof syncManifest>[0];
+  const ids = (has: Parameters<typeof syncManifest>[1]) =>
+    (syncManifest(manifest, has).contributes?.commands ?? []).map((c) => c.id);
+  assert.deepEqual(ids({ planPage: true, teamPage: true, teams: true }), [
+    "sync.show",
+    "sync.managePlan",
+    "sync.manageTeam",
+    "sync.team.publish",
+  ]);
+  assert.deepEqual(ids({ planPage: false, teamPage: false, teams: false }), ["sync.show"]);
+  assert.deepEqual(ids({ planPage: true, teamPage: false, teams: false }), [
+    "sync.show",
+    "sync.managePlan",
+  ]);
 });
 
 test("sync: recent activity", () => {

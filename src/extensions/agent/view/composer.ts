@@ -728,7 +728,7 @@ export class Composer implements Disposable {
   /**
    * Who answers (D286, as VS Code's agent picker): the main agent and yours, each checked when
    * it's the chat's, its own way of working beside it. Then Mode (D292): Agent, Plan or Ask for
-   * whichever agent is answering, so the pill's "Jonna · Ask" is always one of the menu's checks.
+   * whichever agent is answering, so the pill's "<agent> · Ask" is always one of the menu's checks.
    */
   private chatModeMenu(anchor: HTMLElement): void {
     const { session } = this.host;

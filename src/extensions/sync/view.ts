@@ -506,8 +506,9 @@ class SyncView implements DockView, PageKit {
         ),
       ];
     const plan = planSituation(profile, status);
-    // Sync is on sale to this account, which doesn't have it.
-    if (plan === "offered") return this.offer();
+    // Sync is on sale to this account, which doesn't have it. A build whose service names no
+    // plan page has nowhere to send them: it says sync isn't open, as for any other account.
+    if (plan === "offered" && hasPlanPage()) return this.offer();
     if (profile.sync !== true || status?.state === "unavailable")
       return [this.panel(null, this.text("Sync isn't open to this account yet."))];
     if (!status) return [this.panel(null, this.text("Checking where sync stands…", true))];

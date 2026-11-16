@@ -1035,43 +1035,46 @@ export function registerSyncCommands(
     return { base, profile };
   };
 
-  sub.add(
-    dispatcher.register({
-      id: "sync.managePlan",
-      title: "Manage plan…",
-      category: CATEGORY,
-      description:
-        "Opens the account page's plan section in the browser: subscribing to Sync or renewing it, cancelling, cards, invoices and more storage. Payment happens only on that page, never in the IDE. Afterwards sync.checkPlan reads the account again (coming back to the window does too).",
-      input: s.empty(),
-      effects: [],
-      agent: "hidden",
-      run: async () => {
-        if (!hasPlanPage()) throw new Error("This build has no plan page.");
-        const { base } = await account(false);
-        await openerIpc.openUrl(planUrl(base));
-        return { opened: true };
-      },
-    }),
-  );
+  // A build whose service has no plan page (or no team page) has no command for it.
+  if (hasPlanPage())
+    sub.add(
+      dispatcher.register({
+        id: "sync.managePlan",
+        title: "Manage plan…",
+        category: CATEGORY,
+        description:
+          "Opens the account page's plan section in the browser: subscribing to Sync or renewing it, cancelling, cards, invoices and more storage. Payment happens only on that page, never in the IDE. Afterwards sync.checkPlan reads the account again (coming back to the window does too).",
+        input: s.empty(),
+        effects: [],
+        agent: "hidden",
+        run: async () => {
+          if (!hasPlanPage()) throw new Error("This build has no plan page.");
+          const { base } = await account(false);
+          await openerIpc.openUrl(planUrl(base));
+          return { opened: true };
+        },
+      }),
+    );
 
-  sub.add(
-    dispatcher.register({
-      id: "sync.manageTeam",
-      title: "Manage team…",
-      category: CATEGORY,
-      description:
-        "Opens the account page's team section in the browser. A subscriber invites people into a team there: each member has Sync through it, the owner pays one seat a person, and the team shares one pool of storage. Inviting, removing, leaving and seats happen only on that page, never in the IDE; ide://sync says the team the account is in (`team`). Fails when the build's service has no teams.",
-      input: s.empty(),
-      effects: [],
-      agent: "hidden",
-      run: async () => {
-        if (!hasTeamPage()) throw new Error("This build has no team page.");
-        const { base } = await account(false);
-        await openerIpc.openUrl(teamPageUrl(base));
-        return { opened: true };
-      },
-    }),
-  );
+  if (hasTeamPage())
+    sub.add(
+      dispatcher.register({
+        id: "sync.manageTeam",
+        title: "Manage team…",
+        category: CATEGORY,
+        description:
+          "Opens the account page's team section in the browser. A subscriber invites people into a team there: each member has Sync through it, the owner pays one seat a person, and the team shares one pool of storage. Inviting, removing, leaving and seats happen only on that page, never in the IDE; ide://sync says the team the account is in (`team`). Fails when the build's service has no teams.",
+        input: s.empty(),
+        effects: [],
+        agent: "hidden",
+        run: async () => {
+          if (!hasTeamPage()) throw new Error("This build has no team page.");
+          const { base } = await account(false);
+          await openerIpc.openUrl(teamPageUrl(base));
+          return { opened: true };
+        },
+      }),
+    );
 
   sub.add(
     dispatcher.register({

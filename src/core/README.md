@@ -616,7 +616,8 @@ gives them ports.
   computer.
 - `localSettings.ts` — `staysLocal`: the settings that never sync (what could make another
   computer run or send something).
-- `errors.ts` — telling the service's refusals apart (offline, slow down, per item).
+- `errors.ts` — telling the service's refusals apart (offline, slow down, per item, and
+  `isFull`: the account has no room, so the pass stops sending and keeps reading, D443).
 
 ## team/
 
@@ -629,8 +630,9 @@ other people's: these are the rules that keep it from being trusted like the use
   used left out), `activeIds` (on = a default not turned off, or one added), `switchOf` (a
   skill is switched by its `SKILL.md`), `addItem` / `turnOffItem` (the two lists of choices),
   `itemsToFetch` (what to download given the list and the cache, within the limits).
-- `settings.ts` — `teamMaySet`, `teamSettings` (never a key that stays on a computer, an
-  unknown one, or `team.*` / `sync.*` / `accounts.*`; language blocks filtered too),
+- `settings.ts` — `teamMaySet(key, known, value?)`, `teamSettings` (never a key that stays on
+  a computer, an unknown one, or `team.*` / `sync.*` / `accounts.*`; a switch only to off;
+  no path, command, URL or protection, D443; language blocks filtered too),
   `mergeTeamSettings` (publishing keys into the team's file).
 - `mcp.ts` — `literalSecretIn`, `mcpForTeam`: an mcp.json to publish holds servers and the
   inputs they use, and is refused when a server has a secret written out.

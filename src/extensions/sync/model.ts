@@ -1,5 +1,29 @@
 // Sync, DOM-free (D435): the words the Sync tab and the commands share.
+import type { ExtensionManifest } from "../../core/extensions/index";
 import { hasTeamPage, planPageUrl } from "../../core/ownServices";
+
+/**
+ * The extension's manifest for this build (docs/own-services.md): a build whose service has
+ * no plan page, no team page or no teams doesn't list the commands for them.
+ */
+export function syncManifest(
+  manifest: ExtensionManifest,
+  has: { planPage: boolean; teamPage: boolean; teams: boolean },
+): ExtensionManifest {
+  const gone = new Set([
+    ...(has.planPage ? [] : ["sync.managePlan"]),
+    ...(has.teamPage ? [] : ["sync.manageTeam"]),
+    ...(has.teams ? [] : ["sync.team.publish"]),
+  ]);
+  const contributes = manifest.contributes ?? {};
+  return {
+    ...manifest,
+    contributes: {
+      ...contributes,
+      commands: (contributes.commands ?? []).filter((c) => !gone.has(c.id)),
+    },
+  };
+}
 
 export interface ActivityLike {
   state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked" | "lapsed";
@@ -373,7 +397,7 @@ export function storageNotice(
   if (share >= 0.95)
     return {
       level: 95,
-      text: `Storage is ${percent}% full. When it is full, new snapshots stop; settings and chats keep syncing.`,
+      text: `Storage is ${percent}% full. When it is full, nothing new is sent to the account until there is room; what it holds still arrives here.`,
     };
   if (share >= 0.8) return { level: 80, text: `Storage is ${percent}% full.` };
   return null;

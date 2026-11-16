@@ -21,6 +21,7 @@ import extensions from "../../../docs/guide/18-extensions.md?raw";
 import remote from "../../../docs/guide/19-remote.md?raw";
 import workspaces from "../../../docs/guide/20-workspaces.md?raw";
 import troubleshooting from "../../../docs/guide/21-troubleshooting.md?raw";
+import sync from "../../../docs/guide/23-sync.md?raw";
 
 export interface DocPage {
   /** The file name ("02-quick-access.md"); links between pages use it. */
@@ -51,6 +52,7 @@ const RAW: [string, string][] = [
   ["19-remote.md", remote],
   ["20-workspaces.md", workspaces],
   ["21-troubleshooting.md", troubleshooting],
+  ["23-sync.md", sync],
 ];
 
 export function docPages(product: string): DocPage[] {

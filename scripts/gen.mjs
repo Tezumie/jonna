@@ -147,7 +147,7 @@ const base = await read("src-tauri/tauri.base.json");
 const conf = structuredClone(base);
 // (tauri.conf.json is strict JSON with no comment field; it is git-ignored and documented in README.)
 conf.productName = product.nameLong;
-// The program's file name (Jonna.exe, not the Cargo package's ide.exe): what Windows shows in the
+// The program's file name (the product's name, not the Cargo package's ide.exe): what Windows shows in the
 // UAC prompt, Task Manager, the Start menu shortcut's target and the installer.
 conf.mainBinaryName = product.nameShort;
 conf.version = pkg.version;

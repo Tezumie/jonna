@@ -379,16 +379,16 @@ test("groupChat: a resumed turn is for the member a handoff or a report was for 
 
 test("groupChat: mentions in shown text, for coloring (D273)", () => {
   const members = [
-    { name: "agent", label: "Jonna" },
+    { name: "agent", label: "Main" },
     { name: "planner", label: "Plato" },
     { name: "test", label: "Test runner" },
   ];
-  const text = "@Gabby? @plato and @Jonna, then @Test runner. @channel mail a@plato.dev @Platoo";
+  const text = "@Gabby? @plato and @Main, then @Test runner. @channel mail a@plato.dev @Platoo";
   assert.deepEqual(
     mentionRanges(text, members).map((r) => [text.slice(r.start, r.end), r.name]),
     [
       ["@plato", "planner"],
-      ["@Jonna", "agent"],
+      ["@Main", "agent"],
       ["@Test runner", "test"],
       ["@channel", null],
     ],

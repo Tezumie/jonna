@@ -16,7 +16,7 @@ test("protected config files: other agents' settings, MCP lists, startup files",
   assert.equal(protectedConfig(".mcp.json")?.risk, "mcp");
   assert.equal(protectedConfig("/home/me/.cursor/mcp.json")?.risk, "mcp");
   assert.equal(protectedConfig(".vscode/mcp.json")?.risk, "mcp");
-  assert.equal(protectedConfig(".jonna/mcp.json", ".jonna")?.risk, "mcp");
+  assert.equal(protectedConfig(".ide/mcp.json", ".ide")?.risk, "mcp");
   assert.equal(protectedConfig("docs/mcp.json"), null);
   assert.equal(protectedConfig(".gemini/settings.json")?.risk, "agent");
   assert.equal(protectedConfig(".vscode/settings.json"), null);
