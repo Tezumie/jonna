@@ -4242,3 +4242,28 @@ with `--user-data-dir <folder>`), both signed in.
     reset and are off; turning it on again on one uploads its data afresh.
 12. An account sync isn't open to: no Sync item in the Accounts menu, and the account page
     shows no Sync section.
+
+## D436 — Sync, hardened, and what is synced shown by name
+Reset sync on the account page first if it was turned on with an earlier build.
+1. Second computer, Sync, Join: it says it is waiting and shows no code yet. First computer,
+   Sync, the waiting computer's row: Check code. Both now show the same six digits; Approve
+   on the first. (Approve isn't offered before Check code.)
+2. The Sync tab's "In your account": settings with a count, your files by kind, chats without
+   a folder, and each synced project by name with its chats, snapshots, size, last change and
+   computer. A project synced only from another computer says so.
+3. The account page on the website lists the same, with the computers. Removing a computer
+   there asks to sign in again when the sign-in is older than ten minutes.
+4. The status bar shows sync's state; clicking it opens the Sync tab. With sync off or not
+   open to the account, it isn't there.
+5. A folder with no git remote that is a copy of a synced one: Sync this project asks whether
+   it is the same project or one of its own.
+6. A folder that isn't synced, on an account with projects not on this computer: "This folder
+   is one of my synced projects" lists them by name; choosing one links the folder.
+7. A project's row, Delete from the account: asks, then its snapshots and chats' synced copies
+   are gone from the account page; nothing on the computer changed.
+8. Make two stashes in a synced git project, Snapshot now, Continue on the other computer:
+   `git stash list` there shows both, in order.
+9. Close the window with a change made a moment ago: a snapshot of it is in the history when
+   the project is opened on the other computer.
+10. Fill storage past 80% (or lower the limit on a test account): a notice once, and a line by
+    the meter.

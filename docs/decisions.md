@@ -30,6 +30,7 @@ unless noted.
 | · Small cleanups, a default layout to choose, an audit of D421–D424, a chat header with less in it | D424–D426 |
 | · The UI suite's baseline, the backend and the agent without a window, a command-line agent, their audit, its name and CI job | D427–D434 |
 | · Sync: devices and keys, encrypted records and chunks, snapshots | D435 |
+| · Sync hardened after a review; what is synced shown by name | D436 |
 
 ## Seeded from PLAN §19
 
@@ -15406,3 +15407,56 @@ the service lists (the owner's, until it is on sale), so nothing shows for anyon
   being recognised as the same.
 - **The guide page and release notes wait** until sync is open to more than the owner's
   account, as the command-line agent's page does (D434).
+
+## D436 — Sync: the service trusts no client, a pairing code that can't be fitted, and what is synced shown by name
+
+After the owner tried sync, and after an independent review of D435 found ways a person with
+only an account's sign-in (no keys) could get at the keys or the data. The source is public
+and anyone can call the service, so every finding was taken as real.
+
+- **Being signed in is not being a device.** A session is tied to a device only by proof of
+  that device's private key (a challenge answered with X25519 and HMAC), when it registers and
+  whenever a new sign-in says which device it is. Records and chunks are read and written, and
+  devices approved, removed and given new keys, only by a session tied to an approved device.
+  Before, a session could name any device as its own.
+- **Joining by recovery key takes proof of the recovery key,** checked by the service, and the
+  recovery wrap carries a tag under a key derived from the recovery key, which the account's
+  devices keep in their sealed list. A computer that joins that way can tell the account's own
+  keys from keys made up by whoever stores the wrap. Before, the service's word for the
+  recovery key was taken, and new keys were wrapped to whatever key it named.
+- **The devices' sealed list is the authority,** with a counter that only goes up: which
+  devices get new keys, and which recovery key they are wrapped to. A list that is missing,
+  unreadable or older than one seen stops a device from changing anything, instead of being
+  read as empty.
+- **The pairing code is chosen after the key is fixed.** The approving computer fixes the
+  waiting one's public key, then picks a random value; the six digits come from both. Before,
+  the digits came from the key alone, so a key could be found to fit them. New dependency use:
+  `curve25519-dalek` (BSD-3-Clause), already built as part of `crypto_box`.
+- **Who may remove a device:** an approved device, the device itself, or the account page
+  right after signing in. Before, any session could.
+- **Storage can't be had for free:** a record counts its content, its list of chunks and a
+  fixed part; a chunk counts a fixed part too; room is taken before an upload is written;
+  empty chunks are refused; an account holds a bounded number of records. A sweep needs an
+  approved device and runs at most once a minute. A brake on request rates per account.
+- **A restore writes only inside the project:** no `.git` at any depth nor a spelling Windows
+  reads as one, nothing through a link.
+- **Labels the service can read, on purpose** (the owner's call: "some things don't need
+  hidden"): a project's name, a snapshot's date, computer, branch, file count and size, a
+  chat's date and size, the names of the user's files, how many settings. They make the
+  account page and the Sync tab say plainly what is synced. Content, chat titles and settings
+  stay sealed, and the app never decides anything from a label. Both places state what the
+  service can see.
+- **The Sync tab leads with "is it working, and what is synced":** state and last synced, what
+  is in the account (settings, files, chats, each project by name with counts, size, last
+  change and computer), then the open project, storage, computers. A status bar item. Recent
+  activity. A project can be linked to a folder by hand, a copied folder is asked about, and a
+  project can be deleted from the account. A snapshot is taken when the window closes.
+- **Every stash travels** (git packs them when they are named), and is put back in the list.
+- **This breaks vaults made with D435's build:** sync is reset and turned on again. Only the
+  owner's test vault existed.
+- **Still open:** records can be replayed or rolled back by the service (an older settings
+  record served again); only the devices' list is protected by a counter. Sessions outlive a
+  password change, and there is no "sign out everywhere". Synced skills, commands and agents
+  apply without a prompt on the receiving computer (they come from a holder of the keys).
+  Keys, the list of extensions and a project's layout still don't sync; billing isn't built.
+  The review was done by a second model, not a person.
