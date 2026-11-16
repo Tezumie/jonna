@@ -279,8 +279,9 @@ as it is.
 
 ## Settings sync
 
-Settings sync through an account isn't available yet. Until it is, the **Accounts** menu (the
-person icon above the gear) has **Backup and sync settings…**, which exports or imports a
+[Sync](23-sync.md) keeps your settings, keyboard shortcuts and snippets the same on every
+computer of your account, in builds that have it. Without it, the **Accounts** menu (the person
+icon above the gear) has **Backup and sync settings…**, which exports or imports a
 [profile](#profiles).
 
 ## Common questions

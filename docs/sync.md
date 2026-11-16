@@ -14,7 +14,7 @@ on the website (`<accounts server>/account#plan`), which the IDE opens in the br
 (`sync.managePlan`) and never handles itself; `sync.checkPlan`, and coming back to the window
 while offered or lapsed, read the account again.
 
-An account may be in a team (`/api/me` says `team`: null, or `{ id, name, role, publisher }`
+An account may be in a team (`/api/me` says `team`: null, or `{ id, name, role, publisher, libraryRev }`
 with `role` "owner" or "member"; an older server sends none). A member has sync because the
 team's owner pays: its `syncState` is "on" while the owner's subscription runs and "lapsed",
 with `syncUntil`, once it ended; `syncOffered` is false. The team shares one pool of storage:

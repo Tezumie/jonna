@@ -37,6 +37,7 @@ unless noted.
 | · Sync as a subscription: an offer, a subscription that ended, a purchase seen without a restart | D440 |
 | · A build's own services in one place: accounts server, account and plan pages, whether Sync is built in | D441 |
 | · Teams: seats on one subscription, one pool of storage, a library of how the team works | D442 |
+| · The audit before 0.1.8: a restore that can't lose work, a team's settings that can't switch things on, a full account, forks | D443 |
 
 ## Seeded from PLAN §19
 
@@ -15719,3 +15720,83 @@ Seat changes were tried once against Stripe's own sandbox under Managed Payments
 account page), handing a team to another owner (Stripe can't move a subscription between
 customers; the owner ends the team), a usage view per member in the IDE (the website shows
 it), sharing secrets through a team key, model providers in the library, an admin role.
+
+## D443 — The audit before 0.1.8: a restore that can't lose work, a team's settings that can't switch things on, a full account, forks
+
+Before the release, everything since 0.1.7 was read again by reviewers that hadn't written
+it (one for Sync and the team library, one for what a build of someone else's needs), and
+what they found and could show was fixed. The findings, by what could have gone wrong:
+
+**Work lost on a restore.**
+- Continuing from a snapshot in a folder "as a restore left it" stashed with
+  `--include-untracked` and dropped the stash. The check that the folder was as left skips
+  what `.syncignore` names; the stash didn't, so files `.syncignore` names (and git doesn't
+  ignore) went into a stash that was dropped at once. Now only the files of the dirty list
+  are stashed (by name, through a pathspec file), and the stash is dropped only when the push
+  made one. What `.syncignore` names is never touched by a restore.
+- A restore that failed after "Stash them and continue" left the work in a stash and didn't
+  say so. The error now ends with where the changes are (the stash by name, or the folder the
+  differing files were copied to). It isn't popped back: the folder may be half restored.
+- Restoring a folder without git compared files by reading them whole into memory; it now
+  compares a chunk at a time and keeps only the names. The folder the replaced files are kept
+  in is never shared by two restores.
+
+**A team's settings.** `teamMaySet` listed what a team may not set, and missed some: the
+local server that lets outside agents drive the IDE (`mcp.*`), extensions' access to models,
+the shield over key files (`agent.ignore*`), read-only paths, remote images in previews,
+documentation sources. The rule is now stated the other way round where it can be: a team may
+switch a feature **off**, never on (any `*.enabled`, `enable*`); never set a path, a
+command, arguments, a URL, a host, a port, a proxy, an environment or a shell; nothing whose
+name speaks of approving, trusting, protecting, warning, confirming or secrets; and the
+prefixes above, updates, tasks and web access. Ordinary preferences (tab size, format on
+save, theme) pass. The function takes the value now, on download and on publish.
+
+**A full account.** A 507 from the service wasn't a reason to stop: every chat was sealed and
+sent again each minute, for nothing, with a note each time. Now the first refusal in a pass
+stops what is sent (deletes still go, they make room), reading continues, it is said once,
+the pass backs off, and automatic snapshots wait. It resumes when the status shows room.
+
+**Settings that went backwards.** "The later change wins" used the settings file's time,
+which the IDE itself moves when it writes `sync.projects`. Each key now carries the time its
+change was first seen (kept in the engine's state). A computer with no history (joining, or
+its state lost) takes the account's value where both have one and they differ, doesn't bring
+back a setting deleted elsewhere, and says once in the Activity log what it replaced.
+
+**A service that answers wrongly.** A 200 that wasn't the expected JSON read as "the account
+was reset" and cleared this computer's history of what it had synced. A page of changes must
+now have a numeric epoch and a list; a page that says "more" must move on; a download that
+brings back what wasn't asked for is an error, not a loop.
+
+**Names.** A synced file whose name Windows can't have is kept on the computer that has it,
+not sent and failed on every pass; two names that differ only by letter case are not written
+into one file on a file system that folds case (and the other isn't then deleted). Conflict
+copies are numbered (`name.conflict-2.ext`), so a second conflict doesn't replace the first
+copy. A team library holding a file and a folder of the same name no longer stops applying.
+
+**Keys.** Removing a computer makes new keys for the rest; one that had just joined (its
+place on the trusted list still being written) could be taken for one that never was
+trusted, and removed. The rotation now waits while a computer may be joining.
+
+**Builds that aren't ours.**
+- `sync.managePlan`, `sync.manageTeam` and `sync.team.publish` aren't registered (or
+  listed) in a build without a plan page, a team page or teams, instead of failing when run.
+  The offer to subscribe isn't shown where there is no page to send people to; the Accounts
+  menu doesn't name a plan there.
+- `docs/own-services.md` gained what was missing: removing only the team library, the
+  rest of a build that isn't ours (icons, the release notes, the guide's Sync page, wording
+  that assumes a subscription), which tests assume our service, and what a Sync server must
+  answer (the error codes, the fields the client needs).
+- The product's name was in three comments and three tests; it isn't any more.
+
+**Also:** the guide has a page on Sync and teams (it had none), and the backup dialog no
+longer says sync is "coming soon".
+
+**Left as they are, known:**
+- A snapshot carries the files as they are on disk, so one taken on Windows with
+  `core.autocrlf` restores CRLF files on macOS or Linux.
+- A synced file changed in the moment between the scan and the write is overwritten (chats
+  have a guard for this; files need the same through the write call).
+- An install that already wrote two names differing by case into one file still sends one
+  deletion.
+- The website's side (payments, the commercial license, the supporters page) had its own
+  audit; it is in that repository.

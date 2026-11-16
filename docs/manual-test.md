@@ -4366,3 +4366,31 @@ Needs the accounts service with billing set up (Stripe's test mode) and two acco
    their subscription ended with the date until which their own synced copy is kept.
 9. End the owner's subscription in Stripe: both IDEs say the team's subscription ended; the
    library still applies; nothing can be published. Renew: both resume.
+
+## D443 — The audit before 0.1.8
+1. **A restore leaves `.syncignore`d files alone.** A git project that syncs, with a
+   `.syncignore` naming `data/` (not in `.gitignore`). On a second computer: Continue from
+   another computer; put a file in `data/`; on the first computer change a file and wait for a
+   snapshot; Continue again on the second. The file in `data/` is still there, and `git stash
+   list` has nothing new.
+2. **A failed restore says where your changes are.** Change a file, go offline, Continue from
+   another computer and choose "Stash them and continue": the error names the stash
+   ("Before continuing from …") and `git stash pop` brings the change back.
+3. **A team can switch off, not on.** As a publisher, publish default settings holding
+   `"editor.tabSize": 3`, `"editor.minimap.enabled": false`, `"mcp.enabled": true` and
+   `"git.path": "x"`. A member's Settings tab shows the tab size and the minimap as "Set by
+   your team"; `mcp.enabled` and `git.path` are as they were. Publish… doesn't offer them.
+4. **A full account.** Fill the account's storage (a small limit on a test account). The
+   status bar says storage is full once; the Activity log has one line, not one a chat a
+   minute; a chat made on another computer still arrives. Free space: syncing resumes.
+5. **A joining computer takes the account's settings.** Computer A syncs with a theme set. On
+   computer B set another theme, then join sync: B takes A's theme, and Activity says which
+   settings the account's values replaced.
+6. **A second conflict keeps the first copy.** Change the same snippet file on two computers
+   while both are offline, twice over: `name.conflict.json` and `name.conflict-2.json` both
+   exist afterwards.
+7. **A build without a plan page.** In `product.json` set `"planPagePath": ""` and
+   `"teamPagePath": ""`, build: the command palette has no "Manage plan…", "Manage team…" or
+   "Publish to the team's library…", and the Accounts menu shows no plan.
+8. **The guide.** Help → Documentation: "Sync and teams" is in the list, and search finds
+   "recovery key".

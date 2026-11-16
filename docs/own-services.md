@@ -227,6 +227,83 @@ The accounts code is `src/extensions/accounts/`, `src/core/ipc/accounts.ts`,
 Accounts menu serves GitHub and extensions too); an empty `accountsUrl` is how a build goes
 without an account.
 
+## Taking only the team library out
+
+`"teamPagePath": ""` is enough to ship without teams: no Team page, no `team.*` command, no
+`sync.manageTeam` or `sync.team.publish`, no `ide://team`. To remove the code and keep Sync,
+delete the team folders named above, and also:
+
+- in `src/extensions/sync/`: `teamCommands.ts`, `teamPage.ts`, `teamPage.model.ts` (and
+  their tests), with their uses in `index.ts` (`registerTeamPageCommands`), `pages.ts` and
+  `view.ts` (the Team page), and the `sync.team.publish` entry of `extension.json`;
+- `src/workbench/settings.ts` and `src/core/settings/model.ts`: the settings layer `team`
+  (and `src/extensions/settings/controls.ts`, which marks a value as the team's);
+- `src-tauri/src/ipc/settings.rs`: the call to `crate::ipc::team::read_path`;
+- the readers of `core/team/source.ts`, each of which adds the team's folder after the
+  user's own: in `src/extensions/agent/` `agentEditor.ts`, `commandsPage.ts`, `mcp.ts`,
+  `outputStyles.ts`, `rules.ts`, `rulesPage.ts`, `skills.ts`, `slashCommands.ts`,
+  `subagents.ts`; `src/extensions/editor/userSnippets.ts`;
+  `src/extensions/extensions/store.ts`; and the "team" source kind in
+  `src/core/agent/{rules,skills,slash,subagents,outputStyles}.ts`. The shortest way is to keep
+  `core/team/source.ts` as a stub whose `activeTeam` is always null: nothing else then changes.
+
+With Sync's code gone, `src-tauri/src/agent/mod.rs`'s log of deleted chats
+(`note_deleted_session`, `deleted_sessions`, `forget_deleted_sessions`) has no reader left and
+goes too, as do the `sync.show` and `sync.checkPlan` lines of `src/extensions/accounts/index.ts`.
+
+## The rest of a build that isn't ours
+
+Not services, but the same checklist. A build of your own also replaces:
+
+- `product.json`: the names, the identifier, `issuesUrl`, `extensionsRepo`, the folder names.
+- `src-tauri/icons/` and the logo (`TRADEMARKS.md` doesn't let a fork use ours), and
+  `docs/images/`.
+- `.github/FUNDING.yml` (our sponsors link) and the addresses in `SECURITY.md`,
+  `COMMERCIAL-LICENSING.md` and `TRADEMARKS.md`.
+- `docs/release-notes.md`: it is bundled and shown after an update, and speaks of our Sync,
+  our plans and our account page.
+- `docs/guide/23-sync.md`: the guide's page on Sync and teams, bundled into the
+  Documentation tab. Rewrite it for your service, or remove it (its line in
+  `src/extensions/help/pages.ts`) when the build has no Sync.
+- Wording that assumes Sync is a subscription with seats and pooled storage: the offer and the
+  lapsed texts in `src/extensions/sync/view.ts` and `model.ts` (`SYNC_BENEFITS`,
+  `LAPSED_*`, the team sentences), "Your plan" in `pages.ts`, and the descriptions of
+  `sync.managePlan` and `sync.manageTeam`. They only show when your server says
+  `syncOffered`, a lapsed `syncState` or a `team`.
+- Pictures of people: the IDE loads an account's picture only from GitHub's avatar hosts or
+  from the accounts server itself (`src-tauri/src/ipc/accounts.rs`); serve yours from there.
+
+Tests that read `product.json` or assume our service, and fail in a build that changes them:
+
+- `scripts/sync-e2e.mjs` tests **our** server (Firebase emulators, its Firestore layout, a
+  sign-in shortcut `POST /oauth/issue-code` that isn't part of the protocol). Treat it as an
+  example of what to test against your own.
+- `tests/scripts/sync-m7-129.jsonc`, `features-m6-39.jsonc` and `features-m6-41.jsonc` expect
+  an account, Sync, a plan page and teams to be there.
+- The command scripts that name the workspace folder (`.` and the product's short name, as in
+  `tests/scripts/m6-90.jsonc`, `extensions.jsonc`, `m6-92.jsonc`) follow
+  `workspaceFolderName`: change them with it.
+
+## What a Sync server must answer
+
+[sync.md](sync.md) lists every call under `/api/sync/` with its purpose. The exact bodies are
+in the Rust client, which is the specification: `src-tauri/src/sync/api.rs` (the calls and the
+error codes), `vault.rs` (the state, devices, pairing and keys), `records.rs` and
+`chunks.rs` (records and their content). What the client depends on, in short:
+
+- Errors are `{ "error": code, "error_description": text }`. Codes the client knows:
+  403 `sync_unavailable` (not open to the account), 402 `sync_lapsed` (read-only: the
+  subscription ended), 403 `not_approved` and `not_a_device`, 409 `no_vault`, 409 `gc` (a
+  clean-up is running: try again), 403 `proof_failed`, 409 `conflict` with the `current`
+  record, 413 (too large), 429 (slow down) and 507 (storage full).
+- `GET state` always has `exists` (boolean), `devices` (array) and `epoch` (number); the
+  client also reads `keyVersion`, `usageBytes`, `storageLimit`, `lapsedUntil`,
+  `rotationNeeded`, `self`, `recovery`, and for each device `id`, `status`, `publicKey`,
+  `owner`, `commit`, `reveal`, `createdAt`, `lastSeenAt`.
+- `GET records?since=` answers `{ epoch, records, more }`, and each page moves the cursor on;
+  a record has `version`, `seq`, `blob`, `refs`, `deleted`, `device`, `info`. A reply
+  without a numeric `epoch` and a `records` array is refused, not read as an empty account.
+
 ## Where it is in the code
 
 - `product.json` → `scripts/gen.mjs` → `src/core/product.ts` (generated).

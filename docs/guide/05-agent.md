@@ -244,8 +244,8 @@ editor's **Mode**, as in Cursor and VS Code:
   Ask, as agents). Without a planner or a chat partner of your own, the main agent plans or
   answers itself.
 - **Mode ›** in the same menu switches whichever agent is answering to **Agent**, **Plan** or
-  **Ask** for this chat (its current mode is shown beside it). The pill then says so, for example
-  "Jonna · Ask".
+  **Ask** for this chat (its current mode is shown beside it). The pill then says so: the agent's
+  name, then "· Ask".
 - **Build** hands the plan to the main agent (or to a builder of yours if you made one) and it
   carries the plan out in the same chat; the "Plan ready" note says who.
 - **Another model for planning:** give Plato that model on its card. Plan with one model and build

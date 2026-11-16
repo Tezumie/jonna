@@ -26,7 +26,10 @@ Sync: your settings, chats and unfinished work on every computer.
   can switch an item off. A team's items never run anything without asking, and can't change
   what the agent is allowed to do on your computer.
 - **The Documentation tab has search,** and looks like Settings: pages with icons on the
-  left, the open page's sections under its name, Previous and Next at the end of a page.
+  left, the open page's sections under its name, Previous and Next at the end of a page. It
+  has a new page, **Sync and teams**.
+- **You can rename a computer and a synced project,** and stop syncing a project from the
+  Projects page, where projects now look like folders.
 
 ## 0.1.7
 
