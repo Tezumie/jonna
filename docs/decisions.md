@@ -36,6 +36,7 @@ unless noted.
 | · The Documentation tab on the Settings tab's frame, with search | D439 |
 | · Sync as a subscription: an offer, a subscription that ended, a purchase seen without a restart | D440 |
 | · A build's own services in one place: accounts server, account and plan pages, whether Sync is built in | D441 |
+| · Teams: seats on one subscription, one pool of storage, a library of how the team works | D442 |
 
 ## Seeded from PLAN §19
 
@@ -15656,3 +15657,65 @@ through the code. The product's name already works that way (`product.json`, rul
   made.
 - Checked with each switch off (`syncBuiltIn: false`; `accountsUrl: ""`): the checks and
   every unit test pass. Not checked by starting the app in either state.
+
+## D442 — Teams: seats on one subscription, one pool of storage, a library of how the team works
+
+The owner chose to ship teams with Sync. People, invitations and the bill are the website's
+(its repository); the IDE shows membership and carries the team's library.
+
+**Seats (the service).** A team is a Sync subscriber and the people they invited; it happens
+with the first invitation. An invitation is for an email address and is taken up by signing
+in with that address, shown to be the person's own: no secret travels in a link. A member has
+Sync through the team; the owner's subscription carries one seat a person, kept in step with
+who is in the team. Storage is one pool (50 GB a seat plus the owner's blocks): each member's
+limit is what the others left. Leaving or being removed starts the same 30 days as a
+subscription that ended; the owner's subscription ending ends every member's sync the same
+way. No limit on a team's size is sold; a bound of 250 guards against accidents.
+
+**In the IDE.**
+- The profile carries the team (name, owner or member, may publish). The Sync tab says who
+  Sync comes through and that storage is the team's pool; a member whose team's subscription
+  ended is told that and not offered Renew. `sync.manageTeam` opens the team page
+  (`product.json` `teamPagePath`; empty: the build has no teams).
+- **The library** (`src/extensions/team/`, `src/core/team/`, `src-tauri/src/team/`): rules,
+  skills, commands, agents, output styles, snippets, a list of MCP servers, default settings,
+  recommended extensions. It is plain text the service can read (a team's conventions, not
+  anyone's work), so it never holds a key: publishing refuses a secret written out, and each
+  member is asked for their own. Kept under `<data>/team/<team>/` (not under `<data>/sync`,
+  which turning sync off removes), with an `active/` tree the loaders read.
+- **What is on:** an item the team marked as a default, unless this person turned it off; any
+  other once this person added it (`team.added`, `team.off`, settings that never sync).
+- **Every kind takes the team's as one more source, lowest of all:** the user's and the
+  folder's own win. Settings get a layer between the defaults and the user's, shown in the
+  Settings tab as "Set by your team".
+- **The Team page** of the Sync tab lists the library by kind with a switch, a preview, and
+  for publishers Publish, Make a default and Remove.
+
+**A team's content is other people's, arriving unread.** So it gets none of the trust the
+user's own files have:
+- its skills and commands don't pre-approve the tools they name, and a command's shell lines
+  always ask, whatever `agent.runCommands` allows the person's own;
+- its MCP servers ask before they start, as a folder's do;
+- its agent files can't say their edits skip review;
+- its settings never include what stays on a computer (D437's list), nor anything that lowers
+  a protection ("…Protection"), approves for the person ("…autoApprove…"), switches a
+  model-calling feature on (rule 8), decides which MCP servers start or are found, lets the
+  computer be driven, or touches folder trust. One function decides (`teamMaySet`), on
+  download and on publish;
+- its file names are checked again before anything is written (no way out of the cache, no
+  name Windows reserves), and what is fetched is capped.
+- The commands that change a person's choices or publish their files are hidden from agents:
+  a prompt that got into a chat shouldn't switch on other people's files or publish yours.
+
+**Checked:** the service's suite (teams: invitations, seats against a stand-in for Stripe,
+the pool, leaving, the owner's subscription ending, the library and who may change it); the
+two-computer run (one publishes, the other fetches and applies; a stale publish gets the
+newer one back; reserved names never reach the disk); the real window with two accounts in
+one team (the member's page, a team setting applying with source "team" and the user's own
+going over it, a guarded setting not applying, adding an item, a member refused publishing).
+Seat changes were tried once against Stripe's own sandbox under Managed Payments.
+
+**Not built:** invitation emails (the owner tells the person; the invitation is on their
+account page), handing a team to another owner (Stripe can't move a subscription between
+customers; the owner ends the team), a usage view per member in the IDE (the website shows
+it), sharing secrets through a team key, model providers in the library, an admin role.

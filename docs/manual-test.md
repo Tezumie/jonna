@@ -4343,3 +4343,26 @@ Needs the accounts service with billing set up (Stripe's test mode).
 6. Sync, Storage, Manage plan: the website's plan page opens.
 7. Add a storage block on the website: Sync, Storage shows the larger limit after the next
    status check (at most five minutes, or Sync now).
+
+## D442 — Teams
+Needs the accounts service with billing set up (Stripe's test mode) and two accounts.
+1. Account page, Team, as a subscriber: invite the second account's address. Sign in with
+   that account (another browser): Team shows the invitation; Join. The first account's Team
+   lists two people, and Plan says Sync for 2 people.
+2. The member's IDE: Sync, Overview says "Through <team>"; Storage says the storage is the
+   team's pool; there is no "Manage plan", and "Manage team" opens the website's Team page.
+3. The owner's IDE: Sync, Team, Publish: choose Rules. The member's IDE, Sync, Team, Refresh:
+   the rule is listed, on, with a preview; the agent's Rules page shows it as the team's.
+4. Publish a setting (for example the tab size) as a default: the member's Settings tab shows
+   the value with "Set by your team"; changing it there wins, and reset brings the team's back.
+5. Publish a command that is not a default: off on the member's Team page until switched on;
+   then it is in the member's command list, marked as the team's, and its shell lines ask.
+6. Publish an MCP server whose key is a ${input:…} placeholder: the member is asked before it
+   starts, and for their own key. A server with a key written out is refused at publishing.
+7. As the member, try Publish: there is no button, and `team.publish` says only publishers can.
+   Tick "Can publish" for the member on the website: the button appears after a refresh.
+8. Remove the member on the website: within a minute or two of returning to the IDE, the Team
+   page says they are in no team, the team's items are gone from every list, and Sync says
+   their subscription ended with the date until which their own synced copy is kept.
+9. End the owner's subscription in Stripe: both IDEs say the team's subscription ended; the
+   library still applies; nothing can be published. Renew: both resume.

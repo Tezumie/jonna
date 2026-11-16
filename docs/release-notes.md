@@ -19,6 +19,12 @@ Sync: your settings, chats and unfinished work on every computer.
   your computers, nobody can open the synced copy.
 - **The Sync tab** (Accounts menu → Sync): what is in your account, your projects as folders,
   your computers, storage and recent activity. The website's account page shows the same.
+- **Teams.** Add people to your Sync subscription from your account page: one bill, one pool
+  of storage, and what each person syncs stays their own. A team also has a **library**
+  (Sync → Team): publish your rules, skills, commands, agents, MCP server lists and default
+  settings, and every member's editor can use them. Defaults are on from the start; anyone
+  can switch an item off. A team's items never run anything without asking, and can't change
+  what the agent is allowed to do on your computer.
 - **The Documentation tab has search,** and looks like Settings: pages with icons on the
   left, the open page's sections under its name, Previous and Next at the end of a page.
 
