@@ -72,6 +72,17 @@ pub async fn sync_join(state: State<'_, AppState>, base: String, name: String) -
     vault(&state, &base).join(&name).await
 }
 
+/// Gives this computer another name in the account's list; returns the name as kept.
+#[tauri::command]
+pub async fn sync_rename_device(
+    state: State<'_, AppState>,
+    base: String,
+    name: String,
+) -> Result<String> {
+    let _step = STEP.lock().await;
+    vault(&state, &base).rename(&name).await
+}
+
 /// Joins with the recovery key.
 #[tauri::command]
 pub async fn sync_join_recovery(

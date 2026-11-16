@@ -43,6 +43,11 @@
         "category": "Sync"
       },
       {
+        "id": "sync.renameDevice",
+        "title": "Rename this computer…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.removeDevice",
         "title": "Remove a computer from sync…",
         "category": "Sync"
@@ -75,6 +80,11 @@
       {
         "id": "sync.project.editIgnore",
         "title": "Choose what snapshots leave out…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.rename",
+        "title": "Rename a synced project…",
         "category": "Sync"
       },
       {

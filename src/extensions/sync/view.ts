@@ -17,7 +17,7 @@ import { DisposableStore, MutableDisposable } from "../../core/lifecycle/index";
 import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
 import { type IconName, icon } from "../../ui/Icon";
-import { type MenuItem, showMenu } from "../../ui/Menu";
+import { type MenuItem, showContextMenu, showMenu } from "../../ui/Menu";
 import { keepTimesCurrent, timeAttrs } from "../../ui/relativeTimes";
 import { setTooltip } from "../../ui/Tooltip";
 import type { DockView, DockViewDescriptor } from "../../workbench/dock/views";
@@ -246,6 +246,11 @@ class SyncView implements DockView, PageKit {
       }),
     );
     return el;
+  }
+
+  /** A menu at a point (a right-click). */
+  contextMenu(x: number, y: number, items: MenuItem[]): void {
+    this.menu.value = showContextMenu(x, y, items);
   }
 
   menuButton(label: string, items: MenuItem[], menuLabel: string): HTMLElement {

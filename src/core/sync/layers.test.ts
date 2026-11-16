@@ -444,6 +444,31 @@ test("chats: a project's chats appear on the other computer, in its folder", asy
   assert.equal(account.seq, writes, "settled");
 });
 
+test("chats: a project deleted from the account and stopped here isn't uploaded again", async () => {
+  const account = new FakeAccount();
+  const contents = new Map<string, string>();
+  const a = chatsPort("a", account, contents);
+  a.projects.set("C:workapp", "chats.p1");
+  a.chats.set("c1", { workspace: "C:workapp", text: "hello", updated: 10 });
+  const engineA = new SyncEngine(account.backend(), memoryStore(), [chatsLayer(a)]);
+  await engineA.tick();
+  assert.equal(account.records.get("chats.p1/c1")?.deleted, false);
+  // The folder stops syncing from here, then the project is deleted from the account (the
+  // record is removed as a record, not as a deleted chat).
+  a.projects.clear();
+  account.put("chats.p1", "c1", account.records.get("chats.p1/c1")?.version ?? null, null);
+  const pushes = a.pushes.get("c1");
+  await engineA.tick();
+  await engineA.tick();
+  assert.equal(a.pushes.get("c1"), pushes, "not sent again");
+  assert.equal(account.records.get("chats.p1/c1")?.deleted, true);
+  assert.equal(a.chats.get("c1")?.text, "hello", "the chat here stays");
+  // Synced again from here: it is uploaded afresh.
+  a.projects.set("C:workapp", "chats.p1");
+  await engineA.tick();
+  assert.equal(account.records.get("chats.p1/c1")?.deleted, false);
+});
+
 test("chats: changed on both computers, nothing is lost", async () => {
   const account = new FakeAccount();
   const contents = new Map<string, string>();

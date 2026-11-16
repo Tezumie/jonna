@@ -107,6 +107,7 @@ const COMMANDS: &[&str] = &[
     "sync_prepare",
     "sync_setup",
     "sync_join",
+    "sync_rename_device",
     "sync_review_device",
     "sync_join_recovery",
     "sync_approve",

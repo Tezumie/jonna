@@ -155,6 +155,9 @@ export const syncIpc = {
   setup: (base: string, typed: string): Promise<void> => call<void>("sync_setup", { base, typed }),
   /** Asks to join. The code to compare shows in the status once a computer checks this one. */
   join: (base: string, name: string): Promise<void> => call<void>("sync_join", { base, name }),
+  /** Gives this computer another name in the account's list; resolves with the name as kept. */
+  renameDevice: (base: string, name: string): Promise<string> =>
+    call<string>("sync_rename_device", { base, name }),
   /**
    * Starts checking a waiting device. The code both computers show appears in the status a
    * moment later, once the waiting one has answered (ask for the status again).

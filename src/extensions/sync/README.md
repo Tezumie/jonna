@@ -113,7 +113,10 @@ the code), `sync.approveDevice {device}` (only after `sync.reviewDevice`), `sync
 {device}`, `sync.turnOff`, `sync.newRecoveryKey`, `sync.syncNow`, `sync.project.enable` (a copied
 folder is asked about first: the same project, or one of its own), `sync.project.disable`,
 `sync.project.editIgnore` (opens the folder's `.syncignore`: what snapshots leave out),
-`sync.project.forgetFolder {folder}` (forgets a folder that is gone; the account is untouched),
+`sync.project.rename {id, name?}` (the project's name in the account; no folder is renamed),
+`sync.renameDevice {name?}` (this computer's name in the account's list),
+`sync.project.forgetFolder {folder}` (stops syncing a folder from this computer: one that is
+gone, or a project no longer wanted here; the account is untouched),
 `sync.project.link {id?}` (the open folder becomes one of the account's projects that isn't on
 this computer; without `id`, pick one), `sync.project.deleteFromAccount {id}` (the project's
 snapshots and its chats' synced copies leave the account; nothing on a computer is deleted),

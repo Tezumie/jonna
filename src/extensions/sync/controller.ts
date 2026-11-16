@@ -384,8 +384,23 @@ export class SyncController implements Disposable {
    * projects by that label. Tried again at most every ten minutes.
    */
   private async nameProject(): Promise<void> {
-    const project = this.project.peek();
-    if (!this.leader || !project?.on || !project.id) return;
+    if (!this.leader) return;
+    const open = this.project.peek();
+    const seen = new Set<string>();
+    if (open?.on && open.id) {
+      seen.add(open.id);
+      await this.nameOne({ id: open.id, root: open.root, kind: open.kind });
+    }
+    // The other folders that sync from here: the account page lists a project by its name,
+    // and a folder that was never opened since (a reset, an older build) has none there.
+    for (const folder of Object.values(this.projects())) {
+      if (seen.has(folder.id)) continue;
+      seen.add(folder.id);
+      await this.nameOne({ id: folder.id, root: folder.path, kind: undefined });
+    }
+  }
+
+  private async nameOne(project: { id: string; root: string; kind: unknown }): Promise<void> {
     const record = this.engine.records("projects").find((r) => r.id === project.id);
     if (record?.unreadable) return;
     const live = record && !record.deleted ? record : null;
@@ -698,6 +713,67 @@ export class SyncController implements Disposable {
     this.note(
       `${folderName(folder) || folder} is no longer noted as a folder that syncs from here.`,
     );
+    return true;
+  }
+
+  /** Gives this computer another name in the account's list of computers. */
+  async renameDevice(name: string): Promise<string> {
+    const kept = await syncIpc.renameDevice(this.base(), name);
+    await this.refreshStatus();
+    this.readOverview();
+    this.note(`This computer is now called ${kept}.`);
+    return kept;
+  }
+
+  /**
+   * Gives a project another name in the account (what every computer and the account page
+   * show). Folders keep their own names.
+   */
+  async renameProject(id: string, name: string): Promise<void> {
+    await this.engine.tick().catch(() => {});
+    const record = this.engine.records("projects").find((r) => r.id === id);
+    if (record?.unreadable)
+      throw new Error("This computer's keys haven't caught up yet. Try again in a moment.");
+    let kept: { kind?: unknown } = {};
+    try {
+      const parsed: unknown =
+        record && !record.deleted && record.text ? JSON.parse(record.text) : null;
+      if (parsed && typeof parsed === "object") kept = parsed as typeof kept;
+    } catch {
+      // Not an entry this version wrote: only the name is kept.
+    }
+    const result = await syncIpc.put(
+      this.base(),
+      "projects",
+      id,
+      record ? record.version : null,
+      JSON.stringify({ name, kind: kept.kind }),
+      { name },
+    );
+    if (result.outcome !== "done")
+      throw new Error("Another computer changed the project just now. Try again.");
+    await this.engine.tick().catch(() => {});
+    this.readOverview();
+    this.note(`A project was renamed to ${name}.`);
+  }
+
+  /**
+   * Stops syncing a project from this computer: every folder noted here as that project is
+   * forgotten. Nothing in the account is touched. Returns whether any folder was.
+   */
+  async stopSyncingProject(id: string): Promise<boolean> {
+    const projects = { ...this.projects() };
+    const keys = Object.entries(projects)
+      .filter(([, entry]) => entry.id === id)
+      .map(([key]) => key);
+    if (keys.length === 0) return false;
+    for (const key of keys) {
+      delete projects[key];
+      this.missingFolders.delete(key);
+    }
+    await this.services.settings.update("sync.projects", projects, "user");
+    await this.refreshProject();
+    this.readOverview();
     return true;
   }
 

@@ -521,6 +521,7 @@ macro_rules! all_commands {
                 ipc::sync::sync_prepare,
                 ipc::sync::sync_setup,
                 ipc::sync::sync_join,
+                ipc::sync::sync_rename_device,
                 ipc::sync::sync_review_device,
                 ipc::sync::sync_join_recovery,
                 ipc::sync::sync_approve,

@@ -4298,3 +4298,18 @@ on again from the computer that has the data.
     with the cable back it syncs without being asked (within a minute or two).
 12. The account page, Security, Sign out everywhere: asks to sign in again; afterwards the
     app on each computer asks to sign in, and syncs again once signed in (no new approval).
+
+## D438 — Sync: projects as folders, stop, rename
+1. Sync, Projects: the projects are folders in a grid under an address bar. Click one: the
+   bar reads "Projects > name", the page is that project; the arrow or "Projects" goes back.
+2. Right-click a folder: Open, Rename, (the open one: Snapshot now, what snapshots leave out,
+   Stop syncing), Delete from the account. The same menu is behind "…" inside the folder.
+3. A project that syncs from a folder that isn't open: its menu has "Stop syncing from this
+   computer". After it, and after Delete from the account, Sync now twice: the project stays
+   gone, here and on the account page.
+4. Rename a project: the new name shows here, on the other computer after a pass and on the
+   account page; the folders on disk keep their names.
+5. Computers, this computer's row, Rename: the new name shows here at once, on the other
+   computer and on the account page.
+6. The account page, Projects: the same folders; a folder opens to its numbers and snapshot
+   history, with the address bar to go back. On a phone the folders are one column.

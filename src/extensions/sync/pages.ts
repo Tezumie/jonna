@@ -65,6 +65,8 @@ export interface PageKit {
   details(key: string, summary: Child[], ...children: Child[]): HTMLElement;
   /** A ⋯ button that opens a menu. */
   menuButton(label: string, items: MenuItem[], menuLabel: string): HTMLElement;
+  /** A menu at a point (a right-click). */
+  contextMenu(x: number, y: number, items: MenuItem[]): void;
 }
 
 /** The switches under "What this computer syncs": setting key and its words. */
@@ -471,12 +473,34 @@ function placeTag(project: OverviewProject): string {
   return project.here ? "This computer" : "Not on this computer";
 }
 
-/** One project: its name and folder, its numbers, and (the open folder's) its history. */
-function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatus): HTMLElement {
-  const { controller, services } = kit;
-  const open = controller.project.peek();
+/** What can be done with a project: the same from its folder (right-click) and inside it. */
+function projectMenu(kit: PageKit, project: OverviewProject, inside: boolean): MenuItem[] {
+  const open = kit.controller.project.peek();
   const isOpen = !!open?.on && open.id === project.id;
-  const menu: MenuItem[] = [
+  return [
+    ...(inside
+      ? []
+      : [
+          {
+            label: "Open",
+            icon: "folder-open" as const,
+            run: () => kit.go("projects", project.id),
+          },
+        ]),
+    ...(isOpen
+      ? [
+          {
+            label: "Snapshot now",
+            icon: "camera" as const,
+            run: () => void kit.run("sync.snapshot.create"),
+          },
+        ]
+      : []),
+    {
+      label: "Rename…",
+      separatorBefore: !inside || isOpen,
+      run: () => void kit.run("sync.project.rename", { id: project.id }),
+    },
     ...(isOpen
       ? [
           {
@@ -489,14 +513,30 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
           },
         ]
       : []),
+    ...(!isOpen && project.here && project.folder
+      ? [
+          {
+            label: "Stop syncing from this computer",
+            run: () => void kit.run("sync.project.forgetFolder", { folder: project.folder }),
+          },
+        ]
+      : []),
     {
       label: "Delete from the account…",
       icon: "trash-2",
       destructive: true,
-      separatorBefore: isOpen,
+      separatorBefore: true,
       run: () => void kit.run("sync.project.deleteFromAccount", { id: project.id }),
     },
   ];
+}
+
+/** One project: its name and folder, its numbers, and (the open folder's) its history. */
+function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatus): HTMLElement {
+  const { controller, services } = kit;
+  const open = controller.project.peek();
+  const isOpen = !!open?.on && open.id === project.id;
+  const menu = projectMenu(kit, project, true);
   const where = changedOn(project);
   const head = h(
     "div",
@@ -504,13 +544,14 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
     h(
       "div",
       { class: "sync-detail-head" },
+      folderGlyph(project),
       h(
         "div",
         { class: "sync-item-main" },
         h(
           "div",
           { class: "sync-item-title" },
-          h("h3", { class: "sync-detail-title", title: project.name }, project.name),
+          h("h2", { class: "sync-detail-title", title: project.name }, project.name),
           h("span", { class: "ai-tag" }, placeTag(project)),
         ),
         project.folder
@@ -614,90 +655,120 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
     ];
   }
 
+  return h("div", { class: "sync-detail", "data-project-detail": project.id }, head, ...rest);
+}
+
+/** A folder, as the Projects page draws a project: quieter when it isn't on this computer. */
+function folderGlyph(project: OverviewProject): HTMLElement {
+  const away = !project.here || project.folderMissing;
   return h(
-    "div",
-    { class: "sync-detail", "data-project-detail": project.id },
-    backLink(kit),
-    head,
-    ...rest,
+    "span",
+    { class: `sync-folder-glyph${away ? " is-away" : ""}`, "aria-hidden": "true" },
+    icon(project.folderMissing ? "folder-x" : "folder"),
   );
 }
 
-/** Back to the list, where the detail takes the list's place (a narrow tab). */
-function backLink(kit: PageKit): HTMLElement {
-  const el = h(
+/**
+ * Where the Projects page is, as a file manager's address bar: a way back, then the path from
+ * "Projects" to the project shown. Every part but the last is a button.
+ */
+function addressBar(kit: PageKit, project: OverviewProject | null): HTMLElement {
+  const back = h(
     "button",
-    { class: "ai-link sync-back", type: "button" },
+    {
+      class: "icon-button sync-address-back",
+      type: "button",
+      title: "Back to all projects",
+      "aria-label": "Back to all projects",
+      ...(project === null && { disabled: "" }),
+    },
     icon("arrow-left"),
-    "All projects",
   );
-  kit.drawn.add(on(el, "click", () => kit.go("projects", null)));
-  return el;
+  if (project !== null) kit.drawn.add(on(back, "click", () => kit.go("projects", null)));
+  const crumbs: Child[] = [];
+  if (project === null) {
+    crumbs.push(h("span", { class: "sync-crumb is-current", "aria-current": "page" }, "Projects"));
+  } else {
+    const up = h("button", { class: "sync-crumb", type: "button" }, "Projects");
+    kit.drawn.add(on(up, "click", () => kit.go("projects", null)));
+    crumbs.push(
+      up,
+      h("span", { class: "sync-crumb-sep", "aria-hidden": "true" }, icon("chevron-right")),
+      h(
+        "span",
+        { class: "sync-crumb is-current", "aria-current": "page", title: project.name },
+        project.name,
+      ),
+    );
+  }
+  return h(
+    "nav",
+    { class: "sync-address", "aria-label": "Where you are in Projects" },
+    back,
+    h("div", { class: "sync-crumbs" }, icon("folder"), ...crumbs),
+  );
 }
 
 function projectsPage(kit: PageKit, status: SyncStatus): Child[] {
   const { controller, session } = kit;
   const projects = controller.overview.peek().projects;
   const open = controller.project.peek();
-  // The open folder's project is a row of the list (marked, and the one shown at first); the
-  // folder gets a card of its own only while it doesn't sync.
   const openId = open?.on ? open.id : null;
+  // Inside one project, or the folders themselves.
   const chosen = projects.find((p) => p.id === session.projectId.peek()) ?? null;
-  const shown = chosen ?? projects.find((p) => p.id === openId) ?? projects[0] ?? null;
+  if (chosen) return [addressBar(kit, chosen), projectDetail(kit, chosen, status)];
 
-  const rows = projects.map((project) => {
+  const folders = projects.map((project) => {
     const el = h(
       "button",
       {
-        class: `sync-item sync-pick sync-project-row${project === shown ? " is-selected" : ""}`,
+        class: "sync-folder",
         type: "button",
         "data-project": project.id,
-        ...(project === shown && { "aria-current": "true" }),
+        title: project.folder ?? project.name,
       },
+      folderGlyph(project),
       h(
-        "div",
-        { class: "sync-item-main" },
+        "span",
+        { class: "sync-folder-main" },
+        h("span", { class: "sync-folder-name" }, project.name),
         h(
-          "div",
-          { class: "sync-item-title" },
-          h("span", { class: "sync-item-name", title: project.name }, project.name),
-          h("span", { class: "ai-tag" }, placeTag(project)),
+          "span",
+          { class: "sync-folder-line" },
+          project.id === openId ? "Open here" : placeTag(project),
         ),
         h(
-          "div",
-          { class: "sync-item-detail sync-one-line" },
+          "span",
+          { class: "sync-folder-line" },
           projectCounts(project),
-          project.lastChange === null ? null : " · changed ",
+          project.lastChange === null ? null : " · ",
           project.lastChange === null ? null : kit.when(project.lastChange),
         ),
       ),
-      project.id === openId ? h("span", { class: "sync-open-here" }, "Open here") : null,
-      icon("chevron-right"),
     );
     kit.drawn.add(on(el, "click", () => kit.go("projects", project.id)));
+    kit.drawn.add(
+      on(el, "contextmenu", (event) => {
+        event.preventDefault();
+        kit.contextMenu(event.clientX, event.clientY, projectMenu(kit, project, false));
+      }),
+    );
     return el;
   });
 
   return [
+    addressBar(kit, null),
     open && !open.on ? section("This folder", notSyncedCard(kit, open.root, open.known)) : null,
     continueCallout(kit),
-    section(
-      "All projects",
-      projects.length === 0
-        ? card(
-            empty(
-              open
-                ? "No projects yet. A project syncs once you choose Sync this project."
-                : "No projects yet. Open a folder and choose Sync this project: its chats travel with you, and snapshots of unfinished work are taken automatically.",
-            ),
-          )
-        : h(
-            "div",
-            { class: `sync-md${chosen ? " is-chosen" : ""}` },
-            h("div", { class: "settings-card sync-card sync-md-list" }, ...rows),
-            shown ? projectDetail(kit, shown, status) : null,
+    projects.length === 0
+      ? card(
+          empty(
+            open
+              ? "No projects yet. A project syncs once you choose Sync this project."
+              : "No projects yet. Open a folder and choose Sync this project: its chats travel with you, and snapshots of unfinished work are taken automatically.",
           ),
-    ),
+        )
+      : h("div", { class: "sync-folders", role: "list" }, ...folders),
   ];
 }
 
@@ -831,7 +902,7 @@ function deviceRow(kit: PageKit, device: SyncDevice): HTMLElement {
           )
         : null,
       device.current
-        ? null
+        ? kit.button("Rename", () => kit.run("sync.renameDevice"))
         : kit.button("Remove", () => kit.run("sync.removeDevice", { device: device.id })),
     ],
   });

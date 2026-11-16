@@ -32,6 +32,7 @@ unless noted.
 | · Sync: devices and keys, encrypted records and chunks, snapshots | D435 |
 | · Sync hardened after a review; what is synced shown by name | D436 |
 | · Sync: keys only from a computer the person checked, a loop that can't lose data, large projects | D437 |
+| · Sync: projects as folders, a project that can be stopped and renamed, a computer's name | D438 |
 
 ## Seeded from PLAN §19
 
@@ -15545,3 +15546,29 @@ because the pairing and the wraps changed.
 relays chunks; fine at this size, the next step if transfer cost matters); a server-side check
 of the commitment (the service is the party not trusted); symbolic links and submodules in
 snapshots; keys, the extension list and layouts in sync; billing.
+
+## D438 — Sync: projects as folders, a project that can be stopped and renamed, a computer's name
+
+From the owner's first day with D437's build.
+
+- **A project deleted from the account came back.** After a reset, two folders were still in
+  this computer's list of folders that sync (`sync.projects`, which stays on the computer), so
+  their chats were uploaded again after every "Delete from the account", and nothing in the
+  view could stop a folder that wasn't the open one. Three changes: a chat is uploaded only
+  when its folder syncs from this computer (the chats layer asked this only for a chat never
+  synced before); a project that syncs from another folder here has "Stop syncing from this
+  computer" in its menu (`sync.project.forgetFolder`); and "Delete from the account" stops
+  it from this computer first, whichever folder it is.
+- **The account page didn't list them** because only the open folder ever wrote its project's
+  name. Every folder that syncs from a computer is named now, and the account page lists a
+  project when the account holds anything for it (an entry, chats or snapshots).
+- **The Projects page is a file manager's view,** in the IDE and on the account page: an
+  address bar (a way back, then "Projects" and the project's name), the projects as folders
+  in a grid, and one project's contents as the whole page. It replaces the list beside a
+  detail, which showed one project's detail before anything was chosen. A folder's
+  right-click menu is the menu inside it (open, snapshot now, rename, what snapshots leave
+  out, stop syncing, delete from the account).
+- **Names can be changed.** A project's name in the account (`sync.project.rename`: no
+  folder is renamed), and this computer's name in the account's list (`sync.renameDevice`,
+  `sync_rename_device`). The service takes a device's name from that device only, with proof
+  of its key, by the call that registers it; another computer can't rename it.

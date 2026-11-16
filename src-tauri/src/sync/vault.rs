@@ -704,6 +704,26 @@ impl Vault {
 
     // ------------------------------------------------------------ joining
 
+    /// Gives this computer another name, here and in the account's list of computers. The
+    /// service takes it from the device itself only (with proof of its key).
+    pub async fn rename(&self, name: &str) -> Result<String> {
+        let mut local = self.local();
+        if local.device_id.is_empty() {
+            return Err(Error::Sync(
+                "SyncOff",
+                "Sync isn't on for this device.".into(),
+            ));
+        }
+        local.device_name = clean_name(name);
+        let key = self.device_key()?;
+        let mut body = self.device_body(&local, &key.public());
+        body["proof"] = self.proof(&key).await?;
+        self.api.post("devices", &body).await?.into_ok()?;
+        // Kept once the account has it, so the two never disagree.
+        self.save_local(&local)?;
+        Ok(local.device_name)
+    }
+
     /// Registers this device with an account that already syncs, to wait for approval (or
     /// for the recovery key). The code to compare shows once an approving computer starts
     /// checking this one.

@@ -296,6 +296,12 @@ try {
     await desk.sync("approve", { device: seen.id });
     const after = await laptop.sync("status");
     check(after.state === "on" && after.devices.length === 2, JSON.stringify(after));
+    // A computer gives itself another name; the other sees it.
+    const kept = await laptop.sync("rename_device", { name: "  Travel laptop  " });
+    check(kept === "Travel laptop", kept);
+    const names = (await desk.sync("status")).devices.map((d) => d.name).sort();
+    check(names.join() === "Desk,Travel laptop", names.join());
+    await laptop.sync("rename_device", { name: "Laptop" });
   });
 
   await step(

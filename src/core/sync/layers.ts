@@ -325,10 +325,14 @@ export function chatsLayer(port: ChatsPort): SyncLayer {
       const upload = async (id: string, expect: number | null): Promise<void> => {
         const chat = chats.get(id);
         if (!chat) return;
+        // Only a chat whose folder syncs from this computer (or one with no folder) is sent:
+        // a project that stopped syncing here, or was deleted from the account, isn't
+        // uploaded again behind the person's back.
+        const here = port.collectionOf(chat.workspace);
+        if (!here) return;
         // A chat keeps the collection it was first synced under.
         const gone = removed.get(id);
-        const collection = where.get(id) ?? gone?.collection ?? port.collectionOf(chat.workspace);
-        if (!collection) return;
+        const collection = where.get(id) ?? gone?.collection ?? here;
         // Over the marker of a record removed from the account, when there is one.
         const result = await port.push(collection, id, expect ?? gone?.version ?? null);
         if (!result) return;

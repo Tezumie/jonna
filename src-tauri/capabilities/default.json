@@ -61,6 +61,7 @@
     "allow-sync-prepare",
     "allow-sync-setup",
     "allow-sync-join",
+    "allow-sync-rename-device",
     "allow-sync-review-device",
     "allow-sync-join-recovery",
     "allow-sync-approve",

@@ -80,6 +80,8 @@ content stays readable after new keys.
   anything is sent, so a window closed half-way finishes the same setup the next time, with
   the recovery key the person wrote down.
 - **A new recovery key** replaces the old one's wrap.
+- **A device's name** is changed by that device only (`sync_rename_device`): it registers
+  again with proof of its key and the new name.
 - **Reset** (the account page, right after signing in again, with the email typed): the
   service deletes the vault. Devices see it at their next check and turn sync off; a computer
   that still has the data turns sync on again and uploads afresh. Snapshot history is gone.
@@ -141,7 +143,7 @@ this computer has, what it had at the last sync, and what the account has.
 |---|---|---|
 | Settings | `settings/user`: each key with its value and when it changed | By key. Two different settings changed on two computers both survive; the same one changed on both takes the later. Settings that could make another computer run something or send something elsewhere stay on the computer (`src/core/sync/localSettings.ts`: what the agent may run without asking, sandboxing, addresses that prompts or code go to, any path to a program), as do `accounts.serverUrl`, `sync.projects` and the keys in `sync.ignoredSettings`. A settings file that is missing takes the account's settings and removes nothing from the account. |
 | The user's files | `files/<name>`: keybindings, rules, snippets, subagents, commands, output styles, skills | Whole files. Changed on both: the later is the file, the other is kept beside it as `name.conflict.ext` (never synced). A file that is there but can't sync as it is (too large, not text) is left alone on both sides, and a scan that couldn't read everything deletes nothing. |
-| Chats | `chats.<project>/<chat>` and `chats.account/<chat>`: a summary, and the chat's file and images as chunks | Changed on both: the other computer's version becomes a chat of its own, once. A chat is saved into this computer's folder for the project, and never over a chat that changed here since the pass looked. A chat is deleted from the account only when it was deleted here by the person (the backend keeps a list of those); a chat that is merely absent, or chats switched off, deletes nothing. |
+| Chats | `chats.<project>/<chat>` and `chats.account/<chat>`: a summary, and the chat's file and images as chunks | Changed on both: the other computer's version becomes a chat of its own, once. A chat is saved into this computer's folder for the project, and never over a chat that changed here since the pass looked. A chat is deleted from the account only when it was deleted here by the person (the backend keeps a list of those); a chat that is merely absent, or chats switched off, deletes nothing. A chat is uploaded only while its folder syncs from this computer, so a project stopped here or deleted from the account isn't sent again. |
 | Projects | `projects/<project>`: a name | The account's list of projects that sync. |
 | Snapshots | `snap.<project>/<time>-<device>` | Below. |
 
@@ -169,7 +171,11 @@ A project is the same project on every computer by its id (`sync_project`):
   when sync is turned on for the project. `.gitignore` is left alone.
 - **The file wins** over a remote added later, so the project's chats don't split.
 
-Which folders sync from a computer is the setting `sync.projects` (folder to id).
+Which folders sync from a computer is the setting `sync.projects` (folder to id). It stays on
+the computer and outlives a reset; a folder leaves it by "Stop syncing" (the open folder),
+"Stop syncing from this computer" (any other) or "Delete from the account". Every folder in
+it has its project named in the account (`projects/<id>`), which is what the account page
+lists; the name can be changed (`sync.project.rename`) without renaming any folder.
 
 ## Snapshots
 

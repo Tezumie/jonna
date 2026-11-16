@@ -371,43 +371,148 @@
     color: var(--status-danger-fg);
   }
 
-  /* ---------- projects: the list, and one project's detail ---------- */
-  /* Narrow: the list, or (once a project is picked) its detail with a way back. */
-  .sync-md {
+  /* ---------- projects: folders, and inside one ---------- */
+  /* Where the page is: a way back, then the path, as a file manager's address bar. */
+  .sync-address {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .sync-address-back {
+    flex: none;
+  }
+  .sync-address-back:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .sync-crumbs {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-crumbs > .icon {
+    flex: none;
+    margin-right: var(--space-1);
+  }
+  .sync-crumb {
+    min-width: 0;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-muted);
+    font: inherit;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button.sync-crumb {
+    flex: none;
+    cursor: pointer;
+  }
+  button.sync-crumb:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  button.sync-crumb:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .sync-crumb.is-current {
+    color: var(--fg-default);
+    font-weight: 500;
+  }
+  .sync-crumb-sep {
+    display: inline-flex;
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  /* The folders: as many columns as fit, each a folder with its name and two muted lines. */
+  .sync-folders {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
-    align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--space-2);
   }
-  .sync-md:not(.is-chosen) > .sync-detail,
-  .sync-md.is-chosen > .sync-md-list {
-    display: none;
+  .sync-folder {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-width: 0;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--ease-standard);
   }
+  .sync-folder:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-subtle);
+  }
+  .sync-folder:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .sync-folder-glyph {
+    display: inline-flex;
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .sync-folder-glyph .icon {
+    width: 40px;
+    height: 40px;
+    stroke-width: 1.25;
+    fill: var(--bg-chip);
+  }
+  .sync-folder-glyph.is-away {
+    color: var(--fg-subtle);
+  }
+  .sync-folder-glyph.is-away .icon {
+    fill: none;
+  }
+  .sync-folder-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .sync-folder-name {
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-folder-line {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Inside a folder. */
   .sync-detail {
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
     min-width: 0;
   }
-  .sync-back {
-    align-self: flex-start;
-    flex-direction: row;
-  }
-  /* A row of the list: a name with its tag, one muted line under it; every row the same
-     height, the chevron in its middle. */
-  .sync-project-row .sync-item-title {
-    flex-wrap: nowrap;
-  }
   .sync-one-line {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sync-open-here {
-    flex: none;
-    color: var(--fg-muted);
-    font-size: var(--text-xs);
-    line-height: var(--text-xs-lh);
     white-space: nowrap;
   }
   /* The detail's first card: the name with its tag, the folder under it, the actions at the
@@ -842,27 +947,6 @@
     line-height: var(--text-2xl-lh);
   }
 
-  /* ---------- room for the list beside a project's detail ---------- */
-  @container (min-width: 1000px) {
-    .sync-md,
-    .sync-md.is-chosen {
-      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-    }
-    .sync-md:not(.is-chosen) > .sync-detail,
-    .sync-md.is-chosen > .sync-md-list {
-      display: flex;
-    }
-    .sync-md > .sync-md-list {
-      flex-direction: column;
-    }
-    .sync-back {
-      display: none;
-    }
-    .sync-pick.is-selected {
-      background: var(--bg-selected);
-    }
-  }
-
   /* ---------- the navigation is a rail (Settings' breakpoint) ---------- */
   @container (max-width: 640px) {
     .sync-nav-count {
@@ -918,9 +1002,6 @@
     }
     .sync-snapshot-time {
       width: 8ch;
-    }
-    .sync-open-here {
-      display: none;
     }
     .sync-card-body,
     .sync-panel {

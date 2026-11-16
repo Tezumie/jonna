@@ -422,6 +422,39 @@ export function registerSyncCommands(
 
   sub.add(
     dispatcher.register({
+      id: "sync.renameDevice",
+      title: "Rename this computer…",
+      category: CATEGORY,
+      description:
+        "Gives this computer another name in the account's list of computers (what the Sync tab, the other computers and the account page show). Without `name`, asks for one. Only a computer can rename itself.",
+      input: s.object({
+        name: s.string().describe("The new name (at most 80 characters)").optional(),
+      }),
+      effects: ["network"],
+      agent: "discoverable",
+      run: async ({ name }) => {
+        await open();
+        const status = await standing();
+        if (!status.deviceId || (status.state !== "on" && status.state !== "pending"))
+          throw new Error("Sync is off on this computer. Turn it on in the Sync tab first.");
+        let wanted = name;
+        if (wanted === undefined) {
+          wanted = await quickInput.prompt({
+            prompt: "A name for this computer",
+            value: status.deviceName ?? "",
+            validate: (value) => (value.trim() ? undefined : "Give it a name."),
+          });
+          if (wanted === undefined) return { renamed: false, cancelled: true };
+        }
+        if (!wanted.trim()) throw new Error("Give the computer a name.");
+        const kept = await sync().renameDevice(wanted.trim());
+        return { renamed: true, name: kept };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
       id: "sync.removeDevice",
       title: "Remove a computer from sync…",
       category: CATEGORY,
@@ -628,11 +661,44 @@ export function registerSyncCommands(
 
   sub.add(
     dispatcher.register({
+      id: "sync.project.rename",
+      title: "Rename a synced project…",
+      category: CATEGORY,
+      description:
+        "Gives one of the account's projects another name: what the Sync tab on every computer and the account page show. No folder is renamed. Without `name`, asks for one.",
+      input: s.object({
+        id: s.string().describe("The project's id (ide://sync overview.projects)"),
+        name: s.string().describe("The new name (at most 80 characters)").optional(),
+      }),
+      effects: ["network"],
+      agent: "discoverable",
+      run: async ({ id, name }) => {
+        await whenOn();
+        const project = accountProject(id);
+        let wanted = name;
+        if (wanted === undefined) {
+          wanted = await quickInput.prompt({
+            prompt: "A name for this project (folders keep their own names)",
+            value: project.name,
+            validate: (value) => (value.trim() ? undefined : "Give it a name."),
+          });
+          if (wanted === undefined) return { renamed: false, cancelled: true };
+        }
+        const text = wanted.trim().slice(0, 80);
+        if (!text) throw new Error("Give the project a name.");
+        await sync().renameProject(id, text);
+        return { renamed: true, id, name: text };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
       id: "sync.project.forgetFolder",
       title: "Forget a folder that synced from this computer…",
       category: CATEGORY,
       description:
-        "Removes this computer's note that a folder syncs from here (a folder that was moved or deleted). Nothing in the account is touched: the project, its chats and its snapshots stay.",
+        "Stops syncing a folder from this computer: removes this computer's note that the folder syncs from here (a folder that was moved or deleted, or a project no longer wanted here). Nothing in the account is touched: the project, its chats and its snapshots stay there until deleted from the account.",
       input: s.object({
         folder: s.string().describe("The folder's path (ide://sync overview.projects[].folder)"),
       }),
@@ -721,25 +787,21 @@ export function registerSyncCommands(
         const project = accountProject(id);
         const open = sync().project.peek();
         const isOpen = !!open?.on && open.id === id;
-        const elsewhere = project.here && !isOpen;
         const ok = await confirmAction(
           `Delete ${project.name} from the account?`,
           [
             `Its snapshots (${project.snapshots}) and the synced copies of its chats (${project.chats}) are removed from the account. This can't be undone.`,
             "Nothing on any computer is deleted: the folders and the chats saved on your computers stay as they are.",
-            "A computer that still syncs this project uploads it again, so stop syncing it there first.",
-            ...(isOpen ? ["It stops syncing from this computer first."] : []),
-            ...(elsewhere
-              ? [
-                  `It still syncs from ${project.folder ?? "another folder"} on this computer: open that folder and stop syncing it, or it is uploaded again.`,
-                ]
-              : []),
+            "Another computer that still syncs this project uploads it again, so stop syncing it there first.",
+            ...(project.here ? ["It stops syncing from this computer first."] : []),
           ].join("\n\n"),
           "Delete from the account",
           true,
         );
         if (!ok) return { deleted: false, cancelled: true };
         if (isOpen) await sync().setProjectSync(false);
+        // Every folder here that is this project, or its chats would be uploaded again.
+        await sync().stopSyncingProject(id);
         const { removed, failed } = await sync().deleteProjectFromAccount(id);
         if (failed > 0)
           throw new Error(
