@@ -1,4 +1,5 @@
 // Sync, DOM-free (D435): the words the Sync tab and the commands share.
+import { planPageUrl } from "../../core/ownServices";
 
 export interface ActivityLike {
   state: "off" | "idle" | "syncing" | "offline" | "error" | "other" | "blocked" | "lapsed";
@@ -517,9 +518,12 @@ export const SYNC_BENEFITS: readonly string[] = [
   "Snapshots of unfinished work in those projects, with a history.",
 ];
 
-/** The account page's plan section (buying, renewing, cards, invoices, storage). */
+/**
+ * The account page's plan section (buying, renewing, cards, invoices, storage): the page
+ * product.json names (`planPagePath`, docs/own-services.md), on the accounts server `base`.
+ */
 export function planUrl(base: string): string {
-  return `${base.replace(/\/+$/, "")}/account#plan`;
+  return planPageUrl(base);
 }
 
 // ------------------------------------------------------------ recent activity

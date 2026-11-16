@@ -1,6 +1,7 @@
 // The built-in extensions, in activation order. One list for every entry: the window's (main.ts)
 // and a screenless one (headless/boot.ts is handed it, so it doesn't import the views behind it).
 import type { BuiltinExtension } from "../core/extensions/index";
+import { hasSync } from "../core/ownServices";
 import type { WorkbenchServices } from "../workbench/services";
 import { accountsExtension } from "./accounts/index";
 import { agentExtension } from "./agent/index";
@@ -62,7 +63,9 @@ export function builtinExtensions(
     remoteExtension,
     testingExtension,
     accountsExtension,
-    syncExtension,
+    // Sync only in a build that has it (product.json, docs/own-services.md): without it, no
+    // tab, command, setting, status bar item or ide://sync is registered.
+    ...(hasSync() ? [syncExtension] : []),
     extensionsExtension,
     languageServersExtension,
     lspExtension,

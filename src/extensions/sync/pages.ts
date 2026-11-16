@@ -5,6 +5,7 @@
 import { type Child, h, on } from "../../core/dom/index";
 import type { SyncDevice, SyncStatus } from "../../core/ipc/sync";
 import type { DisposableStore } from "../../core/lifecycle/index";
+import { hasPlanPage } from "../../core/ownServices";
 import { type IconName, icon } from "../../ui/Icon";
 import type { MenuItem } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -220,7 +221,7 @@ export function lapsedCallout(kit: PageKit, until: number | null): HTMLElement {
     h(
       "div",
       { class: "sync-item-actions" },
-      kit.button("Renew", () => kit.run("sync.managePlan"), "primary"),
+      hasPlanPage() ? kit.button("Renew", () => kit.run("sync.managePlan"), "primary") : null,
       kit.button("Check again", () => kit.checkPlan()),
     ),
   );
@@ -1106,7 +1107,7 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
           notice ? h("p", { class: "sync-text sync-storage-notice" }, notice.text) : null,
         ),
         // Only for an account that has sync: the plan is where storage comes from.
-        kit.session.profile.peek()?.sync === true
+        kit.session.profile.peek()?.sync === true && hasPlanPage()
           ? item({
               title: "Your plan",
               details: [

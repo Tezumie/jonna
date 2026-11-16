@@ -1,13 +1,15 @@
 // Accounts (D140), VS Code's person icon above the gear: the IDE's own account (sign in through
-// the browser once a server exists — product.json `accountsUrl`; until then the menu says it's
-// coming), GitHub through the GitHub CLI (`gh auth login` in a terminal; pull requests use it),
-// model providers, and settings backup (export / import a profile today; sync with the account
-// later). State: ide://accounts.
+// the browser, in a build that names an accounts server: product.json `accountsUrl`,
+// docs/own-services.md; a build without one has no such entry, command or setting), GitHub
+// through the GitHub CLI (`gh auth login` in a terminal; pull requests use it), model providers,
+// and settings backup (export / import a profile; syncing is the Sync tab, where the build has
+// it). State: ide://accounts.
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { type AccountProfile, accountsIpc } from "../../core/ipc/accounts";
 import { githubIpc } from "../../core/ipc/git";
 import { openerIpc } from "../../core/ipc/system";
 import { MutableDisposable } from "../../core/lifecycle/index";
+import { accountsServer, hasAccounts, hasSync } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
@@ -16,7 +18,17 @@ import { type MenuItem, showMenu } from "../../ui/Menu";
 import { withTimeout } from "../../workbench/extensionRegistries";
 import type { WorkbenchServices } from "../../workbench/services";
 import manifest from "./extension.json";
-import { accountsServer, type GitHubLogin, parseGhAuth } from "./model";
+import {
+  accountsManifest,
+  backupTitle,
+  type GitHubLogin,
+  parseGhAuth,
+  signInProviders,
+} from "./model";
+
+/** Whether this build has an account of its own, and Sync (product.json, docs/own-services.md). */
+const ideAccount = hasAccounts();
+const syncBuiltIn = hasSync();
 
 /** An extension's authentication provider in the Accounts menu (D233). */
 interface ExtensionAccounts {
@@ -27,11 +39,11 @@ interface ExtensionAccounts {
 }
 
 export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
-  manifest,
+  manifest: accountsManifest(manifest, { accounts: ideAccount, sync: syncBuiltIn }),
   activate({ subscriptions: sub, services }) {
     const { dispatcher, state, notifications, settings } = services;
-    const server = () =>
-      accountsServer(settings.peek<string | undefined>("accounts.serverUrl"), product.accountsUrl);
+    /** The accounts server; "" in a build without one. */
+    const server = () => accountsServer(settings.peek<string | undefined>("accounts.serverUrl"));
     const profile = signal<AccountProfile | null>(null);
     const github = signal<GitHubLogin[]>([]);
     /** "gh isn't installed" and the like; null when gh answered. */
@@ -183,7 +195,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
                 },
               ],
             });
-          else
+          else if (ideAccount)
             items.push({
               label: signingIn.value
                 ? "Signing in… (cancel)"
@@ -199,7 +211,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               items.push({
                 label: `${g.login} (GitHub${g.host === "github.com" ? "" : ` · ${g.host}`})`,
                 icon: "git-pull-request",
-                separatorBefore: g === logins[0],
+                separatorBefore: g === logins[0] && items.length > 0,
                 submenu: [
                   {
                     label: "Open profile",
@@ -220,7 +232,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
                 ? "Sign in to GitHub… (install the GitHub CLI)"
                 : "Sign in to GitHub…",
               icon: "git-pull-request",
-              separatorBefore: true,
+              separatorBefore: items.length > 0,
               run: run("accounts.signIn", { provider: "github" }),
             });
           // Extensions' sign-ins (D233, VS Code lists them here too): each account with Sign
@@ -272,7 +284,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
               run: run("sync.show"),
             });
           items.push({
-            label: "Backup and sync settings…",
+            label: backupTitle(syncBuiltIn),
             icon: syncOpen ? "file-output" : "refresh-cw",
             separatorBefore: !syncOpen,
             run: run("accounts.syncSettings"),
@@ -296,9 +308,10 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
         id: "accounts.signIn",
         title: "Sign in…",
         category: "Accounts",
-        description:
-          'Signs in: "ide" (the IDE account, through the browser) or "github" (`gh auth login` in a terminal).',
-        input: s.object({ provider: s.enum(["ide", "github"] as const) }),
+        description: ideAccount
+          ? 'Signs in: "ide" (the IDE account, through the browser) or "github" (`gh auth login` in a terminal).'
+          : 'Signs in to "github" (`gh auth login` in a terminal).',
+        input: s.object({ provider: s.enum(signInProviders(ideAccount)) }),
         effects: ["network"],
         agent: "hidden",
         run: async ({ provider }) => {
@@ -312,15 +325,8 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
             return { started: "github" };
           }
           const base = server();
-          if (!base) {
-            await showDialog({
-              title: "Accounts are coming soon",
-              message: `Signing in to a ${product.nameShort} account needs the accounts service, which isn't available yet. Everything in the IDE works without an account; GitHub sign-in (for pull requests) and your model providers are already here.`,
-              actions: [{ label: "OK", value: true, variant: "primary" }],
-              cancelValue: true,
-            });
-            return { available: false };
-          }
+          // Not reached through the menu: a build without accounts has no "ide" provider.
+          if (!base) throw new Error("This build has no accounts service.");
           if (signingIn.peek()) return { signingIn: true };
           signingIn.value = true;
           try {
@@ -338,27 +344,30 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
       }),
     );
 
-    sub.add(
-      dispatcher.register({
-        id: "accounts.cancelSignIn",
-        title: "Cancel sign-in",
-        category: "Accounts",
-        description: "Stops waiting for the browser sign-in.",
-        input: s.empty(),
-        effects: [],
-        agent: "hidden",
-        run: () => accountsIpc.cancel(),
-      }),
-    );
+    // Only the IDE account's sign-in waits for the browser.
+    if (ideAccount)
+      sub.add(
+        dispatcher.register({
+          id: "accounts.cancelSignIn",
+          title: "Cancel sign-in",
+          category: "Accounts",
+          description: "Stops waiting for the browser sign-in.",
+          input: s.empty(),
+          effects: [],
+          agent: "hidden",
+          run: () => accountsIpc.cancel(),
+        }),
+      );
 
     sub.add(
       dispatcher.register({
         id: "accounts.signOut",
         title: "Sign out…",
         category: "Accounts",
-        description:
-          'Signs out of "ide" (the IDE account) or "github" (`gh auth logout`, in a terminal).',
-        input: s.object({ provider: s.enum(["ide", "github"] as const) }),
+        description: ideAccount
+          ? 'Signs out of "ide" (the IDE account) or "github" (`gh auth logout`, in a terminal).'
+          : 'Signs out of "github" (`gh auth logout`, in a terminal).',
+        input: s.object({ provider: s.enum(signInProviders(ideAccount)) }),
         effects: ["network"],
         agent: "hidden",
         run: async ({ provider }) => {
@@ -378,10 +387,11 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       dispatcher.register({
         id: "accounts.syncSettings",
-        title: "Backup and sync settings…",
+        title: backupTitle(syncBuiltIn),
         category: "Accounts",
-        description:
-          "Settings backup: export or import a profile (settings, keybindings, snippets) as a file. Syncing between computers is the Sync tab (sync.show), for accounts it is open to.",
+        description: syncBuiltIn
+          ? "Settings backup: export or import a profile (settings, keybindings, snippets) as a file. Syncing between computers is the Sync tab (sync.show), for accounts it is open to."
+          : "Settings backup: export or import a profile (settings, keybindings, snippets) as a file.",
         input: s.empty(),
         effects: [],
         agent: "hidden",
@@ -390,12 +400,14 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
           const syncOpen =
             (p?.sync === true || p?.syncOffered === true) && dispatcher.has("sync.show");
           const choice = await showDialog<"export" | "import" | "sync" | "cancel">({
-            title: "Backup and sync settings",
+            title: syncBuiltIn ? "Backup and sync settings" : "Back up settings",
             message: syncOpen
               ? "To keep your settings the same on every computer, use Sync. For a copy in a file, export your settings, keybindings and snippets, or import one."
-              : profile.peek()
-                ? "Syncing with your account is coming soon. Until then, export your settings, keybindings and snippets to a file, or import one."
-                : "Syncing needs an account (coming soon). Until then, export your settings, keybindings and snippets to a file, or import one.",
+              : !syncBuiltIn
+                ? "Export your settings, keybindings and snippets to a file, or import one."
+                : profile.peek()
+                  ? "Syncing with your account is coming soon. Until then, export your settings, keybindings and snippets to a file, or import one."
+                  : "Syncing needs an account (coming soon). Until then, export your settings, keybindings and snippets to a file, or import one.",
             actions: [
               { label: "Cancel", value: "cancel" },
               { label: "Import…", value: "import" },
@@ -415,7 +427,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://accounts", {
         description:
-          "Accounts: the IDE account (available once its service exists; profile when signed in) and the GitHub CLI's signed-in accounts.",
+          "Accounts: the IDE account (`available`: whether this build has an accounts service; profile when signed in) and the GitHub CLI's signed-in accounts.",
         get: () => ({
           ide: {
             available: !!server(),

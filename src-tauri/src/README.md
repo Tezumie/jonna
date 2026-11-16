@@ -70,8 +70,9 @@ attribute's argument and return mapping), `folders_tests.rs` (the app folders' f
 
 The IDE account (D140, D414): OAuth code + PKCE through the system browser with a loopback
 redirect (`mod.rs`); the saved session, tokens in the OS keychain and the profile check that
-refreshes rotating tokens (`session.rs`). Server: product.json's `accountsUrl`; endpoints in
-docs/accounts.md. Commands in `ipc/accounts.rs`.
+refreshes rotating tokens (`session.rs`). Server: product.json's `accountsUrl`, passed by the
+front end with each call; what a server must implement is in docs/own-services.md. Commands in
+`ipc/accounts.rs`.
 
 ## node_runtime.rs
 

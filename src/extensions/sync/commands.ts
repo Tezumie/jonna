@@ -8,6 +8,7 @@ import { accountsIpc } from "../../core/ipc/accounts";
 import { type SyncStatus, syncIpc } from "../../core/ipc/sync";
 import { openerIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
+import { accountPageUrl, hasPlanPage } from "../../core/ownServices";
 import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -1014,7 +1015,7 @@ export function registerSyncCommands(
       run: async () => {
         const base = sync().base();
         if (!base) throw new Error("This build has no accounts service.");
-        await openerIpc.openUrl(`${base}/account`);
+        await openerIpc.openUrl(accountPageUrl(base));
         return { opened: true };
       },
     }),
@@ -1044,6 +1045,7 @@ export function registerSyncCommands(
       effects: [],
       agent: "hidden",
       run: async () => {
+        if (!hasPlanPage()) throw new Error("This build has no plan page.");
         const { base } = await account(false);
         await openerIpc.openUrl(planUrl(base));
         return { opened: true };

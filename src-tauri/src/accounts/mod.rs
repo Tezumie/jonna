@@ -1,11 +1,12 @@
 //! The IDE's own account (D140), ready for the backend: OAuth 2 authorization code with PKCE
 //! through the system browser and a loopback redirect (RFC 8252, what desktop apps like VS Code
-//! do without a custom URL scheme). Nothing here knows a server until `product.json` gets an
-//! `accountsUrl`; the expected endpoints are in docs/accounts.md:
+//! do without a custom URL scheme). Nothing here names a server: the front end passes `base`,
+//! which is `product.json`'s `accountsUrl` (a build without one never calls this). What a server
+//! must implement is in docs/own-services.md:
 //!
 //! - `GET  {base}/oauth/authorize` — the sign-in page; redirects to `http://127.0.0.1:<port>/callback?code&state`
 //! - `POST {base}/oauth/token`     — code + verifier → `{access_token, refresh_token?, expires_in?}`
-//! - `GET  {base}/api/me`          — bearer token → `{id, name, email?, avatarUrl?, plan?}`
+//! - `GET  {base}/api/me`          — bearer token → `{id, name, email?, avatarUrl?, plan?, sync?, …}`
 //! - `POST {base}/oauth/revoke`    — optional, on sign-out
 //!
 //! The saved session, its tokens (in the OS keychain) and the profile check with refresh are in

@@ -109,12 +109,15 @@ A local desktop code editor in the spirit of VS Code and Cursor, minus the bloat
   "urlScheme": "ide",
   "extensionApiGlobal": "ide",
   "accountsUrl": "",
+  "accountPagePath": "/account",
+  "planPagePath": "/account#plan",
+  "syncBuiltIn": true,
   "extensionsRepo": "",
   "issuesUrl": "",
   "updates": { "endpoint": "", "betaEndpoint": "", "pubkey": "" }
 }
 ```
-(The values above are placeholders; the real file holds the current name.) Renaming the product later = edit this file and rebuild.
+(The values above are placeholders; the real file holds the current name.) Renaming the product later = edit this file and rebuild. The same file names the online services a build uses (the accounts server, the pages it opens, whether Sync is built in, updates): `docs/own-services.md`.
 
 ## 5. Frontend core (vanilla patterns)
 - `core/reactive`: `signal()`, `computed()`, `effect()`, `batch()`. ~100 lines.

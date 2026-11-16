@@ -1,5 +1,6 @@
 // Generates every file derived from a single source of truth:
 //   product.json                 -> src/core/product.ts, src-tauri/tauri.conf.json
+//   (the product's names, and the online services it uses: docs/own-services.md)
 // Runs on `npm install` (postinstall) and before dev/build/check, so generated files never drift.
 // Generated files are git-ignored; edit the sources instead.
 // (tokens.css is hand-authored since M1.5 — DESIGN.md §19.)
@@ -66,7 +67,7 @@ for (const key of required) {
     throw new Error(`product.json: "${key}" must be a non-empty string`);
   }
 }
-// Optional: empty means "not available yet" (accountsUrl: the IDE account's server, D140).
+// Optional: empty means "this build has none" (accountsUrl: the IDE account's server, D140).
 // extensionsRepo: the git repository of official extensions (D185). issuesUrl: where Help →
 // Report a problem opens a new issue (a GitHub repository's ".../issues", D204).
 // serverDataFolderName: the remote server's folder in a remote machine's home (D252, read by Rust).
@@ -85,14 +86,51 @@ for (const key of optional) {
   if (product[key] !== undefined && typeof product[key] !== "string")
     throw new Error(`product.json: "${key}" must be a string`);
 }
+// The online services the app talks to (docs/own-services.md is the guide to these keys). All of
+// it hangs on accountsUrl, the accounts server: empty means the build has no account of its own
+// (no sign-in, no Sync). The rest, with what is used when the key is left out:
+// - accountPagePath: the account page the app opens in the browser. A path on the accounts
+//   server, or a whole URL when the page lives somewhere else.
+// - planPagePath: the page where a plan is bought, renewed or cancelled (the app has no payment
+//   code: it only opens this page). A path or a whole URL, as above. Set to "" for a service
+//   with no plans (sync that is free, or sold elsewhere): the app then shows no plan wording.
+// - syncBuiltIn: false leaves Sync out of the build (its tab, commands, settings, status bar
+//   item and ide://sync), whatever the server offers. Sync needs an accounts server either way.
+const servicePages = { accountPagePath: "/account", planPagePath: "/account#plan" };
+for (const key of Object.keys(servicePages)) {
+  const value = product[key];
+  if (value === undefined || value === "") continue;
+  if (typeof value !== "string" || !/^(https?:\/\/|\/|#)\S*$/.test(value))
+    throw new Error(
+      `product.json: "${key}" must be a path on the accounts server ("/account") or a whole URL`,
+    );
+}
+if (product.syncBuiltIn !== undefined && typeof product.syncBuiltIn !== "boolean")
+  throw new Error('product.json: "syncBuiltIn" must be true or false');
+const services = {
+  ...Object.fromEntries(
+    Object.entries(servicePages).map(([key, fallback]) => [
+      key,
+      // An empty plan page is a choice (no plans); an empty account page is just "the default".
+      key === "planPagePath" ? (product[key] ?? fallback) : product[key] || fallback,
+    ]),
+  ),
+  syncBuiltIn: product.syncBuiltIn !== false,
+};
 const pkg = await read("package.json");
 
 // --- src/core/product.ts ---------------------------------------------------
 await writeIfChanged(
   "src/core/product.ts",
   `// ${banner}\n// Source: product.json. Never hard-code product names anywhere else.\n` +
-    `export interface ProductConfig {\n${required.map((k) => `  readonly ${k}: string;`).join("\n")}\n${optional.map((k) => `  readonly ${k}: string;`).join("\n")}\n  readonly workspaceFolderAliases: readonly string[];\n  readonly version: string;\n}\n\n` +
-    `export const product: ProductConfig = ${JSON.stringify({ ...pick(product, required), ...Object.fromEntries(optional.map((k) => [k, product[k] ?? ""])), workspaceFolderAliases: aliases, version: pkg.version }, null, 2)};\n`,
+    `export interface ProductConfig {\n${required.map((k) => `  readonly ${k}: string;`).join("\n")}\n${optional.map((k) => `  readonly ${k}: string;`).join("\n")}\n${Object.keys(
+      servicePages,
+    )
+      .map((k) => `  readonly ${k}: string;`)
+      .join(
+        "\n",
+      )}\n  readonly syncBuiltIn: boolean;\n  readonly workspaceFolderAliases: readonly string[];\n  readonly version: string;\n}\n\n` +
+    `export const product: ProductConfig = ${JSON.stringify({ ...pick(product, required), ...Object.fromEntries(optional.map((k) => [k, product[k] ?? ""])), ...services, workspaceFolderAliases: aliases, version: pkg.version }, null, 2)};\n`,
 );
 
 // --- src-tauri/tauri.conf.json ---------------------------------------------

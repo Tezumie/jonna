@@ -35,6 +35,7 @@ unless noted.
 | · Sync: projects as folders, a project that can be stopped and renamed, a computer's name | D438 |
 | · The Documentation tab on the Settings tab's frame, with search | D439 |
 | · Sync as a subscription: an offer, a subscription that ended, a purchase seen without a restart | D440 |
+| · A build's own services in one place: accounts server, account and plan pages, whether Sync is built in | D441 |
 
 ## Seeded from PLAN §19
 
@@ -15625,3 +15626,33 @@ stand and opens the website's plan page in the browser.
 - **Not here:** prices (the website shows what Stripe says), teams (a subscription is a
   number of people, and the storage follows it, but there is no way to add a person yet), a
   free tier of sync for settings alone (the plan allows for it; nothing is built).
+
+## D441 — A build's own services in one place
+
+The owner's requirement: someone who makes their own product from this code must be able to
+point it at their own website, sign-in and payments, or leave those out, without hunting
+through the code. The product's name already works that way (`product.json`, rule 1).
+
+- **`product.json` names the services,** read through one module (`src/core/ownServices.ts`,
+  DOM-free, tested; `docs/own-services.md` is the guide): `accountsUrl` (the accounts server;
+  empty: no account of the IDE's own, and no Sync), `accountPagePath` and `planPagePath` (the
+  pages the IDE opens in the browser: a path on that server or a whole URL; an empty plan page
+  means the service has no plans, and the IDE then says nothing of plans), `syncBuiltIn`
+  (false leaves Sync out). The update endpoint, the issues address and the extensions
+  repository were there already. The generator validates the keys and fills in the defaults,
+  so an older `product.json` still works.
+- **No payment code is in the IDE.** It opens the plan page and reads from the accounts server
+  whether the account has Sync. A fork's payments are whatever its own server does.
+- **Sync is one line in the list of built-in extensions** (`hasSync()`); everything of it (the
+  tab, commands, settings, the status bar item, `ide://sync`) is registered by that
+  extension. The Accounts menu reaches Sync only through the dispatcher, with no import.
+- **Without an accounts server** the Accounts menu stays (it also serves GitHub, extensions'
+  sign-ins and settings backup) but has no sign-in of the IDE's own, and the
+  `accounts.serverUrl` setting no longer turns one on by itself: a fork developing a server
+  sets `accountsUrl`.
+- `docs/own-services.md` also lists what the accounts server must answer (the sign-in flow,
+  the fields of `/api/me`) and the files and registration lines to delete to take Sync out
+  for good. That list comes from reading the code; a build with the files removed was not
+  made.
+- Checked with each switch off (`syncBuiltIn: false`; `accountsUrl: ""`): the checks and
+  every unit test pass. Not checked by starting the app in either state.

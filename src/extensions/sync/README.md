@@ -7,6 +7,12 @@ before it leaves (Rust `src-tauri/src/sync`, typed calls in `core/ipc/sync.ts`);
 merge rules, the layers and the history rules are `core/sync` (DOM-free, tested). Open only to
 accounts whose profile says `sync: true`. Window only: a screenless session doesn't sync.
 
+Which server it talks to, the pages it opens in the browser (the account page, the plan page)
+and whether a build has Sync at all are set in product.json and read through
+`core/ownServices.ts`: `docs/own-services.md` (running the IDE with your own services, shipping
+without Sync, and the files to delete to take Sync out). The extension is in the list of
+built-ins only when `hasSync()` (`extensions/builtins.ts`).
+
 - `controller.ts` — `SyncController`: where sync stands (`status`), the loop's passes
   (`activity`; one window of a profile writes, the others read), the open project (`project`) and
   its snapshots (`snapshots`), what the account holds (`overview`, recomputed after each pass from

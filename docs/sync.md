@@ -3,7 +3,7 @@
 How the IDE syncs an account's settings, chats and unfinished work between computers (D435,
 hardened in D436 and D437).
 The service's code is in the website's repository; this is the contract and the design both
-sides follow. Sync is open only to accounts the service allows (`/api/me` says `"sync": true`).
+sides follow. Running a build with your own service, or without Sync: [own-services.md](own-services.md). Sync is open only to accounts the service allows (`/api/me` says `"sync": true`).
 
 Sync is a subscription. `/api/me` also says `syncState` ("on", "lapsed", "off"; `sync` is true
 for the first two), `syncUntil` (while lapsed: when what is synced is deleted, in ms),

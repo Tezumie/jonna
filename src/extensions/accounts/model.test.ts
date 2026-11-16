@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accountsServer, parseGhAuth } from "./model";
+import { accountsManifest, backupTitle, parseGhAuth, signInProviders } from "./model";
 
 test("gh auth status: new and old formats, active account", () => {
   const now = `github.com
@@ -20,11 +20,35 @@ test("gh auth status: new and old formats, active account", () => {
   assert.deepEqual(parseGhAuth("You are not logged into any GitHub hosts."), []);
 });
 
-test("the setting overrides the product's server", () => {
-  assert.equal(accountsServer("", ""), "");
-  assert.equal(accountsServer(undefined, "https://a.example/"), "https://a.example");
-  assert.equal(
-    accountsServer(" http://127.0.0.1:8787/ ", "https://a.example"),
-    "http://127.0.0.1:8787",
+test("a build without an accounts server: no IDE account command or setting", () => {
+  const manifest = {
+    id: "builtin.accounts",
+    version: "0.1.0",
+    activation: ["*"],
+    contributes: {
+      commands: [
+        { id: "accounts.signIn", title: "Sign in…" },
+        { id: "accounts.cancelSignIn", title: "Cancel sign-in" },
+        { id: "accounts.syncSettings", title: "Backup and sync settings…" },
+      ],
+      settings: {
+        "accounts.serverUrl": { type: "string", default: "", description: "The accounts server." },
+      },
+    },
+  };
+  // Everything, as written, in a build with both.
+  assert.deepEqual(accountsManifest(manifest, { accounts: true, sync: true }), manifest);
+  const none = accountsManifest(manifest, { accounts: false, sync: false });
+  assert.deepEqual(
+    none.contributes?.commands?.map((c) => c.id),
+    ["accounts.signIn", "accounts.syncSettings"],
   );
+  assert.deepEqual(none.contributes?.settings, {});
+  assert.equal(none.contributes?.commands?.[1]?.title, "Back up settings…");
+  // Accounts without Sync: the account stays, sync leaves the title.
+  const noSync = accountsManifest(manifest, { accounts: true, sync: false });
+  assert.equal(noSync.contributes?.commands?.length, 3);
+  assert.equal(backupTitle(true), "Backup and sync settings…");
+  assert.deepEqual(signInProviders(true), ["ide", "github"]);
+  assert.deepEqual(signInProviders(false), ["github"]);
 });

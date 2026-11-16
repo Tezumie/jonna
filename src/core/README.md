@@ -615,8 +615,13 @@ gives them ports.
   computer run or send something).
 - `errors.ts` — telling the service's refusals apart (offline, slow down, per item).
 
-## perf.ts, product.ts
+## perf.ts, product.ts, ownServices.ts
 
 `perf.ts`: startup and load marks (`ide://perf`, `workbench.startupTimings`); `whenMarked(name)`
 resolves once a mark is reached (What's new waits for `workspaceRestored`, D204). `product.ts` is
-generated from product.json by `scripts/gen.mjs`: the only source of the product's names.
+generated from product.json by `scripts/gen.mjs`: the only source of the product's names, and of
+the online services a build uses. `ownServices.ts` (DOM-free, tested) reads those:
+`hasAccounts()`, `hasSync()`, `accountsServer(setting)` (the server in use; the
+`accounts.serverUrl` setting wins in a build that has one), `accountPageUrl(base)` and
+`planPageUrl(base)` (the pages the app opens in the browser). `docs/own-services.md` is the guide
+to the keys.

@@ -194,7 +194,8 @@ and run `node scripts/ui-test.mjs <binary> [filter]` (the `ui-test` skill in `.a
 the steps).
 
 ```
-product.json      all naming (generated into src/core/product.ts and src-tauri/tauri.conf.json)
+product.json      all naming, and the online services a build uses (generated into
+                  src/core/product.ts and src-tauri/tauri.conf.json; docs/own-services.md)
 src/core/         DOM-free core: dispatcher, schema, state tree, keybindings, reactive, lifecycle,
                   dock model, paths, themes, JSONC, diff, LSP/MCP/ACP clients, agent loop; ipc/ = typed Tauri calls
 src/ui/           Tree, VirtualList, QuickInput, Menu, Dialog, Notifications, Tooltip, HoverCard, icons

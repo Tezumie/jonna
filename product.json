@@ -9,6 +9,9 @@
   "urlScheme": "jonna",
   "extensionApiGlobal": "ide",
   "accountsUrl": "https://jonna.dev",
+  "accountPagePath": "/account",
+  "planPagePath": "/account#plan",
+  "syncBuiltIn": true,
   "extensionsRepo": "",
   "issuesUrl": "https://github.com/Tezumie/jonna/issues",
   "updates": { "endpoint": "", "betaEndpoint": "", "pubkey": "" }

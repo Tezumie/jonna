@@ -14,6 +14,7 @@ import { attachIpc } from "../../core/ipc/agent";
 import type { SyncStatus } from "../../core/ipc/sync";
 import { clipboardIpc } from "../../core/ipc/system";
 import { DisposableStore, MutableDisposable } from "../../core/lifecycle/index";
+import { hasPlanPage } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
 import { type IconName, icon } from "../../ui/Icon";
@@ -545,7 +546,14 @@ class SyncView implements DockView, PageKit {
           true,
         ),
         this.buttonRow(
-          this.button("See plans", () => this.run("sync.managePlan"), "primary", "external-link"),
+          hasPlanPage()
+            ? this.button(
+                "See plans",
+                () => this.run("sync.managePlan"),
+                "primary",
+                "external-link",
+              )
+            : null,
           this.button("I already subscribed", () => this.checkPlan()),
         ),
       ),

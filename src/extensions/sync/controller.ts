@@ -15,6 +15,7 @@ import {
   syncIpc,
 } from "../../core/ipc/sync";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
+import { accountsServer } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { type Signal, signal } from "../../core/reactive/index";
 import { parseJsonc } from "../../core/settings/jsonc";
@@ -31,7 +32,6 @@ import {
 } from "../../core/sync/layers";
 import { staysLocal } from "../../core/sync/localSettings";
 import type { WorkbenchServices } from "../../workbench/services";
-import { accountsServer } from "../accounts/model";
 import {
   backoffMs,
   buildOverview,
@@ -264,10 +264,7 @@ export class SyncController implements Disposable {
 
   /** The accounts server ("" when the build has none). */
   base(): string {
-    return accountsServer(
-      this.services.settings.peek<string | undefined>("accounts.serverUrl"),
-      product.accountsUrl,
-    );
+    return accountsServer(this.services.settings.peek<string | undefined>("accounts.serverUrl"));
   }
 
   private on(key: string): boolean {
