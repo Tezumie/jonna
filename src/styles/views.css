@@ -930,8 +930,167 @@
     overflow: auto;
   }
   @container (max-width: 560px) {
-    .docs-nav {
+    .docs-view > .docs-nav {
       display: none;
+    }
+  }
+
+  /* The guide on the Settings tab's frame (D439): search and pages on the left (a rail when
+     narrow), the page or what a search found beside them. The frame's own rules are
+     settings.css's. */
+  .docs-guide .docs-nav {
+    width: auto;
+    padding: var(--space-6) 0 var(--space-4) var(--space-4);
+    gap: var(--space-4);
+    overflow: visible;
+  }
+  .docs-guide .docs-nav-item {
+    padding: 0 var(--space-3);
+  }
+  .docs-guide .docs-nav-item.is-active {
+    background: var(--bg-selected);
+  }
+  .docs-guide .docs-body {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .docs-guide .docs-page {
+    padding: 0;
+  }
+  /* The page before and the page after, under the page. */
+  .docs-turns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+    margin-top: var(--space-10);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .docs-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    text-align: left;
+    cursor: pointer;
+  }
+  .docs-turn.is-next {
+    text-align: right;
+  }
+  .docs-turn:hover {
+    background: var(--bg-hover);
+  }
+  .docs-turn:focus-visible,
+  .docs-hit:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .docs-turn-label {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+  }
+  .docs-turn-title {
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* What a search found: where it is (page, then heading), and the words around the match. */
+  .docs-results {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .docs-results-head .settings-page-title {
+    overflow-wrap: anywhere;
+  }
+  .docs-results-count,
+  .docs-results-empty {
+    margin: var(--space-2) 0 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .docs-hits {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .docs-hit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-4) var(--space-6);
+    text-align: left;
+    cursor: pointer;
+  }
+  .docs-hit + .docs-hit {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .docs-hit:hover {
+    background: var(--bg-hover);
+  }
+  .docs-hit-where {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .docs-hit-where > .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .docs-hit-page {
+    flex: none;
+  }
+  .docs-hit-heading {
+    min-width: 0;
+    color: var(--fg-default);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A page's own top: its title is what was found. */
+  .docs-hit-where > .docs-hit-page:last-child {
+    color: var(--fg-default);
+    font-weight: 500;
+  }
+  .docs-hit-text {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    overflow-wrap: anywhere;
+  }
+  @container (max-width: 640px) {
+    .docs-guide .docs-nav {
+      padding: var(--space-5) 0 var(--space-5) var(--space-2);
+    }
+    .docs-guide .docs-nav-item {
+      padding: 0;
+    }
+  }
+  @container (max-width: 460px) {
+    .docs-turns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .docs-turn.is-next {
+      text-align: left;
+    }
+    .docs-hit {
+      padding-left: var(--space-5);
+      padding-right: var(--space-5);
     }
   }
 }

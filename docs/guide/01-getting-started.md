@@ -207,7 +207,7 @@ system.
 - [Source control](08-git.md): stage, commit, branch and push.
 - [Terminal](10-terminal.md) and [Debugging](13-debugging.md).
 
-The whole guide is in the IDE: **Help → Documentation**. [Open the documentation](command:help.showDocs)
+The whole guide is in the IDE: **Help → Documentation**, with a search box above its pages. [Open the documentation](command:help.showDocs)
 
 ## Common questions
 

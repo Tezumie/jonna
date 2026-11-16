@@ -33,6 +33,7 @@ unless noted.
 | · Sync hardened after a review; what is synced shown by name | D436 |
 | · Sync: keys only from a computer the person checked, a loop that can't lose data, large projects | D437 |
 | · Sync: projects as folders, a project that can be stopped and renamed, a computer's name | D438 |
+| · The Documentation tab on the Settings tab's frame, with search | D439 |
 
 ## Seeded from PLAN §19
 
@@ -15572,3 +15573,27 @@ From the owner's first day with D437's build.
   folder is renamed), and this computer's name in the account's list (`sync.renameDevice`,
   `sync_rename_device`). The service takes a device's name from that device only, with proof
   of its key, by the call that registers it; another computer can't rename it.
+
+## D439 — The Documentation tab on the Settings tab's frame, with search
+
+The owner asked for the guide to look and work like Settings: a search on top and the same
+sidebar.
+
+- **The frame is Settings'** (`settings-view`, `settings-layout`, `settings-nav`), as the Sync
+  tab's is: a search box, then the pages with an icon each, in four groups; the open page's
+  sections (its second-level headings) under its name, as Settings lists a page's sections.
+  Narrow, the navigation is a rail of icons and the search moves above the page. The page is
+  a column of the same width as a Settings page, and ends with the page before and after.
+- **Search** (`docsSearch.ts`, DOM-free, tested): every page is cut into sections at its
+  headings (levels 1 to 3; code blocks are searched but not cut), and a query finds the
+  sections that hold every one of its words, in the heading, the page's title or the text. A
+  word in a heading counts for more than one in the text, a whole word for more than part of
+  one, the query's words together for more still. No index and no dependency: the guide is 21
+  pages and a search reads all of it in a few milliseconds.
+- **Results** take the page's place: where each is (page, then heading) and the words around
+  the match, marked. One opens its page at that heading; the query stays in the box. Enter
+  opens the best one, Escape clears the search.
+- **Commands:** `help.showDocs` takes `query` (and reports how many places were found), and
+  `help.readDocs {query}` gives an agent the same results as data, so "how do I…" can be
+  answered from the right section instead of a whole page.
+- The tab remembers a search that was on show (`query` in its saved state).

@@ -1,9 +1,15 @@
 # extensions/help
 
 The user guide (`docs/guide/*.md`, 21 pages, bundled with `?raw` imports; `pages.ts`, D283) in a
-singleton `docs` dock tab (`docsView.ts`: page list, Markdown, links to pages / anchors / the web /
-`command:` ids) — `help.showDocs {page?}` (Help → Documentation) — and for agents,
-`help.readDocs {page?}` (D133).
+singleton `docs` dock tab on the Settings tab's frame (`docsView.ts`, D439: a search box and the
+pages with icons, the open page's sections under its name, Markdown, links to pages / anchors /
+the web / `command:` ids, the page before and after) — `help.showDocs {page?, query?}` (Help →
+Documentation; `query` shows what a search finds) — and for agents, `help.readDocs {page?,
+query?}` (D133; `query` returns the matching sections).
+
+`docsSearch.ts` (DOM-free, tested): `pageSections` cuts a page at its headings, `searchDocs`
+finds the sections that hold every word of a query, best first, each with the words around the
+match; `headingAnchor` is the renderer's heading id.
 
 `help.agentGuide {topic?}` (D419, `agentGuide.ts`, tested): what an agent that isn't the IDE's own
 (an external agent in a chat, an MCP client) is told by no prompt: this isn't VS Code, how to

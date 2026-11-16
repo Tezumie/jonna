@@ -4313,3 +4313,16 @@ on again from the computer that has the data.
    computer and on the account page.
 6. The account page, Projects: the same folders; a folder opens to its numbers and snapshot
    history, with the address bar to go back. On a phone the folders are one column.
+
+## D439 — The Documentation tab: Settings' frame, search
+1. Help → Documentation: a search box and the pages with icons on the left, the open page's
+   sections under its name; clicking a section scrolls to it. The page ends with Previous and
+   Next.
+2. Type "stash": results list page, heading and the words around the match, with the word
+   marked. Click one: its page opens at that heading, and "stash" is still in the box.
+3. Type words no page has: "Nothing found" and a hint. Escape clears the search and the page
+   is back.
+4. Enter in the search box opens the best match.
+5. Make the tab narrow (under about 640 px): the navigation is a rail of icons with tooltips,
+   and the search box sits above the page.
+6. Links in a page still work: another page, a heading, a web page, a command link.

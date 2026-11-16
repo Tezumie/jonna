@@ -129,6 +129,31 @@
       "input": { "selector": ".docs-page h1" },
       "expect": [{ "html": { "$contains": "Source control" } }]
     },
-    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"docs\"" } }
+    { "state": "ide://layout", "expect": { "$contains": "\"viewType\":\"docs\"" } },
+    // D439: search takes the page's place; a result opens its page at the heading.
+    {
+      "run": "help.showDocs",
+      "input": { "query": "stash" },
+      "expect": { "query": "stash", "results": { "$gte": 1 } }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-guide .docs-hit", "html": 600 },
+      "expect": [{ "html": { "$contains": "settings-match" } }],
+      "timeoutMs": 3000
+    },
+    { "run": "dev.click", "input": { "selector": ".docs-guide .docs-hit" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".docs-guide .docs-page h1" },
+      "expect": [{ "html": { "$exists": true } }],
+      "timeoutMs": 3000
+    },
+    {
+      "run": "help.readDocs",
+      "input": { "query": "multi-root workspaces" },
+      "expect": { "results": { "$contains": "20-workspaces.md" } }
+    },
+    { "run": "help.showDocs", "input": { "query": "" }, "expect": { "results": 0 } }
   ]
 }

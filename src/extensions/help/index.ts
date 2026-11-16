@@ -7,6 +7,7 @@ import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderName } from "../../workbench/workspaceFolder";
 import { AGENT_GUIDE_TOPICS, agentGuide } from "./agentGuide";
+import { pageSections, searchDocs } from "./docsSearch";
 import { DocsView, docsViewDescriptor } from "./docsView";
 import { ErrorCapture } from "./errorCapture";
 import manifest from "./extension.json";
@@ -30,6 +31,8 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
     registerReleaseNotes(sub, services);
     sub.add(dock.views.register(docsViewDescriptor(services)));
     const pages = docPages(product.nameShort);
+    /** The guide cut into sections, made when first searched. */
+    let sections: ReturnType<typeof pageSections> | undefined;
 
     sub.add(
       dispatcher.register({
@@ -37,11 +40,14 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
         title: "Documentation",
         category: "Help",
         description:
-          "Opens the user guide in a tab, optionally on a page (e.g. 'quick-access', 'agent', 'git').",
-        input: s.object({ page: s.string().describe("Page name or title").optional() }),
+          "Opens the user guide in a tab, optionally on a page (e.g. 'quick-access', 'agent', 'git') or showing what a search of the guide finds (`query`: the places that hold every word; an empty query shows the page again).",
+        input: s.object({
+          page: s.string().describe("Page name or title").optional(),
+          query: s.string().describe("Words to search the guide for").optional(),
+        }),
         effects: [],
         agent: "discoverable",
-        run: ({ page }) => {
+        run: ({ page, query }) => {
           const target = page ? findPage(pages, page) : undefined;
           if (page && !target)
             throw new Error(`No page "${page}" (${pages.map((p) => p.title).join(", ")}).`);
@@ -50,7 +56,13 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
           const tab = ref?.group.tabs[ref.index];
           const view = tab ? dock.view(tab) : undefined;
           if (target && view instanceof DocsView) view.show(target.id);
-          return { tabId, page: target?.id ?? null };
+          const found =
+            query !== undefined && view instanceof DocsView ? view.search(query) : undefined;
+          return {
+            tabId,
+            page: target?.id ?? null,
+            ...(found !== undefined && { query: query?.trim() ?? "", results: found }),
+          };
         },
       }),
     );
@@ -60,12 +72,28 @@ export const helpExtension: BuiltinExtension<WorkbenchServices> = {
         title: "Read the user guide",
         category: "Help",
         description:
-          "The IDE's user guide for answering how-to questions: without `page`, the list of pages; with it, that page's Markdown.",
-        input: s.object({ page: s.string().describe("Page name or title").optional() }),
+          "The IDE's user guide for answering how-to questions: without input, the list of pages; with `page`, that page's Markdown; with `query`, the sections of the guide that hold every word of it (page, heading, the words around the match), best first.",
+        input: s.object({
+          page: s.string().describe("Page name or title").optional(),
+          query: s.string().describe("Words to search the guide for").optional(),
+        }),
         effects: ["read"],
         agent: "discoverable",
         palette: false,
-        run: ({ page }) => {
+        run: ({ page, query }) => {
+          if (query !== undefined && !page) {
+            sections ??= pages.flatMap(pageSections);
+            return {
+              query: query.trim(),
+              results: searchDocs(sections, query, 20).map((hit) => ({
+                page: hit.section.page,
+                title: hit.section.pageTitle,
+                heading: hit.section.heading,
+                anchor: hit.section.anchor,
+                text: hit.snippet.text,
+              })),
+            };
+          }
           if (!page) return { pages: pages.map((p) => ({ id: p.id, title: p.title })) };
           const found = findPage(pages, page);
           if (!found) throw new Error(`No page "${page}".`);
