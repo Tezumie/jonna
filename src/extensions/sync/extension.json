@@ -148,6 +148,11 @@
         "category": "Sync"
       },
       {
+        "id": "sync.team.publish",
+        "title": "Publish to the team's library…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.checkPlan",
         "title": "Check plan again",
         "category": "Sync"

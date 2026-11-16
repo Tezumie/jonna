@@ -49,12 +49,15 @@ import {
   timeOfDay,
 } from "./model";
 import type { SyncSession } from "./session";
+import { type TeamLibraryReader, teamPage } from "./teamPage";
 
 /** What the pages need of the view: its builders, and the two ways a button acts. */
 export interface PageKit {
   readonly services: WorkbenchServices;
   readonly controller: SyncController;
   readonly session: SyncSession;
+  /** The team's library as last read (ide://team), for the Team page. */
+  readonly team: TeamLibraryReader;
   /** The listeners of what is drawn now. */
   readonly drawn: DisposableStore;
   /**
@@ -110,7 +113,7 @@ const SCOPE_WORDS: Record<string, string> = {
 // ------------------------------------------------------------ small pieces
 
 /** A group of cards under a small label (Settings' sections). */
-function section(title: string | null, ...children: Child[]): HTMLElement {
+export function section(title: string | null, ...children: Child[]): HTMLElement {
   return h(
     "section",
     { class: "sync-section" },
@@ -119,21 +122,21 @@ function section(title: string | null, ...children: Child[]): HTMLElement {
   );
 }
 
-function card(...children: Child[]): HTMLElement {
+export function card(...children: Child[]): HTMLElement {
   return h("div", { class: "settings-card sync-card" }, ...children);
 }
 
 /** Free content in a card, with the card's padding. */
-function body(...children: Child[]): HTMLElement {
+export function body(...children: Child[]): HTMLElement {
   return h("div", { class: "sync-card-body" }, ...children);
 }
 
 /** What a card says when it has nothing to list, and what to do about it. */
-function empty(words: string): HTMLElement {
+export function empty(words: string): HTMLElement {
   return h("div", { class: "sync-card-body sync-empty" }, words);
 }
 
-interface ItemParts {
+export interface ItemParts {
   title: Child;
   tags?: readonly string[];
   details?: readonly Child[];
@@ -144,7 +147,7 @@ interface ItemParts {
 }
 
 /** A row of a card: a title with tags, muted lines under it, actions at the end. */
-function item(parts: ItemParts): HTMLElement {
+export function item(parts: ItemParts): HTMLElement {
   const title = typeof parts.title === "string" ? parts.title : null;
   const actions = (parts.actions ?? []).filter(Boolean);
   return h(
@@ -191,7 +194,7 @@ function teamIn(kit: PageKit): SyncTeam | null {
 }
 
 /** Opens the team page in the browser: teams are managed there, never here. */
-function manageTeam(kit: PageKit): HTMLButtonElement {
+export function manageTeam(kit: PageKit): HTMLButtonElement {
   return kit.button("Manage team", () => kit.run("sync.manageTeam"), "secondary", "external-link");
 }
 
@@ -334,6 +337,8 @@ function statusCard(kit: PageKit): HTMLElement {
             "div",
             { class: "sync-item-detail sync-team-line", "data-team": team.role },
             h("span", { class: "sync-team-name" }, teamLine(team)),
+            // What the team shares is a page of this tab (in a build with teams' libraries).
+            kit.team.available() ? kit.link("Team library", () => kit.go("team")) : null,
             kit.link("Manage team", () => kit.run("sync.manageTeam"), "external-link"),
           ),
     ),
@@ -1298,6 +1303,8 @@ function pageContent(kit: PageKit, page: SyncPageId, status: SyncStatus): Child[
       return projectsPage(kit, status);
     case "content":
       return contentPage(kit);
+    case "team":
+      return teamPage(kit);
     case "computers":
       return computersPage(kit, status);
     case "security":

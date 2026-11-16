@@ -14,6 +14,7 @@ import { SyncController } from "./controller";
 import manifest from "./extension.json";
 import { lapsedUntil, planSituation, statusBarWords, teamOf, throughTeam } from "./model";
 import { SyncSession } from "./session";
+import { registerTeamPageCommands } from "./teamCommands";
 import { syncViewDescriptor } from "./view";
 
 /** Coming back to the window starts a pass at most this often. */
@@ -31,6 +32,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     if (!services.hasScreen) {
       // No loop and no tab without a screen; the commands are there and say so.
       registerSyncCommands(sub, services, { controller: null, session });
+      registerTeamPageCommands(sub, services, { controller: null, session });
       return;
     }
     const { dock, events, state, workspace } = services;
@@ -71,6 +73,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
 
     sub.add(dock.views.register(syncViewDescriptor(services, controller, session)));
     registerSyncCommands(sub, services, { controller, session });
+    registerTeamPageCommands(sub, services, { controller, session });
 
     // This computer's own name, for the "Computer name" field.
     void syncIpc
@@ -178,7 +181,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, team, computers, security, storage, activity; team is listed only in a build with teams' libraries, whose state is ide://team), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();

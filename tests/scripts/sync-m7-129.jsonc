@@ -170,6 +170,19 @@
       "expectError": "This account isn't in a team (or isn't signed in): there is no library."
     },
 
+    // The Team page: a page of the tab that can be asked for (it shows once sync is on, in a
+    // team or not), and publishing by picking says why it can't, signed out, before it asks
+    // anything.
+    { "run": "sync.show", "input": { "page": "team" }, "expect": { "page": "team" } },
+    { "state": "ide://sync", "expect": { "page": "team" } },
+    { "run": "sync.team.publish", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "sync.team.publish",
+      "input": { "kind": "commands" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    { "run": "sync.show", "input": { "page": "overview" }, "expect": { "page": "overview" } },
+
     // Its settings are known ones (a value that fits the schema is taken).
     { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },
     { "run": "settings.set", "input": { "key": "sync.chats", "value": false } },

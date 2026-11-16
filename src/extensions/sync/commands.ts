@@ -227,7 +227,7 @@ export function registerSyncCommands(
       title: "Sync",
       category: CATEGORY,
       description:
-        "Opens the Sync tab: turning sync on or joining it, and once it is on its pages: overview (state, counts, what needs attention), projects (the open folder, every project by name, a project's snapshot history), content (what syncs and what the account holds of it), computers, security (the recovery key, what the service can see), storage and activity. `page` opens one of them; `project` (with page \"projects\") shows that project's detail. State: ide://sync.",
+        "Opens the Sync tab: turning sync on or joining it, and once it is on its pages: overview (state, counts, what needs attention), projects (the open folder, every project by name, a project's snapshot history), content (what syncs and what the account holds of it), team (what the account's team shares and which of it is on here, ide://team; only in a build with teams' libraries, Overview shows otherwise), computers, security (the recovery key, what the service can see), storage and activity. `page` opens one of them; `project` (with page \"projects\") shows that project's detail. State: ide://sync.",
       input: s.object({
         page: s.enum(SYNC_PAGE_IDS).describe("The page to show").optional(),
         project: s

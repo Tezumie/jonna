@@ -975,6 +975,69 @@
     line-height: var(--text-2xl-lh);
   }
 
+  /* ---------- team: the team, then its library by kind ---------- */
+  /* One line under a kind's heading: what holds for everything of that kind. */
+  .sync-section-note {
+    margin: 0 var(--space-2);
+    max-width: 68ch;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  /* The team's card has up to three buttons: they go under the text, and wrap, before the text
+     is squeezed. */
+  .sync-team-head .sync-item {
+    flex-wrap: wrap;
+  }
+  .sync-team-head .sync-item-main {
+    flex-basis: calc(var(--size-control-sm) * 10);
+  }
+  .sync-team-head .sync-item-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+  }
+  /* A library row: the switch stays beside the name while the preview under it is open. */
+  .sync-item.sync-team-item {
+    align-items: flex-start;
+  }
+  .sync-team-switch {
+    gap: var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    font-weight: 400;
+  }
+  .sync-team-preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+    padding-top: var(--space-3);
+  }
+  /* An item's text, to read: its own scroll, and long lines break instead of widening the page. */
+  .sync-team-text {
+    margin: 0;
+    max-height: calc(var(--text-sm-lh) * 18);
+    padding: var(--space-4) var(--space-5);
+    overflow: auto;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .sync-team-text:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .sync-team-others .sync-files {
+    padding-left: 0;
+  }
+
   /* ---------- the navigation is a rail (Settings' breakpoint) ---------- */
   @container (max-width: 640px) {
     .sync-nav-count {

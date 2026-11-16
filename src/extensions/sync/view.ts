@@ -34,9 +34,11 @@ import {
   SYNC_BENEFITS,
   SYNC_PAGES,
   type SyncPageId,
+  shownPages,
 } from "./model";
 import { drawPage, lapsedCallout, type PageKit, RESET_NOTE } from "./pages";
 import { DEFAULT_DEVICE_NAME, type SyncSession, type SyncStep } from "./session";
+import { TeamLibraryReader } from "./teamPage";
 
 /** How often a computer waiting to be approved asks whether it has been. */
 const PENDING_POLL_MS = 4_000;
@@ -45,6 +47,7 @@ const PAGE_ICONS: Record<SyncPageId, IconName> = {
   overview: "layout-dashboard",
   projects: "folder-git-2",
   content: "sliders-horizontal",
+  team: "users",
   computers: "monitor-smartphone",
   security: "shield",
   storage: "server",
@@ -58,6 +61,8 @@ class SyncView implements DockView, PageKit {
   readonly element: HTMLElement;
   /** The listeners of what is drawn now. */
   readonly drawn: DisposableStore;
+  /** The team's library as last read, for the Team page. */
+  readonly team: TeamLibraryReader;
   private readonly store = new DisposableStore();
   private readonly menu = this.store.add(new MutableDisposable());
   /** While sync is on: the navigation and the open page. */
@@ -85,6 +90,7 @@ class SyncView implements DockView, PageKit {
     state: Json,
   ) {
     this.drawn = this.store.add(new DisposableStore());
+    this.team = this.store.add(new TeamLibraryReader(services, session));
     // The page it was left on (a restored tab).
     const saved =
       state && typeof state === "object" && !Array.isArray(state) ? state.page : undefined;
@@ -116,7 +122,7 @@ class SyncView implements DockView, PageKit {
         const from = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-page]");
         const current = from?.dataset.page;
         if (!isSyncPage(current)) return;
-        const to = pageByKey(current, event.key);
+        const to = pageByKey(current, event.key, this.pages());
         if (!to) return;
         event.preventDefault();
         this.navItems.querySelector<HTMLElement>(`[data-page="${to}"]`)?.focus();
@@ -138,6 +144,8 @@ class SyncView implements DockView, PageKit {
           session.working.value,
           session.page.value,
           session.projectId.value,
+          this.team.library.value,
+          this.team.previews.value,
           services.workspace.root.value,
           // The switches follow the settings file.
           services.settings.version.value,
@@ -203,6 +211,11 @@ class SyncView implements DockView, PageKit {
       .finally(() => {
         if (session.working.peek() === id) session.working.value = null;
       });
+  }
+
+  /** The pages the navigation lists: Team only in a build with teams' libraries. */
+  private pages(): readonly SyncPageId[] {
+    return shownPages(this.team.available());
   }
 
   go(page: SyncPageId, project?: string | null): void {
@@ -402,10 +415,13 @@ class SyncView implements DockView, PageKit {
 
   private drawPages(status: SyncStatus): void {
     const { session } = this;
-    const current = session.page.peek();
+    const listed = this.pages();
+    // A page that isn't listed (Team, in a build without teams) shows as Overview.
+    const asked = session.page.peek();
+    const current = listed.includes(asked) ? asked : "overview";
     const waiting = status.devices.filter((d) => d.status === "pending").length;
     this.navItems.replaceChildren(
-      ...SYNC_PAGES.map((entry) => {
+      ...SYNC_PAGES.filter((entry) => listed.includes(entry.id)).map((entry) => {
         const selected = entry.id === current;
         const count = entry.id === "computers" && waiting > 0 ? waiting : 0;
         const label = count > 0 ? `${entry.title} (${count} waiting)` : entry.title;

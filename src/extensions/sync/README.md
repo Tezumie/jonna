@@ -59,12 +59,16 @@ built-ins only when `hasSync()` (`extensions/builtins.ts`).
     files", never "0 B".
   - `content`: what this computer syncs (the switches), with what the account holds of each
     beside it and a kind's file names on demand; the settings that stay on this computer.
+  - `team` (`teamPage.ts`): below.
   - `computers`: computers waiting to join (Check code, then the code with Approve), this
     computer and the others (Remove), how to add one, Turn off sync on this computer.
   - `security`: the recovery key, what the service can see and can't read, what a reset loses.
   - `storage`: used of the limit with the 80% / 95% lines, the latest snapshot's size per
     project, the history settings with their values, how to free space.
   - `activity`: everything the log holds, newest first.
+- `teamPage.ts` — the Team page, and `TeamLibraryReader` (the view's): `ide://team` as last
+  read, and the texts of the previews that were opened. `teamPage.model.ts` (DOM-free, tested)
+  has its words and rules; `teamCommands.ts` has `sync.team.publish`. See "The Team page".
 - `model.ts` — DOM-free and tested: the words both share (sizes, the status line, the privacy
   line), `buildOverview` (the account's records as an overview), the user's files by kind, the
   storage notices, the retention sentence, the status bar's words, the activity log, and the
@@ -124,7 +128,7 @@ built-ins only when `hasSync()` (`extensions/builtins.ts`).
   The profile's `team` (`teamOf` in `model.ts`: its name and the account's role; null in a build
   whose service has no teams, `teamPagePath` empty) is shown, nothing more. Overview: one muted
   line in the status card ("Your team: <name>" for the owner, "Through <name>" for a member)
-  with Manage team, and the storage card says "Storage, shared by your team". Storage: a note
+  with Team library (the Team page, in a build with teams' libraries) and Manage team, and the storage card says "Storage, shared by your team". Storage: a note
   that the limit is what is left of the team's storage; a member has a team row with Manage
   team and no "Your plan" (the plan is the owner's), an owner has both, and a subscriber in no
   team has "Add people to your subscription". Lapsed as a member (`throughTeam`): the callout
@@ -132,9 +136,53 @@ built-ins only when `hasSync()` (`extensions/builtins.ts`).
   status line, the status bar's tooltip and the reason on disabled buttons say the same. The
   log's sentence (`LAPSED_ACTIVITY`) names nobody's subscription: the loop doesn't know the team.
 
+**The Team page** (in the navigation only in a build with teams' libraries: the team
+extension's `team.refresh` is registered; `shownPages` in `model.ts`. `sync.show {page:
+"team"}` is taken either way, and Overview shows without teams). The library is the team
+extension's (`extensions/team`): this page imports nothing from it, reads `ide://team` and runs
+its commands through the dispatcher.
+
+- How it gets its data: the state tree isn't reactive, so `TeamLibraryReader` reads
+  `ide://team` again after any `team.*` command ran (and `accounts.signIn`, `accounts.signOut`,
+  `sync.checkPlan`), when the profile or the applied library (`activeTeam`, `core/team/source.ts`)
+  changed, when the Team page is shown, and every 3 seconds while it is the page shown (a read
+  of memory, no network: the team extension also refreshes by itself, which nothing announces).
+  Its signals (`library`, `previews`) are among the ones the tab draws from; a read that says
+  the same redraws nothing.
+- Not in a team: what a team is for, and Manage team (`sync.manageTeam`); an account whose own
+  subscription ended sees how to be invited instead. No library.
+- In a team: a card with the team's name, "You own this team" / "Member" / "Member · Can
+  publish", "Refreshed <when>", the state's `problem` as a plain muted line, and Publish…
+  (publishers; `sync.team.publish`), Refresh (`team.refresh`), Manage team. Then the library by
+  kind, in this order, empty kinds left out: Rules, Skills, Commands, Agents, Output styles,
+  Snippets, MCP servers, Default settings, Recommended extensions (a line under Skills,
+  Commands, MCP servers and Default settings says what holds for a team's). An empty library
+  says so, and tells a publisher to choose Publish.
+- A row: the name (a skill is one row: its folder, with its number of files), a "Default" tag,
+  "Published by <who> · <when>", and a checkbox that reads On / Off. On for a default that was
+  turned off runs `team.turnOnItem`, on for any other `team.addItem`, off `team.turnOffItem`
+  (`toggleCommand`). "Preview" opens the item's text (`team.readItem`, read when first opened,
+  kept per version) in a read-only monospace block with its own scroll; a skill previews its
+  `SKILL.md` and lists its other files by name. A skill's files without a `SKILL.md` are one row
+  without a switch. For a publisher a ⋯ menu: Make a default / Stop being a default
+  (`team.setDefault`), Remove from the library… (`team.unpublish`, which asks).
+- Lapsed (the state's `state` is "lapsed", or the account's sync is ended): the library stays
+  listed and what is on can still be chosen; Publish… and the ⋯ menu are gone, and one line in
+  the card says why.
+- `sync.team.publish {kind?}` (hidden from agents, needs the screen): picks, in the quick
+  input, the kind (kinds the user has nothing of are disabled), then which of the user's own (a
+  pick with checkboxes; the rules are one file and skip it), then "On for everyone from the
+  start?" (Yes / No, and "Keep as it is" when it is in the library already). Where the choices
+  come from: the user-files scan (`syncIpc.userFiles`; a skill whole, only with a `SKILL.md`),
+  the settings the user changed that `teamMaySet` allows, the servers of the user's own
+  `mcp.json`, and the installed extensions plus the ones the team recommends now (checked, since
+  publishing replaces the list). It then runs `team.publish` once per file or skill (once for
+  settings, servers, extensions) and says in a notification what was published and what wasn't,
+  with why; returns `{published, notPublished: [{what, why}], message}` or `{cancelled: true}`.
+
 **Exports:** `syncExtension` (`index.ts`), `SyncController` (`controller.ts`).
 
-**Commands:** `sync.show {page?, project?}` (`page`: overview, projects, content, computers,
+**Commands:** `sync.show {page?, project?}` (`page`: overview, projects, content, team, computers,
 security, storage, activity; `project` shows that project's detail), `sync.turnOn {name?}`, `sync.join {name?}`, `sync.useRecoveryKey`,
 `sync.closeStep`, `sync.reviewDevice {device}` (starts checking a waiting computer: both then show
 the code), `sync.approveDevice {device}` (only after `sync.reviewDevice`), `sync.removeDevice
@@ -154,7 +202,7 @@ snapshots and its chats' synced copies leave the account; nothing on a computer 
 {id}`, `sync.openAccountPage`, `sync.managePlan` (opens the account page's plan section in the
 browser: subscribing, renewing, cancelling, cards, invoices, storage), `sync.manageTeam` (opens
 the account page's team section in the browser: inviting, removing, leaving, seats; fails in a
-build whose service has no teams), `sync.checkPlan` (reads the
+build whose service has no teams), `sync.team.publish {kind?}` (the Team page's picker, above), `sync.checkPlan` (reads the
 profile from the server and the status again; returns `{plan, state, lapsedUntil}`, `plan`: on,
 lapsed, offered, none). Each fails with one sentence when nobody is signed in or sync isn't
 open to the account (the two plan commands and `sync.manageTeam` need only an account). What writes to the account

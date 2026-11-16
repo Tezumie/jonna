@@ -5,7 +5,10 @@ on purpose so every member's IDE works the same way. Rules, skills, commands, ag
 styles, snippets, a list of MCP servers, default settings and recommended extensions. This
 extension is the plumbing: it fetches the library, keeps a copy on this computer, and makes the
 items that are on take effect as a read-only source that is the team's, under the user's own
-files. There is no page here: the commands and `ide://team` are what a page is built on.
+files. There is no page here: the commands and `ide://team` are what a page is built on. That
+page is the Sync tab's Team page (`extensions/sync/teamPage.ts`, with the picker
+`sync.team.publish`): it imports nothing from here, reads `ide://team` again after each
+`team.*` command and while it is shown, and runs these commands through the dispatcher.
 
 Only in a build with teams: in the list of built-ins when `hasTeams()` (`core/ownServices.ts`:
 Sync is built in and `teamPagePath` isn't empty; `docs/own-services.md`). It imports nothing

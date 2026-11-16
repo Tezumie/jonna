@@ -681,6 +681,11 @@ export const SYNC_PAGES = [
     lead: "What this computer sends and takes, and what the account holds of it.",
   },
   {
+    id: "team",
+    title: "Team",
+    lead: "What your team shares, and which of it applies on this computer.",
+  },
+  {
     id: "computers",
     title: "Computers",
     lead: "The computers that can read what you sync.",
@@ -708,6 +713,7 @@ export const SYNC_PAGE_IDS = [
   "overview",
   "projects",
   "content",
+  "team",
   "computers",
   "security",
   "storage",
@@ -718,10 +724,25 @@ export function isSyncPage(value: unknown): value is SyncPageId {
   return typeof value === "string" && (SYNC_PAGE_IDS as readonly string[]).includes(value);
 }
 
-/** The page a key moves to in the navigation (the arrows, Home, End); null for other keys. */
-export function pageByKey(current: SyncPageId, key: string): SyncPageId | null {
-  const at = SYNC_PAGE_IDS.indexOf(current);
-  const last = SYNC_PAGE_IDS.length - 1;
+/**
+ * The pages the navigation lists: Team only in a build with teams' libraries (`teams`: the
+ * team's commands are there). `sync.show` still takes "team" without them, and Overview shows.
+ */
+export function shownPages(teams: boolean): readonly SyncPageId[] {
+  return SYNC_PAGE_IDS.filter((id) => teams || id !== "team");
+}
+
+/**
+ * The page a key moves to in the navigation (the arrows, Home, End), among the pages listed
+ * (`pages`); null for other keys.
+ */
+export function pageByKey(
+  current: SyncPageId,
+  key: string,
+  pages: readonly SyncPageId[] = SYNC_PAGE_IDS,
+): SyncPageId | null {
+  const at = pages.indexOf(current);
+  const last = pages.length - 1;
   const to =
     key === "ArrowDown" || key === "ArrowRight"
       ? Math.min(last, at + 1)
@@ -732,7 +753,7 @@ export function pageByKey(current: SyncPageId, key: string): SyncPageId | null {
           : key === "End"
             ? last
             : -1;
-  return SYNC_PAGE_IDS[to] ?? null;
+  return pages[to] ?? null;
 }
 
 /** The privacy line as two lists (Security and privacy). */

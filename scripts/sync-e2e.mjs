@@ -1098,6 +1098,160 @@ try {
     check(put.outcome === "done", JSON.stringify(put));
   });
 
+  await step("a team's library: published from one computer, applied on the other", async () => {
+    // The account owns a team (the team service's job; here the test plays it).
+    const doc = (path, fields) =>
+      fetch(`${FIRESTORE}/${path}`, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
+    const text = (v) => ({ stringValue: v });
+    await doc(`teams/${account.uid}`, { ownerUid: text(account.uid), name: text("Acme studio") });
+    await doc(`teams/${account.uid}/members/${account.uid}`, {
+      role: text("owner"),
+      publisher: { booleanValue: true },
+    });
+    await doc(`memberships/${account.uid}`, {
+      teamId: text(account.uid),
+      role: text("owner"),
+      publisher: { booleanValue: true },
+    });
+
+    const empty = await desk.call("team_library", { base: BASE, rev: null });
+    check(
+      empty?.team?.id === account.uid &&
+        empty.team.name === "Acme studio" &&
+        empty.items.length === 0,
+      JSON.stringify(empty),
+    );
+    const put = await desk.call("team_put", {
+      base: BASE,
+      id: "rules-1",
+      kind: "rules",
+      path: "AGENTS.md",
+      text: "Use tabs.\n",
+      isDefault: true,
+      expect: null,
+    });
+    check(JSON.stringify(put).includes('"version":1'), JSON.stringify(put));
+    await desk.call("team_put", {
+      base: BASE,
+      id: "cmd-1",
+      kind: "commands",
+      path: "commands/ship.md",
+      text: "Ship it.\n",
+      isDefault: false,
+      expect: null,
+    });
+
+    // The other computer reads the list, fetches the texts and applies what is active.
+    const listed = await laptop.call("team_library", { base: BASE, rev: null });
+    check(
+      listed.items.length === 2 && listed.items.every((i) => i.text === undefined),
+      JSON.stringify(listed.items),
+    );
+    const got = await laptop.call("team_fetch", {
+      base: BASE,
+      team: account.uid,
+      ids: ["rules-1", "cmd-1"],
+    });
+    check(got.fetched.length === 2 && got.failed.length === 0, JSON.stringify(got));
+    check(
+      (await laptop.call("team_item_text", { team: account.uid, id: "rules-1" })) === "Use tabs.\n",
+      "the text kept",
+    );
+    const applied = await laptop.call("team_apply", { team: account.uid, active: ["rules-1"] });
+    const rules = join(applied.dir, "AGENTS.md");
+    check(
+      existsSync(rules) && (await readFile(rules, "utf8")) === "Use tabs.\n",
+      "the default is in the folder the loaders read",
+    );
+    check(!existsSync(join(applied.dir, "commands", "ship.md")), "what isn't on isn't there");
+    check(
+      applied.dir.replace(/\\/g, "/").includes(`/team/${account.uid}/active`) &&
+        !/[/]data[/]sync[/]/.test(applied.dir),
+      applied.dir,
+    );
+
+    // Added by this person: there too. Turned off again: gone.
+    await laptop.call("team_apply", { team: account.uid, active: ["rules-1", "cmd-1"] });
+    check(existsSync(join(applied.dir, "commands", "ship.md")), "an added item is applied");
+    const fewer = await laptop.call("team_apply", { team: account.uid, active: ["cmd-1"] });
+    check(!existsSync(rules) && fewer.removed >= 1, JSON.stringify(fewer));
+
+    // Published over a version this computer never saw: theirs comes back, nothing is lost.
+    const stale = await laptop.call("team_put", {
+      base: BASE,
+      id: "rules-1",
+      kind: "rules",
+      path: "AGENTS.md",
+      text: "Use spaces.\n",
+      isDefault: true,
+      expect: null,
+    });
+    check(
+      !JSON.stringify(stale).includes('"version":2') && JSON.stringify(stale).includes("Use tabs."),
+      JSON.stringify(stale),
+    );
+
+    // A name that would leave the folder, or that Windows can't hold, never reaches the disk.
+    for (const [id, path] of [
+      ["bad-1", "skills/con/SKILL.md"],
+      ["bad-2", "commands/aux.md"],
+    ]) {
+      await fetch(`${FIRESTORE}/teams/${account.uid}/library/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            kind: text(path.split("/")[0] === "skills" ? "skills" : "commands"),
+            path: text(path),
+            text: text("x"),
+            size: { integerValue: "1" },
+            version: { integerValue: "1" },
+            isDefault: { booleanValue: true },
+          },
+        }),
+      });
+    }
+    const hostile = await laptop.call("team_library", { base: BASE, rev: null });
+    const kept = hostile.items.map((i) => i.id);
+    await laptop
+      .call("team_fetch", { base: BASE, team: account.uid, ids: ["bad-1", "bad-2"] })
+      .catch(() => null);
+    await laptop
+      .call("team_apply", { team: account.uid, active: ["bad-1", "bad-2", "cmd-1"] })
+      .catch(() => null);
+    check(
+      !existsSync(join(applied.dir, "skills", "con")) &&
+        !existsSync(join(applied.dir, "commands", "aux.md")),
+      `a reserved name was written (listed: ${kept.join(",")})`,
+    );
+
+    // Taken out of the library by a publisher; then the account leaves the team.
+    check(
+      (await desk.call("team_delete", { base: BASE, id: "cmd-1" })) === true,
+      "an item is taken out",
+    );
+    await fetch(`${FIRESTORE}/memberships/${account.uid}`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer owner" },
+    });
+    check(
+      (await laptop.call("team_library", { base: BASE, rev: null })) === null,
+      "no team, no library",
+    );
+    check(
+      (await laptop.call("team_clear", { keep: null })) >= 1 && !existsSync(applied.dir),
+      "the cache goes with the team",
+    );
+    await fetch(`${FIRESTORE}/teams/${account.uid}`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer owner" },
+    });
+  });
+
   await step("sync reset from the account page turns it off everywhere", async () => {
     const r = await fetch(`${BASE}/api/sync/reset`, {
       method: "POST",

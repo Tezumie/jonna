@@ -40,6 +40,7 @@ import {
   SYNC_PAGE_IDS,
   SYNC_PAGES,
   type SyncOverview,
+  shownPages,
   snapshotFacts,
   snapshotSize,
   snapshotSpacing,
@@ -467,6 +468,18 @@ test("sync: the tab's pages", () => {
   assert.equal(pageByKey("content", "Home"), "overview");
   assert.equal(pageByKey("content", "End"), "activity");
   assert.equal(pageByKey("content", "Enter"), null);
+});
+
+test("sync: the Team page is listed only in a build with teams' libraries", () => {
+  assert.equal(isSyncPage("team"), true);
+  assert.deepEqual([...shownPages(true)], [...SYNC_PAGE_IDS]);
+  assert.equal(shownPages(false).includes("team"), false);
+  assert.equal(shownPages(false).length, SYNC_PAGE_IDS.length - 1);
+  // The arrows move among the pages that are listed.
+  assert.equal(pageByKey("content", "ArrowDown"), "team");
+  assert.equal(pageByKey("content", "ArrowDown", shownPages(false)), "computers");
+  assert.equal(pageByKey("computers", "ArrowUp", shownPages(false)), "content");
+  assert.equal(pageByKey("content", "End", shownPages(false)), "activity");
 });
 
 const held: SyncOverview = {
