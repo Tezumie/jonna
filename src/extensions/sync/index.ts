@@ -80,6 +80,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
         tooltip: () => words()?.tooltip ?? "",
         tone: () => (words()?.error ? "error-text" : undefined),
         command: "sync.show",
+        input: { page: "overview" },
       }),
     );
 
@@ -143,7 +144,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), where it stands here (`state`: signedOut, unavailable, off, pending, on), this account's computers, storage, the last pass (`activity`), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), where it stands here (`state`: signedOut, unavailable, off, pending, on), this account's computers, storage, the last pass (`activity`), the page the Sync tab shows while sync is on (`page`: overview, projects, content, computers, security, storage, activity), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
@@ -168,6 +169,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
             usageBytes: status?.usageBytes ?? 0,
             storageLimit: status?.storageLimit || session.profile.peek()?.storageLimit || 0,
             activity: { state: activity.state, message: activity.message, at: activity.at },
+            page: session.page.peek(),
             overview: controller.overview.peek(),
             recent: controller.log.peek(),
             project: project

@@ -12,7 +12,7 @@ import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { SnapshotRow, SyncController } from "./controller";
-import { countOf, folderName, formatSize, projectCounts } from "./model";
+import { countOf, folderName, formatSize, projectCounts, SYNC_PAGE_IDS } from "./model";
 import { DEFAULT_DEVICE_NAME, type SyncSession } from "./session";
 
 export const SYNC_VIEW = "sync";
@@ -200,17 +200,27 @@ export function registerSyncCommands(
       title: "Sync",
       category: CATEGORY,
       description:
-        "Opens the Sync tab: turning sync on or joining it, what the account holds (settings, files, chats, projects by name), the open project's snapshots, storage, this account's computers, what syncs, and recent activity. State: ide://sync.",
-      input: s.empty(),
+        "Opens the Sync tab: turning sync on or joining it, and once it is on its pages: overview (state, counts, what needs attention), projects (the open folder, every project by name, a project's snapshot history), content (what syncs and what the account holds of it), computers, security (the recovery key, what the service can see), storage and activity. `page` opens one of them; `project` (with page \"projects\") shows that project's detail. State: ide://sync.",
+      input: s.object({
+        page: s.enum(SYNC_PAGE_IDS).describe("The page to show").optional(),
+        project: s
+          .string()
+          .describe("A project's id (ide://sync overview.projects), to show its detail")
+          .optional(),
+      }),
       effects: [],
       agent: "discoverable",
       needsScreen: true,
-      run: () => {
+      run: ({ page, project }) => {
+        if (project !== undefined) {
+          session.projectId.value = project;
+          session.page.value = page ?? "projects";
+        } else if (page !== undefined) session.page.value = page;
         const tabId = showTab();
         void open()
           .then(() => sync().pass(true))
           .catch(() => {});
-        return { tabId };
+        return { tabId, page: session.page.peek() };
       },
     }),
   );

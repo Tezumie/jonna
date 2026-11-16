@@ -14,7 +14,7 @@
     { "run": "sync.show", "expect": { "tabId": { "$exists": true } }, "save": "tab" },
     {
       "run": "dev.inspectDom",
-      "input": { "selector": ".sync-view .ai-title", "html": 400 },
+      "input": { "selector": ".sync-view .sync-setup-title", "html": 400 },
       "expect": [{ "html": { "$contains": "Sync" } }],
       "timeoutMs": 5000
     },
@@ -30,6 +30,26 @@
       "expect": [{ "html": { "$contains": "Sign in" } }]
     },
     { "run": "sync.show", "expect": { "tabId": "${tab.tabId}" } },
+
+    // A page can be asked for (shown once sync is on; before that the tab is the one setup
+    // pane, without the navigation).
+    {
+      "run": "sync.show",
+      "input": { "page": "storage" },
+      "expect": { "tabId": "${tab.tabId}", "page": "storage" }
+    },
+    { "state": "ide://sync", "expect": { "page": "storage" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sync-view .sync-setup-scroll", "html": 10 },
+      "expect": [{ "display": "block" }]
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".sync-view .sync-layout", "html": 10 },
+      "expect": [{ "display": "none" }]
+    },
+    { "run": "sync.show", "input": { "page": "overview" }, "expect": { "page": "overview" } },
 
     // State: not available, nothing of the account's, no key material.
     {

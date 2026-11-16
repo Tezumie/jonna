@@ -1,16 +1,96 @@
-/* The Sync tab (D435), on the AI pages' layout (ai-setup.css: .ai-page, .ai-setup, .ai-header,
-   .ai-section, .ai-field, .ai-link, .ai-tag). Quiet: one column, rows on --bg-surface-raised,
-   color only where it means something (an error, storage nearly full). Holds at 320 px. */
+/* The Sync tab (D435), a sibling of the Settings tab: it takes Settings' frame as it is
+   (settings.css: .settings-view, .settings-layout, .settings-nav and its items, .settings-main,
+   .settings-scroll, .settings-page-title, .settings-section-title, .settings-card), so the
+   navigation is a list on the left and an icon rail under 640px, exactly as there. What is here
+   is the inside of the pages: cards of rows, tiles, the projects' list and detail, and the one
+   focused pane shown before sync is on. Quiet: color only where it means something (an error,
+   storage nearly full). Names and paths are cut with an ellipsis, never broken letter by letter.
+   Holds at 320px. */
 @layer extensions {
-  .sync-view {
-    container-type: inline-size;
+  /* One of the two shows: the pages, or the setup pane. */
+  .sync-layout[hidden],
+  .sync-setup-scroll[hidden] {
+    display: none;
   }
+  .sync-view:focus-visible {
+    outline: none;
+  }
+
+  /* ---------- the navigation (Settings' own; only the waiting count is new) ---------- */
+  .sync-nav-count {
+    flex: none;
+    min-width: var(--space-6);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
+    color: var(--fg-default);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+    text-align: center;
+  }
+  .sync-nav .settings-nav-item:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* ---------- a page: title, one line under it, sections of cards ---------- */
   .sync-page {
-    gap: var(--space-7);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    max-width: 760px;
+    margin: 0 auto;
+    color: var(--fg-default);
+  }
+  /* The list and a project's detail sit side by side when there is room. */
+  .sync-page[data-page="projects"] {
+    max-width: 960px;
+  }
+  .sync-page-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .sync-page-lead {
+    margin: 0;
+    color: var(--fg-muted);
+  }
+  .sync-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .sync-section > .settings-section-title {
+    margin-bottom: 0;
+  }
+  /* A line under a section's cards: what the numbers mean, a way on. */
+  .sync-section-foot {
+    margin: 0 var(--space-2);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-page-foot {
+    display: flex;
+    padding: 0 var(--space-2);
+  }
+  .sync-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding: var(--space-6);
+    min-width: 0;
+  }
+  .sync-empty {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
   }
   .sync-text {
     margin: 0;
-    max-width: 60ch;
+    max-width: 68ch;
     color: var(--fg-default);
     line-height: var(--text-md-lh);
   }
@@ -18,14 +98,6 @@
     color: var(--fg-muted);
     font-size: var(--text-sm);
     line-height: var(--text-sm-lh);
-  }
-  .sync-points {
-    margin: 0;
-    padding-left: var(--space-7);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    color: var(--fg-default);
   }
 
   /* Buttons in a row that wraps. */
@@ -40,99 +112,132 @@
     align-items: center;
     gap: var(--space-3);
     max-width: 100%;
+    min-width: 0;
   }
   .sync-button .icon {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .sync-button-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  /* Fields */
-  .sync-form {
+  /* ---------- rows of a card ---------- */
+  .sync-item {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    max-width: 420px;
-  }
-  .sync-field .input {
-    height: var(--size-control-md);
-  }
-  .sync-field textarea.input {
-    height: auto;
-    padding: var(--space-3) var(--space-4);
-    resize: vertical;
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    line-height: var(--text-md-lh);
-  }
-
-  /* The recovery key and the code two computers compare. */
-  .sync-key {
-    margin: 0;
-    padding: var(--space-5);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
-    color: var(--fg-default);
-    font-family: var(--font-mono);
-    font-size: var(--text-md);
-    line-height: var(--text-lg-lh);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    user-select: text;
-  }
-  .sync-code {
-    font-family: var(--font-mono);
-    font-size: var(--text-3xl);
-    line-height: var(--text-3xl-lh);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    color: var(--fg-default);
-    user-select: text;
-  }
-
-  .sync-code.is-row {
-    font-size: var(--text-2xl);
-    line-height: var(--text-2xl-lh);
-  }
-
-  /* The header: is it working, when it last synced, Sync now. */
-  .sync-status {
-    display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-5);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
+    gap: var(--space-5);
+    min-width: 0;
+    padding: var(--space-5) var(--space-6);
   }
-  .sync-status-main {
-    flex: 1 1 160px;
+  .sync-item + .sync-item {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .sync-item-main {
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
   }
-  .sync-status-state {
+  .sync-item-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+  }
+  .sync-item-title .ai-tag {
+    flex: none;
+    white-space: nowrap;
+  }
+  .sync-item-name {
+    min-width: 0;
+    max-width: 100%;
+    font-weight: 500;
+    color: var(--fg-default);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-item-detail {
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-item-detail .ai-link {
+    margin-top: var(--space-2);
+  }
+  .sync-path {
+    display: block;
+    max-width: 100%;
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-item-actions {
+    flex: none;
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    min-width: 0;
-    color: var(--fg-default);
-    font-weight: 500;
+    max-width: 100%;
   }
-  .sync-status-state .icon {
+  /* A row that is a button: a project to open, a size that leads to its project. */
+  .sync-pick {
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sync-pick:hover {
+    background: var(--bg-hover);
+  }
+  .sync-pick:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .sync-pick > .icon {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+
+  /* ---------- overview ---------- */
+  .sync-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-6);
+  }
+  .sync-status-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--size-control-lg);
+    height: var(--size-control-lg);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
     color: var(--fg-muted);
+  }
+  .sync-status-icon .icon {
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
   }
   .sync-status-text {
     min-width: 0;
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 600;
+    color: var(--fg-default);
   }
-  .sync-status.is-error .sync-status-state,
-  .sync-status.is-error .sync-status-state .icon {
+  .sync-status.is-error .sync-status-icon,
+  .sync-status.is-error .sync-status-text {
     color: var(--status-danger-fg);
   }
   .sync-status-reason {
@@ -143,141 +248,226 @@
     overflow-wrap: anywhere;
     user-select: text;
   }
-  .sync-status-earlier {
-    color: var(--fg-subtle);
-    font-size: var(--text-sm);
+  .sync-callout {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    padding: var(--space-5) var(--space-6);
   }
-
-  /* Storage: a thin meter. */
-  .sync-meter {
-    height: var(--space-2);
-    border-radius: var(--radius-full);
-    background: var(--bg-chip);
+  /* Tiles: a number, large, and what it counts. Each opens its page. */
+  .sync-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: var(--space-4);
+  }
+  .sync-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-5) var(--space-6);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--motion-fast) var(--ease-standard);
+  }
+  .sync-tile:hover {
+    border-color: var(--border-strong);
+  }
+  .sync-tile:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .sync-tile-value {
+    max-width: 100%;
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
+    font-weight: 600;
+    color: var(--fg-default);
+    font-variant-numeric: tabular-nums;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .sync-meter-fill {
-    height: 100%;
-    min-width: var(--space-1);
-    border-radius: var(--radius-full);
-    background: var(--fg-muted);
-    transition: width var(--motion-base) var(--ease-standard);
+  .sync-tile-value.is-text {
+    font-size: var(--text-xl);
+    line-height: var(--text-2xl-lh);
   }
-  .sync-meter.is-full .sync-meter-fill {
-    background: var(--status-warning-fg);
-  }
-  .sync-storage-notice {
+  .sync-tile-label {
+    color: var(--fg-muted);
     font-size: var(--text-sm);
     line-height: var(--text-sm-lh);
   }
+  /* Storage: the row's whole width, with its meter. */
+  .sync-tile.is-wide {
+    grid-column: 1 / -1;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+  .sync-attention-text {
+    min-width: 0;
+    color: var(--fg-default);
+  }
 
-  /* A smaller heading inside a section (Projects, Snapshot history), with a note beside it. */
-  .sync-subtitle {
-    margin: 0;
+  /* Activity: when, then what. */
+  .sync-item.sync-log-row {
+    display: grid;
+    grid-template-columns: minmax(0, 10ch) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-5);
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-4);
     font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-log-time {
+    color: var(--fg-subtle);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-log-text {
+    min-width: 0;
+    color: var(--fg-default);
+    user-select: text;
+  }
+  .sync-log-row.is-error .sync-log-text {
+    color: var(--status-danger-fg);
+  }
+
+  /* ---------- projects: the list, and one project's detail ---------- */
+  /* Narrow: the list, or (once a project is picked) its detail with a way back. */
+  .sync-md {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+  .sync-md:not(.is-chosen) > .sync-detail,
+  .sync-md.is-chosen > .sync-md-list {
+    display: none;
+  }
+  .sync-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+  .sync-back {
+    align-self: flex-start;
+    flex-direction: row;
+  }
+  .sync-detail-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: 0 var(--space-2);
+  }
+  .sync-detail-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-detail-head .ai-tag {
+    flex: none;
+    white-space: nowrap;
+  }
+  .sync-detail-head .icon-button {
+    flex: none;
+    margin-left: auto;
+  }
+  .sync-detail > .sync-text {
+    padding: 0 var(--space-2);
+  }
+  .sync-detail > .sync-actions {
+    padding: 0 var(--space-2);
+  }
+  /* A project's facts: labels in one column, values in the other. */
+  .sync-facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-3) var(--space-7);
+    margin: 0;
+    padding: var(--space-5) var(--space-6);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .sync-fact {
+    display: contents;
+  }
+  .sync-fact-label {
     color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-md-lh);
   }
-  .sync-section > .sync-subtitle {
-    margin-top: var(--space-3);
+  .sync-fact-value {
+    min-width: 0;
+    margin: 0;
+    color: var(--fg-default);
+    font-variant-numeric: tabular-nums;
   }
+  .sync-fact-value .sync-path {
+    color: var(--fg-default);
+  }
+  /* A smaller heading inside a detail (Snapshot history), with a note beside it. */
   .sync-subhead {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-1) var(--space-4);
+    padding: 0 var(--space-2);
     margin-top: var(--space-3);
+  }
+  .sync-subtitle {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--fg-default);
   }
   .sync-subhead-note {
     min-width: 0;
     color: var(--fg-subtle);
     font-size: var(--text-sm);
   }
-
-  /* Rows: what the account holds, projects, computers, snapshots. Names and paths are cut
-     with an ellipsis (the whole text is the tooltip), never broken letter by letter. */
-  .sync-list {
+  .sync-day {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
   }
-  .sync-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3) var(--space-5);
-    min-width: 0;
-    padding: var(--space-4) var(--space-5);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
-  }
-  /* A row whose only action is an icon: the icon stays beside the text. */
-  .sync-row.is-compact {
-    flex-wrap: nowrap;
-    align-items: flex-start;
-  }
-  /* One line: what it is, then how much of it. */
-  .sync-row.is-line {
-    justify-content: space-between;
-    min-height: var(--size-control-lg);
-    padding-top: var(--space-3);
-    padding-bottom: var(--space-3);
-    gap: var(--space-1) var(--space-5);
-  }
-  .sync-row-main {
-    flex: 1 1 160px;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-  }
-  .sync-row.is-compact .sync-row-main {
-    flex-basis: 0;
-  }
-  .sync-row-title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
-    min-width: 0;
-  }
-  .sync-row-title .ai-tag {
-    flex: none;
-    white-space: nowrap;
-  }
-  .sync-row-name {
-    min-width: 0;
-    max-width: 100%;
-    font-weight: 500;
-    color: var(--fg-default);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sync-row-from {
-    min-width: 0;
-    max-width: 100%;
+  .sync-day-label {
+    padding: 0 var(--space-2);
     color: var(--fg-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .sync-row-detail {
-    min-width: 0;
-    color: var(--fg-subtle);
     font-size: var(--text-sm);
-    line-height: var(--text-sm-lh);
+    font-weight: 500;
   }
-  .sync-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .sync-item.sync-snapshot {
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-4);
+  }
+  .sync-snapshot-time {
+    flex: none;
+    width: 9ch;
+    color: var(--fg-default);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .sync-row-actions {
-    flex: none;
-    display: flex;
+  .sync-snapshot .sync-item-main {
+    flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-1) var(--space-3);
   }
   .sync-pin {
     color: var(--fg-subtle);
@@ -292,15 +482,51 @@
     white-space: nowrap;
   }
 
-  /* Parts that open: your files, recent activity. */
+  /* ---------- settings and files: a switch, and what the account holds of it ---------- */
+  .sync-item.sync-toggle {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-4);
+  }
+  .sync-toggle-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-5);
+    min-width: 0;
+  }
+  .sync-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+    min-height: var(--size-control-sm);
+    color: var(--fg-default);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .sync-check-label {
+    min-width: 0;
+  }
+  .sync-held {
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  /* Parts that open: a kind's file names. */
   .sync-details {
     min-width: 0;
   }
   .sync-details-summary {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: var(--space-3);
-    min-width: 0;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
     cursor: pointer;
     list-style: none;
     border-radius: var(--radius-sm);
@@ -308,49 +534,28 @@
   .sync-details-summary::-webkit-details-marker {
     display: none;
   }
+  .sync-details-summary:hover {
+    color: var(--fg-default);
+  }
   .sync-details-summary:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
   .sync-details-summary > .icon {
     flex: none;
-    width: 14px;
-    height: 14px;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
     color: var(--fg-subtle);
     transition: transform var(--motion-fast) var(--ease-standard);
   }
   .sync-details[open] > .sync-details-summary > .icon {
     transform: rotate(90deg);
   }
-  .sync-details-summary .ai-section-title {
-    min-width: 0;
-  }
-  .sync-section > .sync-details[open] > .sync-details-summary {
-    margin-bottom: var(--space-4);
-  }
-  /* Your files: a row like its neighbours that opens into the files by kind. */
-  .sync-details.sync-holding {
-    padding: var(--space-3) var(--space-5);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
-  }
-  .sync-holding > .sync-details-summary {
-    min-height: calc(var(--size-control-lg) - var(--space-3) * 2);
-  }
-  .sync-holding > .sync-details-summary .sync-row-detail {
-    margin-left: auto;
-    flex: none;
-  }
   .sync-files {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding-top: var(--space-4);
-  }
-  .sync-files-kind {
-    color: var(--fg-muted);
-    font-size: var(--text-xs);
-    font-weight: 600;
+    padding: var(--space-3) 0 var(--space-2) var(--space-7);
   }
   .sync-file {
     display: flex;
@@ -372,68 +577,279 @@
   .sync-file-size {
     flex: none;
     color: var(--fg-subtle);
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Recent activity: when, then what. */
-  .sync-log {
+  /* ---------- computers ---------- */
+  .sync-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding-left: var(--space-7);
+    max-width: 68ch;
+    color: var(--fg-default);
+  }
+
+  /* ---------- security and privacy: can see / can't read ---------- */
+  .sync-seen-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-6);
+  }
+  .sync-seen {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .sync-seen-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-weight: 500;
+    color: var(--fg-default);
+  }
+  .sync-seen-title .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  .sync-seen-list {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-  }
-  .sync-log-row {
-    display: grid;
-    grid-template-columns: minmax(0, 9ch) minmax(0, 1fr);
-    gap: var(--space-4);
+    margin: 0;
+    padding-left: var(--space-7);
+    color: var(--fg-muted);
     font-size: var(--text-sm);
     line-height: var(--text-sm-lh);
   }
-  .sync-log-time {
-    color: var(--fg-subtle);
+
+  /* ---------- storage ---------- */
+  .sync-storage-used {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+  }
+  .sync-storage-number {
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .sync-storage-of {
+    color: var(--fg-muted);
+  }
+  .sync-meter {
+    height: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--bg-chip);
     overflow: hidden;
-    text-overflow: ellipsis;
+  }
+  .sync-meter-fill {
+    height: 100%;
+    min-width: var(--space-1);
+    border-radius: var(--radius-full);
+    background: var(--fg-muted);
+    transition: width var(--motion-base) var(--ease-standard);
+  }
+  .sync-meter.is-full .sync-meter-fill {
+    background: var(--status-warning-fg);
+  }
+  .sync-storage-notice {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  /* A project and its size: the name takes what is left, the sizes line up. */
+  .sync-size-row .sync-item-name {
+    flex: 1 1 0;
+  }
+  .sync-size-row .sync-held {
+    flex: none;
     white-space: nowrap;
   }
-  .sync-log-text {
+  .sync-size {
+    flex: none;
+    min-width: 8ch;
+    color: var(--fg-default);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* ---------- before sync is on: one focused pane ---------- */
+  .sync-setup-scroll {
+    height: 100%;
+    overflow: auto;
+  }
+  .sync-setup {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-7);
+    max-width: 520px;
+    margin: 0 auto;
+    padding: var(--space-10) var(--space-8) var(--space-12);
+    color: var(--fg-default);
+  }
+  .sync-setup-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .sync-setup-title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
+    font-weight: 600;
+  }
+  .sync-setup-lead {
+    margin: 0;
+    color: var(--fg-muted);
+  }
+  .sync-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding: var(--space-7);
+  }
+  .sync-panel-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    line-height: var(--text-lg-lh);
+    font-weight: 600;
+  }
+  /* What sync brings: an icon and a line each. */
+  .sync-benefits {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin: 0;
+    padding: 0 var(--space-2);
+    list-style: none;
+  }
+  .sync-benefit {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-5);
     min-width: 0;
+    line-height: var(--text-md-lh);
+  }
+  .sync-benefit .icon {
+    flex: none;
+    width: var(--size-icon-md);
+    height: var(--size-icon-md);
+    margin-top: var(--space-1);
+    color: var(--fg-muted);
+  }
+  .sync-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 420px;
+  }
+  .sync-field .input {
+    height: var(--size-control-md);
+  }
+  .sync-field textarea.input {
+    height: auto;
+    padding: var(--space-3) var(--space-4);
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: var(--text-md-lh);
+  }
+  /* The recovery key and the code two computers compare. */
+  .sync-key {
+    margin: 0;
+    padding: var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--fg-default);
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    line-height: var(--text-lg-lh);
+    white-space: pre-wrap;
+    /* Four characters to a group: a group may break anywhere when the pane is very narrow. */
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .sync-code {
+    font-family: var(--font-mono);
+    font-size: var(--text-3xl);
+    line-height: var(--text-3xl-lh);
+    font-weight: 600;
+    letter-spacing: 0.08em;
     color: var(--fg-default);
     user-select: text;
   }
-  .sync-log-row.is-error .sync-log-text {
-    color: var(--status-danger-fg);
+  .sync-code.is-row {
+    margin-top: var(--space-2);
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl-lh);
   }
 
-  /* What syncs */
-  .sync-checks {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: var(--space-3) var(--space-6);
-  }
-  .sync-check {
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    min-width: 0;
-    min-height: var(--size-control-sm);
-    color: var(--fg-default);
-    cursor: pointer;
-  }
-
-  .sync-footer {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-4);
-    padding-top: var(--space-5);
-    border-top: 1px solid var(--border-subtle);
-  }
-  .sync-footer .ai-link {
-    text-align: left;
+  /* ---------- room for the list beside a project's detail ---------- */
+  @container (min-width: 1000px) {
+    .sync-md,
+    .sync-md.is-chosen {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    }
+    .sync-md:not(.is-chosen) > .sync-detail,
+    .sync-md.is-chosen > .sync-md-list {
+      display: flex;
+    }
+    .sync-md > .sync-md-list {
+      flex-direction: column;
+    }
+    .sync-back {
+      display: none;
+    }
+    .sync-pick.is-selected {
+      background: var(--bg-selected);
+    }
   }
 
-  /* A narrow tab: less air around the column, the code a size smaller. */
-  @container (max-width: 420px) {
-    .ai-page .sync-page {
-      padding: var(--space-7) var(--space-6) var(--space-9);
+  /* ---------- the navigation is a rail (Settings' breakpoint) ---------- */
+  @container (max-width: 640px) {
+    .sync-nav-count {
+      display: none;
+    }
+  }
+
+  /* ---------- narrow: a row's buttons go under its text ---------- */
+  @container (max-width: 460px) {
+    .sync-item,
+    .sync-status,
+    .sync-callout {
+      flex-wrap: wrap;
+      padding-left: var(--space-5);
+      padding-right: var(--space-5);
+    }
+    .sync-item-main,
+    .sync-status .sync-item-main,
+    .sync-callout .sync-item-main {
+      flex-basis: 140px;
+    }
+    .sync-snapshot .sync-item-main {
+      flex-basis: 80px;
+    }
+    .sync-card-body,
+    .sync-panel {
+      padding: var(--space-5);
+    }
+    .sync-facts {
+      gap: var(--space-3) var(--space-5);
+      padding: var(--space-5);
+    }
+    .sync-size-row .sync-held {
+      display: none;
+    }
+    .sync-setup {
+      padding: var(--space-7) var(--space-5) var(--space-9);
     }
     .sync-code {
       font-size: var(--text-2xl);

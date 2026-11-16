@@ -403,3 +403,252 @@ export function changedCount(
   for (const [key, version] of after) if (before.get(key) !== version) changed++;
   return changed;
 }
+
+// ------------------------------------------------------------ the tab's pages
+
+/** The Sync tab's pages, in the navigation's order. */
+export const SYNC_PAGES = [
+  {
+    id: "overview",
+    title: "Overview",
+    lead: "Whether sync is working, and what is in your account.",
+  },
+  {
+    id: "projects",
+    title: "Projects",
+    lead: "The folders whose chats and unfinished work travel with you.",
+  },
+  {
+    id: "content",
+    title: "Settings and files",
+    lead: "What this computer sends and takes, and what the account holds of it.",
+  },
+  {
+    id: "computers",
+    title: "Computers",
+    lead: "The computers that can read what you sync.",
+  },
+  {
+    id: "security",
+    title: "Security and privacy",
+    lead: "Your recovery key, and what the service can and can't see.",
+  },
+  {
+    id: "storage",
+    title: "Storage",
+    lead: "How much the account holds, and how long snapshots are kept.",
+  },
+  {
+    id: "activity",
+    title: "Activity",
+    lead: "What sync did lately, as seen from this window.",
+  },
+] as const;
+
+export type SyncPageId = (typeof SYNC_PAGES)[number]["id"];
+
+export const SYNC_PAGE_IDS = [
+  "overview",
+  "projects",
+  "content",
+  "computers",
+  "security",
+  "storage",
+  "activity",
+] as const satisfies readonly SyncPageId[];
+
+export function isSyncPage(value: unknown): value is SyncPageId {
+  return typeof value === "string" && (SYNC_PAGE_IDS as readonly string[]).includes(value);
+}
+
+/** The page a key moves to in the navigation (the arrows, Home, End); null for other keys. */
+export function pageByKey(current: SyncPageId, key: string): SyncPageId | null {
+  const at = SYNC_PAGE_IDS.indexOf(current);
+  const last = SYNC_PAGE_IDS.length - 1;
+  const to =
+    key === "ArrowDown" || key === "ArrowRight"
+      ? Math.min(last, at + 1)
+      : key === "ArrowUp" || key === "ArrowLeft"
+        ? Math.max(0, at - 1)
+        : key === "Home"
+          ? 0
+          : key === "End"
+            ? last
+            : -1;
+  return SYNC_PAGE_IDS[to] ?? null;
+}
+
+/** The privacy line as two lists (Security and privacy). */
+export const SERVICE_CAN_SEE: readonly string[] = [
+  "Project names",
+  "How many items there are, their sizes and dates",
+  "The names of your files",
+  "Your computers' names",
+];
+export const SERVICE_CANT_READ: readonly string[] = [
+  "File contents",
+  "Chats",
+  "Settings",
+  "What is in your own files",
+];
+
+export interface OverviewTile {
+  page: SyncPageId;
+  label: string;
+  /** The number, large. */
+  value: string;
+}
+
+/** The overview's tiles: a number and what it counts; each opens its page. */
+export function overviewTiles(
+  overview: SyncOverview,
+  devices: readonly { status: string }[],
+): OverviewTile[] {
+  const sum = (pick: (p: OverviewProject) => number) =>
+    overview.projects.reduce((total, p) => total + pick(p), 0);
+  const computers = devices.filter((d) => d.status === "approved").length;
+  const chats = overview.accountChats + sum((p) => p.chats);
+  const snapshots = sum((p) => p.snapshots);
+  return [
+    {
+      page: "projects",
+      label: overview.projects.length === 1 ? "Project" : "Projects",
+      value: String(overview.projects.length),
+    },
+    { page: "content", label: chats === 1 ? "Chat" : "Chats", value: String(chats) },
+    {
+      page: "projects",
+      label: snapshots === 1 ? "Snapshot" : "Snapshots",
+      value: String(snapshots),
+    },
+    {
+      page: "computers",
+      label: computers === 1 ? "Computer" : "Computers",
+      value: String(computers),
+    },
+  ];
+}
+
+export interface AttentionItem {
+  kind: "device" | "storage" | "error" | "project";
+  text: string;
+  /** The one thing to do about it: the button's words. */
+  action: string;
+  /** Where the button goes, */
+  page?: SyncPageId;
+  /** or the command it runs. */
+  command?: string;
+}
+
+/** What needs the person, most pressing first; empty when nothing does. */
+export function attentionItems(input: {
+  /** Computers waiting to join. */
+  waiting: readonly { name: string }[];
+  usage: number;
+  limit: number;
+  activity: ActivityLike;
+  /** The open folder, when one is open on this computer. */
+  project: { name: string; on: boolean } | null;
+}): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  if (input.activity.state === "error")
+    items.push({
+      kind: "error",
+      text: input.activity.message ?? "Sync ran into a problem.",
+      action: "Retry",
+      command: "sync.syncNow",
+    });
+  for (const device of input.waiting)
+    items.push({
+      kind: "device",
+      text: `${device.name} wants to join. Check its code before you approve it.`,
+      action: "Review",
+      page: "computers",
+    });
+  const storage = storageNotice(input.usage, input.limit);
+  if (storage)
+    items.push({ kind: "storage", text: storage.text, action: "Open storage", page: "storage" });
+  if (input.project && !input.project.on)
+    items.push({
+      kind: "project",
+      text: `${input.project.name || "This folder"} isn't synced yet.`,
+      action: "Open projects",
+      page: "projects",
+    });
+  return items;
+}
+
+/** Projects by the size of their latest snapshot, largest first; those without one left out. */
+export function storageByProject(
+  overview: SyncOverview,
+): { id: string; name: string; bytes: number; snapshots: number }[] {
+  return overview.projects
+    .filter((p) => p.snapshots > 0)
+    .map((p) => ({ id: p.id, name: p.name, bytes: p.snapshotBytes, snapshots: p.snapshots }))
+    .sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
+}
+
+/**
+ * What the account holds of one kind that syncs (`key`: its `sync.<kind>` setting), in a few
+ * words, beside its switch.
+ */
+export function heldSummary(key: string, overview: SyncOverview): string {
+  const kind = key.replace(/^sync\./, "");
+  if (kind === "settings")
+    return overview.settings ? countOf(overview.settings.count, "setting") : "Nothing yet";
+  if (kind === "chats") {
+    const inProjects = overview.projects.reduce((total, p) => total + p.chats, 0);
+    return overview.accountChats + inProjects === 0
+      ? "Nothing yet"
+      : `${overview.accountChats} without a folder · ${inProjects} in projects`;
+  }
+  if (kind === "snapshots") {
+    const withSome = overview.projects.filter((p) => p.snapshots > 0);
+    const total = withSome.reduce((sum, p) => sum + p.snapshots, 0);
+    return total === 0
+      ? "Nothing yet"
+      : `${countOf(total, "snapshot")} in ${countOf(withSome.length, "project")}`;
+  }
+  const files = overview.files.filter((f) => fileKind(f.path) === kind).length;
+  return files === 0 ? "Nothing yet" : countOf(files, "file");
+}
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+/** A day as a heading: Today, Yesterday, or the date (with the year when it isn't this one). */
+export function dayLabel(time: number, now = Date.now()): string {
+  const day = new Date(time);
+  const today = new Date(now);
+  if (sameDay(day, today)) return "Today";
+  if (sameDay(day, new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)))
+    return "Yesterday";
+  return day.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "long",
+    ...(day.getFullYear() !== today.getFullYear() && { year: "numeric" }),
+  });
+}
+
+/** Rows under their day's heading, in the order given (newest first stays newest first). */
+export function groupByDay<T>(
+  rows: readonly T[],
+  timeOf: (row: T) => number,
+  now = Date.now(),
+): { label: string; rows: T[] }[] {
+  const groups: { label: string; rows: T[] }[] = [];
+  for (const row of rows) {
+    const label = dayLabel(timeOf(row), now);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.rows.push(row);
+    else groups.push({ label, rows: [row] });
+  }
+  return groups;
+}
+
+/** A time of day for a row under a day's heading ("14:05" or "2:05 PM", as the system has it). */
+export function timeOfDay(time: number): string {
+  return new Date(time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}

@@ -2,20 +2,32 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   activityLine,
+  attentionItems,
   buildOverview,
   changedCount,
   countOf,
+  dayLabel,
+  EMPTY_OVERVIEW,
   fileKind,
   folderName,
   formatSize,
+  groupByDay,
   groupFiles,
+  heldSummary,
+  isSyncPage,
   LOG_LIMIT,
   type OverviewRecord,
+  overviewTiles,
+  pageByKey,
   passSentence,
   platformLabel,
   projectCounts,
   retentionText,
+  SYNC_PAGE_IDS,
+  SYNC_PAGES,
+  type SyncOverview,
   statusBarWords,
+  storageByProject,
   storageNotice,
   storageShare,
   storageText,
@@ -263,6 +275,172 @@ test("sync: recent activity", () => {
       ]),
     ),
     2,
+  );
+});
+
+test("sync: the tab's pages", () => {
+  assert.deepEqual(
+    SYNC_PAGES.map((p) => p.id),
+    [...SYNC_PAGE_IDS],
+  );
+  assert.equal(isSyncPage("storage"), true);
+  assert.equal(isSyncPage("nowhere"), false);
+  assert.equal(isSyncPage(3), false);
+  assert.equal(pageByKey("overview", "ArrowDown"), "projects");
+  assert.equal(pageByKey("overview", "ArrowUp"), "overview");
+  assert.equal(pageByKey("activity", "ArrowDown"), "activity");
+  assert.equal(pageByKey("content", "Home"), "overview");
+  assert.equal(pageByKey("content", "End"), "activity");
+  assert.equal(pageByKey("content", "Enter"), null);
+});
+
+const held: SyncOverview = {
+  settings: { count: 42, updatedAt: null },
+  files: [
+    { path: "keybindings.json", bytes: 1, updatedAt: null },
+    { path: "skills/a/SKILL.md", bytes: 1, updatedAt: null },
+    { path: "skills/b/SKILL.md", bytes: 1, updatedAt: null },
+  ],
+  accountChats: 2,
+  projects: [
+    {
+      id: "p1",
+      name: "site",
+      chats: 3,
+      snapshots: 4,
+      snapshotBytes: 100,
+      lastChange: null,
+      lastComputer: null,
+      here: true,
+      folder: "/work/site",
+    },
+    {
+      id: "p2",
+      name: "api",
+      chats: 0,
+      snapshots: 1,
+      snapshotBytes: 900,
+      lastChange: null,
+      lastComputer: null,
+      here: false,
+      folder: null,
+    },
+    {
+      id: "p3",
+      name: "notes",
+      chats: 1,
+      snapshots: 0,
+      snapshotBytes: 0,
+      lastChange: null,
+      lastComputer: null,
+      here: false,
+      folder: null,
+    },
+  ],
+};
+
+test("sync: the overview's tiles and what the account holds of each kind", () => {
+  assert.deepEqual(
+    overviewTiles(held, [{ status: "approved" }, { status: "pending" }]).map((t) => [
+      t.page,
+      t.value,
+      t.label,
+    ]),
+    [
+      ["projects", "3", "Projects"],
+      ["content", "6", "Chats"],
+      ["projects", "5", "Snapshots"],
+      ["computers", "1", "Computer"],
+    ],
+  );
+  assert.deepEqual(
+    overviewTiles(EMPTY_OVERVIEW, []).map((t) => t.value),
+    ["0", "0", "0", "0"],
+  );
+  assert.equal(heldSummary("sync.settings", held), "42 settings");
+  assert.equal(heldSummary("sync.keybindings", held), "1 file");
+  assert.equal(heldSummary("sync.skills", held), "2 files");
+  assert.equal(heldSummary("sync.rules", held), "Nothing yet");
+  assert.equal(heldSummary("sync.chats", held), "2 without a folder · 4 in projects");
+  assert.equal(heldSummary("sync.snapshots", held), "5 snapshots in 2 projects");
+  assert.equal(heldSummary("sync.settings", EMPTY_OVERVIEW), "Nothing yet");
+  assert.equal(heldSummary("sync.chats", EMPTY_OVERVIEW), "Nothing yet");
+  // Largest first; a project without snapshots isn't listed.
+  assert.deepEqual(
+    storageByProject(held).map((p) => [p.name, p.bytes]),
+    [
+      ["api", 900],
+      ["site", 100],
+    ],
+  );
+});
+
+test("sync: what needs attention", () => {
+  const idle = { state: "idle", message: null, at: 5 } as const;
+  assert.deepEqual(
+    attentionItems({ waiting: [], usage: 10, limit: 100, activity: idle, project: null }),
+    [],
+  );
+  assert.deepEqual(
+    attentionItems({
+      waiting: [],
+      usage: 10,
+      limit: 100,
+      activity: idle,
+      project: { name: "site", on: true },
+    }),
+    [],
+  );
+  const all = attentionItems({
+    waiting: [{ name: "Laptop" }],
+    usage: 85,
+    limit: 100,
+    activity: { state: "error", message: "Storage is full.", at: 5 },
+    project: { name: "site", on: false },
+  });
+  assert.deepEqual(
+    all.map((entry) => [entry.kind, entry.action, entry.page ?? entry.command]),
+    [
+      ["error", "Retry", "sync.syncNow"],
+      ["device", "Review", "computers"],
+      ["storage", "Open storage", "storage"],
+      ["project", "Open projects", "projects"],
+    ],
+  );
+  assert.equal(all[0]?.text, "Storage is full.");
+  assert.match(all[1]?.text ?? "", /^Laptop wants to join/);
+  assert.equal(all[3]?.text, "site isn't synced yet.");
+});
+
+test("sync: snapshots under their day", () => {
+  const at = (day: number, hour: number) => new Date(2026, 10, day, hour, 30).getTime();
+  const now = at(15, 18);
+  assert.equal(dayLabel(at(15, 0), now), "Today");
+  assert.equal(dayLabel(at(14, 23), now), "Yesterday");
+  assert.notEqual(dayLabel(at(13, 12), now), "Yesterday");
+  // The first of a month: yesterday is the last of the month before.
+  assert.equal(
+    dayLabel(new Date(2026, 9, 31, 9).getTime(), new Date(2026, 10, 1, 9).getTime()),
+    "Yesterday",
+  );
+  // Another year says its year.
+  assert.match(dayLabel(new Date(2024, 2, 5, 9).getTime(), now), /2024/);
+  const groups = groupByDay(
+    [at(15, 17), at(15, 9), at(14, 20), at(10, 8), at(10, 7)],
+    (t) => t,
+    now,
+  );
+  assert.deepEqual(
+    groups.map((g) => g.rows.length),
+    [2, 1, 2],
+  );
+  assert.deepEqual(
+    groups.slice(0, 2).map((g) => g.label),
+    ["Today", "Yesterday"],
+  );
+  assert.deepEqual(
+    groupByDay([], (t: number) => t, now),
+    [],
   );
 });
 

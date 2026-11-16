@@ -5,6 +5,7 @@
 // buttons still only run commands.
 import type { AccountProfile } from "../../core/ipc/accounts";
 import { type Signal, signal } from "../../core/reactive/index";
+import type { SyncPageId } from "./model";
 
 export type SyncStep =
   | { step: "none" }
@@ -19,6 +20,10 @@ export class SyncSession {
   /** The signed-in account (null: nobody, or not read yet). */
   readonly profile: Signal<AccountProfile | null> = signal<AccountProfile | null>(null);
   readonly step: Signal<SyncStep> = signal<SyncStep>({ step: "none" });
+  /** The page the tab shows while sync is on. */
+  readonly page: Signal<SyncPageId> = signal<SyncPageId>("overview");
+  /** The project whose detail the Projects page shows (null: none picked). */
+  readonly projectId: Signal<string | null> = signal<string | null>(null);
   /** The command running from the tab now (its buttons wait), by id. */
   readonly working: Signal<string | null> = signal<string | null>(null);
   /** The computer's name as typed in the tab. */

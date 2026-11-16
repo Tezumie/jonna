@@ -37,6 +37,7 @@ import {
   passSentence,
   type SyncEvent,
   type SyncOverview,
+  type SyncPageId,
   storageNotice,
   withEvent,
 } from "./model";
@@ -122,6 +123,8 @@ export class SyncController implements Disposable {
   private disposed = false;
   /** The fullest storage a notification was shown for, this run (0, 80 or 95). */
   private storageWarned = 0;
+  /** The waiting computers a notification was shown for, this run (ids). */
+  private readonly announced = new Set<string>();
   /** Chats this window is writing (ids), given by the agent's own state. */
   private busyChats: () => ReadonlySet<string> = () => new Set();
 
@@ -313,8 +316,30 @@ export class SyncController implements Disposable {
     const notice = storageNotice(status.usageBytes, status.storageLimit);
     if (!notice || notice.level <= this.storageWarned) return;
     this.storageWarned = notice.level;
-    this.services.notifications.show("warning", notice.text, { title: "Sync" });
+    this.services.notifications.show("warning", notice.text, {
+      title: "Sync",
+      actions: [{ label: "Open storage", run: () => this.showPage("storage") }],
+    });
     this.note(notice.text);
+  }
+
+  /** Opens the Sync tab on a page (from a notification's button). */
+  private showPage(page: SyncPageId): void {
+    void this.services.dispatcher.execute("sync.show", { page }).catch(() => {});
+  }
+
+  /** Says once per run and computer that one is waiting to be let in. */
+  private announceWaiting(status: SyncStatus): void {
+    for (const device of status.devices) {
+      if (device.status !== "pending" || this.announced.has(device.id)) continue;
+      this.announced.add(device.id);
+      this.services.notifications.show(
+        "info",
+        `${device.name} wants to join sync. Check its code before you approve it.`,
+        { title: "Sync", actions: [{ label: "Review", run: () => this.showPage("computers") }] },
+      );
+      this.note(`${device.name} asked to join sync.`);
+    }
   }
 
   /** The agent tells which chats it is writing right now, so they wait a pass. */
@@ -340,7 +365,10 @@ export class SyncController implements Disposable {
       if (before?.state === "on") this.engine.reset();
       this.activity.value = { state: "off", message: null, at: null };
       this.readOverview();
-    } else this.warnStorage(status);
+    } else {
+      this.warnStorage(status);
+      this.announceWaiting(status);
+    }
     if (status.notice) {
       this.services.notifications.show(
         "warning",
