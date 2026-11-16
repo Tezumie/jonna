@@ -33,11 +33,12 @@ import {
   changedCount,
   countOf,
   EMPTY_OVERVIEW,
-  formatSize,
+  folderName,
   passSentence,
   type SyncEvent,
   type SyncOverview,
   type SyncPageId,
+  snapshotFacts,
   storageNotice,
   withEvent,
 } from "./model";
@@ -50,6 +51,8 @@ const STATUS_MS = 5 * 60_000;
 const SNAPSHOT_MS = 3 * 60_000;
 /** The longest a closing window waits for its last snapshot. */
 const CLOSE_SNAPSHOT_MS = 4_000;
+/** A project's missing name is written again at most this often. */
+const NAME_RETRY_MS = 10 * 60_000;
 
 /** Settings that always stay on the computer they were set on. */
 const LOCAL_SETTINGS = ["accounts.serverUrl", "sync.projects"];
@@ -125,6 +128,8 @@ export class SyncController implements Disposable {
   private storageWarned = 0;
   /** The waiting computers a notification was shown for, this run (ids). */
   private readonly announced = new Set<string>();
+  /** When each project's missing name was last written (project id to ms). */
+  private readonly namedAt = new Map<string, number>();
   /** Chats this window is writing (ids), given by the agent's own state. */
   private busyChats: () => ReadonlySet<string> = () => new Set();
 
@@ -299,9 +304,57 @@ export class SyncController implements Disposable {
     const status = this.status.peek();
     const next =
       status?.state === "on"
-        ? buildOverview(this.engine.allRecords(), status.devices, Object.values(this.projects()))
+        ? buildOverview(
+            this.engine.allRecords(),
+            status.devices,
+            Object.values(this.projects()),
+            status.deviceId,
+          )
         : EMPTY_OVERVIEW;
     if (JSON.stringify(next) !== JSON.stringify(this.overview.peek())) this.overview.value = next;
+  }
+
+  /**
+   * The open project's entry in the account gets its name when it has none the service can
+   * read (made before names were labels, or its write failed): the account page lists
+   * projects by that label. Tried again at most every ten minutes.
+   */
+  private async nameProject(): Promise<void> {
+    const project = this.project.peek();
+    if (!this.leader || !project?.on || !project.id) return;
+    const record = this.engine.records("projects").find((r) => r.id === project.id);
+    if (record?.unreadable) return;
+    const live = record && !record.deleted ? record : null;
+    const label = live?.info?.name;
+    if (typeof label === "string" && label !== "") return;
+    if (Date.now() - (this.namedAt.get(project.id) ?? 0) < NAME_RETRY_MS) return;
+    this.namedAt.set(project.id, Date.now());
+    let kept: { name?: unknown; kind?: unknown } = {};
+    try {
+      const parsed: unknown = live?.text ? JSON.parse(live.text) : null;
+      if (parsed && typeof parsed === "object") kept = parsed as typeof kept;
+    } catch {
+      // Not an entry this version wrote: named from the folder.
+    }
+    const name =
+      (typeof kept.name === "string" && kept.name.trim()) || folderName(project.root) || "Project";
+    const failed = await syncIpc
+      .put(
+        this.base(),
+        "projects",
+        project.id,
+        record ? record.version : null,
+        JSON.stringify({ name, kind: kept.kind ?? project.kind }),
+        { name },
+      )
+      .then(
+        (result) => (result.outcome === "done" ? null : "another computer wrote it first"),
+        (err: unknown) => messageOf(err),
+      );
+    if (failed !== null)
+      this.note(`The project's name couldn't be written to the account: ${failed}`, true);
+    // The entry as the account has it now, label included.
+    else await this.engine.tick().catch(() => {});
   }
 
   /** Each record's version, to tell what a pass changed. */
@@ -413,6 +466,7 @@ export class SyncController implements Disposable {
       }
       this.readSnapshots();
       await this.maybeSnapshot(false);
+      await this.nameProject();
       this.readOverview();
       const sentence =
         before.at === null
@@ -483,8 +537,8 @@ export class SyncController implements Disposable {
       // A project the account already names keeps that name: the folder here may be called
       // something else.
       const named = !!now && !now.deleted && typeof now.info?.name === "string";
-      if (!named)
-        await syncIpc
+      if (!named) {
+        const failed = await syncIpc
           .put(
             this.base(),
             "projects",
@@ -494,7 +548,14 @@ export class SyncController implements Disposable {
             // The name is readable by the service, so the account page can list projects.
             { name },
           )
-          .catch(() => {});
+          .then(
+            (result) => (result.outcome === "done" ? null : "another computer wrote it first"),
+            (err: unknown) => messageOf(err),
+          );
+        // Not fatal (the project syncs, and a later pass writes the name again), but said.
+        if (failed !== null)
+          this.note(`The project's name couldn't be written to the account: ${failed}`, true);
+      }
       if (identity.kind === "file") {
         this.services.notifications.show(
           "info",
@@ -557,7 +618,7 @@ export class SyncController implements Disposable {
     );
     if (!created) return null;
     this.note(
-      `Snapshot taken: ${countOf(created.summary.files, "file")}, ${formatSize(created.summary.bytes)}.`,
+      `Snapshot taken: ${snapshotFacts(created.summary.files, created.summary.bytes, ", ")}.`,
     );
     await this.engine.tick().catch(() => {});
     this.readSnapshots();

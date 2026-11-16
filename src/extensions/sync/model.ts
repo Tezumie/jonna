@@ -111,6 +111,8 @@ export interface OverviewProject {
   lastChange: number | null;
   /** The computer that made that change, by name. */
   lastComputer: string | null;
+  /** Whether that computer is this one. */
+  lastHere: boolean;
   /** Whether a folder on this computer syncs as this project. */
   here: boolean;
   folder: string | null;
@@ -158,6 +160,8 @@ export function buildOverview(
   records: readonly OverviewRecord[],
   devices: readonly { id: string; name: string }[],
   folders: readonly { id: string; path: string }[],
+  /** This computer's device id, to tell its own changes. */
+  deviceId: string | null = null,
 ): SyncOverview {
   const computers = new Map(devices.map((d) => [d.id, d.name]));
   const overview: SyncOverview = { settings: null, files: [], accountChats: 0, projects: [] };
@@ -174,6 +178,7 @@ export function buildOverview(
         snapshotBytes: 0,
         lastChange: null,
         lastComputer: null,
+        lastHere: false,
         here: !!folder,
         folder: folder?.path ?? null,
         named: false,
@@ -192,6 +197,7 @@ export function buildOverview(
     if (time === null || (entry.lastChange !== null && time <= entry.lastChange)) return;
     entry.lastChange = time;
     entry.lastComputer = (record.device ? computers.get(record.device) : undefined) ?? computer;
+    entry.lastHere = deviceId !== null && record.device === deviceId;
   };
 
   for (const record of records) {
@@ -296,11 +302,33 @@ export function groupFiles(
   });
 }
 
-/** A project row's counts: "3 chats · 12 snapshots · latest snapshot 4 MB". */
-export function projectCounts(project: OverviewProject): string {
-  const parts = [countOf(project.chats, "chat"), countOf(project.snapshots, "snapshot")];
-  if (project.snapshots > 0) parts.push(`latest snapshot ${formatSize(project.snapshotBytes)}`);
-  return parts.join(" · ");
+/** A project's counts: "3 chats · 12 snapshots". */
+export function projectCounts(project: { chats: number; snapshots: number }): string {
+  return `${countOf(project.chats, "chat")} · ${countOf(project.snapshots, "snapshot")}`;
+}
+
+/**
+ * A snapshot's size in words. A snapshot can hold no files at all (only commits or stashes
+ * travelled): that is said, not "0 B".
+ */
+export function snapshotSize(bytes: number): string {
+  return bytes > 0 ? formatSize(bytes) : "no changed files";
+}
+
+/** A snapshot's files and size: "3 files · 4 MB", or "no changed files" when it holds none. */
+export function snapshotFacts(files: number, bytes: number, between = " · "): string {
+  return files > 0 || bytes > 0
+    ? `${countOf(files, "file")}${between}${formatSize(bytes)}`
+    : "no changed files";
+}
+
+/**
+ * Where a project last changed: "on this computer" when it was this one (whatever it is
+ * called), else "on <name>"; "" when it isn't known.
+ */
+export function changedOn(project: { lastHere: boolean; lastComputer: string | null }): string {
+  if (project.lastHere) return "on this computer";
+  return project.lastComputer ? `on ${project.lastComputer}` : "";
 }
 
 // ------------------------------------------------------------ storage, history, the status bar

@@ -254,34 +254,46 @@
     gap: var(--space-5);
     padding: var(--space-5) var(--space-6);
   }
-  /* Tiles: a number, large, and what it counts. Each opens its page. */
-  .sync-tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  /* Status, counts, storage: three cards of one width, one under the other. */
+  .sync-stack {
+    display: flex;
+    flex-direction: column;
     gap: var(--space-4);
+    min-width: 0;
   }
-  .sync-tile {
+  /* Stats: equal columns in one card, hairlines between them; a number, large, and under it
+     what it counts. No box of their own: a stat that leads somewhere only tints on hover. */
+  .sync-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-width: 0;
+  }
+  .sync-stats[data-count="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sync-stat {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-1);
     min-width: 0;
     padding: var(--space-5) var(--space-6);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
     text-align: left;
+  }
+  .sync-stat + .sync-stat {
+    border-left: 1px solid var(--border-subtle);
+  }
+  .sync-stat.is-button {
     cursor: pointer;
-    transition: border-color var(--motion-fast) var(--ease-standard);
   }
-  .sync-tile:hover {
-    border-color: var(--border-strong);
+  .sync-stat.is-button:hover {
+    background: var(--bg-hover);
   }
-  .sync-tile:focus-visible {
+  .sync-stat.is-button:focus-visible {
     outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
-  .sync-tile-value {
+  .sync-stat-value {
     max-width: 100%;
     font-size: var(--text-2xl);
     line-height: var(--text-2xl-lh);
@@ -292,20 +304,41 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sync-tile-value.is-text {
-    font-size: var(--text-xl);
-    line-height: var(--text-2xl-lh);
-  }
-  .sync-tile-label {
+  .sync-stat-label {
+    max-width: 100%;
     color: var(--fg-muted);
     font-size: var(--text-sm);
     line-height: var(--text-sm-lh);
   }
-  /* Storage: the row's whole width, with its meter. */
-  .sync-tile.is-wide {
-    grid-column: 1 / -1;
-    align-items: stretch;
-    gap: var(--space-3);
+  /* Storage: a card of the same width and padding, with its meter. */
+  .sync-storage-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    padding: var(--space-5) var(--space-6);
+    text-align: left;
+    cursor: pointer;
+  }
+  .sync-storage-card:hover {
+    background: color-mix(in srgb, var(--bg-surface-raised), var(--fg-default) 4%);
+  }
+  .sync-storage-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .sync-storage-card-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-5);
+    min-width: 0;
+  }
+  .sync-storage-card-value {
+    color: var(--fg-default);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
   }
   .sync-attention-text {
     min-width: 0;
@@ -360,100 +393,103 @@
     align-self: flex-start;
     flex-direction: row;
   }
+  /* A row of the list: a name with its tag, one muted line under it; every row the same
+     height, the chevron in its middle. */
+  .sync-project-row .sync-item-title {
+    flex-wrap: nowrap;
+  }
+  .sync-one-line {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-open-here {
+    flex: none;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
+    white-space: nowrap;
+  }
+  /* The detail's first card: the name with its tag, the folder under it, the actions at the
+     end; then the project's numbers. */
   .sync-detail-head {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-5);
     min-width: 0;
-    padding: 0 var(--space-2);
+    padding: var(--space-5) var(--space-6);
+  }
+  .sync-detail-head .sync-item-title {
+    flex-wrap: nowrap;
   }
   .sync-detail-title {
     flex: 0 1 auto;
     min-width: 0;
     margin: 0;
-    font-size: var(--text-lg);
-    line-height: var(--text-lg-lh);
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sync-detail-head .ai-tag {
-    flex: none;
-    white-space: nowrap;
+  .sync-detail-head + .sync-stats {
+    border-top: 1px solid var(--border-subtle);
   }
-  .sync-detail-head .icon-button {
-    flex: none;
-    margin-left: auto;
+  .sync-detail .sync-stat-value {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
   }
-  .sync-detail > .sync-text {
-    padding: 0 var(--space-2);
-  }
+  .sync-detail > .sync-text,
   .sync-detail > .sync-actions {
     padding: 0 var(--space-2);
   }
-  /* A project's facts: labels in one column, values in the other. */
-  .sync-facts {
-    display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-3) var(--space-7);
-    margin: 0;
-    padding: var(--space-5) var(--space-6);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface-raised);
-  }
-  .sync-fact {
-    display: contents;
-  }
-  .sync-fact-label {
-    color: var(--fg-muted);
-    font-size: var(--text-sm);
-    line-height: var(--text-md-lh);
-  }
-  .sync-fact-value {
-    min-width: 0;
-    margin: 0;
-    color: var(--fg-default);
-    font-variant-numeric: tabular-nums;
-  }
-  .sync-fact-value .sync-path {
-    color: var(--fg-default);
-  }
-  /* A smaller heading inside a detail (Snapshot history), with a note beside it. */
+  /* A heading inside a detail (Snapshot history), and under it one muted line that ends in a
+     link. */
   .sync-subhead {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-1) var(--space-4);
+    flex-direction: column;
+    gap: var(--space-1);
     padding: 0 var(--space-2);
     margin-top: var(--space-3);
   }
   .sync-subtitle {
     margin: 0;
     font-size: var(--text-md);
+    line-height: var(--text-md-lh);
     font-weight: 600;
     color: var(--fg-default);
   }
   .sync-subhead-note {
-    min-width: 0;
-    color: var(--fg-subtle);
+    margin: 0;
+    color: var(--fg-muted);
     font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .sync-subhead-note .ai-link {
+    display: inline;
+    vertical-align: baseline;
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
   .sync-day {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
   .sync-day-label {
     padding: 0 var(--space-2);
-    color: var(--fg-muted);
-    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs-lh);
     font-weight: 500;
   }
+  /* A snapshot: its time (one width, so the rows line up), where from and how much, then the
+     pin and the menu. One height. */
   .sync-item.sync-snapshot {
-    padding-top: var(--space-4);
-    padding-bottom: var(--space-4);
+    min-height: var(--size-control-lg);
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
   }
   .sync-snapshot-time {
     flex: none;
@@ -463,11 +499,25 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-  .sync-snapshot .sync-item-main {
-    flex-direction: row;
-    flex-wrap: wrap;
+  .sync-snapshot-main {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
     align-items: center;
-    gap: var(--space-1) var(--space-3);
+    gap: var(--space-3);
+  }
+  .sync-snapshot-facts {
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-snapshot-main .sync-pin-name {
+    flex: 0 1 auto;
+    min-width: 0;
   }
   .sync-pin {
     color: var(--fg-subtle);
@@ -834,15 +884,46 @@
     .sync-callout .sync-item-main {
       flex-basis: 140px;
     }
-    .sync-snapshot .sync-item-main {
-      flex-basis: 80px;
+    /* Four stats: two by two in the same card. Three stay in a row, a size smaller. */
+    .sync-stats:not([data-count="3"]) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .sync-stats:not([data-count="3"]) > .sync-stat:nth-child(odd) {
+      border-left: 0;
+    }
+    .sync-stats:not([data-count="3"]) > .sync-stat:nth-child(n + 3) {
+      border-top: 1px solid var(--border-subtle);
+    }
+    .sync-stat,
+    .sync-storage-card,
+    .sync-detail-head {
+      padding-left: var(--space-5);
+      padding-right: var(--space-5);
+    }
+    .sync-stats[data-count="3"] > .sync-stat {
+      padding-left: var(--space-4);
+      padding-right: var(--space-4);
+    }
+    .sync-detail .sync-stat-value {
+      font-size: var(--text-lg);
+      line-height: var(--text-lg-lh);
+    }
+    .sync-detail-head {
+      flex-wrap: wrap;
+    }
+    /* A snapshot stays one line: time, facts, pin and menu. */
+    .sync-item.sync-snapshot {
+      flex-wrap: nowrap;
+      gap: var(--space-4);
+    }
+    .sync-snapshot-time {
+      width: 8ch;
+    }
+    .sync-open-here {
+      display: none;
     }
     .sync-card-body,
     .sync-panel {
-      padding: var(--space-5);
-    }
-    .sync-facts {
-      gap: var(--space-3) var(--space-5);
       padding: var(--space-5);
     }
     .sync-size-row .sync-held {

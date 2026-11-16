@@ -13,7 +13,7 @@ accounts whose profile says `sync: true`. Window only: a screenless session does
   the records' labels: no content), and what sync did lately (`log`, the last 30 events, in memory
   only; `note()` adds one). Also: the storage notifications (once per run at 80% and 95%; their button opens the Storage
   page), a notification when a computer asks to join (once per run and computer; its button
-  opens Computers), a last
+  opens Computers), the open project's name written to the account again when its entry has none the service can read (`nameProject`, after a pass; a failed write is noted in the log), a last
   snapshot as the window or folder closes (`snapshotOnClose`: only when something changed, 4
   seconds at most), and the account's projects (`linkProject`, `separateProject`, `copiedFrom`,
   `deleteProjectFromAccount`). No view code.
@@ -35,17 +35,22 @@ accounts whose profile says `sync: true`. Window only: a screenless session does
   else), and copying and saving the recovery key go straight to the clipboard and the save
   dialog, so the key stays out of the audit log.
 - `pages.ts` — the pages while sync is on, each a few cards:
-  - `overview`: the state with when it last synced and Sync now (the reason and Retry after an
-    error); Continue from another computer when there is newer work; tiles (projects, chats,
-    snapshots, computers, storage with its meter), each opening its page; Needs attention (a
-    waiting computer, storage filling up, the open folder not synced), only when there is
-    something; the last five things sync did.
-  - `projects`: the open folder (Sync this project / Snapshot now, Stop syncing, This folder is
-    one of my synced projects); every project of the account by name, and the picked one's
-    detail beside the list (from 1000px; under that the detail takes the list's place, with a
-    way back): its facts, the open project's snapshot history by day (Restore, Show files, Pin,
-    Delete) with how long it is kept, how to get a project that isn't here, and Delete from the
-    account in its menu.
+  - `overview`: three cards of one width: the state with when it last synced and Sync now (the
+    reason and Retry after an error), the counts (projects, chats, snapshots, computers: one
+    row of stats, two by two when narrow, each opening its page), and storage with its meter;
+    Continue from another computer when there is newer work; Needs attention (a waiting
+    computer, storage filling up, the open folder not synced), only when there is something;
+    the last five things sync did.
+  - `projects`: every project of the account by name (one tag, then chats, snapshots and when
+    it changed on one line; the open folder's is marked Open here and shown first), and the
+    picked one's detail beside the list (from 1000px; under that the detail takes the list's
+    place, with a way back): its name, tag and folder with Snapshot now (the open folder's) and
+    a menu (Stop syncing, Delete from the account), its numbers (chats, snapshots, last change
+    and where: "on this computer" for this one), the open project's snapshot history by day
+    (Restore, Show files, Pin, Delete) with how long it is kept, and how to get a project that
+    isn't here. A card for the open folder shows only while it doesn't sync (Sync this project,
+    This folder is one of my synced projects). A snapshot without files says "no changed
+    files", never "0 B".
   - `content`: what this computer syncs (the switches), with what the account holds of each
     beside it and a kind's file names on demand; the settings that stay on this computer.
   - `computers`: computers waiting to join (Check code, then the code with Approve), this

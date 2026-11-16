@@ -12,7 +12,14 @@ import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { SnapshotRow, SyncController } from "./controller";
-import { countOf, folderName, formatSize, projectCounts, SYNC_PAGE_IDS } from "./model";
+import {
+  countOf,
+  folderName,
+  formatSize,
+  projectCounts,
+  SYNC_PAGE_IDS,
+  snapshotFacts,
+} from "./model";
 import { DEFAULT_DEVICE_NAME, type SyncSession } from "./session";
 
 export const SYNC_VIEW = "sync";
@@ -684,7 +691,7 @@ export function registerSyncCommands(
         if (!created) return { created: false };
         notifications.show(
           "success",
-          `Snapshot taken: ${countOf(created.summary.files, "file")}, ${formatSize(created.summary.bytes)}.`,
+          `Snapshot taken: ${snapshotFacts(created.summary.files, created.summary.bytes, ", ")}.`,
           { title: "Sync" },
         );
         return {

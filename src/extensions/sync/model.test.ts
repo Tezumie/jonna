@@ -5,6 +5,7 @@ import {
   attentionItems,
   buildOverview,
   changedCount,
+  changedOn,
   countOf,
   dayLabel,
   EMPTY_OVERVIEW,
@@ -26,6 +27,8 @@ import {
   SYNC_PAGE_IDS,
   SYNC_PAGES,
   type SyncOverview,
+  snapshotFacts,
+  snapshotSize,
   statusBarWords,
   storageByProject,
   storageNotice,
@@ -107,6 +110,7 @@ test("sync: what the account holds, from its records' labels", () => {
       { id: "d2", name: "Desk" },
     ],
     [{ id: "p1", path: "C:\\work\\site" }],
+    "d1",
   );
   assert.deepEqual(overview.settings, { count: 42, updatedAt: 1_700_000_000_000 });
   assert.deepEqual(
@@ -128,6 +132,7 @@ test("sync: what the account holds, from its records' labels", () => {
       lastChange: 1_700_000_200_000,
       // The device's name now, over the name the label was written with.
       lastComputer: "Laptop (work)",
+      lastHere: true,
       here: true,
       folder: "C:\\work\\site",
     },
@@ -139,14 +144,17 @@ test("sync: what the account holds, from its records' labels", () => {
       snapshotBytes: 0,
       lastChange: null,
       lastComputer: null,
+      lastHere: false,
       here: false,
       folder: null,
     },
   ]);
   assert.deepEqual(overview.projects.map(projectCounts), [
-    "1 chat · 2 snapshots · latest snapshot 500 B",
+    "1 chat · 2 snapshots",
     "0 chats · 0 snapshots",
   ]);
+  // This computer's own change is "on this computer", whatever the computer is called.
+  assert.deepEqual(overview.projects.map(changedOn), ["on this computer", ""]);
 });
 
 test("sync: records without a label are read from their text", () => {
@@ -189,6 +197,25 @@ test("sync: records without a label are read from their text", () => {
     accountChats: 0,
     projects: [],
   });
+});
+
+test("sync: where a project changed, and a snapshot without files", () => {
+  assert.equal(changedOn({ lastHere: true, lastComputer: "This computer" }), "on this computer");
+  assert.equal(changedOn({ lastHere: false, lastComputer: "Laptop" }), "on Laptop");
+  assert.equal(changedOn({ lastHere: false, lastComputer: null }), "");
+  // Without this computer's id, nothing is taken for its own.
+  const other = buildOverview(
+    [record("snap.p1", "s1", { info: { time: 5, computer: "Desk", bytes: 0 }, device: "d1" })],
+    [{ id: "d1", name: "Desk" }],
+    [],
+  );
+  assert.equal(other.projects[0]?.lastHere, false);
+  assert.equal(changedOn(other.projects[0] ?? { lastHere: false, lastComputer: null }), "on Desk");
+  assert.equal(snapshotSize(0), "no changed files");
+  assert.equal(snapshotSize(2048), "2 KB");
+  assert.equal(snapshotFacts(0, 0), "no changed files");
+  assert.equal(snapshotFacts(3, 2048), "3 files · 2 KB");
+  assert.equal(snapshotFacts(1, 640, ", "), "1 file, 640 B");
 });
 
 test("sync: the user's files by kind", () => {
@@ -311,6 +338,7 @@ const held: SyncOverview = {
       snapshotBytes: 100,
       lastChange: null,
       lastComputer: null,
+      lastHere: false,
       here: true,
       folder: "/work/site",
     },
@@ -322,6 +350,7 @@ const held: SyncOverview = {
       snapshotBytes: 900,
       lastChange: null,
       lastComputer: null,
+      lastHere: false,
       here: false,
       folder: null,
     },
@@ -333,6 +362,7 @@ const held: SyncOverview = {
       snapshotBytes: 0,
       lastChange: null,
       lastComputer: null,
+      lastHere: false,
       here: false,
       folder: null,
     },

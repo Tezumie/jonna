@@ -13,6 +13,7 @@ import {
   type AttentionItem,
   activityLine,
   attentionItems,
+  changedOn,
   countOf,
   FILE_KINDS,
   fileKind,
@@ -30,6 +31,8 @@ import {
   type SyncEvent,
   type SyncPageId,
   serviceTime,
+  snapshotFacts,
+  snapshotSize,
   storageByProject,
   storageNotice,
   storageShare,
@@ -266,6 +269,38 @@ function attentionRow(kit: PageKit, entry: AttentionItem): HTMLElement {
   );
 }
 
+interface Stat {
+  key: string;
+  /** The number (or a time), large. */
+  value: Child;
+  label: Child;
+  /** Where it leads, when it is a button. */
+  go?: () => void;
+}
+
+/** A row of equal stats with hairlines between them: a number, and under it what it counts. */
+function stats(kit: PageKit, entries: readonly Stat[]): HTMLElement {
+  return h(
+    "div",
+    { class: "sync-stats", "data-count": String(entries.length) },
+    ...entries.map((entry) => {
+      const inner = [
+        h("span", { class: "sync-stat-value" }, entry.value),
+        h("span", { class: "sync-stat-label" }, entry.label),
+      ];
+      const go = entry.go;
+      if (!go) return h("div", { class: "sync-stat", "data-stat": entry.key }, ...inner);
+      const el = h(
+        "button",
+        { class: "sync-stat is-button", type: "button", "data-stat": entry.key },
+        ...inner,
+      );
+      kit.drawn.add(on(el, "click", go));
+      return el;
+    }),
+  );
+}
+
 function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
   const { controller } = kit;
   const overview = controller.overview.peek();
@@ -281,36 +316,43 @@ function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
     // The status card right above says an error, with Retry: not said twice.
   }).filter((entry) => entry.kind !== "error");
 
-  const tiles = overviewTiles(overview, status.devices).map((tile) => {
-    const el = h(
-      "button",
-      { class: "sync-tile", type: "button", "data-tile": tile.label.toLowerCase() },
-      h("span", { class: "sync-tile-value" }, tile.value),
-      h("span", { class: "sync-tile-label" }, tile.label),
-    );
-    kit.drawn.add(on(el, "click", () => kit.go(tile.page)));
-    return el;
-  });
+  // Status, counts and storage: three cards of one width, one under the other.
+  const counts = h(
+    "div",
+    { class: "settings-card sync-card" },
+    stats(
+      kit,
+      overviewTiles(overview, status.devices).map((tile) => ({
+        key: tile.label.toLowerCase(),
+        value: tile.value,
+        label: tile.label,
+        go: () => kit.go(tile.page),
+      })),
+    ),
+  );
   const storage = h(
     "button",
-    { class: "sync-tile is-wide", type: "button", "data-tile": "storage" },
+    { class: "settings-card sync-card sync-storage-card", type: "button", "data-stat": "storage" },
     h(
       "span",
-      { class: "sync-tile-value is-text" },
-      limit > 0
-        ? `${formatSize(status.usageBytes)} of ${formatSize(limit)}`
-        : formatSize(status.usageBytes),
+      { class: "sync-storage-card-line" },
+      h("span", { class: "sync-stat-label" }, "Storage"),
+      h(
+        "span",
+        { class: "sync-storage-card-value" },
+        limit > 0
+          ? `${formatSize(status.usageBytes)} of ${formatSize(limit)}`
+          : `${formatSize(status.usageBytes)} used`,
+      ),
     ),
     limit > 0 ? meter(share, storageNotice(status.usageBytes, limit) !== null) : null,
-    h("span", { class: "sync-tile-label" }, "Storage"),
   );
   kit.drawn.add(on(storage, "click", () => kit.go("storage")));
 
   const log = controller.log.peek();
   return [
-    section(null, statusCard(kit)),
+    h("div", { class: "sync-stack" }, statusCard(kit), counts, storage),
     continueCallout(kit),
-    section(null, h("div", { class: "sync-tiles" }, ...tiles, storage)),
     attention.length === 0
       ? null
       : section("Needs attention", card(...attention.map((entry) => attentionRow(kit, entry)))),
@@ -332,60 +374,18 @@ function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
 
 // ------------------------------------------------------------ projects
 
-/** The open folder: whether it syncs, and the one thing to do about it. */
-function openFolderCard(kit: PageKit): HTMLElement {
-  const { controller, services } = kit;
-  const project = controller.project.peek();
-  if (!project) {
-    const root = services.workspace.root.peek();
-    return card(
-      empty(
-        root
-          ? "Only folders on this computer can sync."
-          : "Open a folder to sync it as a project: its chats travel with you, and snapshots of unfinished work are taken automatically.",
-      ),
-    );
-  }
-  const name = folderName(project.root) || project.root;
-  if (project.on) {
-    // Continue is the page's one primary button when it is on offer.
-    const primary = controller.continueFrom() === null;
-    return card(
-      item({
-        title: name,
-        tags: ["Syncs from this computer"],
-        details: [h("span", { class: "sync-path", title: project.root }, project.root)],
-        attrs: { "data-open-project": "on" },
-        actions: [
-          kit.button(
-            "Snapshot now",
-            () => kit.run("sync.snapshot.create"),
-            primary ? "primary" : "secondary",
-            "camera",
-          ),
-          kit.menuButton(
-            `More for ${name}`,
-            [
-              {
-                label: "Stop syncing this project",
-                run: () => void kit.run("sync.project.disable"),
-              },
-            ],
-            "This folder",
-          ),
-        ],
-      }),
-    );
-  }
+/** The open folder while it doesn't sync yet: what syncing it does, and the way in. */
+function notSyncedCard(kit: PageKit, root: string, known: boolean): HTMLElement {
+  const name = folderName(root) || root;
   // A folder the account doesn't know, while the account has projects that aren't here: it
   // may be one of them (a copy made by hand, a clone without its remote).
-  const linkable = !project.known && controller.overview.peek().projects.some((p) => !p.here);
+  const linkable = !known && kit.controller.overview.peek().projects.some((p) => !p.here);
   return card(
     item({
       title: name,
       tags: ["Not synced"],
       details: [
-        `When it syncs, its chats travel with you, and snapshots of unfinished work are taken automatically, with a history.${project.known ? " Another of your computers already syncs it." : ""}`,
+        `When it syncs, its chats travel with you, and snapshots of unfinished work are taken automatically, with a history.${known ? " Another of your computers already syncs it." : ""}`,
         linkable
           ? kit.link("This folder is one of my synced projects…", () =>
               kit.run("sync.project.link"),
@@ -398,7 +398,7 @@ function openFolderCard(kit: PageKit): HTMLElement {
   );
 }
 
-function snapshotRow(kit: PageKit, row: SnapshotRow): HTMLElement {
+function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): HTMLElement {
   const { summary } = row;
   const pinned = summary.pinned;
   const pin = h(
@@ -439,24 +439,19 @@ function snapshotRow(kit: PageKit, row: SnapshotRow): HTMLElement {
       run: () => void kit.run("sync.snapshot.delete", { id: row.id }),
     },
   ];
-  const detail = [
-    summary.deviceName,
-    summary.branch,
-    countOf(summary.files, "file"),
-    formatSize(summary.bytes),
-  ].filter((part): part is string => !!part);
+  const computer = summary.device === deviceId ? "This computer" : summary.deviceName;
+  const facts = `${computer} · ${snapshotFacts(summary.files, summary.bytes)}`;
+  const full = [new Date(summary.time).toLocaleString(), summary.branch, facts]
+    .filter(Boolean)
+    .join(" · ");
   return h(
     "div",
     { class: "sync-item sync-snapshot", "data-snapshot": row.id },
-    h(
-      "span",
-      { class: "sync-snapshot-time", title: new Date(summary.time).toLocaleString() },
-      timeOfDay(summary.time),
-    ),
+    h("span", { class: "sync-snapshot-time", title: full }, timeOfDay(summary.time)),
     h(
       "div",
-      { class: "sync-item-main" },
-      h("div", { class: "sync-item-detail sync-snapshot-facts" }, detail.join(" · ")),
+      { class: "sync-snapshot-main" },
+      h("span", { class: "sync-snapshot-facts", title: full }, facts),
       pinned ? h("span", { class: "ai-tag sync-pin-name", title: pinned }, pinned) : null,
     ),
     h(
@@ -468,19 +463,14 @@ function snapshotRow(kit: PageKit, row: SnapshotRow): HTMLElement {
   );
 }
 
-/** One project: its facts, and (when it is the open folder's) its snapshot history. */
-function projectDetail(kit: PageKit, project: OverviewProject): HTMLElement {
+/** One project: its name and folder, its numbers, and (the open folder's) its history. */
+function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatus): HTMLElement {
   const { controller, services } = kit;
   const open = controller.project.peek();
   const isOpen = !!open?.on && open.id === project.id;
   const menu: MenuItem[] = [
     ...(isOpen
       ? [
-          {
-            label: "Snapshot now",
-            icon: "camera" as const,
-            run: () => void kit.run("sync.snapshot.create"),
-          },
           {
             label: "Stop syncing this project",
             run: () => void kit.run("sync.project.disable"),
@@ -495,45 +485,71 @@ function projectDetail(kit: PageKit, project: OverviewProject): HTMLElement {
       run: () => void kit.run("sync.project.deleteFromAccount", { id: project.id }),
     },
   ];
-  const fact = (label: string, ...value: Child[]) =>
+  const where = changedOn(project);
+  const head = h(
+    "div",
+    { class: "settings-card sync-card" },
     h(
       "div",
-      { class: "sync-fact" },
-      h("dt", { class: "sync-fact-label" }, label),
-      h("dd", { class: "sync-fact-value" }, ...value),
-    );
-  const facts = h(
-    "dl",
-    { class: "sync-facts" },
-    fact("Chats", String(project.chats)),
-    fact("Snapshots", String(project.snapshots)),
-    project.snapshots > 0 ? fact("Latest snapshot", formatSize(project.snapshotBytes)) : null,
-    project.lastChange === null
-      ? null
-      : fact(
-          "Last change",
-          kit.when(project.lastChange),
-          project.lastComputer ? ` on ${project.lastComputer}` : null,
+      { class: "sync-detail-head" },
+      h(
+        "div",
+        { class: "sync-item-main" },
+        h(
+          "div",
+          { class: "sync-item-title" },
+          h("h3", { class: "sync-detail-title", title: project.name }, project.name),
+          h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
         ),
-    project.folder
-      ? fact(
-          "Folder here",
-          h("span", { class: "sync-path", title: project.folder }, project.folder),
-        )
-      : null,
+        project.folder
+          ? h("div", { class: "sync-item-detail sync-path", title: project.folder }, project.folder)
+          : h("div", { class: "sync-item-detail" }, "In your account, from another computer"),
+      ),
+      h(
+        "div",
+        { class: "sync-item-actions" },
+        isOpen
+          ? kit.button(
+              "Snapshot now",
+              () => kit.run("sync.snapshot.create"),
+              // Continue is the page's one primary button when it is on offer.
+              controller.continueFrom() === null ? "primary" : "secondary",
+              "camera",
+            )
+          : null,
+        kit.menuButton(`More for ${project.name}`, menu, "Project"),
+      ),
+    ),
+    stats(kit, [
+      { key: "chats", value: String(project.chats), label: project.chats === 1 ? "Chat" : "Chats" },
+      {
+        key: "snapshots",
+        value: String(project.snapshots),
+        label: project.snapshots === 1 ? "Snapshot" : "Snapshots",
+      },
+      {
+        key: "changed",
+        value: project.lastChange === null ? "–" : kit.when(project.lastChange),
+        label: where ? `Last change, ${where}` : "Last change",
+      },
+    ]),
   );
 
-  let history: Child[];
+  let rest: Child[];
   if (isOpen) {
     const rows = controller.snapshots.peek();
     const days = services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
-    history = [
+    rest = [
       h(
         "div",
         { class: "sync-subhead" },
         h("h3", { class: "sync-subtitle" }, "Snapshot history"),
-        h("span", { class: "sync-subhead-note" }, `${retentionText(days)}.`),
-        kit.link("Change", () => kit.run("settings.open", { query: "@id:sync.historyDays" })),
+        h(
+          "p",
+          { class: "sync-subhead-note" },
+          `${retentionText(days)}. `,
+          kit.link("Change", () => kit.run("settings.open", { query: "@id:sync.historyDays" })),
+        ),
       ),
       rows.length === 0
         ? card(empty("No snapshots yet. One is taken when there is unfinished work."))
@@ -542,21 +558,21 @@ function projectDetail(kit: PageKit, project: OverviewProject): HTMLElement {
               "div",
               { class: "sync-day" },
               h("div", { class: "sync-day-label" }, group.label),
-              card(...group.rows.map((row) => snapshotRow(kit, row))),
+              card(...group.rows.map((row) => snapshotRow(kit, row, status.deviceId))),
             ),
           ),
     ];
   } else if (project.here) {
-    history = [
+    rest = [
       kit.text(
-        `It syncs from ${project.folder ?? "another folder on this computer"}. Open that folder to see and restore its snapshots.`,
+        "It syncs from the folder above. Open that folder to see and restore its snapshots.",
         true,
       ),
     ];
   } else {
     // The open folder can become this project when it doesn't sync as another.
     const canLink = !!open && !open.on;
-    history = [
+    rest = [
       kit.text(
         "Its chats and snapshots are in your account. To get it on this computer, open its folder here (clone or copy the project first), then say that the folder is this project: its chats arrive, and you can continue from its latest snapshot.",
         true,
@@ -577,15 +593,8 @@ function projectDetail(kit: PageKit, project: OverviewProject): HTMLElement {
     "div",
     { class: "sync-detail", "data-project-detail": project.id },
     backLink(kit),
-    h(
-      "div",
-      { class: "sync-detail-head" },
-      h("h3", { class: "sync-detail-title", title: project.name }, project.name),
-      h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
-      kit.menuButton(`More for ${project.name}`, menu, "Project"),
-    ),
-    facts,
-    ...history,
+    head,
+    ...rest,
   );
 }
 
@@ -601,19 +610,21 @@ function backLink(kit: PageKit): HTMLElement {
   return el;
 }
 
-function projectsPage(kit: PageKit): Child[] {
+function projectsPage(kit: PageKit, status: SyncStatus): Child[] {
   const { controller, session } = kit;
   const projects = controller.overview.peek().projects;
   const open = controller.project.peek();
+  // The open folder's project is a row of the list (marked, and the one shown at first); the
+  // folder gets a card of its own only while it doesn't sync.
+  const openId = open?.on ? open.id : null;
   const chosen = projects.find((p) => p.id === session.projectId.peek()) ?? null;
-  // Beside the list a detail always shows: the one picked, else the open folder's, else the first.
-  const shown = chosen ?? projects.find((p) => open?.on && p.id === open.id) ?? projects[0] ?? null;
+  const shown = chosen ?? projects.find((p) => p.id === openId) ?? projects[0] ?? null;
 
   const rows = projects.map((project) => {
     const el = h(
       "button",
       {
-        class: `sync-item sync-pick${project === shown ? " is-selected" : ""}`,
+        class: `sync-item sync-pick sync-project-row${project === shown ? " is-selected" : ""}`,
         type: "button",
         "data-project": project.id,
         ...(project === shown && { "aria-current": "true" }),
@@ -627,20 +638,15 @@ function projectsPage(kit: PageKit): Child[] {
           h("span", { class: "sync-item-name", title: project.name }, project.name),
           h("span", { class: "ai-tag" }, project.here ? "This computer" : "Not on this computer"),
         ),
-        h("div", { class: "sync-item-detail" }, projectCounts(project)),
-        project.lastChange === null
-          ? null
-          : h(
-              "div",
-              { class: "sync-item-detail" },
-              "Changed ",
-              kit.when(project.lastChange),
-              project.lastComputer ? ` on ${project.lastComputer}` : null,
-            ),
-        project.folder
-          ? h("div", { class: "sync-item-detail sync-path", title: project.folder }, project.folder)
-          : null,
+        h(
+          "div",
+          { class: "sync-item-detail sync-one-line" },
+          projectCounts(project),
+          project.lastChange === null ? null : " · changed ",
+          project.lastChange === null ? null : kit.when(project.lastChange),
+        ),
       ),
+      project.id === openId ? h("span", { class: "sync-open-here" }, "Open here") : null,
       icon("chevron-right"),
     );
     kit.drawn.add(on(el, "click", () => kit.go("projects", project.id)));
@@ -648,21 +654,23 @@ function projectsPage(kit: PageKit): Child[] {
   });
 
   return [
-    section("This folder", openFolderCard(kit)),
+    open && !open.on ? section("This folder", notSyncedCard(kit, open.root, open.known)) : null,
     continueCallout(kit),
     section(
       "All projects",
       projects.length === 0
         ? card(
             empty(
-              "No projects yet. A project syncs once you choose Sync this project with its folder open.",
+              open
+                ? "No projects yet. A project syncs once you choose Sync this project."
+                : "No projects yet. Open a folder and choose Sync this project: its chats travel with you, and snapshots of unfinished work are taken automatically.",
             ),
           )
         : h(
             "div",
             { class: `sync-md${chosen ? " is-chosen" : ""}` },
             h("div", { class: "settings-card sync-card sync-md-list" }, ...rows),
-            shown ? projectDetail(kit, shown) : null,
+            shown ? projectDetail(kit, shown, status) : null,
           ),
     ),
   ];
@@ -938,7 +946,7 @@ function storagePage(kit: PageKit, status: SyncStatus): Child[] {
                 { class: "sync-item sync-pick sync-size-row", type: "button" },
                 h("span", { class: "sync-item-name", title: p.name }, p.name),
                 h("span", { class: "sync-held" }, countOf(p.snapshots, "snapshot")),
-                h("span", { class: "sync-size" }, formatSize(p.bytes)),
+                h("span", { class: "sync-size" }, snapshotSize(p.bytes)),
               );
               kit.drawn.add(on(el, "click", () => kit.go("projects", p.id)));
               return el;
@@ -1014,7 +1022,7 @@ function activityPage(kit: PageKit): Child[] {
 export function drawPage(kit: PageKit, page: SyncPageId, status: SyncStatus): Child[] {
   switch (page) {
     case "projects":
-      return projectsPage(kit);
+      return projectsPage(kit, status);
     case "content":
       return contentPage(kit);
     case "computers":
