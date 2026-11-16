@@ -16,6 +16,8 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct Api {
     base: String,
+    /// The part of the service asked: `/api/<area>/…` ("sync"; "team" for a team's library).
+    area: &'static str,
     /// The saved account session (`account.json`), where the tokens come from.
     session: PathBuf,
     client: reqwest::Client,
@@ -92,7 +94,14 @@ fn refusal(status: u16, json: &Value) -> Error {
 
 impl Api {
     pub fn new(base: &str, data_dir: &Path) -> Self {
+        Self::of("sync", base, data_dir)
+    }
+
+    /// The same client for another part of the accounts server (`/api/<area>/…`): the same
+    /// session, the same refresh of a token that ran out.
+    pub fn of(area: &'static str, base: &str, data_dir: &Path) -> Self {
         Self {
+            area,
             base: base.trim_end_matches('/').to_string(),
             session: accounts::session_file(data_dir),
             client: reqwest::Client::new(),
@@ -117,7 +126,10 @@ impl Api {
     ) -> Result<reqwest::Response> {
         let mut request = self
             .client
-            .request(method.clone(), format!("{}/api/sync/{path}", self.base))
+            .request(
+                method.clone(),
+                format!("{}/api/{}/{path}", self.base, self.area),
+            )
             .bearer_auth(token);
         // Chunks and sweeps take as long as megabytes take; everything else is quick.
         let slow = path.starts_with("blobs") || path == "gc";

@@ -27,6 +27,7 @@ import {
   type SkillProblem,
   type SkillScope,
   skillFileRel,
+  skillPreApproves,
   skillsForFile,
   upFrontSkills,
   withNestedSkills,
@@ -48,6 +49,7 @@ import {
 import { product } from "../../core/product";
 import { effect, signal, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { activeTeam, teamKey, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
 import { agentHost } from "./agentHost";
@@ -285,6 +287,12 @@ export class SkillsService {
     for (const p of activePlugins.peek())
       for (const dir of p.skillDirs)
         out.push({ dir, label: pluginLabel(p.name), scope: "user", prefix: `${p.name}:` });
+    // D442: the team's skills that are on here. Other people's: a scope of their own, so they
+    // get none of the trust the user's own skills have, and the user's of the same name win.
+    const team = activeTeam.peek();
+    const teamSkills = teamPath("skills", team);
+    if (team && teamSkills)
+      out.push({ dir: teamSkills, label: teamLabel(team.name), scope: "team" });
     // D213: not a folder's own in restricted mode or a risky folder (Downloads…), each folder
     // judged on its own.
     const first = this.services.workspace.root.peek();
@@ -325,7 +333,7 @@ export class SkillsService {
       .map((p) => p.id)
       .join(
         ",",
-      )}${folders.length > 1 ? `\0${folders.map((f) => `${f.path}\u0001${f.name}`).join("\0")}` : ""}`;
+      )}\0${teamKey()}${folders.length > 1 ? `\0${folders.map((f) => `${f.path}\u0001${f.name}`).join("\0")}` : ""}`;
     if (
       this.cache &&
       this.cache.key === key &&
@@ -483,7 +491,7 @@ export class SkillsService {
         ...(x.nested !== undefined && { nested: x.nested }),
         ...(x.builtin && { builtIn: true }),
         // A user's own skill pre-approves its allowed-tools while it's active (D221).
-        ...(x.allowedTools.length && { preApproves: x.scope === "user" }),
+        ...(x.allowedTools.length && { preApproves: skillPreApproves(x) }),
         name: x.name,
         description: x.description,
         scope: x.scope,
@@ -609,8 +617,9 @@ export function useSkillTool(skills: SkillsService, subagents?: SubagentRegistry
       }
       const files = await skills.files(skill);
       // A user's own skill pre-approves its allowed-tools while it's active (D221): for the rest
-      // of this turn. A project's skill can't approve its own tools (a cloned repository's).
-      if (skill.scope === "user" && skill.allowedTools.length)
+      // of this turn. A project's skill can't approve its own tools (a cloned repository's),
+      // nor can a team's (D442).
+      if (skillPreApproves(skill) && skill.allowedTools.length)
         host.preApprove?.(skill.allowedTools);
       // Its `effort` holds for the rest of the turn (D229, Claude Code's); a forked one's is
       // its subagent's.
@@ -780,6 +789,18 @@ export function registerSkills(
   sub.add(workspace.onDidOpen(() => skills.invalidate()));
   sub.add(workspace.onDidClose(() => skills.invalidate()));
   sub.add(workspace.onDidChangeFolders(() => skills.invalidate()));
+  // The team's library changed (refreshed, an item added or turned off, the team left): its
+  // folder isn't watched, the team extension says when it wrote it.
+  let teamWas = teamKey();
+  sub.add(
+    effect(() => {
+      const now = teamKey(activeTeam.value);
+      if (now === teamWas) return undefined;
+      teamWas = now;
+      untracked(() => skills.invalidate());
+      return undefined;
+    }),
+  );
   // The user skills folders are watched with what's in them (D221), instead of being read again
   // every 30 s: a skill installed, edited or removed elsewhere shows at once.
   registerSkillsWatch(sub, services, skills);
@@ -846,7 +867,7 @@ export function registerSkills(
         // Its model, effort and (a user's own skill) pre-approved tools hold for this turn (D221).
         if (skill.model && skill.model !== "inherit") session.nextTurnModel = skill.model;
         if (skill.effort) session.nextTurnEffort = skill.effort;
-        if (skill.scope === "user" && skill.allowedTools.length)
+        if (skillPreApproves(skill) && skill.allowedTools.length)
           session.nextTurnTools = mergeTurnTools(session.nextTurnTools, {
             preApproved: skill.allowedTools,
           });
@@ -863,7 +884,7 @@ export function registerSkills(
   sub.add(
     state.register("ide://agent/skills", {
       description:
-        "The agent's skills (D206): the folders looked in, each skill (name, description, user or workspace, path, whether it's turned off, whether the agent or only the user may run it), skills hidden by another of the same name, and SKILL.md files that couldn't be used and why.",
+        "The agent's skills (D206): the folders looked in, each skill (name, description, `scope`: user, workspace, or team for one from the team's library, which is read only and never pre-approves its tools; path, whether it's turned off, whether the agent or only the user may run it), skills hidden by another of the same name, and SKILL.md files that couldn't be used and why.",
       get: () => skills.listing(),
     }),
   );

@@ -57,6 +57,7 @@ export const SOURCE_LABELS: Record<RuleSource, string> = {
   cursor: "Cursor rule",
   claudeRules: "Claude Code rule",
   user: "Your own rules",
+  team: "Your team's rules",
 };
 
 export interface RuleFields {

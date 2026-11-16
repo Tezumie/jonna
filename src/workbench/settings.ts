@@ -27,6 +27,7 @@ import { isLanguageOverrideKey, languageOverrideKey } from "../core/settings/lan
 import { SettingsModel, type SettingsScope } from "../core/settings/model";
 import { type SettingSchema, SettingsRegistry } from "../core/settings/schema";
 import { translateVscodeSettings } from "../core/settings/vscode";
+import { teamSettings } from "../core/team/settings";
 import type { WorkspaceService } from "./workspace";
 import { ensureWorkspaceFolder, workspaceFolderName, workspaceFolders } from "./workspaceFolder";
 
@@ -173,12 +174,21 @@ export class SettingsService implements Disposable {
     const added = Object.keys(settings);
     if (added.some((k) => this.vscodeSkipped.some((s) => s === k || s.endsWith(` ${k}`))))
       void this.reloadVscode();
+    // The same for the team's defaults: a key it sets that wasn't known when they were read.
+    if (
+      this.teamRefused.some((k) =>
+        added.includes(k.slice(k.lastIndexOf("]") + 1).replace(/^\./, "")),
+      )
+    )
+      this.applyTeam();
     // An open settings page shows (or drops) these at once: an extension turned on or off.
     this.version.value = this.version.peek() + 1;
     return toDisposable(() => {
       const prior = this.model.snapshot();
       unregister();
       this.model.registryChanged(prior);
+      // A team's default for a setting that is gone is no longer one.
+      if (Object.keys(this.teamRaw).length) this.applyTeam();
       this.version.value = this.version.peek() + 1;
     });
   }
@@ -334,6 +344,50 @@ export class SettingsService implements Disposable {
       if (keys.length) out.set(folder, keys);
     }
     return out;
+  }
+
+  /** What the team's settings.json holds, as parsed (filtered again when the registry changes). */
+  private teamRaw: Record<string, unknown> = {};
+  private teamRead = 0;
+  /** Keys of the team's settings.json that a team may not set, or that aren't known: left out. */
+  teamRefused: string[] = [];
+
+  /**
+   * The team's default settings (D442): `path` is the settings.json of the team's library, in
+   * the folder of the items that are on here (null: no team, or it has none). Read into a layer
+   * of its own between the built-in defaults and the user's settings. Never a lock, never
+   * written from here, and only the keys a team may set (core/team/settings.ts).
+   */
+  async loadTeam(path: string | null): Promise<void> {
+    const read = ++this.teamRead;
+    let raw: Record<string, unknown> = {};
+    if (path && hasBackend()) {
+      try {
+        const parsed = parseJsonc(new TextDecoder().decode(await fsIpc.read(path)));
+        if (
+          parsed.ok &&
+          parsed.value &&
+          typeof parsed.value === "object" &&
+          !Array.isArray(parsed.value)
+        )
+          raw = parsed.value as Record<string, unknown>;
+      } catch {
+        // No settings.json in the team's library (or it isn't on here).
+      }
+    }
+    // A later call won: its file is the one that counts.
+    if (read !== this.teamRead) return;
+    this.teamRaw = raw;
+    this.applyTeam();
+  }
+
+  private applyTeam(): void {
+    const { values, refused } = teamSettings(this.teamRaw, (key) => {
+      const schema = this.registry.get(key);
+      return !!schema && schema.scope !== "workspace";
+    });
+    this.teamRefused = refused;
+    this.model.setTeam(values);
   }
 
   private async reloadVscode(): Promise<void> {

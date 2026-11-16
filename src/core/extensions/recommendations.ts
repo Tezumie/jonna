@@ -10,7 +10,7 @@ export interface Recommendation {
   id: string;
   /** Why, in a few words ("Recommended by this workspace", "For Python files"). */
   reason: string;
-  source: "workspace" | "files" | "popular";
+  source: "workspace" | "team" | "files" | "popular";
 }
 
 /**
@@ -181,6 +181,8 @@ export function fileRecommendations(paths: readonly string[]): Recommendation[] 
  */
 export function recommendationsFor(input: {
   workspace: readonly WorkspaceRecommendations[];
+  /** The team's list (its library's extensions.json, D442) and its name: after the workspace's. */
+  team?: { name: string; recommendations: readonly string[] } | null;
   paths: readonly string[];
   installed: ReadonlySet<string>;
   ignored: readonly string[];
@@ -198,6 +200,13 @@ export function recommendationsFor(input: {
   for (const w of input.workspace)
     for (const id of w.recommendations)
       add({ id, reason: "Recommended by this workspace", source: "workspace" });
+  // Recommended, never installed for anyone: each person installs what they want of it.
+  for (const id of input.team?.recommendations ?? [])
+    add({
+      id,
+      reason: `Recommended by your team${input.team?.name.trim() ? ` (${input.team.name.trim()})` : ""}`,
+      source: "team",
+    });
   for (const r of fileRecommendations(input.paths)) add(r);
   if (!out.size)
     for (const id of POPULAR_EXTENSIONS) add({ id, reason: "Popular", source: "popular" });

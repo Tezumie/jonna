@@ -55,6 +55,7 @@ mod search;
 mod speech;
 mod store;
 mod sync;
+mod team;
 #[cfg(feature = "desktop")]
 mod update;
 mod url_scheme;
@@ -557,6 +558,14 @@ macro_rules! all_commands {
                 ipc::sync::sync_chat_same,
                 ipc::sync::sync_project_link,
                 ipc::sync::sync_project_separate,
+                ipc::team::team_library,
+                ipc::team::team_cache,
+                ipc::team::team_fetch,
+                ipc::team::team_apply,
+                ipc::team::team_clear,
+                ipc::team::team_item_text,
+                ipc::team::team_put,
+                ipc::team::team_delete,
                 ipc::app::state_load,
                 ipc::app::state_save,
                 ipc::app::audit_append,

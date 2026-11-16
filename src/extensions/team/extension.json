@@ -1,0 +1,74 @@
+{
+  "id": "builtin.team",
+  "version": "0.1.0",
+  "displayName": "Team library",
+  "description": "What your team published so everyone's setup works the same way: rules, skills, commands, agents, output styles, snippets, MCP servers, default settings and recommended extensions.",
+  "activation": ["*"],
+  "permissions": [],
+  "contributes": {
+    "commands": [
+      {
+        "id": "team.refresh",
+        "title": "Refresh the team's library",
+        "category": "Team"
+      },
+      {
+        "id": "team.readItem",
+        "title": "Read an item of the team's library",
+        "category": "Team"
+      },
+      {
+        "id": "team.addItem",
+        "title": "Add an item of the team's library",
+        "category": "Team"
+      },
+      {
+        "id": "team.turnOnItem",
+        "title": "Turn an item of the team's library back on",
+        "category": "Team"
+      },
+      {
+        "id": "team.turnOffItem",
+        "title": "Turn off an item of the team's library",
+        "category": "Team"
+      },
+      {
+        "id": "team.publish",
+        "title": "Publish to the team's library",
+        "category": "Team"
+      },
+      {
+        "id": "team.setDefault",
+        "title": "Make an item of the team's library a default (or not)",
+        "category": "Team"
+      },
+      {
+        "id": "team.unpublish",
+        "title": "Remove an item from the team's library…",
+        "category": "Team"
+      }
+    ],
+    "settings": {
+      "team.added": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Items of your team's library you added on this computer (their ids). Kept here by the team's commands; it never syncs.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Added from the team's library"
+      },
+      "team.off": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Defaults of your team's library you turned off on this computer (their ids). Kept here by the team's commands; it never syncs.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Turned off from the team's library"
+      }
+    }
+  }
+}

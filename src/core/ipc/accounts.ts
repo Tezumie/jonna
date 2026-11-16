@@ -33,7 +33,10 @@ export interface AccountTeam {
   name: string;
   /** "owner" pays for the team; a "member" has sync through it. */
   role: "owner" | "member";
+  /** May change the team's library (publish, unpublish, mark as default). */
   publisher: boolean;
+  /** Moves with every change of the team's library: differs from the cached one → read it again. */
+  libraryRev?: number;
 }
 
 export const accountsIpc = {

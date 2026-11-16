@@ -682,6 +682,32 @@ taking the accounts server as `base`.
   computer (`scan`, which also says what it kept out and whether it saw everything;
   `read`, `write`); only those names resolve.
 
+## team/
+
+A team's library (D442, `src/extensions/team/README.md`): what a team published for its
+members, fetched from the accounts server (`/api/team/`, through `sync::api::Api::of("team", …)`:
+the same session and token refresh) and kept in `<data>/team/<team>/`. Commands in
+`ipc/team.rs` (`team_library`, `team_cache`, `team_fetch`, `team_apply`, `team_clear`,
+`team_item_text`, `team_put`, `team_delete`), one at a time. The front end decides which items
+are on; where files go is decided here, and nothing a library says is trusted to name a place.
+
+- `mod.rs` — the calls (`listing`, `item_text`, `put`, `delete`), `parse_listing` (unknown
+  kinds, names that fit no kind, bad ids, oversized items and repeats left out; at most 500
+  items and 20 MiB), refusals as `Error::Sync(code, message)`: `TeamNone`, `TeamNotPublisher`,
+  `TeamLapsed`, `TeamNameTaken`, `TeamConflict`, `TeamTooLarge`, `TeamFull`, `TeamMissing`,
+  `TeamInvalid`, `TeamOffline`, `TeamSignedOut`. A publish that meets a newer version comes
+  back as `Put::Conflict`, not an error.
+- `paths.rs` — `check(kind, path)`: the names each kind may have (relative, plain parts, no
+  `..`, no `\` or `:`, no hidden files, no Windows device names, the kind's own shape);
+  `valid_id`; `folder_name` (a team's folder: its id when that is a plain name).
+- `cache.rs` — `library.json` (the list and which texts are here), `items/<id in hex>.txt`
+  (every item's text), `active/` (only the items that are on, at their names): `set_listing`,
+  `store_text`, `apply` (writes what changed, removes the rest, never a name that fails
+  `paths::check`), `clear_others`. Atomic writes.
+
+The front end reads `active/` with the normal fs commands: `ipc::team::read_path` (called from
+`settings::resolve`) lets in paths inside a team's `active/` tree, no links, reading only.
+
 ## update/
 
 Updates (D192): tauri-plugin-updater, registered only when the build has an update endpoint and

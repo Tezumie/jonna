@@ -19,7 +19,7 @@ export interface OutputStyle {
    * IDE's essentials (Claude Code's `keep-coding-instructions`, false by default).
    */
   keepCodingInstructions: boolean;
-  source: "built-in" | "user" | "project";
+  source: "built-in" | "user" | "project" | "team";
   /** Where its file is (the user's and the project's). */
   path?: string;
   /** The folder it came from, as the picker labels it. */
@@ -68,7 +68,7 @@ const stem = (fileName: string) => fileName.replace(/\.md$/i, "");
 export function parseOutputStyleFile(
   text: string,
   fileName: string,
-  source: "user" | "project",
+  source: "user" | "project" | "team",
   path?: string,
 ): OutputStyle | null {
   const { meta, body } = parseFrontMatter(text);

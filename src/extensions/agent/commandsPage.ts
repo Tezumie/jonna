@@ -13,6 +13,7 @@ import { isWithin, joinPath, samePath } from "../../core/paths/index";
 import { isUserCaller } from "../../core/permissions/commandGuards";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { activeTeam } from "../../core/team/source";
 import { confirmAction } from "../../ui/Dialog";
 import { icon } from "../../ui/Icon";
 import type { DockView } from "../../workbench/dock/views";
@@ -44,6 +45,8 @@ class CommandsView implements DockView {
     this.store.add(
       effect(() => {
         version.value;
+        // The team's library changed: its commands come or go.
+        activeTeam.value;
         services.workspace.root.value;
         services.workspace.folders.value;
         services.settings.version.value;
@@ -72,14 +75,18 @@ class CommandsView implements DockView {
     const st = this.render;
     const group = (
       title: string,
-      scope: "user" | "workspace",
+      scope: "user" | "workspace" | "team",
       items: SlashCommand[],
       extra: HTMLElement | null = null,
     ) => {
-      const add = addButton(st, "New", () => this.run("agent.newSlashCommand", { scope }), {
-        "data-new": scope,
-        title: `New ${scope} command`,
-      });
+      // The team's (D442) are read only: nothing is added or deleted from here.
+      const add =
+        scope === "team"
+          ? null
+          : addButton(st, "New", () => this.run("agent.newSlashCommand", { scope }), {
+              "data-new": scope,
+              title: `New ${scope} command`,
+            });
       const rows = items.map((c) => {
         const more = h(
           "button",
@@ -116,7 +123,7 @@ class CommandsView implements DockView {
               .pick(
                 [
                   { id: "open", label: "Open", icon: "file-text" as const },
-                  { id: "delete", label: "Delete", icon: "trash-2" as const },
+                  ...(c.team ? [] : [{ id: "delete", label: "Delete", icon: "trash-2" as const }]),
                 ],
                 { placeholder: `/${c.name}` },
               )
@@ -155,11 +162,20 @@ class CommandsView implements DockView {
         // Every command the chat knows (built-in, skills, MCP prompts), not only these files.
         addButton(st, "All commands", () => this.run("agent.slash"), {}, "list"),
       ),
+      ...(list.some((c) => c.team)
+        ? [
+            group(
+              "Team",
+              "team",
+              list.filter((c) => c.team),
+            ),
+          ]
+        : []),
       root
         ? group(
             "Workspace",
             "workspace",
-            list.filter((c) => !c.user),
+            list.filter((c) => !c.user && !c.team),
           )
         : emptyNote("Open a folder for its own commands."),
     );
@@ -233,7 +249,9 @@ export function registerCommandsPage(sub: DisposableStore, services: WorkbenchSe
       if (where === "workspace" && services.workspace.root.peek() && !target)
         return { created: false };
       const folder = folders.find((f) =>
-        where === "user" ? f.user : !f.user && !!target && !!f.root && samePath(f.root, target),
+        where === "user"
+          ? f.user
+          : !f.user && !f.team && !!target && !!f.root && samePath(f.root, target),
       );
       if (!folder)
         throw new Error(
@@ -288,6 +306,10 @@ export function registerCommandsPage(sub: DisposableStore, services: WorkbenchSe
     run: async ({ name }, ctx) => {
       const command = (await slashCommands(services)).find((c) => c.name === name && c.path);
       if (!command?.path) throw new Error(`No slash command file for /${name}.`);
+      if (command.team)
+        throw new Error(
+          `/${name} is from your team's library (${command.source}): it is removed from the library itself.`,
+        );
       if (
         ctx.caller.kind === "user" &&
         !(await confirmAction(`Delete /${name}?`, `${command.path} is deleted.`, "Delete", true))

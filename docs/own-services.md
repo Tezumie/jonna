@@ -18,7 +18,7 @@ holds the product's names). Nothing else in the code spells a server address or 
 | `accountsUrl` | The accounts server: sign-in, the profile, and the server Sync talks to. `https://…`, without a path. | No account in the build: see "Without accounts". |
 | `accountPagePath` | The account page the app opens in the browser (`sync.openAccountPage`: devices, storage, resetting sync). A path on the accounts server, or a whole URL when the page lives elsewhere. | `/account` |
 | `planPagePath` | The page where a plan is bought, renewed or cancelled (`sync.managePlan`). A path on the accounts server, or a whole URL (a billing portal on another host). Set it to `""` when your service has no plans (sync that is free, or sold elsewhere): the IDE then shows no "Your plan" card, no "See plans" and no "Renew". | `/account#plan` |
-| `teamPagePath` | The page where a subscriber's team is managed: inviting and removing people, seats, leaving (`sync.manageTeam`). A path on the accounts server, or a whole URL. Set it to `""` when your service has no teams: the IDE then shows nothing about teams, whatever the profile says. | `/account#team` |
+| `teamPagePath` | The page where a subscriber's team is managed: inviting and removing people, seats, leaving (`sync.manageTeam`). A path on the accounts server, or a whole URL. Set it to `""` when your service has no teams: the IDE then shows nothing about teams, whatever the profile says, and has no team library (no `team.*` command or setting, no `ide://team`). | `/account#team` |
 | `syncBuiltIn` | `false` leaves Sync out of the build, whatever the server offers. | `true` (Sync also needs `accountsUrl`). |
 | `updates.endpoint` | Where installed copies look for a new version (a `latest.json`). | No updates: the build never checks and never connects. |
 | `updates.betaEndpoint` | The same for the beta channel (`update.channel`). | No beta channel. |
@@ -68,7 +68,7 @@ The profile, `GET /api/me`:
 | `syncUntil` | ms, optional | While lapsed: when what is synced is deleted. |
 | `syncOffered` | boolean, optional | Sync is on sale to this account and it doesn't have it: the Sync tab shows an offer. |
 | `supporter` | boolean, optional | Read and kept; nothing shows it yet. |
-| `team` | `null` or `{ id, name, role, publisher }`, optional | The team the account is in (`role`: `"owner"` or `"member"`): see "Teams". A shape the app can't read counts as no team. |
+| `team` | `null` or `{ id, name, role, publisher, libraryRev }`, optional | The team the account is in (`role`: `"owner"` or `"member"`): see "Teams". `publisher`: the account may change the team's library; `libraryRev`: a number that moves with every change of it (see "A team's library"). A shape the app can't read counts as no team. |
 
 A server that sends only `id` and `name` is a complete accounts server: there is sign-in and a
 profile, and Sync stays closed to everyone.
@@ -123,11 +123,53 @@ A member sees no "Your plan" card (there is "Manage team" instead); an owner see
 subscriber in no team sees one row, "Add people to your subscription". With `teamPagePath` set
 to `""` none of this shows, and `sync.manageTeam` says the build has no team page.
 
+## A team's library
+
+A team may publish things on purpose so every member's IDE works the same way: rules, skills,
+commands, agents, output styles, snippets, a list of MCP servers, default settings and
+recommended extensions. The app fetches the library, keeps a copy
+(`<data>/team/<team>/`), and makes the items that are on take effect as a read-only source of
+its own, under the user's own files (`src/extensions/team/README.md`). A build has it when
+`hasTeams()`: Sync is built in and `teamPagePath` isn't empty.
+
+It is served by the accounts server under `/api/team/`, with the same bearer token as Sync:
+
+| Request | What the app sends | What it expects |
+|---|---|---|
+| `GET /api/team/library` | | `{ team: { id, name }, state: "on" or "lapsed", items: [{ id, kind, path, isDefault, version, size, by, updatedAt }] }`, without any text. 404 `no_team` for an account in no team. |
+| `GET /api/team/library/{id}` | | The item, with `text`. |
+| `PUT /api/team/library/{id}` | `{ kind, path, text, isDefault, expect }` (`expect`: the version it was made from, null for a new item). Publishers. | `{ id, version }`. Refusals: 403 `not_publisher`, 402 `sync_lapsed`, 409 `conflict` (with `current`: the newer item and its text; the app reports it and overwrites nothing), 409 `name_taken`, 413 `too_large`, 507 `library_full`, 400 `invalid_request`. |
+| `DELETE /api/team/library/{id}` | Publishers. | `{ removed }`. |
+
+- `kind` is one of `rules`, `skills`, `commands`, `agents`, `outputStyles`, `snippets`, `mcp`,
+  `settings`, `extensions`. The app leaves out any other kind a service lists.
+- `path` is the item's name, the same names the user's own files sync under: `AGENTS.md`;
+  `skills/<skill>/<file…>` (one item per file; a skill counts when it has a `SKILL.md`);
+  `commands/<name>.md`; `agents/<name>.md`; `output-styles/<name>.md`;
+  `snippets/<name>.json` or `.code-snippets`; `mcp.json` (VS Code's shape, secrets as
+  `${input:…}`); `settings.json` (an object of setting keys); `extensions.json`
+  (`{ "recommendations": ["publisher.name"] }`). The app checks every name again and takes
+  nothing else.
+- `id` is 1 to 64 characters of `[A-Za-z0-9_-]`. The app makes it from the kind and the name
+  (base64url of the first 16 bytes of SHA-256 of `kind + "\0" + path`), so the same file always
+  has the same id.
+- The app takes at most 500 items, 256 KiB an item and 20 MiB in all, whatever is listed.
+- The library is read at startup, when the profile's `team.libraryRev` differs from the one
+  the copy was made at, when `team.refresh` runs, and (the profile only) at most every 10
+  minutes while the window has the focus. While `state` is `"lapsed"` the copy keeps applying;
+  it can be read, not changed.
+
+What a team's item may do on a member's computer is the app's, not the service's: a team's
+skill or command never pre-approves tools, its MCP servers ask before starting, its settings
+are defaults under the user's own and never include one that stays on a computer, and
+publishing refuses an MCP server with a secret written out.
+
 ## Without Sync
 
 `"syncBuiltIn": false`. The Sync extension is then not activated
 (`src/extensions/builtins.ts`), so the build has no Sync tab, no `sync.*` command or setting,
-no status bar item and no `ide://sync`. The Accounts menu has no "Sync…" entry, and its
+no status bar item and no `ide://sync`. Nor a team library: a team is a Sync subscriber and
+the people they invited. The Accounts menu has no "Sync…" entry, and its
 settings backup is called "Back up settings…" (export and import of a profile, which needs no
 service).
 
@@ -168,8 +210,17 @@ and edit the places that name it:
 - The `sync/` sections of `src/core/README.md` and `src-tauri/src/README.md`.
 
 `npm run check` (which compares the three Rust lists) and `cargo clippy` say what was missed.
-Nothing outside these folders imports them: the Accounts menu reaches Sync only by asking
-whether the command `sync.show` exists.
+Nothing outside these folders imports them, except the team library, which goes with Sync: the
+Accounts menu reaches Sync only by asking whether the command `sync.show` exists.
+
+The team library uses three things of Sync's (the client for the accounts server in
+`src-tauri/src/sync/api.rs`, the calls that read the user's own files in `core/ipc/sync.ts`,
+and `core/sync/localSettings.ts`). Taking Sync's code out takes it out too: also delete
+`src/extensions/team/`, `src/core/team/`, `src/core/ipc/team.ts`, `src-tauri/src/team/` and
+`src-tauri/src/ipc/team.rs`, with their lines in the same places (`teamExtension` in
+`builtins.ts`, `mod team;` and the `ipc::team::…` lines, `"team_…"`, `"allow-team-…"`, the
+`team/` sections of the two READMEs), and the places that read `core/team/source.ts` (the
+compiler lists them: each appends the team's folder after the user's own).
 
 The accounts code is `src/extensions/accounts/`, `src/core/ipc/accounts.ts`,
 `src-tauri/src/accounts/` and `src-tauri/src/ipc/accounts.rs`. It is meant to stay (the
@@ -180,8 +231,9 @@ without an account.
 
 - `product.json` → `scripts/gen.mjs` → `src/core/product.ts` (generated).
 - `src/core/ownServices.ts`: `hasAccounts`, `hasSync`, `accountsServer`, `accountPageUrl`,
-  `planPageUrl`, `hasPlanPage`, `teamPageUrl`, `hasTeamPage`. DOM-free, tested.
-- `src/extensions/builtins.ts`: Sync is in the list only when `hasSync()`.
+  `planPageUrl`, `hasPlanPage`, `teamPageUrl`, `hasTeamPage`, `hasTeams`. DOM-free, tested.
+- `src/extensions/builtins.ts`: Sync is in the list only when `hasSync()`, the team library
+  only when `hasTeams()`.
 - `src/extensions/accounts/index.ts` with `model.ts` (`accountsManifest`, `signInProviders`):
   what of the Accounts extension depends on `hasAccounts()`.
 - Rust takes the server from the front end with each call (`base`); it reads no address of its

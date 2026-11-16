@@ -81,6 +81,10 @@ pub struct Team {
     pub role: String,
     #[serde(default)]
     pub publisher: bool,
+    /// Moves with every change of the team's library (`src-tauri/src/team`): a number that
+    /// differs from the one the cache was made at says the library is to be read again.
+    #[serde(default)]
+    pub library_rev: u64,
 }
 
 /// A team this code can't read (a later server's shape) is no team, not a failed sign-in.
@@ -463,6 +467,17 @@ mod tests {
         assert_eq!((team.id.as_str(), team.name.as_str()), ("t1", "Studio"));
         assert_eq!(team.role, "member");
         assert!(team.publisher);
+        // An older server says nothing of the library; a newer one says where it stands.
+        assert_eq!(team.library_rev, 0);
+        let newer: Profile = serde_json::from_str(
+            r#"{"id":"u2","name":"Bo","team":{"id":"t1","name":"Studio","role":"owner","publisher":true,"libraryRev":7}}"#,
+        )
+        .unwrap();
+        assert_eq!(newer.team.as_ref().map(|t| t.library_rev), Some(7));
+        assert_eq!(
+            serde_json::to_value(&newer).unwrap()["team"]["libraryRev"],
+            7
+        );
         let json = serde_json::to_value(&member).unwrap();
         assert_eq!(json["team"]["role"], "member");
         assert_eq!(json["team"]["publisher"], true);

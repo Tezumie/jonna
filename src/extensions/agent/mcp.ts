@@ -23,6 +23,7 @@ import type { Transport } from "../../core/lsp/jsonrpc";
 import { pathToUri } from "../../core/lsp/uri";
 import { agentToolName, McpClient, type McpTool, type SampleHandler } from "../../core/mcp/client";
 import {
+  asksBeforeStart,
   describeServer,
   identityHash,
   inputIds,
@@ -46,6 +47,7 @@ import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { type McpServerConfig, parseMcpConfig } from "../../core/settings/vscodeImport";
+import { activeTeam, teamKey, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderName } from "../../workbench/workspaceFolder";
 import { agentHost, type HostPrompts } from "./agentHost";
@@ -224,6 +226,23 @@ export class McpClients {
           out.push(source);
         }
       }
+    // D442: the servers of the team's library, under the user's and the folder's own. Their
+    // own kind: they ask before they start, like a folder's, and each member's secrets stay
+    // theirs (`${input:…}` asks once here; a config naming a stored secret itself isn't started).
+    const team = activeTeam.peek();
+    const teamFile = teamPath("mcp.json", team);
+    if (team && teamFile) {
+      const text = await fsIpc
+        .read(teamFile)
+        .then((b) => new TextDecoder().decode(b))
+        .catch(() => null);
+      const parsed = text === null ? null : parseJsonc(text);
+      if (parsed?.ok) {
+        const { servers, inputs } = parseMcpConfig(parsed.value);
+        if (Object.keys(servers).length)
+          out.push({ label: teamLabel(team.name), kind: "team", servers, inputs });
+      }
+    }
     if (settings.peek<boolean>("agent.mcp.discovery") === true) {
       for (const [label, text] of await mcpClientIpc.discover().catch(() => [])) {
         const parsed = parseJsonc(text);
@@ -260,9 +279,12 @@ export class McpClients {
     this.statuses.value = [...this.statuses.peek().filter((s) => s.name !== status.name), status];
   }
 
-  /** A folder's server runs commands from the repository: the user says yes once. */
+  /**
+   * A folder's server runs commands from the repository, a team's ones other people listed
+   * (D442): the user says yes once.
+   */
   private async approve(server: ResolvedServer, session?: AgentSession): Promise<boolean> {
-    if (server.source.kind !== "workspace") return true;
+    if (!asksBeforeStart(server.source.kind)) return true;
     const sig = serverSignature(server.name, server.config);
     if (this.approved.has(sig)) return true;
     if (this.declined.has(sig) || !session) return false;
@@ -273,7 +295,7 @@ export class McpClients {
       detail: `Configured in ${server.source.label}. It runs with your permissions.`,
       code: what.slice(0, 1200),
       kind: "tool",
-      always: "always for this folder",
+      always: server.source.kind === "team" ? "always in this folder" : "always for this folder",
       evenWithFullAccess: true,
     });
     if (answer === "deny") {
@@ -388,7 +410,14 @@ export class McpClients {
         continue;
       }
       if (!(await this.approve(server, session))) {
-        status({ state: "waiting", tools: 0, error: "not approved for this folder" });
+        status({
+          state: "waiting",
+          tools: 0,
+          error:
+            source.kind === "team"
+              ? "not approved (from your team)"
+              : "not approved for this folder",
+        });
         continue;
       }
       if (stale()) return;
@@ -894,6 +923,18 @@ export function registerMcpClients(
         keys.includes("agent.mcp.disabledServers")
       )
         void clients.configChanged();
+    }),
+  );
+  // The team's library changed (D442): the next turn starts what its list says now.
+  let teamWas = teamKey();
+  sub.add(
+    effect(() => {
+      const now = teamKey(activeTeam.value);
+      if (now !== teamWas) {
+        teamWas = now;
+        void clients.configChanged();
+      }
+      return undefined;
     }),
   );
   // A folder's mcp.json changed: the next turn starts what it says now.

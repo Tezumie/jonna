@@ -408,7 +408,7 @@ export const settingsExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://settings", {
         description:
-          'Settings: file paths per scope, every registered setting with its effective value, where it comes from, its schema, the values languages set for themselves (`languages`: id → key → value, from `"[python]": {…}` blocks), files.associations, and problems in the files. In a multi-root workspace, `files.workspace` is the workspace file and `folders` lists each folder\'s own settings file and the keys it sets.',
+          'Settings: file paths per scope, every registered setting with its effective value, where it comes from (`source`: default, team (a default from the team library of the account, which any value of the user or the folder goes over), user, vscode (the .vscode/settings.json of the folder), workspace), its schema, the values languages set for themselves (`languages`: id → key → value, from `"[python]": {…}` blocks), files.associations, and problems in the files. In a multi-root workspace, `files.workspace` is the workspace file and `folders` lists each folder\'s own settings file and the keys it sets.',
         get: ({ budget }) => {
           const entries = settings.registry.all().map((info) => {
             const { value, source } = settings.model.resolve(info.key);

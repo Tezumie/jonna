@@ -7,6 +7,7 @@ import {
   hasPlanPage,
   hasSync,
   hasTeamPage,
+  hasTeams,
   type OwnServices,
   planPageUrl,
   teamPageUrl,
@@ -101,4 +102,11 @@ test("own services: a build with no plan page says nothing of plans", () => {
   assert.equal(hasPlanPage({ ...base, planPagePath: "/account#plan" }), true);
   assert.equal(hasPlanPage({ ...base, planPagePath: "" }), false);
   assert.equal(hasPlanPage({ ...base, planPagePath: "  " }), false);
+});
+
+test("own services: teams' libraries need Sync in the build and a service with teams", () => {
+  assert.equal(hasTeams(config()), true);
+  assert.equal(hasTeams(config({ teamPagePath: "" })), false);
+  assert.equal(hasTeams(config({ syncBuiltIn: false })), false);
+  assert.equal(hasTeams(config({ accountsUrl: "" })), false);
 });

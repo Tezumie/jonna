@@ -41,6 +41,7 @@ import type { DisposableStore } from "../../core/lifecycle/index";
 import { basename, dirname, joinPath, samePath } from "../../core/paths/index";
 import { batch, effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { activeTeam, teamKey, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderPaths } from "../../workbench/workspaceFolder";
 import { agentHost } from "./agentHost";
@@ -233,6 +234,11 @@ export class SubagentRegistry {
         .flatMap((p) =>
           p.agentDirs.map((dir) => ({ dir, source: "user" as const, kind: "subagent" as const })),
         ),
+      // D442: the agents of the team's library that are on here, last: the project's and the
+      // user's of the same name win. Their own source: read only, never written into.
+      ...[teamPath("agents")].flatMap((dir) =>
+        dir ? [{ dir, source: "team" as const, kind: "agent" as const }] : [],
+      ),
     ].filter((d, i, all) => all.findIndex((x) => samePath(x.dir, d.dir)) === i);
   }
 
@@ -288,6 +294,9 @@ export class SubagentRegistry {
           .then(decode)
           .catch(() => "");
         const def = parseSubagentFile(text, source, path);
+        // A team's agent file arrives from other people: it doesn't decide that its edits skip
+        // review. The person can make their own copy that does.
+        if (def && source === "team") def.acceptEdits = false;
         if (def) defs.push({ ...def, kind });
         else problems.push(path);
       }
@@ -742,6 +751,18 @@ export function registerSubagents(
       return undefined;
     }),
   );
+  // The team's library changed (D442): its agents come or go.
+  let teamWas = teamKey();
+  sub.add(
+    effect(() => {
+      const now = teamKey(activeTeam.value);
+      if (now !== teamWas) {
+        teamWas = now;
+        void registry.refresh();
+      }
+      return undefined;
+    }),
+  );
   const inAgents = (path: string) =>
     path.endsWith(".md") && registry.dirs().some((d) => samePath(dirname(path), d.dir));
   for (const event of ["files.didSave", "files.didCreate", "files.didDelete"] as const)
@@ -1060,6 +1081,10 @@ export function registerSubagents(
         if (!def) throw new Error(`No subagent named ${name}.`);
         if (!def.path || def.source === "builtin")
           throw new Error(`${name} is built in: turn it off instead.`);
+        if (def.source === "team")
+          throw new Error(
+            `${name} is from your team's library: it is removed from the library itself.`,
+          );
         if (
           ctx.caller.kind === "user" &&
           !(await agentHost(services).prompts.confirm({

@@ -44,6 +44,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { DisposableStore, toDisposable } from "../../core/lifecycle/index";
 import { displayPath, isWindowsPath } from "../../core/paths/index";
 import { effect } from "../../core/reactive/index";
+import { activeTeam } from "../../core/team/source";
 import { icon } from "../../ui/Icon";
 import { showMenu } from "../../ui/Menu";
 import { setTooltip } from "../../ui/Tooltip";
@@ -170,6 +171,8 @@ function formFromDraft(draft: AgentDraft, scope: Scope): Form {
 export function agentSourceLabel(def: Pick<SubagentDef, "source" | "path">): string {
   if (isBundledAgent(def)) return "Built in";
   if (def.path?.replaceAll("\\", "/").includes("/.claude/agents/")) return "Claude Code";
+  // The library of the account's team (D442): by its name where it is known.
+  if (def.source === "team") return activeTeam.peek()?.name.trim() || "Team";
   return def.source === "user" ? "You" : "Project";
 }
 
@@ -1175,6 +1178,11 @@ export class AgentEditorView implements DockView {
   /** A change to write: header fields, or a change to the whole text. */
   private queue(change: Record<string, string | null> | ((text: string) => string)): void {
     if (!this.name) return;
+    // The team's library is read only here (D442): a publisher changes it in the library.
+    if (this.def()?.source === "team") {
+      this.note("From your team's library: it can't be changed here");
+      return;
+    }
     this.pending.push(
       typeof change === "function" ? change : (text) => setHeaderFields(text, change),
     );

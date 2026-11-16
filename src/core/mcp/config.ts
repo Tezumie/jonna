@@ -7,7 +7,21 @@
 
 import type { McpInput, McpServerConfig } from "../settings/vscodeImport";
 
-export type McpSourceKind = "settings" | "workspace" | "discovered" | "extension";
+/**
+ * Where servers are configured: the user's own (`settings`: their settings, their mcp.json, a
+ * plugin they installed), the open folder's files, the team's library (D442), other tools on
+ * this machine, or extensions.
+ */
+export type McpSourceKind = "settings" | "workspace" | "team" | "discovered" | "extension";
+
+/**
+ * Whether a source's servers ask before they start: the open folder's (a cloned repository
+ * could name any program) and the team's (other people wrote the list). The answer is kept by
+ * what the server is, so a changed command asks again.
+ */
+export function asksBeforeStart(kind: McpSourceKind): boolean {
+  return kind === "workspace" || kind === "team";
+}
 
 export interface McpSource {
   /** Shown in the status: "settings", ".vscode/mcp.json", "Claude Desktop"… */

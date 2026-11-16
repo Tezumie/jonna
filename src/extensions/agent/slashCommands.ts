@@ -10,8 +10,10 @@
 import {
   bashAllowed,
   COMMAND_DEPTH,
+  type CommandOrigin,
   commandFileFor,
   commandNameFor,
+  commandTrusted,
   expandArguments,
   fileRefs,
   inlineShell,
@@ -27,6 +29,7 @@ import { fsIpc } from "../../core/ipc/fs";
 import { execIpc } from "../../core/ipc/process";
 import { appIpc } from "../../core/ipc/system";
 import { dirname, isWithin, joinPath, relativePath, resolveInRoot } from "../../core/paths/index";
+import { activeTeam, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
 import { readText } from "./changeset";
@@ -42,6 +45,23 @@ import {
 import { activePlugins, pluginLabel } from "./pluginContributions";
 import type { AgentSession } from "./session";
 
+/** A folder command files are read from. */
+export interface CommandFolder {
+  dir: string;
+  label: string;
+  /** The user's own (their folders, a plugin they installed): trusted with what it asks for. */
+  user?: boolean;
+  /** The team's library's (D442): read only, and trusted like a project's, not like the user's. */
+  team?: boolean;
+  root?: string;
+  prefix?: string;
+}
+
+/** Whose a folder's commands are, for trust (`commandTrusted`). */
+export function commandOrigin(folder: Pick<CommandFolder, "user" | "team">): CommandOrigin {
+  return folder.team ? "team" : folder.user ? "user" : "project";
+}
+
 export interface SlashCommand {
   name: string;
   description: string;
@@ -55,6 +75,8 @@ export interface SlashCommand {
   path?: string;
   /** From the user's own folders rather than the project's. */
   user?: boolean;
+  /** From the team's library (D442): read only, labeled as the team's. */
+  team?: boolean;
   /** Other names it answers to ("/new" for /clear, D389). */
   aliases?: readonly string[];
 }
@@ -213,12 +235,10 @@ const homeDir = () => {
  * a multi-root workspace each folder's, the first first, labeled with the folder's name; `root`
  * is the workspace folder a project command belongs to (its `!` lines run there).
  */
-export async function commandFolders(
-  services: WorkbenchServices,
-): Promise<{ dir: string; label: string; user?: boolean; root?: string; prefix?: string }[]> {
+export async function commandFolders(services: WorkbenchServices): Promise<CommandFolder[]> {
   const others = services.settings.peek<boolean>("agent.thirdPartyConfigs") !== false;
   const root = services.workspace.root.peek();
-  const out: { dir: string; label: string; user?: boolean; root?: string; prefix?: string }[] = [];
+  const out: CommandFolder[] = [];
   const listed = services.workspace.folders.peek();
   const folders = root ? (listed.length ? listed : [{ path: root, name: root }]) : [];
   const several = folders.length > 1;
@@ -248,6 +268,12 @@ export async function commandFolders(
   for (const p of activePlugins.peek())
     for (const dir of p.commandDirs)
       out.push({ dir, label: pluginLabel(p.name), user: true, prefix: `${p.name}:` });
+  // D442: the team's commands that are on here, last (the user's and the project's of the same
+  // name win). Not `user`: other people wrote them, so nothing they ask for is pre-approved.
+  const team = activeTeam.peek();
+  const teamCommands = teamPath("commands", team);
+  if (team && teamCommands)
+    out.push({ dir: teamCommands, label: teamLabel(team.name), team: true });
   return out;
 }
 
@@ -281,7 +307,7 @@ async function commandFiles(dir: string): Promise<{ name: string; path: string }
 /** Built-in commands, then the folders' own (first folder wins for a name). */
 export async function slashCommands(services: WorkbenchServices): Promise<SlashCommand[]> {
   const out: SlashCommand[] = [...BUILTIN_COMMANDS];
-  for (const { dir, label, user, prefix } of await commandFolders(services)) {
+  for (const { dir, label, user, team, prefix } of await commandFolders(services)) {
     for (const found of await commandFiles(dir)) {
       const e = prefix ? { ...found, name: `${prefix}${found.name}` } : found;
       if (out.some((c) => c.name === e.name)) continue;
@@ -296,6 +322,7 @@ export async function slashCommands(services: WorkbenchServices): Promise<SlashC
         source: label,
         path: e.path,
         ...(user && { user: true }),
+        ...(team && { team: true }),
         ...(file.argumentHint && { argumentHint: file.argumentHint }),
         ...(file.model && { model: file.model }),
       });
@@ -321,7 +348,11 @@ function preApproved(
   command: string,
   allowedTools: string[],
   fromProject: boolean,
+  fromTeam = false,
 ): boolean {
+  // A team's command arrives from other people and was never opened by this person: each of
+  // its lines asks, whatever is allowed for commands the person runs themself.
+  if (fromTeam) return false;
   const s = services.settings;
   if (s.peek<boolean>("agent.deleteProtection") === true && mayDeleteFiles(command)) return false;
   if (
@@ -349,10 +380,12 @@ async function runShellLine(
   fromProject: boolean,
   /** The workspace folder the command file is in (D251); the first folder by default. */
   inFolder?: string,
+  /** The command is from the team's library: its lines always ask. */
+  fromTeam = false,
 ): Promise<string> {
   const root = inFolder ?? services.workspace.root.peek();
   if (!root) return "(not run: no folder is open)";
-  if (!preApproved(services, command, allowedTools, fromProject)) {
+  if (!preApproved(services, command, allowedTools, fromProject, fromTeam)) {
     const always = permissionKey(command);
     const answer = await session.askBeforeSend({
       title: `Run \`${command}\` for /${name}`,
@@ -435,7 +468,10 @@ export async function promptSlash(
   if (builtin) return builtin(session, args);
   const plainFile = commandFileFor(name);
   if (!plainFile) return null;
-  for (const { dir, label, user, root, prefix } of await commandFolders(services)) {
+  for (const folder of await commandFolders(services)) {
+    const { dir, label, root, prefix } = folder;
+    // The user's own command is trusted with what it asks for; a project's and a team's aren't.
+    const trusted = commandTrusted(commandOrigin(folder));
     // A plugin's command is `<plugin>:<command>` (D358); its plain name works too.
     const relFile =
       prefix && name.startsWith(prefix)
@@ -458,7 +494,16 @@ export async function promptSlash(
           file.disallowedTools.some((t) => t.trim() === "Bash") ||
             lineDisallowed(file.disallowedTools, line)
             ? "(not run: the command's disallowed-tools refuses it)"
-            : await runShellLine(services, session, line, name, file.allowedTools, !user, root),
+            : await runShellLine(
+                services,
+                session,
+                line,
+                name,
+                file.allowedTools,
+                !trusted,
+                root,
+                commandOrigin(folder) === "team",
+              ),
         );
       prompt = inlineShell(prompt, outputs);
     }
@@ -467,12 +512,12 @@ export async function promptSlash(
     // user's own command it also pre-approves them (D207); disallowed-tools takes tools away.
     const notes = [
       file.allowedTools.length &&
-        `you have only the tools it names, ${file.allowedTools.join(", ")}, and the read-only ones${user ? " (the ones it names run without asking)" : ""}`,
+        `you have only the tools it names, ${file.allowedTools.join(", ")}, and the read-only ones${trusted ? " (the ones it names run without asking)" : ""}`,
       file.disallowedTools.length &&
         `you may not use ${file.disallowedTools.join(", ")} (those calls are refused)`,
     ].filter(Boolean);
     const tools = notes.length ? `\n\n(For this command ${notes.join("; ")}.)` : "";
-    const turnTools = turnToolsFor(file, !!user);
+    const turnTools = turnToolsFor(file, trusted);
     return {
       context: `The user ran the command /${name} (${label}/${relFile}). Follow it:\n${prompt}${tools}${files.length ? `\n\n${files.join("\n\n")}` : ""}`,
       ...(file.model && { model: file.model }),

@@ -37,6 +37,7 @@ import {
   samePath,
 } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
+import { activeTeam, teamKey, teamPath } from "../../core/team/source";
 import type { WorkspaceFolder } from "../../core/workspace/workspaceFile";
 import type { WorkbenchServices } from "../../workbench/services";
 import { agentIgnored } from "./ignore";
@@ -113,6 +114,13 @@ export class RulesService {
     return out;
   }
 
+  /** The rules file of the team's library (D442), when the team has one that is on here. */
+  teamFile(): { path: string; team: string } | null {
+    const team = activeTeam.peek();
+    const path = teamPath("AGENTS.md", team);
+    return team && path ? { path, team: team.name.trim() || "your team" } : null;
+  }
+
   /** Every rules file the agent follows (the ones turned off left out). */
   async rules(): Promise<ActiveRule[]> {
     return (await this.all()).filter((r) => !r.disabled);
@@ -133,7 +141,7 @@ export class RulesService {
     const folders = this.folders().filter(
       (f, i) => !(i === 0 ? blocked : projectInstructionsBlocked(this.services, f.path)),
     );
-    const key = `${root}\0${this.others()}\0${[...off].join("\0")}\0${blocked ?? ""}\0${this.services.trust.risky.version.peek()}\0${folders.map((f) => `${f.path}\u0001${f.name}`).join("\0")}`;
+    const key = `${teamKey()}\0${root}\0${this.others()}\0${[...off].join("\0")}\0${blocked ?? ""}\0${this.services.trust.risky.version.peek()}\0${folders.map((f) => `${f.path}\u0001${f.name}`).join("\0")}`;
     if (this.cache && this.cache.key === key && Date.now() - this.cache.at < STALE_MS)
       return this.cache.rules;
     const rules = this.load(folders)
@@ -213,8 +221,18 @@ export class RulesService {
 
   private async load(folders: readonly WorkspaceFolder[]): Promise<ActiveRule[]> {
     const others = this.others();
-    const found: { rel: string; abs: string; user?: boolean; root?: string; name?: string }[] = [];
+    const found: {
+      rel: string;
+      abs: string;
+      user?: boolean;
+      team?: string;
+      root?: string;
+      name?: string;
+    }[] = [];
     for (const abs of await this.userFiles()) found.push({ rel: abs, abs, user: true });
+    // The team's, with an origin of its own: shown as the team's, never as the user's.
+    const ofTeam = this.teamFile();
+    if (ofTeam) found.push({ rel: ofTeam.path, abs: ofTeam.path, team: ofTeam.team });
     const primary = this.services.workspace.root.peek();
     if (folders.length && primary) {
       // The index's hits, each in its folder (the index names the folder of those outside the
@@ -260,11 +278,16 @@ export class RulesService {
     for (const f of found) {
       if (seen.has(f.abs)) continue;
       // A rules file in a Downloads folder inside the open one (the home folder) isn't loaded.
-      if (!f.user && inDownloads(this.services, f.abs)) continue;
+      if (!f.user && !f.team && inDownloads(this.services, f.abs)) continue;
       seen.add(f.abs);
       const text = await readText(f.abs);
       if (text === null || !text.trim()) continue;
-      const classified = classifyRule({ path: f.rel, text, ...(f.user && { user: true }) });
+      const classified = classifyRule({
+        path: f.rel,
+        text,
+        ...(f.user && { user: true }),
+        ...(f.team !== undefined && { team: f.team }),
+      });
       if (!classified) continue;
       // Another folder's rule, named and scoped with the folder (D251).
       const rule = f.name ? ruleInFolder(classified, f.name) : classified;
@@ -455,6 +478,8 @@ export function registerRules(
         const session = sessions.find(undefined);
         return {
           userFiles: await rules.userFiles(),
+          // The rules file of the team's library (its `kind` in `rules` is "team"), or null.
+          teamFile: rules.teamFile()?.path ?? null,
           rules: await rules.listing(session?.attachedRules),
           // D213: why the folder's own rules aren't loaded (restricted mode, a risky folder).
           projectBlocked: projectInstructionsBlocked(services),

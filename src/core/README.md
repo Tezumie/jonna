@@ -493,7 +493,10 @@ DOM-free settings core (tested in `settings.test.ts`, `jsonc.test.ts`):
   layer, syntax errors keep the previous values, `onDidChange(keys)`, `problems()`. Restricted
   settings (`restricted: true` in a manifest, D209: terminal profiles, the automation profile)
   come from a folder's layers only after `setTrusted(true)` (the workbench follows the folder's
-  trust); extensions can't write them.
+  trust); extensions can't write them. A read-only `team` layer (D442: `setTeam`, the
+  defaults a team publishes, already filtered by `team/settings.ts`) sits between the defaults
+  and the user's: `resolve` and `inspect(key, "team")` say `team`, and the user's own value
+  wins.
 - `jsoncEdit.ts` — `setJsoncProperty(text, key, value | undefined)`: edits one top-level key and
   keeps comments and formatting; `setJsoncNestedProperty(text, outer, inner, value)` one key of a
   top-level object (a language block), making or removing the block as needed. Both throw
@@ -615,6 +618,31 @@ gives them ports.
   computer run or send something).
 - `errors.ts` — telling the service's refusals apart (offline, slow down, per item).
 
+## team/
+
+A team's library (D442, `extensions/team`), with no backend calls of its own. A library is
+other people's: these are the rules that keep it from being trusted like the user's own files.
+
+- `items.ts` — `TeamItem`, the kinds (`TEAM_KINDS`), `validItemPath` (the names each kind may
+  have: relative, plain parts, no device names), `validItemId`, `itemId` (the same id for the
+  same kind and name: base64url of 16 bytes of SHA-256), `teamItems` (a list with what can't be
+  used left out), `activeIds` (on = a default not turned off, or one added), `switchOf` (a
+  skill is switched by its `SKILL.md`), `addItem` / `turnOffItem` (the two lists of choices),
+  `itemsToFetch` (what to download given the list and the cache, within the limits).
+- `settings.ts` — `teamMaySet`, `teamSettings` (never a key that stays on a computer, an
+  unknown one, or `team.*` / `sync.*` / `accounts.*`; language blocks filtered too),
+  `mergeTeamSettings` (publishing keys into the team's file).
+- `mcp.ts` — `literalSecretIn`, `mcpForTeam`: an mcp.json to publish holds servers and the
+  inputs they use, and is refused when a server has a secret written out.
+- `publish.ts` — `publishPath`, `skillFiles`, `extensionsForTeam`.
+- `source.ts` — `activeTeam` (a signal: the team whose library applies and the folder of the
+  items that are on), `teamPath`, `teamLabel`, `teamKey`. Every reader of the user's own rules,
+  skills, commands, agents, output styles, snippets, MCP servers and recommendations appends it,
+  with a source of its own ("team").
+- `safety.test.ts` — the rules, each tested where it is decided: no pre-approval for a team's
+  skill or command, the team's rules shown as the team's, settings precedence (default < team
+  < user < workspace), recommendations.
+
 ## perf.ts, product.ts, ownServices.ts
 
 `perf.ts`: startup and load marks (`ide://perf`, `workbench.startupTimings`); `whenMarked(name)`
@@ -624,5 +652,6 @@ the online services a build uses. `ownServices.ts` (DOM-free, tested) reads thos
 `hasAccounts()`, `hasSync()`, `accountsServer(setting)` (the server in use; the
 `accounts.serverUrl` setting wins in a build that has one), `accountPageUrl(base)`,
 `planPageUrl(base)` and `teamPageUrl(base)` (the pages the app opens in the browser;
-`hasPlanPage()` and `hasTeamPage()` say whether the service has them). `docs/own-services.md` is the guide
-to the keys.
+`hasPlanPage()` and `hasTeamPage()` say whether the service has them), `hasTeams()` (the build
+has teams' libraries: Sync is built in and the service has teams). `docs/own-services.md` is
+the guide to the keys.

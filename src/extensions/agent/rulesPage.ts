@@ -28,6 +28,7 @@ import { DisposableStore } from "../../core/lifecycle/index";
 import { isWithin, resolveInRoot } from "../../core/paths/index";
 import { effect, signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { activeTeam } from "../../core/team/source";
 import { confirmAction } from "../../ui/Dialog";
 import { icon } from "../../ui/Icon";
 import type { DockView } from "../../workbench/dock/views";
@@ -75,6 +76,8 @@ class RulesView implements DockView {
     this.store.add(
       effect(() => {
         rulesVersion.value;
+        // The team's library changed: its rules file comes or goes.
+        activeTeam.value;
         services.settings.version.value;
         services.workspace.root.value;
         services.workspace.folders.value;
@@ -100,9 +103,11 @@ class RulesView implements DockView {
     this.render.clear();
     const st = this.render;
     const root = this.services.workspace.root.peek();
-    const project = this.rules.filter((r) => !r.user);
+    const project = this.rules.filter((r) => !r.user && !r.team);
     const blocked = projectInstructionsBlocked(this.services);
     const own = this.rules.filter((r) => r.user);
+    // The rules of the team's library (D442): a group of their own, named after the team.
+    const team = this.rules.filter((r) => r.team);
     // Always there, like every page's add button: with no folder, a rule needs one first.
     const add = root
       ? addButton(st, "New", () => this.open("new"), { "data-new": "rule", title: "New rule" })
@@ -138,6 +143,15 @@ class RulesView implements DockView {
             [],
             [h("div", { class: "mcp-list" }, ...own.map((r) => this.row(st, r)))],
             { "data-group": "user" },
+          )
+        : null,
+      team.length
+        ? pageGroup(
+            `From your team (${team[0]?.team ?? "your team"}), in every project`,
+            team.length,
+            [],
+            [h("div", { class: "mcp-list" }, ...team.map((r) => this.row(st, r)))],
+            { "data-group": "team" },
           )
         : null,
     ];
@@ -188,13 +202,16 @@ class RulesView implements DockView {
             label: "Open",
             run: () => this.run("editor.openFile", { path: r.abs }),
           },
-          { id: "edit", label: "When it applies…", run: () => this.open(r.path) },
+          // The team's file is read only: nothing about it is changed from here.
+          ...(r.team
+            ? []
+            : [{ id: "edit", label: "When it applies…", run: () => this.open(r.path) }]),
           {
             id: "toggle",
             label: r.disabled ? "Turn on" : "Turn off",
             run: () => setEnabled(r.disabled === true),
           },
-          ...(r.user
+          ...(r.user || r.team
             ? []
             : [
                 {
@@ -264,7 +281,7 @@ class RulesView implements DockView {
   }
 
   private editForm(st: DisposableStore, r: ActiveRule): HTMLElement {
-    const allowed = r.user ? [] : scopesFor(r.source, r.path);
+    const allowed = r.user || r.team ? [] : scopesFor(r.source, r.path);
     const parts = this.scopeFields(st, allowed, { ...fieldsOf(r) });
     const save = pageButton(
       st,
@@ -455,7 +472,7 @@ export function registerRulesPage(
         await ctx.execute("settings.set", {
           key: "agent.rules.disabled",
           value: [...off].sort(),
-          scope: workspace.root.peek() && !rule.user ? "workspace" : "user",
+          scope: workspace.root.peek() && !rule.user && !rule.team ? "workspace" : "user",
         });
         changed();
         return { path: rule.path, enabled };
@@ -558,6 +575,10 @@ export function registerRulesPage(
       palette: false,
       run: async ({ path, scope, globs, description, subagents, body }) => {
         const rule = await find(path);
+        if (rule.team)
+          throw new Error(
+            `${rule.path} is your team's rules file (${rule.team}): it is changed in the team's library, not here.`,
+          );
         const text = (await readText(rule.abs)) ?? "";
         const allowed = rule.user ? [] : scopesFor(rule.source, rule.path);
         if (scope && !allowed.includes(scope))
@@ -604,6 +625,8 @@ export function registerRulesPage(
       run: async ({ path }, ctx) => {
         const rule = await find(path);
         if (rule.user) throw new Error("Your own rules file isn't deleted from here: open it.");
+        if (rule.team)
+          throw new Error("Your team's rules file is removed from the team's library, not here.");
         if (
           ctx.caller.kind === "user" &&
           !(await confirmAction(

@@ -59,6 +59,8 @@ async function serverUrl(server: ResolvedServer, root: string): Promise<string |
 /** "User", "Workspace", or where else it's configured (Claude Desktop…). */
 function scopeLabel(source: ResolvedServer["source"]): string {
   if (source.kind === "workspace") return "Workspace";
+  // The team's library (D442): its label names the team.
+  if (source.kind === "team") return "Team";
   if (source.label === "user mcp.json" || source.kind === "settings") return "User";
   return source.label;
 }

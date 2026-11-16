@@ -99,6 +99,15 @@ fn resolve(state: &AppState, path: &str, with_claude: bool) -> Result<PathBuf> {
                         None
                     }
                 })
+                // The team's library: the items that are on here (`<data>/team/<team>/active`),
+                // read only (its own commands write there).
+                .or_else(|| {
+                    if with_claude {
+                        crate::ipc::team::read_path(state, &requested)
+                    } else {
+                        None
+                    }
+                })
                 .ok_or(err)
         }
     }

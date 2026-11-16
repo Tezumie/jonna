@@ -56,6 +56,19 @@ export interface TurnTools {
   preApproved: readonly string[];
 }
 
+/** Whose a command file is: the user's own, the open folder's, or the team's library's (D442). */
+export type CommandOrigin = "user" | "project" | "team";
+
+/**
+ * Whether a command file is trusted with what it asks for: its `allowed-tools` pre-approved and
+ * its `!` lines run under them without asking. Only the user's own. A project's file can't
+ * approve its own lines (a cloned repository's), and neither can a team's: other people wrote
+ * both.
+ */
+export function commandTrusted(origin: CommandOrigin): boolean {
+  return origin === "user";
+}
+
 /** The turn's tool settings for a command file; null when it changes nothing. */
 export function turnToolsFor(file: CommandFile, fromUser: boolean): TurnTools | null {
   if (!file.allowedTools.length && !file.disallowedTools.length) return null;

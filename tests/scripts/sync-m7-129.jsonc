@@ -127,6 +127,49 @@
     { "run": "sync.manageTeam", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.checkPlan", "expectError": "Sign in to your account to use sync." },
 
+    // The team's library (D442): signed out there is none, nothing of one is on, and the
+    // commands say why instead of doing anything.
+    {
+      "state": "ide://team",
+      "expect": { "team": null, "state": null, "items": { "$length": 0 }, "problem": null }
+    },
+    { "run": "team.refresh", "expect": { "team": null, "items": 0, "active": 0 } },
+    {
+      "run": "team.readItem",
+      "input": { "id": "none" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.addItem",
+      "input": { "id": "none" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.turnOffItem",
+      "input": { "id": "none" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.turnOnItem",
+      "input": { "id": "none" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.publish",
+      "input": { "kind": "rules" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.setDefault",
+      "input": { "id": "none", "isDefault": true },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+    {
+      "run": "team.unpublish",
+      "input": { "id": "none" },
+      "expectError": "This account isn't in a team (or isn't signed in): there is no library."
+    },
+
     // Its settings are known ones (a value that fits the schema is taken).
     { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },
     { "run": "settings.set", "input": { "key": "sync.chats", "value": false } },

@@ -270,7 +270,16 @@ export function registerMcpConfigure(
                 h(
                   "span",
                   { class: "mcp-config-main" },
-                  h("strong", null, sv.source.kind === "workspace" ? "Workspace" : "User"),
+                  h(
+                    "strong",
+                    null,
+                    // The team's library (D442) is neither the folder's nor the user's own.
+                    sv.source.kind === "workspace"
+                      ? "Workspace"
+                      : sv.source.kind === "team"
+                        ? "Team"
+                        : "User",
+                  ),
                   h("span", { class: "mcp-config-note" }, sv.source.label),
                 ),
                 switchBox(`${sv.name} on`, enabled, (v) =>

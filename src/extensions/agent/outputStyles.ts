@@ -19,6 +19,7 @@ import { appIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { dirname, joinPath, resolveInRoot } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
+import { activeTeam, teamKey, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
 import { readText } from "./changeset";
@@ -42,9 +43,9 @@ const homeDir = () => {
 /** The folders style files come from: the project's (trusted folders only), then the user's. */
 async function styleFolders(
   services: WorkbenchServices,
-): Promise<{ dir: string; label: string; source: "user" | "project" }[]> {
+): Promise<{ dir: string; label: string; source: "user" | "project" | "team" }[]> {
   const others = services.settings.peek<boolean>("agent.thirdPartyConfigs") !== false;
-  const out: { dir: string; label: string; source: "user" | "project" }[] = [];
+  const out: { dir: string; label: string; source: "user" | "project" | "team" }[] = [];
   const root = services.workspace.root.peek();
   if (root && services.trust.trusted) {
     const listed = services.workspace.folders.peek();
@@ -74,6 +75,11 @@ async function styleFolders(
       label: "~/.claude/output-styles",
       source: "user",
     });
+  // D442: the team's styles that are on here, last (the user's own of the same name wins).
+  const team = activeTeam.peek();
+  const teamStyles = teamPath("output-styles", team);
+  if (team && teamStyles)
+    out.push({ dir: teamStyles, label: teamLabel(team.name), source: "team" });
   return out;
 }
 
@@ -84,7 +90,7 @@ export function outputStyles(services: WorkbenchServices, fresh = false): Promis
   const key = `${services.workspace.root.peek() ?? ""}\0${services.trust.trusted}\0${activePlugins
     .peek()
     .map((p) => p.id)
-    .join(",")}`;
+    .join(",")}\0${teamKey()}`;
   if (!fresh && cache && cache.key === key && Date.now() - cache.at < FRESH_MS) return cache.styles;
   const styles = (async () => {
     const lists: OutputStyle[][] = [];

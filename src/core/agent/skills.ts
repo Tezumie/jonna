@@ -8,7 +8,20 @@ import { globToRegExp } from "../paths/glob";
 import { expandArguments } from "./slash";
 
 /** Where a skill was found: the user's own folders, or the open folder's. */
-export type SkillScope = "user" | "workspace";
+/**
+ * Whose a skill is: the user's own, the open folder's, or the team's (its library, D442). Only
+ * the user's own is trusted with what it asks for (`skillPreApproves`).
+ */
+export type SkillScope = "user" | "workspace" | "team";
+
+/**
+ * Whether a skill's `allowed-tools` run without asking while it is active (D221): only the
+ * user's own. A project's skill can't approve its own tools (a cloned repository's), and
+ * neither can a team's: both were written by other people.
+ */
+export function skillPreApproves(skill: { scope: SkillScope }): boolean {
+  return skill.scope === "user";
+}
 
 export interface SkillMeta {
   name: string;
@@ -269,8 +282,8 @@ export interface SkillProblem {
 
 /**
  * One skill per name: a workspace skill overrides a user skill of the same name (like the IDE's
- * settings, D206; Claude Code puts personal ones first), and within a scope the first folder in
- * precedence order wins. `found` is in precedence order within each scope. The ones left out are
+ * settings, D206; Claude Code puts personal ones first), both override the team's (a default
+ * under the user's own, D442), and within a scope the first folder in precedence order wins. `found` is in precedence order within each scope. The ones left out are
  * returned as `shadowed`.
  */
 export function mergeSkills(found: readonly FoundSkill[]): {
@@ -282,17 +295,21 @@ export function mergeSkills(found: readonly FoundSkill[]): {
   for (const s of found) {
     const had = byName.get(s.name);
     if (!had) byName.set(s.name, s);
-    else if (had.scope === "user" && s.scope === "workspace") {
+    else if (SCOPE_RANK[s.scope] > SCOPE_RANK[had.scope]) {
       shadowed.push(had);
       byName.set(s.name, s);
     } else shadowed.push(s);
   }
   const skills = [...byName.values()].sort(
-    (a, b) =>
-      (a.scope === b.scope ? 0 : a.scope === "user" ? -1 : 1) || a.name.localeCompare(b.name),
+    (a, b) => SCOPE_ORDER[a.scope] - SCOPE_ORDER[b.scope] || a.name.localeCompare(b.name),
   );
   return { skills, shadowed };
 }
+
+/** Which scope's skill wins a name: the folder's over the user's, either over the team's. */
+const SCOPE_RANK: Record<SkillScope, number> = { team: 0, user: 1, workspace: 2 };
+/** The order skills are listed in: the user's, the team's, the folder's. */
+const SCOPE_ORDER: Record<SkillScope, number> = { user: 0, team: 1, workspace: 2 };
 
 /**
  * The folders' skills, then the nested ones found so far (D221). A nested skill whose name is
@@ -435,9 +452,9 @@ export function renderSkillForAgent(
   const others = files.filter((f) => f !== "SKILL.md");
   const tools = skill.allowedTools.length
     ? `\n(The skill lists allowed-tools: ${skill.allowedTools.join(", ")}. ${
-        skill.scope === "user"
+        skillPreApproves(skill)
           ? "They run without asking for the rest of this turn."
-          : "A project's skill can't pre-approve tools: they still ask as usual."
+          : `A ${skill.scope === "team" ? "team" : "project"}'s skill can't pre-approve tools: they still ask as usual.`
       })`
     : "";
   const list = others.length

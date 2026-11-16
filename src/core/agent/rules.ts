@@ -17,7 +17,9 @@ export type RuleSource =
   | "cursor"
   /** `.claude/rules/**\/*.md` (Claude Code's rules folder, `paths` front matter), D204. */
   | "claudeRules"
-  | "user";
+  | "user"
+  /** The AGENTS.md of the team's library (D442): other people's, in every project, read only. */
+  | "team";
 
 /**
  * always: in every chat's prompt; folder: a subfolder's AGENTS.md / CLAUDE.md, attached when a
@@ -32,6 +34,8 @@ export interface RuleInput {
   path: string;
   text: string;
   user?: boolean;
+  /** The team's rules file (its absolute path in `path`): the team's name, as shown. */
+  team?: string;
 }
 
 export interface Rule {
@@ -49,6 +53,8 @@ export interface Rule {
   /** The text without its front matter. */
   body: string;
   user?: boolean;
+  /** From the team's library (D442): the team's name. Not the user's own, and read only. */
+  team?: string;
   /**
    * Which subagents get this rule (D204, front matter `subagents:`): names, or `*` for all of
    * them; `[]` (`subagents: none`) keeps it from every subagent. Undefined: the default (an
@@ -148,6 +154,15 @@ function classifyBase(input: RuleInput): Rule | null {
       globs: [],
       body: parseFrontMatter(text).body,
       user: true,
+    };
+  if (input.team !== undefined)
+    return {
+      path,
+      source: "team",
+      activation: "always",
+      globs: [],
+      body: parseFrontMatter(text).body,
+      team: input.team || "your team",
     };
   if (path === ".cursorrules")
     return { path, source: "cursorrules", activation: "always", globs: [], body: text };
@@ -273,7 +288,7 @@ export function ruleCovers(rule: Rule, rel: string): boolean {
  * read inside it. Matched with workspace-relative paths ("api/src/x.ts"). User rules unchanged.
  */
 export function ruleInFolder<T extends Rule>(rule: T, name: string): T {
-  if (rule.user) return rule;
+  if (rule.user || rule.team) return rule;
   const inside = (p: string | undefined) => (p ? `${name}/${p}` : name);
   const scoped = rule.activation === "files" || rule.activation === "requested" || !!rule.folder;
   return {
@@ -294,6 +309,7 @@ export function rulesForFile<T extends Rule>(rules: readonly T[], rel: string): 
 export function ruleReason(rule: Rule): string {
   switch (rule.activation) {
     case "always":
+      if (rule.team) return `From your team (${rule.team}), in every project`;
       return rule.user ? "Your own rules, in every project" : "Always on";
     case "folder":
       return `When the agent reads or edits a file in ${rule.folder}/`;
@@ -364,6 +380,8 @@ const cut = (text: string, limit: number) =>
 
 function heading(rule: Rule): string {
   if (rule.user) return `Your own rules (${baseName(rule.path)}, they hold in every project):`;
+  if (rule.team)
+    return `Rules from the user's team, ${rule.team} (they hold in every project; where they differ, the user's own rules and the project's come first):`;
   if (rule.source === "cursorrules") return `Project rules from ${rule.path}:`;
   if (rule.source === "cursor" || rule.source === "claudeRules")
     return `Project rule ${rule.path}:`;
@@ -371,6 +389,7 @@ function heading(rule: Rule): string {
 }
 
 const ORDER: Record<RuleSource, number> = {
+  team: -1,
   user: 0,
   agents: 1,
   claude: 2,

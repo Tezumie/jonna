@@ -26,7 +26,9 @@ import { pickWorkspaceFolder } from "./workspaceFolderPick";
  * Where a skill comes from, said plainly: nothing for the IDE's own folders, else the tool whose
  * folder it is in (a skill made in Cursor shows "From Cursor"; it is found, not shipped).
  */
-function sourceBadge(source: string): string | null {
+function sourceBadge(source: string, scope?: string): string | null {
+  // The team's (D442): by its name, the label the skills service gave it.
+  if (scope === "team") return `From ${source}`;
   const s = source.replaceAll("\\", "/");
   if (s.includes(".cursor/")) return "From Cursor";
   if (s.includes(".claude/")) return "From Claude Code";
@@ -173,7 +175,7 @@ class SkillsView implements DockView {
         [
           off.has(x.name) ? "Off" : null,
           x.disableModelInvocation ? `Only /${x.name}` : null,
-          sourceBadge(x.source),
+          sourceBadge(x.source, x.scope),
         ],
         x.description,
         () => this.run("agent.openSkill", { name: x.name }),
@@ -182,6 +184,7 @@ class SkillsView implements DockView {
       );
     const user = this.loaded.skills.filter((x) => x.scope === "user").map(rowFor);
     const workspace = this.loaded.skills.filter((x) => x.scope === "workspace").map(rowFor);
+    const team = this.loaded.skills.filter((x) => x.scope === "team").map(rowFor);
     const root = this.services.workspace.root.peek();
     const problems = this.loaded.problems.map((p) =>
       this.row(
@@ -207,6 +210,12 @@ class SkillsView implements DockView {
         user,
         `No user skills. New adds one to ${this.userDir ?? "your skills folder"}, for every project.`,
       ),
+      // The team's (D442): read only, so no New; one is turned off like any other.
+      team.length
+        ? pageGroup("Team", team.length, [], [h("div", { class: "mcp-list" }, ...team)], {
+            "data-group": "team",
+          })
+        : null,
       root
         ? this.group(
             st,
@@ -407,6 +416,10 @@ export function registerSkillsPage(
       run: async ({ name }, ctx) => {
         const skill = await require(name);
         const own = await skills.userDir();
+        if (skill.scope === "team")
+          throw new Error(
+            `${name} is from your team's library (${skill.source}): turn it off here; it is removed from the library itself.`,
+          );
         const userOwn = skill.scope === "user" && !!own && isWithin(own, skill.dir);
         if (skill.scope === "user" && !userOwn)
           throw new Error(

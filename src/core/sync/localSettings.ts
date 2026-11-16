@@ -13,6 +13,9 @@ const LOCAL_KEYS: ReadonlySet<string> = new Set([
   // Sync's own, and where the account lives.
   "accounts.serverUrl",
   "sync.projects",
+  // What of the team's library this person added or turned off, on this computer.
+  "team.added",
+  "team.off",
   // Commands the agent runs or is allowed to run.
   "agent.hooks",
   "agent.statusLine",

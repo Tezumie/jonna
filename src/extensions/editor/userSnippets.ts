@@ -12,6 +12,7 @@ import { basename, dirname, joinPath } from "../../core/paths/index";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { parseJsonc } from "../../core/settings/jsonc";
+import { activeTeam, teamPath } from "../../core/team/source";
 import type { SnippetEntry } from "../../workbench/contributions";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderPaths } from "../../workbench/workspaceFolder";
@@ -78,7 +79,13 @@ export function registerUserSnippets(sub: DisposableStore, services: WorkbenchSe
   };
   const folders = (): { dir: string; json: boolean; source: string; label: string | null }[] => {
     const user = userDir();
+    // The snippets of the team's library that are on here (D442), named as the team's.
+    const team = activeTeam.peek();
+    const teamDir = teamPath("snippets", team);
     return [
+      ...(team && teamDir
+        ? [{ dir: teamDir, json: true, source: "team", label: team.name.trim() || null }]
+        : []),
       ...(user ? [{ dir: user, json: true, source: "user", label: null }] : []),
       ...roots().flatMap(({ path: root, label }) => [
         // VS Code keeps *.code-snippets directly in .vscode; ours are in <folder>/snippets (D189).
@@ -125,6 +132,8 @@ export function registerUserSnippets(sub: DisposableStore, services: WorkbenchSe
     effect(() => {
       workspace.root.value;
       workspace.folders.value;
+      // The team's library changed: its snippets come or go.
+      activeTeam.value;
       void load();
       return undefined;
     }),

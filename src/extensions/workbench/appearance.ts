@@ -371,7 +371,8 @@ export function registerAppearance(sub: DisposableStore, services: WorkbenchServ
       // Tokens or VS Code color ids (Peacock's bars), the folder's over the user's.
       settings.get("workbench.colorCustomizations");
       const custom = mapColorCustomizations(
-        (["user", "vscode", "workspace"] as const).map((scope) =>
+        // The team's defaults first (D442): the user's and the folder's go over them.
+        (["team", "user", "vscode", "workspace"] as const).map((scope) =>
           settings.model.inspect("workbench.colorCustomizations", scope),
         ),
         colorTheme,

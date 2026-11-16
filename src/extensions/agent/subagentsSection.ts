@@ -26,6 +26,7 @@ const short = (key: string) => key.slice(key.indexOf("/") + 1);
 /** Where a subagent comes from, as its badge says. */
 function sourceLabel(def: SubagentDef): string {
   if (def.source === "builtin") return "Built in";
+  if (def.source === "team") return "Team";
   return def.source === "project" ? "Project" : "You";
 }
 

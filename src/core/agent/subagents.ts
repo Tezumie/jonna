@@ -19,7 +19,12 @@
 import { type Handoff, parseHandoffs } from "./groupChat";
 import { TURN_TOOL_NAMES } from "./turnTools";
 
-export type SubagentSource = "builtin" | "project" | "user";
+/**
+ * Where an agent's file is: built in, the open folder's, the user's own, or "team": the library
+ * of the account's team (D442; read only, and not the agents every user starts with, which are
+ * the user's own files).
+ */
+export type SubagentSource = "builtin" | "project" | "user" | "team";
 
 /** Shipped with the IDE (no file of its own): a file with its name replaces it. */
 export function isBundledAgent(def: { source: SubagentSource }): boolean {

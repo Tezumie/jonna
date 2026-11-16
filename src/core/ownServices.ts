@@ -49,6 +49,15 @@ export function hasTeamPage(config: OwnServices = product): boolean {
   return config.teamPagePath.trim() !== "";
 }
 
+/**
+ * Whether the build has teams' libraries (what a team publishes so every member's IDE works
+ * the same way: rules, skills, commands, default settings…): Sync is part of the build, since a
+ * team is a Sync subscriber and the people they invited, and the service has teams.
+ */
+export function hasTeams(config: OwnServices = product): boolean {
+  return hasSync(config) && hasTeamPage(config);
+}
+
 /** A page of the service: `page` on the server `base`, or `page` itself when it is a whole URL. */
 function pageUrl(base: string, page: string): string {
   if (/^https?:\/\//i.test(page)) return page;

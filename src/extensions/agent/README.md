@@ -1601,6 +1601,17 @@ Claude Code's Workflow tool: a script that runs subagents deterministically, in 
   `agent.addPluginMarketplace`, `agent.updatePluginMarketplace`, `agent.removePluginMarketplace`,
   `agent.listPlugins`, `agent.installPlugin`, `agent.uninstallPlugin`, `agent.setPluginEnabled`;
   page `pluginsPage.ts` (Customize → Plugins); state `ide://agent/plugins`.
+- The team's library (D442, `extensions/team`, `core/team/source.ts`): `activeTeam` names the
+  folder of the team's items that are on, and the same readers append it after the user's own
+  and the plugins': `rules.ts` (`teamFile()`, a rule with `source: "team"` and `team: <name>`,
+  never `user`), `skills.ts` (scope `team`), `slashCommands.ts` (`CommandFolder.team`),
+  `subagents.ts` (agents, source `team`, never written into), `outputStyles.ts` (source
+  `team`) and `mcp.ts` (a `team` source, after the folder's own). Unlike a plugin's, a team's
+  parts are other people's: a team's skill or command never pre-approves its `allowed-tools`
+  (`skillPreApproves`, `commandTrusted`), and a team's MCP servers ask before they start
+  (`asksBeforeStart`). Its folder isn't watched: each reader reads again when `activeTeam`
+  changes. The pages show them as the team's and offer nothing that writes (no New, Delete or
+  editing): they are turned off like any other, and changed in the library.
 - `chatWindows.ts` (+ `core/agent/windowChats.ts`; Rust `agent/window_chats.rs`,
   `ipc/agent_windows.rs`): list_chats and message_chat reach chats open in the IDE's other windows.
   Each window publishes its loaded chats every 4 s when they change (60 s heartbeat) to

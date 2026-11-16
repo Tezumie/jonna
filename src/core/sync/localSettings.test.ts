@@ -6,6 +6,8 @@ test("sync: settings that run programs or point at paths stay on the computer", 
   for (const key of [
     "accounts.serverUrl",
     "sync.projects",
+    "team.added",
+    "team.off",
     "agent.hooks",
     "agent.statusLine",
     "agent.mcpServers",

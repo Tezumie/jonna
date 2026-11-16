@@ -11,6 +11,7 @@ import { DisposableStore } from "../../core/lifecycle/index";
 import { languageOverrideKey } from "../../core/settings/languageOverrides";
 import type { SettingsScope } from "../../core/settings/model";
 import { isValid, type SettingInfo } from "../../core/settings/schema";
+import { activeTeam } from "../../core/team/source";
 import { icon } from "../../ui/Icon";
 import { showContextMenu } from "../../ui/Menu";
 import { setTooltip } from "../../ui/Tooltip";
@@ -96,7 +97,9 @@ export function settingRow(
       const user = settings.model.inspect(info.key, "user");
       if (user !== undefined) return user;
     }
-    return settings.registry.get(info.key)?.default;
+    // Without the user's own value the team's default holds, so "reset" goes back to that.
+    const team = teamDefault(settings, info.key);
+    return team !== undefined ? team : settings.registry.get(info.key)?.default;
   };
   const write = (value: unknown) =>
     JSON.stringify(value) === JSON.stringify(inherited())
@@ -113,7 +116,9 @@ export function settingRow(
       return own !== undefined ? own : inherited();
     }
     return scope === "user"
-      ? (settings.model.inspect(info.key, "user") ?? info.default)
+      ? (settings.model.inspect(info.key, "user") ??
+          teamDefault(settings, info.key) ??
+          info.default)
       : settings.model.resolve(info.key).value;
   };
 
@@ -264,7 +269,7 @@ export function settingRow(
     reset,
     language
       ? `Remove from ${languageOverrideKey(language)} in ${scopeLabel} settings`
-      : `Reset to ${scope === "folder" ? "the workspace, user or default value" : scope === "workspace" ? "the user or default value" : "default"}`,
+      : `Reset to ${scope === "folder" ? "the workspace, user or default value" : scope === "workspace" ? "the user or default value" : teamDefault(settings, info.key) !== undefined ? "your team's default" : "default"}`,
   );
   store.add(on(reset, "click", () => exec("settings.reset", target)));
 
@@ -347,9 +352,37 @@ export function settingRow(
     if (scope !== "folder" && !language && settings.model.resolve(info.key).source === "vscode")
       note.textContent =
         `${note.textContent} Set by ${settings.aliasFolderOf(info.key) ?? ".vscode"}/settings.json.`.trim();
+    // The team's default holds (nothing of the user's or the folder's is over it), or would
+    // without this scope's own value: said either way, so it is plain where "reset" leads.
+    if (scope !== "folder" && !language) {
+      const source = settings.model.resolve(info.key).source;
+      const said =
+        source === "team"
+          ? `Set by ${teamName()}.`
+          : teamDefault(settings, info.key) !== undefined
+            ? `${teamName(true)} has a default for this; the value set here is used instead.`
+            : "";
+      if (said) note.textContent = `${note.textContent} ${said}`.trim();
+    }
   };
   update();
   return { element, update, dispose: () => store.dispose() };
+}
+
+/** The team's default for `key`, when it sets one that may apply (undefined: none). */
+function teamDefault(settings: WorkbenchServices["settings"], key: string): unknown {
+  const schema = settings.registry.get(key);
+  const value = settings.model.inspect(key, "team");
+  return value !== undefined && schema && schema.scope !== "workspace" && isValid(schema, value)
+    ? value
+    : undefined;
+}
+
+/** Who set a team's default, as a settings row says it ("your team, Studio"). */
+function teamName(capital = false): string {
+  const name = activeTeam.peek()?.name.trim();
+  const said = name ? `your team, ${name}` : "your team";
+  return capital ? `Y${said.slice(1)}` : said;
 }
 
 /** The names of a multi-root workspace's folders whose own settings set `key` (none with one folder). */

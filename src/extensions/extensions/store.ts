@@ -43,6 +43,7 @@ import { isUserCaller } from "../../core/permissions/commandGuards";
 import { product } from "../../core/product";
 import { signal } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { activeTeam, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { ExtensionManager } from "./manager";
 
@@ -150,6 +151,18 @@ async function workspaceRecommendations(
   return out;
 }
 
+/** The team's list (its library's extensions.json that is on here, D442), or null. */
+async function teamRecommendations(): Promise<{ name: string; recommendations: string[] } | null> {
+  const team = activeTeam.peek();
+  const file = teamPath("extensions.json", team);
+  if (!team || !file) return null;
+  const bytes = await fsIpc.read(file).catch(() => null);
+  if (!bytes) return null;
+  // Only its recommendations: a team's "unwanted" list hides nothing of anyone's.
+  const { recommendations } = parseExtensionsJson(new TextDecoder().decode(bytes));
+  return { name: team.name, recommendations };
+}
+
 let recommendationRun = 0;
 /** Recommended ids Open VSX doesn't have (left out). */
 const notOnStore = new Set<string>();
@@ -159,12 +172,14 @@ async function recommendedHere(
   services: WorkbenchServices,
   manager: ExtensionManager,
 ): Promise<Recommendation[]> {
-  const [workspace, paths] = await Promise.all([
+  const [workspace, paths, team] = await Promise.all([
     workspaceRecommendations(services),
     workspacePaths(services),
+    teamRecommendations(),
   ]);
   return recommendationsFor({
     workspace,
+    team,
     paths,
     installed: new Set(manager.records.peek().map((r) => r.id)),
     ignored: services.settings.peek<string[]>("extensions.recommendations.ignored") ?? [],

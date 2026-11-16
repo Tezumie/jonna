@@ -1,7 +1,9 @@
-// Effective settings = defaults < user < the folder's `.vscode/settings.json` < workspace (PLAN
-// §12). Holds the parsed contents of the settings files, resolves each key through the layers
+// Effective settings = defaults < the team's defaults < user < the folder's
+// `.vscode/settings.json` < workspace (PLAN §12). Holds the parsed contents of the settings files, resolves each key through the layers
 // (invalid values fall through to the next layer, with a problem recorded), and reports which keys
-// changed. The `.vscode` layer is read-only (translated by vscode.ts). Language blocks
+// changed. The `.vscode` layer is read-only (translated by vscode.ts); so is the team's (the
+// defaults a team publishes, already filtered by core/team/settings.ts: never a lock, the user's
+// own value wins). Language blocks
 // (`"[python]": {…}`, languageOverrides.ts) win over plain values in every layer, for documents of
 // that language (`getForLanguage`). DOM-free and unit-tested.
 //
@@ -21,6 +23,9 @@ import { isValid, type SettingSchema, type SettingsRegistry } from "./schema";
 
 export type SettingsScope = "user" | "workspace";
 
+/** The layer a value came from: a scope, or one of the read-only layers. */
+export type SettingsSource = "default" | SettingsScope | "vscode" | "team";
+
 export interface SettingsProblem {
   scope: SettingsScope;
   key?: string;
@@ -32,6 +37,8 @@ export class SettingsModel {
   private parseProblems: Record<SettingsScope, SettingsProblem[]> = { user: [], workspace: [] };
   /** The folder's VS Code settings, translated (below the IDE's own workspace settings). */
   private vscode: Record<string, unknown> = {};
+  /** The team's defaults (its library's settings.json, filtered): under the user's own. */
+  private team: Record<string, unknown> = {};
   private readonly changed = new Emitter<readonly string[]>();
   /** Fires with the keys whose effective value changed. */
   readonly onDidChange = this.changed.event;
@@ -137,6 +144,38 @@ export class SettingsModel {
   }
 
   /**
+   * Replaces the team's defaults (already filtered: only keys a team may set). Above the built-in
+   * defaults, below everything the user or a folder set. Read only: nothing writes this layer.
+   */
+  setTeam(values: Record<string, unknown>): void {
+    const before = this.snapshot();
+    const old = this.team;
+    this.team = { ...values };
+    // A key whose team value equals what it resolved to anyway changes no value, but it changes
+    // what the settings editor says of it ("Set by your team"): report those too.
+    const raw = [...new Set([...Object.keys(old), ...Object.keys(values)])].filter(
+      (k) => !isLanguageOverrideKey(k) && JSON.stringify(old[k]) !== JSON.stringify(values[k]),
+    );
+    this.emitDiff(before, [...raw, ...changedOverrideKeys(old, values)]);
+  }
+
+  /** The team's defaults as they are held (for the settings editor and `ide://settings`). */
+  teamValues(): Record<string, unknown> {
+    return { ...this.team };
+  }
+
+  /**
+   * The team's value for `key` when it may apply: valid, and not a setting only a folder sets.
+   * A team's value is a default: it never passes the user's own or a folder's.
+   */
+  private teamValue(key: string, schema: SettingSchema): unknown {
+    const value = this.team[key];
+    return value !== undefined && schema.scope !== "workspace" && isValid(schema, value)
+      ? value
+      : undefined;
+  }
+
+  /**
    * Sets (or with null, drops) the settings of one folder of a multi-root workspace (D251): its
    * files' values for `getAt`. Fires the keys it sets or set, so editors showing its files re-read.
    */
@@ -173,7 +212,7 @@ export class SettingsModel {
   resolveAt(
     key: string,
     folder: string | null | undefined,
-  ): { value: unknown; source: "default" | SettingsScope | "vscode" | "folder" } {
+  ): { value: unknown; source: SettingsSource | "folder" } {
     if (this.overrides[key] !== undefined) return this.resolve(key);
     const layer = folder ? this.folders.get(folder) : undefined;
     const value = layer?.[key];
@@ -207,10 +246,12 @@ export class SettingsModel {
       if (block !== undefined && (!schema || (this.folderMaySet(schema) && isValid(schema, block))))
         return block as T;
       const other = this.resolveForLanguage(key, language);
-      if (other.language && other.source !== "default") return other.value as T;
-      // An extension's language default only where neither the folder nor anyone else set it.
+      // A block the user or a folder wrote; a default's block (an extension's, the team's) waits.
+      const isDefault = (source: string) => source === "default" || source === "team";
+      if (other.language && !isDefault(other.source)) return other.value as T;
+      // A default for the language only where neither the folder nor anyone else set it.
       const at = this.resolveAt(key, folder);
-      if (other.language && at.source === "default") return other.value as T;
+      if (other.language && isDefault(at.source)) return other.value as T;
       return at.value as T;
     }
     return this.getAt<T>(key, folder);
@@ -232,7 +273,7 @@ export class SettingsModel {
    * The value and the layer it came from. A value set for this run only (`setOverrides`) wins
    * and reads as the user's: the person chose it, on the command line.
    */
-  resolve(key: string): { value: unknown; source: "default" | SettingsScope | "vscode" } {
+  resolve(key: string): { value: unknown; source: SettingsSource } {
     const schema = this.registry.get(key);
     const override = this.overrides[key];
     if (override !== undefined && (!schema || isValid(schema, override)))
@@ -248,6 +289,8 @@ export class SettingsModel {
       const user = this.layers.user[key];
       if (user !== undefined && schema.scope !== "workspace" && isValid(schema, user))
         return { value: user, source: "user" };
+      const team = this.teamValue(key, schema);
+      if (team !== undefined) return { value: team, source: "team" };
       return { value: schema.default, source: "default" };
     }
     // Unknown keys (an extension that isn't installed) still resolve, unvalidated.
@@ -265,15 +308,17 @@ export class SettingsModel {
   private resolveMerged(
     key: string,
     schema: SettingSchema,
-  ): { value: unknown; source: "default" | SettingsScope | "vscode" } {
+  ): { value: unknown; source: SettingsSource } {
     const folder = this.folderMaySet(schema);
     let value = schema.default as Record<string, unknown>;
-    let source: "default" | SettingsScope | "vscode" = "default";
-    const over = (v: unknown, from: SettingsScope | "vscode") => {
+    let source: SettingsSource = "default";
+    const over = (v: unknown, from: SettingsScope | "vscode" | "team") => {
       if (v === undefined || !isValid(schema, v) || !isPlainObject(v)) return;
       value = deepMergeObjects(value, v);
       source = from;
     };
+    // The team's entries first: the user's and the folder's go over them.
+    over(this.teamValue(key, schema), "team");
     if (schema.scope !== "workspace") over(this.layers.user[key], "user");
     if (folder) {
       over(this.vscode[key], "vscode");
@@ -294,7 +339,7 @@ export class SettingsModel {
   resolveForLanguage(
     key: string,
     language: string | null | undefined,
-  ): { value: unknown; source: "default" | SettingsScope | "vscode"; language: boolean } {
+  ): { value: unknown; source: SettingsSource; language: boolean } {
     if (language) {
       const schema = this.registry.get(key);
       const layers: [SettingsScope | "vscode", Record<string, unknown>][] = [
@@ -314,6 +359,14 @@ export class SettingsModel {
       }
     }
     const plain = this.resolve(key);
+    // The team's block for the language: a default, so under any plain value the user or a
+    // folder set, and above the team's own plain value and the built-in defaults.
+    if (language && (plain.source === "default" || plain.source === "team")) {
+      const schema = this.registry.get(key);
+      const value = languageValues(this.team, language)[key];
+      if (value !== undefined && schema && schema.scope !== "workspace" && isValid(schema, value))
+        return { value, source: "team", language: true };
+    }
     // An extension's default for the language (`configurationDefaults` "[python]"): above the
     // plain default, below anything the user or the folder set (VS Code's default layer).
     if (language && plain.source === "default") {
@@ -340,12 +393,17 @@ export class SettingsModel {
         ...overriddenLanguages(this.layers.user),
         ...overriddenLanguages(this.layers.workspace),
         ...overriddenLanguages(this.vscode),
+        ...overriddenLanguages(this.team),
       ]),
     ].sort();
   }
 
-  /** The raw value written in one scope's file (undefined = not set there); "vscode": the folder's .vscode. */
-  inspect(key: string, scope: SettingsScope | "vscode"): unknown {
+  /**
+   * The raw value written in one scope's file (undefined = not set there); "vscode": the folder's
+   * .vscode; "team": the team's default.
+   */
+  inspect(key: string, scope: SettingsScope | "vscode" | "team"): unknown {
+    if (scope === "team") return this.team[key];
     return scope === "vscode" ? this.vscode[key] : this.layers[scope][key];
   }
 
