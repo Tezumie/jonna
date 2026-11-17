@@ -24,6 +24,7 @@ pub mod process;
 pub mod remote;
 pub mod remote_image;
 pub mod settings;
+pub mod share;
 pub mod skills;
 pub mod speech;
 pub mod sync;

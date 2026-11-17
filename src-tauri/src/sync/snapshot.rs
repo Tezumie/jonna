@@ -209,7 +209,7 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
 
 /// Whether an address from a snapshot may become a git remote: an ordinary https, ssh or git
 /// address. Not a local path, not a transport that runs a program, not an option.
-fn safe_remote(url: &str) -> bool {
+pub(super) fn safe_remote(url: &str) -> bool {
     let url = url.trim();
     if url.starts_with('-') || url.contains("::") || url.chars().any(char::is_control) {
         return false;
@@ -396,10 +396,20 @@ struct Capture<'a> {
     before: HashMap<&'a str, &'a FileEntry>,
     uploader: Uploader<'a>,
     manifest: Manifest,
+    /// Files that stay out whatever the ignore files say (`CreateOptions::leave_out`).
+    leave_out: Option<LeaveOut>,
 }
+
+/// For a path of the project (with `/`): why it stays out of a snapshot, or None when it travels.
+pub type LeaveOut = fn(&str) -> Option<&'static str>;
 
 impl Capture<'_> {
     async fn file(&mut self, path: &str) -> Result<()> {
+        // Before anything of it is looked at: such a file is never read, only named.
+        if let Some(why) = self.leave_out.and_then(|leave| leave(path)) {
+            self.manifest.skipped.push((path.to_string(), why.into()));
+            return Ok(());
+        }
         let full = self.root.join(path);
         let meta = match std::fs::symlink_metadata(&full) {
             Ok(m) => m,
@@ -739,6 +749,46 @@ pub struct CreateOptions<'a> {
     /// The snapshot before this one from this computer, when it is known.
     pub before: Option<&'a Manifest>,
     pub now_ms: u64,
+    /// Files that stay out of this snapshot whatever the ignore files say, each listed as
+    /// skipped with the reason given (a share's key files). None: the vault's own snapshots.
+    pub leave_out: Option<LeaveOut>,
+    /// How the remote's address is written into the snapshot (a share takes a sign-in out of
+    /// it; an address it can't show is left out). None: as git has it.
+    pub remote_as: Option<fn(&str) -> Option<String>>,
+}
+
+/// What is staged, as a patch against the commit, without the files `leave_out` names: a key
+/// file that was staged must not travel inside the patch either.
+fn staged_patch(root: &Path, leave_out: Option<LeaveOut>) -> Result<String> {
+    let mut args: Vec<String> = [
+        "diff",
+        "--cached",
+        "--binary",
+        "--full-index",
+        "--no-renames",
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect();
+    if let Some(leave) = leave_out {
+        let names = git(
+            root,
+            &["diff", "--cached", "--name-only", "-z", "--no-renames"],
+        )?;
+        let out: Vec<String> = names
+            .split('\0')
+            .filter(|p| !p.is_empty() && leave(&rel(p)).is_some())
+            // From the top of the repository, taken as written (never as a pattern).
+            .map(|p| format!(":(top,exclude,literal){p}"))
+            .collect();
+        if !out.is_empty() {
+            args.push("--".into());
+            args.push(":(top)".into());
+            args.extend(out);
+        }
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    git(root, &refs)
 }
 
 /// Captures `root` and stores it as a new snapshot record.
@@ -786,6 +836,7 @@ async fn create_once(
             v: 1,
             ..Default::default()
         },
+        leave_out: options.leave_out,
     };
 
     if is_git(root) {
@@ -818,16 +869,7 @@ async fn create_once(
         };
         let staged = match &head {
             Some(_) => {
-                let patch = git(
-                    root,
-                    &[
-                        "diff",
-                        "--cached",
-                        "--binary",
-                        "--full-index",
-                        "--no-renames",
-                    ],
-                )?;
+                let patch = staged_patch(root, options.leave_out)?;
                 if patch.trim().is_empty() {
                     None
                 } else {
@@ -853,7 +895,10 @@ async fn create_once(
         capture.manifest.git = Some(GitState {
             head,
             branch,
-            remote,
+            remote: match options.remote_as {
+                Some(shown) => remote.as_deref().and_then(shown),
+                None => remote,
+            },
             bundles: chain,
             staged,
             stashes: stashes(root),
@@ -2081,5 +2126,33 @@ mod tests {
         assert!(safe_join(root, ".github/workflows/ci.yml").is_ok());
         #[cfg(windows)]
         assert!(safe_join(root, "C:\\Windows\\x").is_err());
+    }
+
+    #[test]
+    fn a_staged_file_that_stays_out_is_not_in_the_staged_patch() {
+        let dir = repo("staged-left-out", &[("a.txt", "a\n")]);
+        std::fs::write(dir.join("a.txt"), "a\nstaged\n").unwrap();
+        std::fs::write(dir.join(".env"), "TOKEN=hunter2\n").unwrap();
+        std::fs::create_dir_all(dir.join("conf")).unwrap();
+        std::fs::write(dir.join("conf").join("server.pem"), "PRIVATE-KEY-BYTES\n").unwrap();
+        git(&dir, &["add", "-A"]).unwrap();
+        // The vault's own snapshot: everything staged, as before.
+        let whole = staged_patch(&dir, None).unwrap();
+        assert!(whole.contains("hunter2") && whole.contains("PRIVATE-KEY-BYTES"));
+        fn leave(path: &str) -> Option<&'static str> {
+            (path == ".env" || path.ends_with(".pem")).then_some("a key file")
+        }
+        let patch = staged_patch(&dir, Some(leave)).unwrap();
+        assert!(patch.contains("+staged"), "{patch}");
+        assert!(!patch.contains("hunter2"), "{patch}");
+        assert!(!patch.contains("PRIVATE-KEY-BYTES"), "{patch}");
+        assert!(!patch.contains(".env") && !patch.contains("server.pem"));
+        // Nothing staged that stays out: the same patch as without the rule.
+        git(&dir, &["reset", "-q", "--", ".env", "conf/server.pem"]).unwrap();
+        assert_eq!(
+            staged_patch(&dir, Some(leave)).unwrap(),
+            staged_patch(&dir, None).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

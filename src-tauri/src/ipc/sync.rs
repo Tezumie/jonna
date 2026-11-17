@@ -11,7 +11,7 @@ use crate::AppState;
 
 static STEP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// One snapshot or restore at a time: two at once would read and write the same folder.
-static SNAPSHOT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(crate) static SNAPSHOT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn vault(state: &AppState, base: &str) -> Vault {
     Vault::new(base, &state.dirs.data)
@@ -19,12 +19,22 @@ fn vault(state: &AppState, base: &str) -> Vault {
 
 /// The collections a front end may write: not the ones the backend keeps for itself.
 fn writable(collection: &str) -> Result<()> {
-    if collection == "sys" {
+    if collection == "sys" || collection == "shares" {
         return Err(Error::Invalid(
             "that collection isn't the front end's".into(),
         ));
     }
     Ok(())
+}
+
+/// A record as the front end gets it: the ones that hold keys (the account's member key, the
+/// keyrings of the projects it shares) without their content. Those are read here only
+/// (`sync::share`); the front end sees that they are there and what version they are.
+fn without_keys(mut record: Record) -> Record {
+    if record.collection == "shares" || (record.collection == "sys" && record.id == "member") {
+        record.text = None;
+    }
+    record
 }
 
 /// Where sync stands for this device and account, catching up with changes made elsewhere.
@@ -124,7 +134,9 @@ pub async fn sync_new_recovery_key(state: State<'_, AppState>, base: String) -> 
 #[tauri::command]
 pub async fn sync_changes(state: State<'_, AppState>, base: String, since: u64) -> Result<Changes> {
     let v = vault(&state, &base);
-    records::changes(&v.api, &v.keyring()?, since).await
+    let mut changes = records::changes(&v.api, &v.keyring()?, since).await?;
+    changes.records = changes.records.into_iter().map(without_keys).collect();
+    Ok(changes)
 }
 
 #[tauri::command]
@@ -135,7 +147,9 @@ pub async fn sync_record_get(
     id: String,
 ) -> Result<Option<Record>> {
     let v = vault(&state, &base);
-    records::get(&v.api, &v.keyring()?, &collection, &id).await
+    Ok(records::get(&v.api, &v.keyring()?, &collection, &id)
+        .await?
+        .map(without_keys))
 }
 
 /// Writes a record over the version it was made from (`expect`; null: it must be new).
@@ -263,7 +277,7 @@ fn last_snapshot_file(v: &Vault, collection: &str) -> std::path::PathBuf {
 }
 
 /// The open local folder a snapshot is made of or restored into.
-fn snapshot_root(state: &AppState, root: &str) -> Result<std::path::PathBuf> {
+pub(crate) fn snapshot_root(state: &AppState, root: &str) -> Result<std::path::PathBuf> {
     if state.workspace.remote().is_some() {
         return Err(Error::Sync(
             "Sync",
@@ -354,6 +368,8 @@ pub async fn sync_snapshot_create(
             everything,
             before: last.as_ref().map(|l| &l.manifest),
             now_ms: now_ms(),
+            leave_out: None,
+            remote_as: None,
         },
     )
     .await?;

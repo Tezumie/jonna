@@ -273,12 +273,19 @@ impl Vault {
             .then_some((local.device_id, local.device_name))
     }
 
+    /// The account whose keys this computer holds, while sync is on here for this server.
+    /// (Another account may have signed in since: its vault isn't opened with these keys.)
+    pub(super) fn joined_as(&self) -> Option<String> {
+        let local = self.local();
+        (local.joined && local.base == self.api.base()).then_some(local.uid)
+    }
+
     /// A file under this profile's sync folder (caches; removed when sync goes off here).
     pub fn sync_file(&self, name: &str) -> PathBuf {
         self.data.join("sync").join(name)
     }
 
-    fn uid(&self) -> Option<String> {
+    pub(super) fn uid(&self) -> Option<String> {
         accounts::profile(&accounts::session_file(&self.data), self.api.base()).map(|p| p.id)
     }
 
@@ -292,7 +299,7 @@ impl Vault {
     }
 
     /// Proof for the service that `key`'s private half is held here (its challenge, answered).
-    async fn proof(&self, key: &PrivateKey) -> Result<Value> {
+    pub(super) async fn proof(&self, key: &PrivateKey) -> Result<Value> {
         let challenge = self
             .api
             .post("challenge", &json!({ "publicKey": key.public() }))

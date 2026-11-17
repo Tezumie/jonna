@@ -18,6 +18,9 @@ pub struct Api {
     base: String,
     /// The part of the service asked: `/api/<area>/…` ("sync"; "team" for a team's library).
     area: &'static str,
+    /// What comes between the area and a call's path: empty for the account's own vault and
+    /// for a team's library, `shares/<id>/` for a share (which answers a vault's calls there).
+    prefix: String,
     /// The saved account session (`account.json`), where the tokens come from.
     session: PathBuf,
     client: reqwest::Client,
@@ -93,12 +96,37 @@ fn refusal(status: u16, json: &Value) -> Error {
         ),
         (507, _) => Error::Sync("SyncFull", text),
         (413, _) => Error::Sync("SyncTooLarge", text),
+        // A team's shares (`share`): only the calls under `/api/team/` answer with these.
+        (404, "no_team") => Error::Sync("ShareNoTeam", "This account isn't in a team.".into()),
+        (404, "no_share") => Error::Sync(
+            "ShareGone",
+            "That share isn't there (it was stopped, or this account isn't in its team).".into(),
+        ),
+        (403, "not_member") => Error::Sync("ShareNotMember", text),
+        (403, "not_sharer") => Error::Sync("ShareNotSharer", text),
+        (409, "no_member_key") => Error::Sync("ShareNoMemberKey", text),
+        (409, "too_many_shares") => Error::Sync("ShareTooMany", text),
         (s, _) if s >= 500 => Error::Sync(
             "SyncOffline",
             "The sync service has a problem; trying again later.".into(),
         ),
         _ => Error::Sync("Sync", text),
     }
+}
+
+/// Whether `id` can stand in an address as one part of it: letters, digits, `-`, `_` and the
+/// one dot a share's id has between its two halves. Nothing that names another place.
+fn share_id_fits_a_path(id: &str) -> bool {
+    let plain = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
+    id.len() <= 200
+        && id
+            .split_once('.')
+            .is_some_and(|(owner, project)| plain(owner) && plain(project))
 }
 
 impl Api {
@@ -111,10 +139,32 @@ impl Api {
     pub fn of(area: &'static str, base: &str, data_dir: &Path) -> Self {
         Self {
             area,
+            prefix: String::new(),
             base: base.trim_end_matches('/').to_string(),
             session: accounts::session_file(data_dir),
             client: reqwest::Client::new(),
         }
+    }
+
+    /// The client for what a team's share holds (`/api/team/shares/<id>/…`): its records,
+    /// chunks and sweep answer the calls a vault's do, so the same code reads and writes it.
+    /// `id` goes into the address, so only a share's id as the service makes them is taken.
+    pub fn share(base: &str, data_dir: &Path, id: &str) -> Result<Self> {
+        if !share_id_fits_a_path(id) {
+            return Err(Error::Invalid("that isn't a share".into()));
+        }
+        let mut api = Self::of("team", base, data_dir);
+        api.prefix = format!("shares/{id}/");
+        Ok(api)
+    }
+
+    /// Where a call goes. (The team's own view is the area itself: no trailing slash.)
+    fn url(&self, path: &str) -> String {
+        let rest = format!("{}{path}", self.prefix);
+        if rest.is_empty() {
+            return format!("{}/api/{}", self.base, self.area);
+        }
+        format!("{}/api/{}/{rest}", self.base, self.area)
     }
 
     pub fn base(&self) -> &str {
@@ -135,10 +185,7 @@ impl Api {
     ) -> Result<reqwest::Response> {
         let mut request = self
             .client
-            .request(
-                method.clone(),
-                format!("{}/api/{}/{path}", self.base, self.area),
-            )
+            .request(method.clone(), self.url(path))
             .bearer_auth(token);
         // Chunks and sweeps take as long as megabytes take; everything else is quick.
         let slow = path.starts_with("blobs") || path == "gc";
@@ -257,5 +304,73 @@ mod tests {
             refusal(402, &serde_json::json!({ "error": "other" })),
             Error::Sync("Sync", _)
         ));
+    }
+
+    #[test]
+    fn a_share_answers_under_its_own_path_and_the_vault_where_it_did() {
+        let data = std::path::Path::new("data");
+        let vault = Api::new("https://example.test/", data);
+        assert_eq!(vault.url("state"), "https://example.test/api/sync/state");
+        assert_eq!(
+            vault.url("records/settings/user"),
+            "https://example.test/api/sync/records/settings/user"
+        );
+        let team = Api::of("team", "https://example.test", data);
+        assert_eq!(team.url("library"), "https://example.test/api/team/library");
+        assert_eq!(team.url("shares"), "https://example.test/api/team/shares");
+        assert_eq!(team.url(""), "https://example.test/api/team");
+        let share = Api::share("https://example.test", data, "uid_1.proj-2").unwrap();
+        assert_eq!(
+            share.url("records?since=0"),
+            "https://example.test/api/team/shares/uid_1.proj-2/records?since=0"
+        );
+        assert_eq!(
+            share.url("blobs/have"),
+            "https://example.test/api/team/shares/uid_1.proj-2/blobs/have"
+        );
+        assert_eq!(
+            share.url("gc"),
+            "https://example.test/api/team/shares/uid_1.proj-2/gc"
+        );
+        // An id that would name another place is never put into an address.
+        for bad in [
+            "",
+            "uid",
+            "uid.",
+            ".proj",
+            "a.b.c",
+            "uid/../x.proj",
+            "uid.proj/keys",
+            "uid.proj?x=1",
+            "uid.pr oj",
+            "uid.pr%2Foj",
+            "..",
+        ] {
+            assert!(
+                Api::share("https://example.test", data, bad).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_shares_refusals_have_their_own_codes() {
+        let code =
+            |status, error: &str| match refusal(status, &serde_json::json!({ "error": error })) {
+                Error::Sync(code, _) => code,
+                other => panic!("unexpected: {other:?}"),
+            };
+        assert_eq!(code(404, "no_share"), "ShareGone");
+        assert_eq!(code(404, "no_team"), "ShareNoTeam");
+        assert_eq!(code(403, "not_member"), "ShareNotMember");
+        assert_eq!(code(403, "not_sharer"), "ShareNotSharer");
+        assert_eq!(code(409, "no_member_key"), "ShareNoMemberKey");
+        assert_eq!(code(402, "sync_lapsed"), "SyncLapsed");
+        assert_eq!(code(507, "storage_full"), "SyncFull");
+        // What a vault answered before is what it answers now.
+        assert_eq!(code(409, "no_vault"), "SyncReset");
+        assert_eq!(code(409, "gc"), "SyncRetry");
+        assert_eq!(code(404, "not_found"), "Sync");
+        assert_eq!(code(403, "forbidden"), "Sync");
     }
 }

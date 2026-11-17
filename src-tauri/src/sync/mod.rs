@@ -7,6 +7,7 @@ pub mod chunks;
 pub mod crypto;
 pub mod project;
 pub mod records;
+pub mod share;
 pub mod snapshot;
 pub mod user_files;
 pub mod vault;

@@ -241,6 +241,111 @@ asked, and nothing is written inside `.git` to make one.
 
 Not yet: symbolic links, submodules, the "also include" list for ignored files.
 
+## Sharing a project with a team
+
+A member of a team can share a project that syncs: its snapshots (and, by a second switch,
+its chats) are then also written to a **share**, a small place of its own that the team's
+members can read. One writer (the sharer), many readers. Nothing is ever written into a
+reader's folder unasked. What is in a member's own vault is untouched and stays theirs.
+
+### Why a copy under its own key
+
+A reader can't be given the sharer's keyring: it opens everything. So a share has a
+**keyring of its own** (the same kind: generations and a key for naming chunks, made at
+random when sharing is turned on), and the sharer's computer writes each snapshot of a shared
+project twice: to its vault as before, and to the share, sealed under the share's keyring.
+Every construction is the one the vault uses (`sync/crypto.rs`); none is new.
+
+### Keys between people
+
+| Thing | What it is |
+|---|---|
+| Member key | One X25519 key pair an account. The private half is in a sealed record of the account's own vault (`sys/member`), so each of the person's computers has it and the service doesn't. The public half is published to the service with proof of holding it (the same challenge a device answers). |
+| Fingerprint | 20 digits (five groups of four) from SHA-256 over a member's public key. A person reads theirs out; a teammate checks it against what their own app shows for that person, and marks them verified. One key's fingerprint, never a code made from two keys: a short code over two keys can be searched for. |
+| Pins | A sealed record of the account's own vault (`sys/team`): each teammate's public member key as first seen, and whether it was verified. A key that later differs is never used: sharing with that person waits until the new key is accepted by hand. |
+| Share keyring | Made by the sharer. Kept sealed in the sharer's own vault (`shares/<project>`), so the sharer's other computers and the recovery key have it. |
+| Share wrap | The share's keyring, with the share's id and the generation, boxed (the authenticated box a device wrap uses) from the sharer's member key to one member's member key. A reader opens it only as coming from the pinned key of the member the service names as the sharer, and only when the id inside is the share asked for. |
+| New keys | When someone leaves the team or is removed, or the sharer asks: the sharer's computer adds a generation and stores wraps for those who remain. Older content stays readable to those who had it; what is written afterwards is not readable with the old wraps. |
+
+**What the service can and can't do.** It decides who may read (members of the team, with an
+approved device) and refuses a removed member at once. It never has a key. A service that
+swapped a member's public key the very first time two people's computers met could read what
+is then shared with "that member"; comparing fingerprints rules it out, and after the first
+contact the pins do. The app says "Not verified" until then, and has a setting to share only
+with verified members.
+
+### The service's part
+
+A share is stored like a vault (records, chunks, a sweep, bytes counted) and answers the same
+calls with the same bodies; only who may call differs. Its bytes count as the sharer's, in
+the team's pool, under the sharer's limit; a sharer whose subscription lapsed can't write
+(402) and readers can still read; the share is deleted with the sharer's vault (reset, purge),
+when the sharer leaves the team or is removed, and when the team ends.
+
+All under `/api/team/`, JSON unless said, with the account session's token. "A device" means
+a session tied to an approved device of the caller's own vault (as for `/api/sync/`).
+
+| Call | Who | What it does |
+|---|---|---|
+| `PUT key` `{ publicKey, challenge: { id, proof } }` | a device | Publishes the caller's public member key (proof as for a device: `POST /api/sync/challenge`). Answers `{ publicKey }`. Publishing another key replaces it and marks every share of the caller's and every wrap made for the caller as needing new keys. |
+| `GET` (the team's view, as before) | a member | Each member now also carries `memberKey` (the public key, or null). |
+| `GET shares` | a member (a device, or the website) | `{ shares: [{ id, project, name, chats, owner: { uid, name }, mine, keyVersion, rotationNeeded, hasWrap, usageBytes, updatedAt, latest }] }`: the team's shares by their labels. `latest` is the label of the newest snapshot record (`info`), or null. `hasWrap`: a wrap for the caller exists for the current generation. |
+| `PUT shares/{project}` `{ name, chats, wraps: { <uid>: <wrap> } }` | a device, in a team, with sync on (not lapsed) | Makes the caller's share of that project (id `<caller>.<project>`; again: updates `name` and `chats`). `wraps` are for generation 1 and are stored only for current members. Answers the share as `GET shares` lists it. |
+| `DELETE shares/{id}` | the sharer (a device or the website), or the team's owner | Deletes the share and everything in it. |
+| `GET shares/{id}/keys` | a member's device | `{ keyVersion, rotationNeeded, owner: { uid, memberKey }, wrap }`: the caller's own wrap (`{ wrap, keyVersion }` or null). For the sharer also `members: [{ uid, name, memberKey, hasWrap }]`. |
+| `POST shares/{id}/keys` `{ keyVersion, wraps: { <uid>: <wrap> } }` | the sharer's device | Stores wraps for that generation, for current members only. A generation one above the current becomes current: wraps of the generation before for members not named are dropped, and `rotationNeeded` is cleared. The current generation again: adds wraps (a new member). Anything else: 409 with the current generation. |
+| `GET shares/{id}/records?since=N`, `GET records/{collection}/{id}`, `POST blobs/have`, `POST blobs/get` | a member's device | As for a vault, on the share. |
+| `PUT records/{collection}/{id}`, `POST blobs`, `POST gc` | the sharer's device | As for a vault, on the share. |
+
+- A member's wrap is dropped, and `rotationNeeded` set on every share of that team, the
+  moment the member leaves or is removed. The sharer's shares are deleted then too.
+- Limits: 20 shares a member; a wrap is at most 4,096 characters; the vault's limits on
+  records, chunks and request rates.
+- Errors are the vault's (`{ error, error_description }`), and: 404 `no_share`, 403
+  `not_sharer`, 403 `not_member`, 409 `no_member_key` (the caller, or a member named in
+  `wraps`, has published no key), 409 `conflict` with `keyVersion`.
+
+### What a share holds
+
+The same record kinds a project has in a vault, under the share's keys:
+
+| Record | What |
+|---|---|
+| `project/info` | The project's name, the sharer's computer's name, whether it has a git remote and the remote's address (so a reader can clone it first) |
+| `snap/<time>-<device>` | A snapshot, as in a vault. The label (`info`) is the same as a vault snapshot's |
+| `chats/<chat>` | With the second switch: a chat's summary, and its file and images as chunks |
+
+- **When:** after each snapshot of a shared project is taken for the vault, the same capture
+  runs for the share (unchanged files aren't read or uploaded again). A share keeps its
+  latest 10 snapshots; pinned ones are the vault's affair, not the share's.
+- **Key files are left out** of a share whatever the ignore files say: `.env` and `.env.*`
+  (not `.env.example`, `.sample`, `.template`), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `*.keystore`, `*.jks`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `.npmrc`, `.netrc`,
+  `.pypirc`, and files named `credentials` or `secrets` with any ending. They are listed in
+  the snapshot as skipped ("a key file"), and the sharer is told how many.
+
+### Reading a share
+
+- **Its snapshots**, newest first, and for one of them its files (as a vault snapshot's:
+  those that differ from its commit, or all of them without git). A file opens read-only; two
+  snapshots, or a snapshot and the reader's own copy of the project, can be compared.
+- **A copy:** into a new, empty folder the reader chooses. With a remote, the folder is
+  cloned from it first; then the snapshot is restored on top (its commit checked out, staged
+  and changed files written). The folder opens as any other folder someone else made: not
+  trusted until the reader says so.
+- **A chat** (when shared) is copied into the reader's own chats as a new chat, named with
+  whose it was. Nothing the reader does to it goes back.
+- A reader's computer writes nothing to a share.
+
+### Tests
+
+- The service's suite: who may read, write, list and delete; wraps and generations; a member
+  removed is refused at once and their wrap is gone; counting in the pool; lapse; deletion
+  with the vault and with the team.
+- `scripts/sync-e2e.mjs`: two accounts in one team. One shares a project; the other reads
+  its snapshot and opens a copy; a swapped member key is refused; after a removal the next
+  snapshot can't be read with the old wrap.
+
 ## Tests
 
 - `cargo test --lib sync::`: the cryptography, names, paths.

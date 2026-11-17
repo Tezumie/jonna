@@ -113,7 +113,8 @@ pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Resul
             super::api::Body::None,
         )
         .await?;
-    if reply.status == 404 {
+    // (A share that is gone answers 404 too, with its own code: that isn't "no such record".)
+    if reply.status == 404 && reply.error() != "no_share" {
         return Ok(None);
     }
     let v = reply.into_ok()?;

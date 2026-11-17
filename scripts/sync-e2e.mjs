@@ -1252,6 +1252,299 @@ try {
     });
   });
 
+  await step("a project shared with a team is read by a teammate, and by nobody else", async () => {
+    const owner = { Authorization: "Bearer owner", "Content-Type": "application/json" };
+    const doc = (path, fields) =>
+      fetch(`${FIRESTORE}/${path}`, {
+        method: "PATCH",
+        headers: owner,
+        body: JSON.stringify({ fields }),
+      });
+    const patch = (path, mask, fields) =>
+      fetch(`${FIRESTORE}/${path}?${mask.map((m) => `updateMask.fieldPaths=${m}`).join("&")}`, {
+        method: "PATCH",
+        headers: owner,
+        body: JSON.stringify({ fields }),
+      });
+    const drop = (path) => fetch(`${FIRESTORE}/${path}`, { method: "DELETE", headers: owner });
+    const text = (v) => ({ stringValue: v });
+    const share = (host, method, params = {}) =>
+      host.call(`share_${method}`, { base: BASE, ...params });
+
+    // A teammate and a stranger, each with sync on, on a computer of their own.
+    const mate = await newAccount();
+    const stranger = await newAccount();
+    const others = {};
+    for (const [name, who] of [
+      ["mate", mate],
+      ["stranger", stranger],
+    ]) {
+      await giveSync(who);
+      const host = await computer(who, name);
+      hosts.push(host);
+      const key = await host.sync("prepare", { name });
+      await host.sync("setup", { typed: key });
+      check((await host.sync("status")).state === "on", `${name} syncs`);
+      others[name] = host;
+    }
+    let mateDesk = others.mate;
+    const strangerDesk = others.stranger;
+
+    // The first account owns a team the teammate is in (the team service's job; played here).
+    await doc(`teams/${account.uid}`, { ownerUid: text(account.uid), name: text("Acme studio") });
+    for (const [who, role, name] of [
+      [account, "owner", "Ada"],
+      [mate, "member", "Bo"],
+    ]) {
+      await doc(`teams/${account.uid}/members/${who.uid}`, {
+        role: text(role),
+        name: text(name),
+        email: text(who.email),
+        publisher: { booleanValue: role === "owner" },
+      });
+      await doc(`memberships/${who.uid}`, {
+        teamId: text(account.uid),
+        role: text(role),
+        publisher: { booleanValue: role === "owner" },
+      });
+    }
+
+    // Each publishes a member key; the other pins it at first sight and can verify it.
+    const mine = await share(desk, "me");
+    const theirs = await share(mateDesk, "me");
+    check(
+      /^(\d{4} ){4}\d{4}$/.test(mine.fingerprint) && mine.published && theirs.published,
+      JSON.stringify([mine, theirs]),
+    );
+    check(mine.fingerprint !== theirs.fingerprint, "two accounts, two keys");
+    check(
+      (await share(laptop, "me")).fingerprint === mine.fingerprint,
+      "one key an account, on each of its computers",
+    );
+    await fails(share(strangerDesk, "me"), "ShareNoTeam", "an account in no team");
+    const seen = (await share(desk, "members")).find((m) => m.uid === mate.uid);
+    check(
+      seen?.state === "new" && seen.fingerprint === theirs.fingerprint && seen.name === "Bo",
+      JSON.stringify(seen),
+    );
+    await fails(
+      share(desk, "set_verified", { uid: mate.uid, fingerprint: mine.fingerprint, verified: true }),
+      "ShareKeyChanged",
+      "verifying under another fingerprint",
+    );
+    await share(desk, "set_verified", {
+      uid: mate.uid,
+      fingerprint: theirs.fingerprint,
+      verified: true,
+    });
+    check(
+      (await share(laptop, "members")).find((m) => m.uid === mate.uid).state === "verified",
+      "verified on every computer of the account",
+    );
+
+    // The project: a commit, a change not committed, a new file, and a key file.
+    const project = join(scratch, "shared-project");
+    await mkdir(project, { recursive: true });
+    git(project, "init", "-q");
+    await writeFile(join(project, "a.txt"), "one\n");
+    await writeFile(join(project, "b.txt"), "two\n");
+    git(project, "add", "-A");
+    git(project, "commit", "-q", "-m", "first");
+    await writeFile(join(project, "a.txt"), "one\nchanged, not committed\n");
+    await writeFile(join(project, "new.txt"), "untracked\n");
+    await writeFile(join(project, ".env"), "TOKEN=hunter2\n");
+    await desk.call("workspace_open", { path: project });
+
+    const id = `${account.uid}.shared1`;
+    const started = await share(desk, "start", {
+      root: project,
+      project: "shared1",
+      name: "Shared one",
+      chats: false,
+      onlyVerified: true,
+    });
+    check(
+      started.id === id &&
+        typeof started.snapshot === "string" &&
+        started.keyFiles === 1 &&
+        started.wrapsAdded === 1 &&
+        !started.renewed &&
+        started.waiting.length === 0,
+      JSON.stringify(started),
+    );
+    const unchanged = await share(desk, "sync", {
+      root: project,
+      project: "shared1",
+      onlyVerified: true,
+    });
+    check(
+      unchanged.snapshot === null && unchanged.wrapsAdded === 0 && unchanged.keyFiles === 1,
+      JSON.stringify(unchanged),
+    );
+    // The sharer's other computer has the share's keys from the account's own vault.
+    const own = (await share(laptop, "list")).find((s) => s.id === id);
+    check(own?.state === "mine" && own.mine && own.keyVersion === 1, JSON.stringify(own));
+    check((await share(laptop, "snapshots", { id })).length === 1, "read on the other computer");
+    // What holds keys never reaches a front end, and isn't a front end's to write.
+    const kept = (await desk.sync("changes", { since: 0 })).records.filter(
+      (r) => r.collection === "shares" || (r.collection === "sys" && r.id === "member"),
+    );
+    check(kept.length === 2 && kept.every((r) => r.text === null), JSON.stringify(kept));
+    await fails(
+      desk.sync("record_put", { collection: "shares", id: "shared1", expect: null, text: "{}" }),
+      "Invalid",
+      "a front end writing a share's keys",
+    );
+
+    // The teammate: lists it, reads the snapshot's files and one of them, without the key file.
+    const listed = (await share(mateDesk, "list")).find((s) => s.id === id);
+    check(
+      listed?.state === "ready" &&
+        !listed.mine &&
+        listed.name === "Shared one" &&
+        listed.owner.uid === account.uid &&
+        listed.latest?.files === 2,
+      JSON.stringify(listed),
+    );
+    const snaps = await share(mateDesk, "snapshots", { id });
+    check(
+      snaps.length === 1 && snaps[0].id === started.snapshot && snaps[0].summary.kind === "git",
+      JSON.stringify(snaps),
+    );
+    const snapshot = snaps[0].id;
+    const files = await share(mateDesk, "snapshot_files", { id, snapshot, root: null });
+    check(
+      JSON.stringify(files.files.map((f) => f.path)) === JSON.stringify(["a.txt", "new.txt"]),
+      JSON.stringify(files),
+    );
+    check(
+      JSON.stringify(files.skipped) === JSON.stringify([[".env", "a key file"]]),
+      JSON.stringify(files.skipped),
+    );
+    const read = await share(mateDesk, "file_text", { id, snapshot, path: "a.txt" });
+    check(read?.text === "one\nchanged, not committed\n", JSON.stringify(read));
+    check(
+      (await share(mateDesk, "file_text", { id, snapshot, path: ".env" })) === null,
+      "the key file isn't in the share",
+    );
+
+    // A copy in a new folder: the commit, the change, the new file; no key file.
+    const copy = join(scratch, "mate-copy");
+    const opened = await share(mateDesk, "open_copy", { id, snapshot, target: copy });
+    check(!opened.cloned && opened.restored.files === 2, JSON.stringify(opened));
+    const [here, there] = [await tree(copy), await tree(project)];
+    delete there[".env"];
+    check(JSON.stringify(here) === JSON.stringify(there), `files: ${JSON.stringify(here)}`);
+    check(git(copy, "rev-parse", "HEAD") === git(project, "rev-parse", "HEAD"), "the same commit");
+    await fails(
+      share(mateDesk, "open_copy", { id, snapshot, target: copy }),
+      "ShareTargetNotEmpty",
+      "a copy into a folder that has files",
+    );
+    // A reader writes nothing to a share: it has none of its own under that name.
+    await mateDesk.call("workspace_open", { path: copy });
+    await fails(
+      share(mateDesk, "sync", { root: copy, project: "shared1", onlyVerified: false }),
+      "ShareNotShared",
+      "a reader syncing someone else's share",
+    );
+
+    // Anyone outside the team gets nothing, and is told nothing.
+    await fails(share(strangerDesk, "list"), "ShareNoTeam", "a stranger listing");
+    await fails(share(strangerDesk, "snapshots", { id }), "ShareGone", "a stranger reading");
+
+    // A member key swapped on the service is never used. The sharer's side: the teammate
+    // stands as "changed", and gets no keys until the new key is accepted by hand.
+    const keyOf = async (uid) =>
+      (await fetch(`${FIRESTORE}/memberKeys/${uid}`, { headers: owner }).then((r) => r.json()))
+        .fields.publicKey.stringValue;
+    const setKey = (uid, key) =>
+      patch(`memberKeys/${uid}`, ["publicKey"], { publicKey: text(key) });
+    const [realMine, realTheirs] = [await keyOf(account.uid), await keyOf(mate.uid)];
+    await setKey(mate.uid, b64(32));
+    const swapped = (await share(desk, "members")).find((m) => m.uid === mate.uid);
+    check(
+      swapped.state === "changed" &&
+        swapped.fingerprint === theirs.fingerprint &&
+        swapped.pendingFingerprint !== theirs.fingerprint,
+      JSON.stringify(swapped),
+    );
+    const held = await share(desk, "sync", {
+      root: project,
+      project: "shared1",
+      onlyVerified: true,
+    });
+    check(
+      held.wrapsAdded === 0 &&
+        held.waiting.some((w) => w.uid === mate.uid && w.why === "keyChanged"),
+      JSON.stringify(held),
+    );
+    await setKey(mate.uid, realTheirs);
+    check(
+      (await share(desk, "members")).find((m) => m.uid === mate.uid).state === "verified",
+      "the pinned key shown again",
+    );
+    // The reader's side, on a freshly started app (it holds no opened keys): with the sharer's
+    // key swapped, nothing of the share is read.
+    await setKey(account.uid, b64(32));
+    mateDesk.stop();
+    mateDesk = new Host("mate", mateDesk.profile);
+    hosts.push(mateDesk);
+    await mateDesk.call("$/hello", { protocol: 1, client: "sync-e2e" });
+    check((await mateDesk.sync("status")).state === "on", "the teammate's app, started again");
+    await fails(share(mateDesk, "snapshots", { id }), "ShareKeyChanged", "a swapped sharer key");
+    check(
+      (await share(mateDesk, "list")).find((s) => s.id === id).state === "keyChanged",
+      "said in the list",
+    );
+    await setKey(account.uid, realMine);
+    check((await share(mateDesk, "snapshots", { id })).length === 1, "the pinned key again: read");
+
+    // The teammate is removed from the team (the account page's job; when it can't be asked
+    // here, the test plays the service): the next sync of the share renews its keys.
+    const removed = await fetch(`${BASE}/api/team/members/${mate.uid}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${account.idToken}` },
+    });
+    if (removed.status !== 200) {
+      await drop(`memberships/${mate.uid}`);
+      await drop(`teams/${account.uid}/members/${mate.uid}`);
+      await drop(`vaults/${id}/wraps/${mate.uid}`);
+      await patch(`vaults/${id}`, ["rotationNeeded"], { rotationNeeded: { booleanValue: true } });
+    }
+    await writeFile(join(project, "b.txt"), "two, after the teammate left\n");
+    const after = await share(desk, "sync", {
+      root: project,
+      project: "shared1",
+      onlyVerified: true,
+    });
+    check(
+      after.renewed && typeof after.snapshot === "string" && after.waiting.length === 0,
+      JSON.stringify(after),
+    );
+    const now = (await share(desk, "list")).find((s) => s.id === id);
+    check(now.keyVersion === 2 && !now.rotationNeeded, JSON.stringify(now));
+    check((await share(laptop, "snapshots", { id })).length === 2, "the sharer reads both");
+    // The removed teammate, whose app still holds the keys it opened, is refused all the same.
+    await fails(share(mateDesk, "snapshots", { id }), "ShareGone", "reading after being removed");
+    await fails(
+      share(mateDesk, "file_text", { id, snapshot, path: "a.txt" }),
+      "ShareGone",
+      "reading a file after being removed",
+    );
+    await fails(share(mateDesk, "list"), "ShareNoTeam", "listing after being removed");
+
+    // Stopped: gone from the team's list, and from the account's own vault.
+    await share(desk, "stop", { id });
+    check(!(await share(desk, "list")).some((s) => s.id === id), "no longer listed");
+    await fails(share(laptop, "snapshots", { id }), "ShareKeys", "reading a stopped share");
+    for (const who of [account, mate]) {
+      await drop(`memberships/${who.uid}`);
+      await drop(`teams/${account.uid}/members/${who.uid}`);
+    }
+    await drop(`teams/${account.uid}`);
+  });
+
   await step("sync reset from the account page turns it off everywhere", async () => {
     const r = await fetch(`${BASE}/api/sync/reset`, {
       method: "POST",
