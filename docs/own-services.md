@@ -304,6 +304,28 @@ error codes), `vault.rs` (the state, devices, pairing and keys), `records.rs` an
   a record has `version`, `seq`, `blob`, `refs`, `deleted`, `device`, `info`. A reply
   without a numeric `epoch` and a `records` array is refused, not read as an empty account.
 
+## Sharing, proofs and the page's pin (since 0.1.9)
+
+A server of your own that offers teams also answers, as [sync.md](sync.md) lists them:
+
+- `PUT /api/team/key`, and `memberKey` on each member in `GET /api/team`;
+- `/api/team/shares` and everything under it: a share is stored and answered like a vault
+  (the same record and chunk calls), with one writer and the team's members as readers.
+
+And for any Sync server:
+
+- `POST /api/sync/keep { collection, id, keep }` and `keep` on a record, for a snapshot
+  pinned from a page (optional: without it nothing is ever kept from a page);
+- a `challenge: { id, proof }` in the body of approving a device, a new recovery key, new
+  keys and removing a device (also the header `X-Sync-Challenge` on the DELETE): check it,
+  or ignore it;
+- no redirects: the app follows none on `/oauth/token`, `/api/me`, `/api/sync/**` or
+  `/api/team/**`, so the server answers those itself;
+- app sessions only for an address the person confirmed.
+
+`accounts.serverUrl` (the setting) is honoured only for a local address, or in a development
+build: a release build talks to the server `product.json` names.
+
 ## Where it is in the code
 
 - `product.json` → `scripts/gen.mjs` → `src/core/product.ts` (generated).

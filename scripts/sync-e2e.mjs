@@ -90,7 +90,17 @@ class Host {
     });
   }
 
-  call(method, params = {}) {
+  /**
+   * One command. A folder that is opened is also said to be trusted, as a person does in the
+   * window: git stays off in a folder until then, and these folders are the test's own.
+   */
+  async call(method, params = {}) {
+    const result = await this.send(method, params);
+    if (method === "workspace_open") await this.send("git_set_trust", { trusted: true });
+    return result;
+  }
+
+  send(method, params = {}) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
@@ -150,7 +160,18 @@ async function newAccount() {
     body: JSON.stringify({ email, password: "test-password", returnSecureToken: true }),
   }).then((x) => x.json());
   if (!r.idToken) throw new Error(`no account on the emulator at ${AUTH}: ${JSON.stringify(r)}`);
-  return { email, idToken: r.idToken, uid: r.localId };
+  // The app signs in only with an address shown to be the person's own (as a mailed link
+  // does): the emulator is told so, and a new sign-in then carries it.
+  const idp = (path, body, admin) =>
+    fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/${path}?key=demo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(admin ? { Authorization: "Bearer owner" } : {}) },
+      body: JSON.stringify(body),
+    }).then((x) => x.json());
+  await idp("accounts:update", { localId: r.localId, emailVerified: true }, true);
+  const again = await idp("accounts:signInWithPassword", { email, password: "test-password", returnSecureToken: true });
+  if (!again.idToken) throw new Error(`the account couldn't sign in again: ${JSON.stringify(again)}`);
+  return { email, idToken: again.idToken, uid: r.localId };
 }
 
 /** Gives the account the paid plan (the server's job; here the test plays the server). */

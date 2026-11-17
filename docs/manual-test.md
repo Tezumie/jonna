@@ -4394,3 +4394,48 @@ Needs the accounts service with billing set up (Stripe's test mode) and two acco
    "Publish to the team's library…", and the Accounts menu shows no plan.
 8. **The guide.** Help → Documentation: "Sync and teams" is in the list, and search finds
    "recovery key".
+
+## D444 — Look inside a snapshot; a pin from the account page
+1. A synced project with a snapshot. Change a file, delete one, add one. Sync → Projects →
+   the project → a snapshot's row: its files, those that differ first, with what each is.
+2. A file that differs: a diff, the snapshot on the left. One only in the snapshot: against
+   nothing. A picture: a notice, no tab.
+3. A row's Restore asks, restores, and the row becomes "Same". "Restore all…" as before.
+4. On the account page, Projects, a project: Pin on a snapshot. In the app the snapshot shows
+   as pinned ("Pinned from your account page") within a pass; Unpin in either place clears it.
+
+## D445 — The team library's modes
+1. As the owner: a published item's menu has "Make a default" and "Make required". Required:
+   a member sees a lock and "Required", and can't switch it off.
+2. As a member who may publish: Publish offers no mode; publishing over a default item, and
+   removing one, say only the owner can.
+3. More than twelve items: a filter appears. Each row says who published it and when.
+4. Website, Team: a pending invitation has "Copy invitation".
+
+## D446 — Sharing a project with a team
+Two accounts in one team, sync on for both.
+1. A: a synced git project with a `.env`. Sync → Projects → the project → "Share with team".
+   The card lists B, says one key file was left out, and when it was last shared.
+2. B: Sync → Team → Shared projects: A's project. Open it, a snapshot, a file (read-only; no
+   `.env`). With a clone of the same repository open: states and a diff.
+3. B: "Open a copy…": an empty folder; asked whether to clone from the address shown; the
+   folder opens untrusted, with git off until trusted.
+4. People: B is "Not verified". "Mark as verified…" shows B's fingerprint (six groups of
+   five); it matches "Your fingerprint" on B's computer. `team.shareOnlyVerified` on, B
+   unmarked: the card says B isn't verified, and B is waiting.
+5. Remove B from the team on the website: B's list is empty; after A's next snapshot the
+   share has new keys.
+6. A commits a `.env` and doesn't push: sharing stops and names the file.
+7. Switch the share off: asked first; gone for B.
+
+## D447 — After the security audit
+1. **Git and trust.** Open a folder that is a git repository and answer nothing: Source
+   control says git is off until the folder is trusted. Trust it: git works.
+2. **A provider's key and its address.** A custom provider with a key. Change its base URL to
+   another host: its models don't list, and it says the key must be entered again.
+3. **From another computer.** On computer A add a skill with `allowed-tools` and a keybinding
+   that sends text to the terminal. On B after a pass: one notification, a card on Sync's
+   Overview; the keybinding does nothing and the skill's tools ask, until "Accept".
+4. **Sync off by itself.** Reset sync on the account page. On a computer: "Sync is off on this
+   computer", with "Remove the keys…"; nothing was deleted yet.
+5. **A setting that stays.** Set `agent.deleteProtection` on A: it doesn't change on B.

@@ -105,7 +105,11 @@ content stays readable after new keys.
   that still has the data turns sync on again and uploads afresh. Snapshot history is gone.
 
 A device's state is `<data>/sync/local.json`; the sync loop's is `<data>/sync/front.json`. The
-whole folder is removed when sync goes off on the device.
+whole folder is removed when sync is turned off on the device by the person. When sync goes
+off by itself (the service says the vault was reset, or no longer lists this computer, or the
+account or server changed), the keys are kept aside for 30 days, unusable for syncing, until
+the person removes them or turns sync back on (`sync.resumeKept`, `sync.forgetKept`): a
+service that is wrong, or lying, can't make a computer destroy the only keys.
 
 ## The service
 
@@ -232,6 +236,7 @@ asked, and nothing is written inside `.git` to make one.
   pinned snapshot is never removed.
 
 - **Every stash travels** (their commits in the bundles) and is put back in the stash list.
+  (In the vault. A share carries no stash: see "What a share holds".)
 - **A restore writes only inside the project:** a snapshot's path can't name `.git` at any
   depth (nor a spelling Windows reads as it), a name Windows reserves (`NUL`, `COM1`…), climb
   out, or pass through a link.
@@ -261,11 +266,11 @@ Every construction is the one the vault uses (`sync/crypto.rs`); none is new.
 | Thing | What it is |
 |---|---|
 | Member key | One X25519 key pair an account. The private half is in a sealed record of the account's own vault (`sys/member`), so each of the person's computers has it and the service doesn't. The public half is published to the service with proof of holding it (the same challenge a device answers). |
-| Fingerprint | 20 digits (five groups of four) from SHA-256 over a member's public key. A person reads theirs out; a teammate checks it against what their own app shows for that person, and marks them verified. One key's fingerprint, never a code made from two keys: a short code over two keys can be searched for. |
-| Pins | A sealed record of the account's own vault (`sys/team`): each teammate's public member key as first seen, and whether it was verified. A key that later differs is never used: sharing with that person waits until the new key is accepted by hand. |
+| Fingerprint | 30 digits (six groups of five) from SHA-256 over a fixed label, the member's account id and their public key (about 100 bits; with the account id in it, one search can't be aimed at every published key at once). A person reads theirs out; a teammate checks it against what their own app shows for that person, and marks them verified. One key's fingerprint, never a code made from two keys: a short code over two keys can be searched for. |
+| Pins | A sealed record of the account's own vault (`sys/team`): each teammate's public member key as first seen, and whether it was verified. A key that later differs is never used: sharing with that person waits until the new key is accepted by hand. The pins are anchored so the service can't make a computer start again from first sight by withholding them: the account's member key and the pins' counter are also named in the trusted list (`sys/devices`, which can't be rolled back) and in `sys/member`; each computer keeps the last pins it read. A computer that finds the pins missing, damaged or older than those anchors makes and opens no wrap (`SharePins`); the way out is the person's own: "Start over with a new key for sharing" (`team.startOver`), after which teammates see the key as changed. |
 | Share keyring | Made by the sharer. Kept sealed in the sharer's own vault (`shares/<project>`), so the sharer's other computers and the recovery key have it. |
-| Share wrap | The share's keyring, with the share's id and the generation, boxed (the authenticated box a device wrap uses) from the sharer's member key to one member's member key. A reader opens it only as coming from the pinned key of the member the service names as the sharer, and only when the id inside is the share asked for. |
-| New keys | When someone leaves the team or is removed, or the sharer asks: the sharer's computer adds a generation and stores wraps for those who remain. Older content stays readable to those who had it; what is written afterwards is not readable with the old wraps. |
+| Share wrap | The share's keyring, with the share's id, the generation and when the keyring was made, boxed (the authenticated box a device wrap uses) from the sharer's member key to one member's member key. A reader opens it only as coming from the pinned key of the member the service names as the sharer, and only when the id inside is the share asked for. A reader remembers, for each share, the keyring and the highest generation it has seen: older keys of the same keyring are refused, and another keyring is taken only when it was made later (a share stopped and made again). |
+| New keys | When someone leaves the team or is removed, or the sharer asks: the sharer's computer adds a generation and stores wraps for those who remain. It does so when the service says so, and also when someone it handed the keys to (it keeps that list, sealed) is no longer in the team, whatever the service says. Older content stays readable to those who had it; what is written afterwards is not readable with the old wraps. |
 
 **What the service can and can't do.** It decides who may read (members of the team, with an
 approved device) and refuses a removed member at once. It never has a key. A service that
@@ -316,26 +321,58 @@ The same record kinds a project has in a vault, under the share's keys:
 | `chats/<chat>` | With the second switch: a chat's summary, and its file and images as chunks |
 
 - **When:** after each snapshot of a shared project is taken for the vault, the same capture
-  runs for the share (unchanged files aren't read or uploaded again). A share keeps its
-  latest 10 snapshots; pinned ones are the vault's affair, not the share's.
-- **Key files are left out** of a share whatever the ignore files say: `.env` and `.env.*`
-  (not `.env.example`, `.sample`, `.template`), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
-  `*.keystore`, `*.jks`, `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `.npmrc`, `.netrc`,
-  `.pypirc`, and files named `credentials` or `secrets` with any ending. They are listed in
-  the snapshot as skipped ("a key file"), and the sharer is told how many.
+  runs for the share (unchanged files aren't read or uploaded again), and every ten minutes
+  while the project is open, so a teammate who publishes a key later gets theirs. A share
+  keeps its latest 10 snapshots; pinned ones are the vault's affair, not the share's.
+- **Of commits that aren't pushed, only those the checked-out commit builds on travel.** No
+  other branch, no tag, no stash. A share that doesn't name its remote (a local or `file://`
+  origin) carries the whole history of that commit.
+- **Key files are left out** of a share whatever the ignore files say, by name in any letter
+  case: `.env`, `.env.*` and `*.env` (not `.env.example`, `.sample`, `.template`), `.envrc`,
+  `.dev.vars`; `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.keystore`, `*.jks`, `*.ppk`, `*.kdbx`;
+  `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `id_dsa*`; `.npmrc`, `.yarnrc.yml`, `.netrc`,
+  `.pypirc`, `.git-credentials`, `.pgpass`, `.htpasswd`, `auth.json`, `.docker/config.json`;
+  `*.tfvars`, `*.tfvars.json`, `terraform.tfstate` and `terraform.tfstate.*`, `kubeconfig`,
+  `*.kubeconfig`, `client_secret*.json`, `service-account*.json`; and files named
+  `credentials`, `secret` or `secrets` with any ending. They are listed in the snapshot as
+  skipped ("a key file"), also when staged, and the sharer is told how many.
+- **A key file in a commit that would travel stops the share** (`ShareKeyFilesInHistory`,
+  naming the files): it is pushed, or taken out of the history, first. The rule is a list of
+  names; it can't know every secret, and the card says what teammates will see.
 
 ### Reading a share
 
 - **Its snapshots**, newest first, and for one of them its files (as a vault snapshot's:
   those that differ from its commit, or all of them without git). A file opens read-only; two
   snapshots, or a snapshot and the reader's own copy of the project, can be compared.
-- **A copy:** into a new, empty folder the reader chooses. With a remote, the folder is
-  cloned from it first; then the snapshot is restored on top (its commit checked out, staged
-  and changed files written). The folder opens as any other folder someone else made: not
-  trusted until the reader says so.
+- **A copy:** into a new, empty folder the reader chooses. With a remote, the reader is shown
+  the address and asked whether to clone from it first ("No" contacts nothing and adds no
+  remote); the clone runs unattended (nothing can prompt), with the file and ext protocols
+  off, without submodules, for at most 15 minutes, and falls back to a copy from the bundles
+  alone. Then the snapshot is restored on top (its commit checked out, staged and changed
+  files written), without fetching. The folder opens as any other folder someone else made:
+  not trusted until the reader says so, and git stays off in it until then.
+- **Against the reader's own copy:** a folder is taken for the shared project when its git
+  remote is the same repository (a project's id is each account's own, so ids never match);
+  the files then show how they stand against it, and a file opens as a diff.
+- **What is read is checked, not believed:** a snapshot's list is at most 256 MiB, 200,000
+  files of at most 100 MB each and 25 bundles; a file's pieces must fit its stated size, and
+  reading stops when more arrives; a copy is at most 20 GiB.
 - **A chat** (when shared) is copied into the reader's own chats as a new chat, named with
   whose it was. Nothing the reader does to it goes back.
 - A reader's computer writes nothing to a share.
+
+### What sharing can't promise
+
+- **Whose content it is rests on the service.** Every reader holds the share's keys, so a
+  snapshot is the sharer's only because the service lets only the sharer write.
+- **First contact is trust on first use,** until fingerprints are compared.
+- **A removed member keeps what they could already read,** and the key that names chunks is
+  never renewed: with the service's help they could test guesses about later content.
+- **Opening a copy is running git on a teammate's repository,** and their rules, tasks and
+  agent files arrive with it: the folder isn't trusted until the reader says so.
+- **Renewals are finite:** a wrap outgrows the service's limit after some forty renewals; the
+  share is then stopped and made again.
 
 ### Tests
 
@@ -345,6 +382,56 @@ The same record kinds a project has in a vault, under the share's keys:
 - `scripts/sync-e2e.mjs`: two accounts in one team. One shares a project; the other reads
   its snapshot and opens a copy; a swapped member key is refused; after a removal the next
   snapshot can't be read with the old wrap.
+
+## What a computer checks about the service and about its own other computers
+
+After the audit before 0.1.9 (D447). The service is trusted to store and to say who is in a
+team; a computer of the account is trusted with the keys. Neither is trusted further.
+
+- **A record is the one that was asked for.** A reply is opened under the name requested; one
+  that names another record is refused, so one project's snapshot can't be passed off as
+  another's.
+- **A record can't go backwards.** Every record this app writes carries a counter inside its
+  sealed text; each computer keeps the highest it has seen (`<data>/sync/seen.json`, per
+  keyring). A lower one is an older copy given back: it is not applied, never a reason to
+  delete or overwrite, and noted once in the activity. Until every computer on the trusted
+  list has said it writes counters (`counted` in `sys/devices`), a record without one is
+  taken as an older version's.
+- **A page of changes is for the vault this computer joined.** Another epoch is a reset
+  (`SyncReset`), and after one, settings that differ here are kept and reported, not replaced.
+- **After a removal, new keys, always.** The computer that removed a device makes them
+  whatever the service says, and retries until it worked. A device that may still be joining
+  delays that by ten minutes of this computer's own clock at most. The small sealed records
+  (`sys`, `settings`, `files`, `shares`) are sealed again under the new keys, and the trusted
+  list states the generation below which such a record is no longer taken (`floors`).
+- **The recovery wrap states how far the trusted list had got** (`listN`, inside what its tag
+  covers): a computer joining by recovery key refuses an older list.
+- **Calls that change keys carry a proof.** Approving a device, a new recovery key, new keys
+  and removing another device send a fresh proof of this device's key
+  (`challenge: { id, proof }`; on DELETE also the header `X-Sync-Challenge`), so a stolen
+  session alone can't replace the account's keys. The service requires it once
+  `SYNC_REQUIRE_PROOF` is on.
+- **Files from another of the account's computers aren't the person's own until accepted
+  here** (`<data>/sync-incoming.json`, never synced). A skill or command that arrived by sync
+  gets no pre-approved tools; keybindings that arrived and carry arguments, or run something
+  in the terminal, a task, the agent, the debugger or an extension, wait. One notification,
+  a card on the Sync tab's Overview, `sync.acceptIncoming`. A file edited here counts as
+  accepted; what was on the computer before this existed counts as accepted.
+- **Settings that could loosen a protection or point the IDE somewhere new don't sync,** in
+  either direction (`src/core/settings/guard.ts`, the same rule a team's settings pass): model
+  choices, the agent's protections and capability switches, `mcp.*`, `security.*`,
+  `extensions.*`, `update.*`, tasks, anything named like a path, a command, arguments, a URL,
+  a port or a trust setting. Nor does a setting this computer's registry doesn't know
+  (an extension's), unless it is listed in `sync.extraSettings`.
+- **A chat that arrives is only a chat:** it never applies edits by itself, carries no pending
+  changes, and starts external agents afresh.
+- **A snapshot can't bring a git repository's own files.** One that would put `HEAD` with
+  `config`, or with `objects` and `refs`, at the top of a folder is refused; on capture they
+  are skipped. And a restore never writes, reads or deletes through a link or junction.
+- **Sync and account calls follow no redirect,** and replies are read up to a limit.
+- **Keys are in their own place.** Model providers' keys are stored under their own prefix
+  and bound to the address they were saved for; no name a page or a setting can choose
+  reaches the device key or the keyring.
 
 ## Tests
 

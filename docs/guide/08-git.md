@@ -8,6 +8,12 @@ GitHub.
 
 ## Before you start
 
+- **Git is off until you trust the folder.** A repository's own settings and hooks can run
+  programs, so in a folder you haven't answered "Do you trust this folder?" for, the Source
+  control view says git is off and offers
+  [Manage workspace trust](command:workspace.manageTrust). See
+  [Workspaces and trust](20-workspaces.md#workspace-trust).
+
 - Install [Git](https://git-scm.com). On Windows, Git for Windows also brings Git Bash and Git
   Credential Manager, which remembers your sign-ins.
 - For the GitHub features (publishing, pull requests, issues, notifications), install the

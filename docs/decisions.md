@@ -38,6 +38,10 @@ unless noted.
 | · A build's own services in one place: accounts server, account and plan pages, whether Sync is built in | D441 |
 | · Teams: seats on one subscription, one pool of storage, a library of how the team works | D442 |
 | · The audit before 0.1.8: a restore that can't lose work, a team's settings that can't switch things on, a full account, forks | D443 |
+| · Look inside a snapshot before restoring it; a snapshot pinned from the account page | D444 |
+| · The team library: required items, the owner decides what is on for everyone | D445 |
+| · Sharing a project with a team | D446 |
+| · The security audit before 0.1.9: what a computer checks about the service and about its own other computers | D447 |
 
 ## Seeded from PLAN §19
 
@@ -15800,3 +15804,119 @@ longer says sync is "coming soon".
   deletion.
 - The website's side (payments, the commercial license, the supporters page) had its own
   audit; it is in that repository.
+
+## D444 — Look inside a snapshot before restoring it; a snapshot pinned from the account page
+
+A snapshot could only be restored, whole or one file picked from a list: seeing what was in
+it meant changing the folder. Looking comes first now.
+
+- **A snapshot opens** (its row, or "View changes") to its files as they stand against the
+  folder: differs, not in this folder, the same, deleted in the snapshot. What differs comes
+  first; a filter above fifteen files; five hundred rows shown, the filter searches all.
+- **A file opens as a diff,** the snapshot on the left (`syncSnapshot:<collection>/<id>`, a
+  content source for `editor.openDiff`), the folder's file on the right. A file only the
+  snapshot has shows against nothing; a binary or large one says so.
+- **Restore from there:** a row's Restore (`sync.snapshot.restoreFile`), "Restore all…".
+- The backend compares by size, then by the content's chunk ids, a piece at a time, without
+  the network (`sync_snapshot_compare`); a file's text is read without writing it anywhere
+  (`sync_snapshot_file_text`, 2 MB). Commands: `sync.snapshot.files` (agents may read),
+  `sync.snapshot.openDiff`, `sync.snapshot.view`; `ide://sync` `viewing`.
+- **A pin from the account page.** The app's pin is a name inside the sealed record, which the
+  website can't write. So the page's pin is a mark beside the record (`keep`, set by
+  `POST /api/sync/keep`): it counts as a change, so every computer hears of it; the app
+  shows it as pinned, never prunes it (the newest fifty a project), and its Unpin clears it.
+
+## D445 — The team library: required items, the owner decides what is on for everyone
+
+Looked at first: how Cursor, Replit, Obsidian, Zed, VS Code with Copilot, JetBrains and
+Windsurf do teams. What fits a product one person runs was taken; single sign-on, audit
+logs, domain capture and live co-editing were not.
+
+- **Three modes an item** (after Cursor's plugins): optional (members add it), a default (on,
+  a member can switch it off), **required** (always on; a lock where the switch was).
+  `team.setMode` replaces `team.setDefault`. A required "default settings" item still sits
+  below the person's own settings: required means it can't be switched off as a whole.
+- **Only the team's owner decides what is on for everyone.** A member who may publish adds
+  and changes optional items; a default or required one, a file of a skill that is one, and
+  taking one out, are the owner's (the app refuses first; the service answers 403
+  `not_owner`). Publishing shouldn't be a way to put something into every teammate's agent.
+- **The Team page** says who published an item and when, has a filter above twelve rows, and
+  states the order once: your own files and settings win over the team's.
+- **On the website:** "Copy invitation" on a pending invitation (no email is sent, so the
+  owner has the sentence and the link to send), with its expiry.
+
+## D446 — Sharing a project with a team
+
+Teams shared how a team works and a bill, none of the work. A member can now share a project
+that syncs: teammates see its snapshots, what changed in each, and can open a copy. One
+writer, read-only for everyone else, nothing written into a reader's folder unasked. The
+design, the key model and what it can't promise are in `docs/sync.md` ("Sharing a project
+with a team"); the service's half is in its repository.
+
+**Why a copy under its own key.** A reader can't be given the sharer's keyring. Sealing every
+project under its own key would have changed the heart of Sync for everyone; deriving a key a
+project risked other projects on one mistake. A share is a second, small place with a keyring
+of its own, written to after each snapshot: the private vault and its keys are never touched,
+revoking is deleting, and the new code is one module. The cost is that a shared project's
+snapshot is stored twice, which for a git project is small.
+
+**Keys between people.** A member key an account; a fingerprint of thirty digits to compare;
+pins, so a key seen once can't be swapped later; a wrap that names its share, its generation
+and its keyring; new keys when someone leaves. "Not verified" is said plainly until
+fingerprints were compared, and `team.shareOnlyVerified` shares only with those who were.
+
+**In the IDE.** A "Share with team" card on the project's page (who can read, who is waited
+for and why, how many key files were left out); People and Shared projects on the Team page;
+a shared snapshot in the same panel as one's own (D444), with a diff against the reader's
+copy when their folder is the same repository; "Open a copy…", which asks before cloning.
+`sync.project.share` / `unshare` / `shareNow`, `team.share.*`, `team.member.verify`,
+`team.member.acceptKey`, `team.startOver`; `ide://team` `members` and `shares`. What changes
+who sees what is hidden from agents; what returns a teammate's text says so in its result.
+
+**Not built:** sharing a project's chats (the second switch of the plan), sharing with chosen
+people instead of the whole team, a notice when a teammate shares something.
+
+**Checked:** the service's suite; the two-computer run (two accounts in a team: one shares, the
+other reads, opens a copy, is removed, and can't read what comes after); an audit by a
+reviewer that didn't write it (D447).
+
+## D447 — The security audit before 0.1.9: what a computer checks about the service and about its own other computers
+
+Three reviews by reviewers that hadn't written the code: the new sharing, the whole service,
+and the app's accounts and Sync. Everything they could show was fixed before anything was
+released. `docs/sync.md` has the rules that came out of it ("What a computer checks…").
+
+**In sharing, before it shipped.** A restore could write through a link the snapshot's own
+commit had checked out (into `.git`, or out of the folder); a computer with no pins kept
+could be made to start from first sight; a share's bundle carried every local branch and
+every stash; a page in the window could reach the member key through a record's name; the
+fingerprint was too short; sizes read from a share were believed; a clone had no time limit.
+
+**In the app, already released.**
+- **One place for every secret.** A model provider's id chose which stored secret was sent as
+  its key, so a provider named like the keyring would have sent the keyring to its address.
+  Provider keys have their own prefix now, are bound to the address they were saved for, and
+  no name a page or a setting chooses reaches another secret. Existing keys are moved once.
+- **Git before trust.** A folder whose trust was not decided ran git, and git runs what a
+  repository's own settings name. **Git is off until the folder is trusted** (as VS Code's
+  restricted mode): Source control says so, with the way to trust it. Every git call also
+  refuses a folder that is a bare repository unless it was named.
+- **Files from another computer of the account** were the person's own at once: a skill's
+  tools pre-approved, a key bound to a terminal command. They wait for a review now.
+- **The service could give back an older record, or another record,** and a computer would
+  take it. Records carry a counter and are opened under the name asked for.
+- **Removing a computer made new keys only if the service agreed.** Always, now.
+- **Sync going off by itself deleted the keys.** They are kept aside for thirty days.
+- Settings that loosen a protection or choose a model no longer travel; a synced chat is only
+  a chat; account calls follow no redirect; `accounts.serverUrl` counts only for a local
+  address or in a development build; the release workflow's actions are pinned.
+
+**In the service** (its repository): app sessions only for a confirmed address, ended by a
+password reset, with reuse detection and one year at most; rules that let no client touch
+the database; daily budgets that hold across instances; the hourly clean-up given the key it
+needs; proofs on the calls that change keys.
+
+**Known and left:** the proof of possession has no label for what it proves (a change the
+service and the app must make together); a deletion is the service's unsealed word for
+snapshots and projects (files and chats seal theirs); chats and snapshots have no generation
+floor; switches outside the guarded areas still sync.

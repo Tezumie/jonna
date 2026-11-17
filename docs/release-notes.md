@@ -3,6 +3,37 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.9
+
+Sharing with your team, a look inside snapshots, and a security review.
+
+- **Look inside a snapshot before restoring it.** Open a snapshot (Sync → Projects) to see its
+  files and how each differs from your folder, open any of them as a diff, and restore one
+  file or all of them from there.
+- **Share a project with your team.** Turn on "Share with team" for a synced project:
+  teammates see its snapshots, what changed, and can open a copy. Read-only for them; your
+  own synced copy is untouched. Key files (`.env`, keys and tokens) are left out. Sync →
+  Team has **People**, where you can compare fingerprints with a teammate, and **Shared
+  projects**.
+- **The team library has required items.** The team's owner can make an item required
+  (always on) as well as a default, and is the only one who decides what is on for everyone.
+  The Team page says who published each item and when, and has a filter.
+- **Pin a snapshot from your account page,** as well as in the app.
+- **Git is off until you trust a folder.** A repository's own settings can run programs, so
+  git now waits for your answer to "Do you trust this folder?", as in other editors. Source
+  control says so and takes you there.
+- **A review for what arrives from your other computers.** Skills, commands and keybindings
+  that could run something are held until you accept them once on each computer.
+- **Security fixes from a full review of accounts and Sync:**
+  - a model provider's key is only ever sent to the address it was saved for (after
+    changing a provider's address, enter its key again);
+  - the sync service can't hand back an older copy of something, or one item in place of
+    another;
+  - removing a computer always makes new keys;
+  - if sync goes off by itself, your keys are kept for 30 days, not deleted;
+  - settings that choose a model or loosen a protection no longer sync between computers.
+- Signing in from the app now needs a confirmed email address (email and password accounts).
+
 ## 0.1.8
 
 Sync: your settings, chats and unfinished work on every computer.
