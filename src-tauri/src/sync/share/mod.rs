@@ -316,8 +316,32 @@ impl Own {
 /// counter of the last pins write it names, and the record's version.
 struct MemberRead {
     key: Option<PrivateKey>,
+    /// The pins marker to hold the pins against: the record's, or the trusted list's when
+    /// that is further.
     pins: u64,
+    /// The marker as the record itself has it.
+    marked: u64,
     version: Option<u64>,
+}
+
+/// `sys/member` as read, held against what the trusted list says of it (`anchor`: the member
+/// key's public half, when the list names one, and the pins counter). The list names a key
+/// and the record is missing, unreadable or holds another: refused (`SharePins`), never
+/// answered with a new key. A computer that kept nothing of its own would otherwise take
+/// whatever stands in the record's place: an earlier record with its marker at 0, or
+/// nothing at all, and then pin whatever keys the service shows.
+fn anchored(mut read: MemberRead, anchor: &(Option<String>, u64)) -> Result<MemberRead> {
+    if let Some(named) = &anchor.0 {
+        if read.key.as_ref().map(PrivateKey::public).as_deref() != Some(named.as_str()) {
+            return Err(failed(
+                "SharePins",
+                "This account's key for sharing couldn't be read from the account (it is missing, or isn't the one the account's computers agreed on), so nothing was shared or read. Try again; if it stays, the account's synced data was lost or changed outside the app, and you can start over with a new key for sharing.",
+            ));
+        }
+    }
+    read.marked = read.pins;
+    read.pins = read.pins.max(anchor.1);
+    Ok(read)
 }
 
 /// What a reader's computer remembers of the shares it opened (`plan::Floor`), by share id.
@@ -604,7 +628,8 @@ impl Shares {
                 return Ok(read.key);
             }
             // A member key made now starts with no pins written (`pins`: 0): only then may
-            // teammates' keys be pinned at first sight (`pins::reconcile`).
+            // teammates' keys be pinned at first sight (`pins::reconcile`). (Reached only
+            // when the trusted list names no member key: `read_member` refuses otherwise.)
             let key = PrivateKey::generate()?;
             if write(
                 &self.vault.api,
@@ -615,6 +640,9 @@ impl Shares {
             )
             .await?
             {
+                // Named in the trusted list from here on: a computer of the account that
+                // kept nothing never makes another in its place.
+                self.vault.anchor_member(&key.public(), 0, false).await?;
                 return Ok(Some(key));
             }
         }
@@ -624,25 +652,75 @@ impl Shares {
         ))
     }
 
-    /// `sys/member` as it is now.
+    /// `sys/member` as it is now, held against what the account's trusted list says of it
+    /// (`anchored`): the list can't be withheld or rolled back unnoticed, the record alone can.
     async fn read_member(&self) -> Result<MemberRead> {
-        Ok(
-            match read(&self.vault.api, &self.ring, MEMBER.0, MEMBER.1).await? {
-                Read::Text { text, version } => {
-                    let (key, pins) = parse_member(&text);
-                    MemberRead {
-                        key,
-                        pins,
-                        version: Some(version),
-                    }
+        let anchor = self.vault.member_anchor()?;
+        let read = match read(&self.vault.api, &self.ring, MEMBER.0, MEMBER.1).await? {
+            Read::Text { text, version } => {
+                let (key, pins) = parse_member(&text);
+                MemberRead {
+                    key,
+                    pins,
+                    marked: pins,
+                    version: Some(version),
                 }
-                Read::Absent { version } | Read::Damaged { version } => MemberRead {
-                    key: None,
-                    pins: 0,
-                    version,
-                },
+            }
+            Read::Absent { version } | Read::Damaged { version } => MemberRead {
+                key: None,
+                pins: 0,
+                marked: 0,
+                version,
             },
-        )
+        };
+        let read = anchored(read, &anchor)?;
+        // A key the list doesn't name yet (it was made before the list named one, or the
+        // write that names it didn't arrive): named now.
+        if let (Some(key), None) = (&read.key, &anchor.0) {
+            self.vault
+                .anchor_member(&key.public(), read.pins, false)
+                .await?;
+        }
+        Ok(read)
+    }
+
+    /// Starts over with a new member key, knowingly: for when the account's own record of
+    /// its key or of its teammates' keys is gone or was changed outside the app, and sharing
+    /// is refused for it (`SharePins`). The new key is published; teammates see this
+    /// account's key as changed and accept it by hand, and what was shared is shared again
+    /// under it. The teammates' keys this computer kept stay pinned; without any kept they
+    /// are pinned anew at first sight (and should be verified again).
+    pub async fn start_over(&self) -> Result<()> {
+        let _step = STEP.lock().await;
+        let (_, anchored_pins) = self.vault.member_anchor()?;
+        let key = PrivateKey::generate()?;
+        let mut pins = self.kept_pins().unwrap_or_default();
+        pins.n = pins.n.max(anchored_pins) + 1;
+        // Over whatever is there (which is exactly what couldn't be read).
+        for (name, text) in [(PINS, pins.text()?), (MEMBER, member_text(&key, pins.n))] {
+            let mut written = false;
+            for _ in 0..4 {
+                let version = records::version(&self.vault.api, &self.ring, name.0, name.1).await?;
+                if write(&self.vault.api, &self.ring, name, version, Some(&text)).await? {
+                    written = true;
+                    break;
+                }
+            }
+            if !written {
+                return Err(failed(
+                    "Sync",
+                    "This account's key for sharing kept changing; try again.",
+                ));
+            }
+        }
+        self.keep_pins(&pins);
+        self.vault
+            .anchor_member(&key.public(), pins.n, true)
+            .await?;
+        match self.publish(&key).await {
+            Ok(()) | Err(Error::Sync("SyncLapsed", _)) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Raises the pins marker in `sys/member` to `n` (the counter of a pins write that is
@@ -654,7 +732,9 @@ impl Shares {
             let Some(key) = read.key else {
                 return Ok(());
             };
-            if read.pins >= n {
+            // In the trusted list too, which is what a computer that kept nothing goes by.
+            self.vault.anchor_member(&key.public(), n, false).await?;
+            if read.marked >= n {
                 return Ok(());
             }
             if write(
@@ -1045,6 +1125,40 @@ async fn snapshot_records(api: &Api, ring: &Keyring) -> Result<(BTreeMap<String,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_member_record_is_held_against_what_the_trusted_list_names() {
+        let key = PrivateKey::generate().unwrap();
+        let record = |key: Option<&PrivateKey>, pins: u64| MemberRead {
+            key: key.cloned(),
+            pins,
+            marked: pins,
+            version: Some(3),
+        };
+        let refused = |read: MemberRead, anchor: &(Option<String>, u64)| {
+            matches!(anchored(read, anchor), Err(Error::Sync("SharePins", _)))
+        };
+        let named = (Some(key.public()), 5);
+        // The record the list names, with its marker behind the list's (an earlier copy of
+        // the record handed back, marker 0): the list's counter is what the pins must reach.
+        let read = anchored(record(Some(&key), 0), &named).unwrap();
+        assert_eq!((read.pins, read.marked), (5, 0));
+        let read = anchored(record(Some(&key), 7), &named).unwrap();
+        assert_eq!((read.pins, read.marked), (7, 7));
+        // Withheld (a brand-new computer of the account, shown nothing), or another key in
+        // its place: refused, never answered with a new key.
+        assert!(refused(record(None, 0), &named));
+        let other = PrivateKey::generate().unwrap();
+        assert!(refused(record(Some(&other), 9), &named));
+        // The list names no key yet (an account from before, or one that never shared):
+        // as before, and the key is then named.
+        let unnamed = (None, 0);
+        assert!(anchored(record(None, 0), &unnamed).unwrap().key.is_none());
+        assert!(anchored(record(Some(&key), 2), &unnamed)
+            .unwrap()
+            .key
+            .is_some());
+    }
 
     #[test]
     fn members_are_read_with_only_ids_and_keys_that_are_ones() {

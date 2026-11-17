@@ -4,6 +4,7 @@
 import type { Caller } from "../../core/dispatcher/types";
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { fsIpc } from "../../core/ipc/fs";
+import { syncIpc } from "../../core/ipc/sync";
 import {
   addBinding,
   applyRuleEdits,
@@ -20,9 +21,16 @@ import {
   validateUserKeybindings,
 } from "../../core/keybindings/index";
 import { isUserCaller } from "../../core/permissions/commandGuards";
+import { effect, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { appendJsoncArrayItem } from "../../core/settings/jsoncEdit";
+import {
+  bindingCanRun,
+  incomingKeybindings,
+  incomingRevision,
+  splitBindings,
+} from "../../core/sync/incoming";
 import type { WorkbenchServices } from "../../workbench/services";
 import manifest from "./extension.json";
 import { referenceText } from "./reference";
@@ -31,6 +39,11 @@ import { keybindingsViewDescriptor } from "./view";
 
 export interface KeybindingsState {
   problems: string[];
+  /**
+   * How many of the file's shortcuts aren't in use: they arrived by sync from another of the
+   * account's computers, could run something, and weren't accepted here (sync.acceptIncoming).
+   */
+  withheld?: number;
   /**
    * The open shortcuts tab edits a binding's `when` in its row (D209, VS Code's inline input);
    * false when the row isn't there (the command asks in a prompt instead).
@@ -69,12 +82,28 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
       }
       const { rules, problems } = validateUserKeybindings(parsed.value);
       status.problems = problems;
-      keyboard.setUserRules(rules);
+      // A file that another of the account's computers synced here, not accepted on this one
+      // yet: the shortcuts it added that could run something wait (the Sync tab lists them).
+      // Asked now, never kept: a download lists the file before it writes it.
+      const arrived = rules.some(bindingCanRun)
+        ? incomingKeybindings(await syncIpc.incoming().catch(() => []))
+        : null;
+      const { applied, withheld } = splitBindings(rules, arrived);
+      status.withheld = withheld.length;
+      keyboard.setUserRules(applied);
       if (problems.length > 0)
         notifications.show("warning", `keybindings.json: ${problems.slice(0, 2).join("; ")}`);
     };
     sub.add(settings.onDidChangeKeybindingsFile(() => void load()));
-    void load();
+    // Accepting what arrived changes no file: the shortcuts are read again when it happens
+    // (and once at the start).
+    sub.add(
+      effect(() => {
+        void incomingRevision.value;
+        untracked(() => void load());
+        return undefined;
+      }),
+    );
 
     const write = async (next: string) => {
       const path = settings.keybindingsPath;
@@ -400,12 +429,13 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://keybindings", {
         description:
-          "keybindings.json path, problems in it, user rule count, how many of the editor's own bindings are listed (engineBindings, once the editor has loaded), keys bound to more than one command (conflicts), keys the IDE and the editor share and how each is settled (resolved: in an editor the editor's binding runs when its condition holds; a user's keybinding wins), and the when clause being edited in the shortcuts tab (editingWhen).",
+          "keybindings.json path, problems in it, how many of its shortcuts aren't in use because they arrived by sync from another of the account's computers, could run something and weren't accepted on this one (withheld; ide://sync `incoming` lists what waits), user rule count,how many of the editor's own bindings are listed (engineBindings, once the editor has loaded), keys bound to more than one command (conflicts), keys the IDE and the editor share and how each is settled (resolved: in an editor the editor's binding runs when its condition holds; a user's keybinding wins), and the when clause being edited in the shortcuts tab (editingWhen).",
         get: () => {
           const table = effectiveBindings(keyboard.allRules, keyboard.platformName);
           return {
             file: settings.keybindingsPath,
             problems: status.problems,
+            withheld: status.withheld ?? 0,
             userRules: keyboard.allRules.filter((r) => r.source === "user").length,
             engineBindings: table.filter((b) => b.engine).length,
             conflicts: table

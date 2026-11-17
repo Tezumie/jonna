@@ -27,8 +27,10 @@ import {
 import type { Caller } from "../../core/dispatcher/types";
 import { fsIpc } from "../../core/ipc/fs";
 import { execIpc } from "../../core/ipc/process";
+import { syncIpc } from "../../core/ipc/sync";
 import { appIpc } from "../../core/ipc/system";
 import { dirname, isWithin, joinPath, relativePath, resolveInRoot } from "../../core/paths/index";
+import { commandIsIncoming } from "../../core/sync/incoming";
 import { activeTeam, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
@@ -51,6 +53,8 @@ export interface CommandFolder {
   label: string;
   /** The user's own (their folders, a plugin they installed): trusted with what it asks for. */
   user?: boolean;
+  /** The IDE's own user commands folder: the one that syncs with the account. */
+  synced?: boolean;
   /** The team's library's (D442): read only, and trusted like a project's, not like the user's. */
   team?: boolean;
   root?: string;
@@ -255,7 +259,12 @@ export async function commandFolders(services: WorkbenchServices): Promise<Comma
       });
   const settings = services.settings.filePath("user");
   if (settings)
-    out.push({ dir: joinPath(dirname(settings), "commands"), label: "your commands", user: true });
+    out.push({
+      dir: joinPath(dirname(settings), "commands"),
+      label: "your commands",
+      user: true,
+      synced: true,
+    });
   const h = others ? await homeDir() : null;
   if (h)
     out.push({
@@ -470,8 +479,6 @@ export async function promptSlash(
   if (!plainFile) return null;
   for (const folder of await commandFolders(services)) {
     const { dir, label, root, prefix } = folder;
-    // The user's own command is trusted with what it asks for; a project's and a team's aren't.
-    const trusted = commandTrusted(commandOrigin(folder));
     // A plugin's command is `<plugin>:<command>` (D358); its plain name works too.
     const relFile =
       prefix && name.startsWith(prefix)
@@ -483,6 +490,17 @@ export async function promptSlash(
     );
     if (text === null) continue;
     const file = parseCommandFile(text);
+    // The user's own command is trusted with what it asks for; a project's and a team's
+    // aren't, and neither is the user's own while it is as another computer synced it and
+    // wasn't accepted on this one (asked now; when it can't be asked, taken as not accepted).
+    const incoming =
+      !!folder.synced &&
+      file.allowedTools.length > 0 &&
+      (await syncIpc.incoming().then(
+        (files) => commandIsIncoming(files, relFile),
+        () => true,
+      ));
+    const trusted = commandTrusted(commandOrigin(folder), incoming);
     let prompt = expandArguments(file.body, args);
     const lines = shellRefs(prompt).slice(0, 10);
     if (lines.length) {

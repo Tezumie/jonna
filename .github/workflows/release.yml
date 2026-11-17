@@ -43,8 +43,11 @@ jobs:
       WINDOWS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
       MACOS_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Third-party actions are pinned to the commit a release tag named when it was looked up:
+      # a tag can be moved, a commit can't. To update: take the new tag's commit and keep the
+      # version in the comment.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -60,7 +63,7 @@ jobs:
         if: runner.os == 'Windows' && env.WINDOWS_SIGNING == 'true'
         shell: pwsh
         run: |
-          cargo install artifact-signing-cli --locked
+          cargo install artifact-signing-cli --version 0.12.0 --locked
           $cmd = "artifact-signing-cli -e ${{ vars.AZURE_SIGNING_ENDPOINT }} -a ${{ vars.AZURE_SIGNING_ACCOUNT }} -c ${{ vars.AZURE_SIGNING_PROFILE }} -d ${{ github.event.repository.name }} %1"
           "IDE_WINDOWS_SIGN_COMMAND=$cmd" | Out-File -FilePath $env:GITHUB_ENV -Append
       - run: npm ci
@@ -90,7 +93,7 @@ jobs:
             if [ -n "${!name}" ]; then echo "$name=${!name}" >> "$GITHUB_ENV"; fi
           done
       # The signing keys only for the step that builds and signs (not for npm's install scripts).
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

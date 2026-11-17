@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { trustOf, withDecision } from "./trustModel";
+import { gitOffReason, trustOf, withDecision } from "./trustModel";
+
+test("trust: git runs only in a trusted folder, not while the question is open", () => {
+  assert.equal(gitOffReason("trusted"), null);
+  assert.match(gitOffReason("restricted") ?? "", /restricted mode/);
+  // Not decided yet: off too (a folder's own files could name programs git would run).
+  assert.match(gitOffReason("unknown") ?? "", /until this folder is trusted/);
+});
 
 test("trust: a folder's own decision, else a trusted parent's", () => {
   assert.deepEqual(trustOf(undefined, "/home/me/app"), { state: "unknown" });

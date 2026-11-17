@@ -233,6 +233,18 @@ export function sharingSections(kit: PageKit): Child[] {
     { class: "sync-section", "data-team-people": String(members.length) },
     h("h2", { class: "settings-section-title" }, "People"),
     h("p", { class: "sync-section-note" }, PEOPLE_NOTE),
+    // The account's own record of its keys couldn't be read: the way out, the person's to take.
+    book.problem && book.startOver
+      ? card(
+          h("p", { class: "sync-text" }, book.problem),
+          h(
+            "div",
+            { class: "sync-actions" },
+            kit.button("Try again", () => kit.run("team.shares.list"), "ghost", "refresh-cw"),
+            kit.button("Start over with a new key…", () => kit.run("team.startOver"), "ghost"),
+          ),
+        )
+      : null,
     members.length === 0
       ? card(empty(unread ? waiting : "Your team's members couldn't be listed."))
       : card(...members.map((member) => memberRow(kit, member))),

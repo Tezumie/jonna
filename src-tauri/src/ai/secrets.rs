@@ -219,6 +219,11 @@ pub fn has_with(vault: Option<&dyn Vault>, path: &Path, id: &str) -> bool {
     get_with(vault, path, id).is_some()
 }
 
+/// Whether the file lists an entry, whatever became of its value in the keychain.
+pub fn listed(path: &Path, id: &str) -> bool {
+    load(path).contains_key(id)
+}
+
 /// One load-change-write at a time: two keys saved at once both stay (D203 audit).
 static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

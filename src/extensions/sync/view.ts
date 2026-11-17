@@ -11,7 +11,7 @@ import { relativeAge } from "../../core/agent/rooms";
 import type { Json } from "../../core/dock/index";
 import { type Child, h, on } from "../../core/dom/index";
 import { attachIpc } from "../../core/ipc/agent";
-import type { SyncStatus } from "../../core/ipc/sync";
+import type { SyncKept, SyncStatus } from "../../core/ipc/sync";
 import { clipboardIpc } from "../../core/ipc/system";
 import { DisposableStore, MutableDisposable } from "../../core/lifecycle/index";
 import { hasPlanPage } from "../../core/ownServices";
@@ -26,6 +26,7 @@ import type { DockView, DockViewDescriptor } from "../../workbench/dock/views";
 import type { WorkbenchServices } from "../../workbench/services";
 import { SYNC_VIEW } from "./commands";
 import type { SyncController } from "./controller";
+import { keptWords } from "./kept";
 import {
   isSyncPage,
   lapsedUntil,
@@ -138,6 +139,7 @@ class SyncView implements DockView, PageKit {
           controller.snapshots.value,
           controller.overview.value,
           controller.log.value,
+          controller.incoming.value,
           controller.reviewing.value,
           session.ownName.value,
           session.profile.value,
@@ -565,7 +567,23 @@ class SyncView implements DockView, PageKit {
           : null,
       ];
     if (status.state === "pending") return this.whenPending(status, step);
-    return status.exists ? this.join(step) : this.turnOn();
+    // Sync went off here by itself and the keys were kept: said above the way back in.
+    const kept = status.kept ? [this.keptPanel(status.kept)] : [];
+    return [...kept, ...(status.exists ? this.join(step) : this.turnOn())];
+  }
+
+  private keptPanel(kept: SyncKept): HTMLElement {
+    const words = keptWords(kept);
+    return this.panel(
+      words.title,
+      this.text(words.text),
+      this.buttonRow(
+        words.resume
+          ? this.button("Turn sync back on", () => this.run("sync.resumeKept"), "primary")
+          : null,
+        this.button("Remove the keys…", () => this.run("sync.forgetKept"), "ghost"),
+      ),
+    );
   }
 
   /** What sync brings: an icon and a line each. */

@@ -1,5 +1,6 @@
 // Sync (Rust: src-tauri/src/sync, D435). `base` is the accounts server, as for the account.
 // Everything stored is sealed on this computer; these calls hand over and get back plain text.
+import type { IncomingFile } from "../sync/incoming";
 import { call as invoke } from "./invoke";
 
 /** Hears the code of every sync call that failed ("" when the failure has none). */
@@ -49,8 +50,25 @@ export interface SyncDevice {
 
 export type SyncState = "signedOut" | "unavailable" | "off" | "pending" | "on";
 
+/**
+ * This computer's sync keys, kept aside when sync went off by itself (the account said it was
+ * reset, or that this computer was removed; another account signed in): out of use, and
+ * deleted only when the person says so, turns sync on again from the start, or `until` passes.
+ */
+export interface SyncKept {
+  reason: "reset" | "removed" | "account" | "server";
+  at: number;
+  /** When they are deleted (ms). */
+  until: number;
+  /** The account lists this computer as before: sync can be turned back on with them. */
+  resumable: boolean;
+  deviceName: string;
+}
+
 export interface SyncStatus {
   state: SyncState;
+  /** Absent from an older backend. */
+  kept?: SyncKept | null;
   /** Why sync went off by itself, said once: the account's sync was reset, or this device removed. */
   notice: "reset" | "removed" | "keysLost" | null;
   /** Whether the account has sync set up on some device. */
@@ -81,6 +99,11 @@ export interface SyncRecord {
   unreadable: boolean;
   /** Its content opens with no key at all: it counts as empty, and the next write replaces it. */
   damaged?: boolean;
+  /**
+   * An older copy than this computer has seen, or sealed with keys from before a device was
+   * removed: its content is never handed over (no text), and the next write replaces it.
+   */
+  stale?: boolean;
   refs: number;
   device: string | null;
   updatedAt: number | null;
@@ -234,6 +257,10 @@ export const syncIpc = {
     call<void>("sync_remove_device", { base, device }),
   newRecoveryKey: (base: string): Promise<string> =>
     call<string>("sync_new_recovery_key", { base }),
+  /** Turns sync back on with the keys that were kept when it went off by itself. */
+  keptResume: (base: string): Promise<void> => call<void>("sync_kept_resume", { base }),
+  /** Deletes the keys that were kept when sync went off by itself. */
+  keptForget: (base: string): Promise<void> => call<void>("sync_kept_forget", { base }),
   changes: (base: string, since: number): Promise<SyncChanges> =>
     call<SyncChanges>("sync_changes", { base, since }),
   get: (base: string, collection: string, id: string): Promise<SyncRecord | null> =>
@@ -359,6 +386,17 @@ export const syncIpc = {
   /** Writes one of the user's synced files (`text` null removes it). */
   userFileWrite: (path: string, text: string | null): Promise<SyncUserFile | null> =>
     call<SyncUserFile | null>("sync_user_file_write", { path, text }),
+  /**
+   * The user's files that are here as a sync download wrote them, not accepted on this
+   * computer yet (`core/sync/incoming.ts`). Read when it matters, never kept: a download
+   * lists a file before it writes it.
+   */
+  incoming: (): Promise<IncomingFile[]> => call<IncomingFile[]>("sync_incoming"),
+  /** The person accepted these files (`paths` null: all that wait) on this computer. */
+  incomingAccept: (paths: string[] | null): Promise<void> =>
+    call<void>("sync_incoming_accept", { paths }),
+  /** The person was told about what waits now. */
+  incomingTold: (): Promise<void> => call<void>("sync_incoming_told"),
   /** What the sync loop keeps between runs. */
   stateLoad: (): Promise<string | null> => call<string | null>("sync_state_load"),
   stateSave: (text: string): Promise<void> => call<void>("sync_state_save", { text }),

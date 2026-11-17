@@ -15,6 +15,12 @@ export interface ShareBook {
   readAt: number | null;
   /** Why the last read failed, in a sentence (what was read before stays); null when it worked. */
   problem: string | null;
+  /**
+   * The problem is that the account's own record of its key for sharing, or of its teammates'
+   * keys, couldn't be read (`SharePins`): trying again may settle it, and when it stays the
+   * person can start over with a new key (`team.startOver`).
+   */
+  startOver?: boolean;
 }
 
 export const EMPTY_SHARE_BOOK: ShareBook = {
@@ -23,6 +29,19 @@ export const EMPTY_SHARE_BOOK: ShareBook = {
   readAt: null,
   problem: null,
 };
+
+/** Whether a failed read is one starting over with a new key for sharing settles. */
+export function settledByStartingOver(code: string): boolean {
+  return code === "SharePins";
+}
+
+/** What starting over with a new key for sharing means, asked before it is done. */
+export const START_OVER_WORDS = {
+  title: "Start over with a new key for sharing?",
+  message:
+    "Use this only when sharing keeps being refused because your account's record of its keys can't be read.\n\nYour account gets a new key for sharing. Your teammates will see your key as changed and each has to accept it (compare fingerprints again). What you shared has to be shared again under the new key. Teammates' keys this computer doesn't remember are taken as first seen: verify them again.\n\nYour projects, snapshots and chats are not touched.",
+  confirm: "Start over",
+} as const;
 
 /** Moves only when something in it changed, so a read that says the same redraws nothing. */
 export const shareBook: Signal<ShareBook> = signal<ShareBook>(

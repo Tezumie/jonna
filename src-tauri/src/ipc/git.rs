@@ -122,6 +122,13 @@ pub async fn git_status(state: State<'_, AppState>, repo: Option<String>) -> Res
     blocking(move || ops::status(&root)).await
 }
 
+/// The window's workspace trust, for git (`git/trust.rs`): git runs in the open folders only
+/// while they are trusted. Not async, so it is applied before a git command sent after it.
+#[tauri::command]
+pub fn git_set_trust(state: State<'_, AppState>, trusted: bool) {
+    crate::git::trust::set(trusted, &state.workspace.all_folders());
+}
+
 /// The user accepts the repository's git settings as they are now, after they changed while
 /// an agent's sandboxed commands ran there (D392): the IDE's git runs in it again.
 #[tauri::command]

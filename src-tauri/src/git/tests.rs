@@ -677,6 +677,110 @@ fn every_workspace_folder_brings_its_repositories() {
     let _ = fs::remove_dir_all(&other);
 }
 
+/// A folder without `.git` whose own files have a bare repository's shape, with a `config`
+/// that names a program (`core.fsmonitor`, run by `git status`): files like these can arrive
+/// in an archive, a synced snapshot or a teammate's copy. The IDE's git doesn't take the
+/// folder for a repository, so nothing it names runs.
+#[test]
+fn a_folder_shaped_like_a_bare_repository_is_not_one_and_runs_nothing() {
+    let dir = std::env::temp_dir().join(format!("ide-git-bareshape-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    // Plain git throughout the setup (the IDE's own refuses to work in such a folder).
+    let plain = |args: &[&str]| {
+        std::process::Command::new("git")
+            .env_remove(crate::debug::pane_port::WEBVIEW2_ARGS_VAR)
+            .current_dir(&dir)
+            .args(args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+    if !plain(&["init", "-q", "--bare", "."]) {
+        eprintln!("git not available; skipping");
+        return;
+    }
+    let marker = dir.join("fsmonitor-ran");
+    let hook = format!(
+        "echo ran > \"{}\" #",
+        marker.to_string_lossy().replace('\\', "/")
+    );
+    assert!(plain(&["config", "core.bare", "false"]));
+    assert!(plain(&["config", "core.worktree", "."]));
+    assert!(plain(&["config", "core.fsmonitor", &hook]));
+    write(&dir, "a.txt", "hello\n");
+    // The setup is the real thing: plain git runs the program on a status.
+    let _ = plain(&["status", "--porcelain"]);
+    if !marker.exists() {
+        eprintln!("this git doesn't run core.fsmonitor here; skipping");
+        let _ = fs::remove_dir_all(&dir);
+        return;
+    }
+    fs::remove_file(&marker).unwrap();
+
+    assert_eq!(super::repo_root(&dir), None);
+    assert_eq!(super::git_dir(&dir), None);
+    assert!(ops::status(&dir).is_err());
+    assert!(run(&dir, &["diff"], None).is_err());
+    assert!(ops::remote_urls(&dir).is_err());
+    assert!(super::run_unattended(&dir, &["status"], std::time::Duration::from_secs(30)).is_err());
+    assert!(ops::remote_op(&dir, &["fetch", "--progress"], |_| {}).is_err());
+    assert!(!marker.exists(), "the folder's own settings ran a program");
+
+    // Every git the IDE starts carries the setting, whatever it is asked.
+    let args: Vec<String> = super::command(&dir)
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "-c" && w[1] == "safe.bareRepository=explicit"),
+        "{args:?}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Git stays off in a workspace folder that isn't trusted yet (`trust.rs`): an ordinary
+/// repository's own settings don't run either, and where it is and its remotes still answer.
+#[test]
+fn git_is_off_in_a_held_folder_and_on_again_once_trusted() {
+    let Some(dir) = repo("held") else { return };
+    let marker = dir.join("fsmonitor-ran");
+    let hook = format!(
+        "echo ran > \"{}\" #",
+        marker.to_string_lossy().replace('\\', "/")
+    );
+    run(
+        &dir,
+        &["remote", "add", "origin", "https://example.com/a/b.git"],
+        None,
+    )
+    .unwrap();
+    run(&dir, &["config", "core.fsmonitor", &hook], None).unwrap();
+    write(&dir, "a.txt", "a\n");
+    super::trust::hold(std::slice::from_ref(&dir));
+    assert!(ops::status(&dir).is_err());
+    let refused = run(&dir, &["status"], None).unwrap_err().to_string();
+    assert!(
+        refused.contains("until this folder is trusted"),
+        "{refused}"
+    );
+    assert!(ops::remote_op(&dir, &["fetch", "--progress"], |_| {}).is_err());
+    assert!(ops::init(&dir.join("inside")).is_err());
+    assert!(!marker.exists(), "git ran in a folder that isn't trusted");
+    // What only reads still answers (a project's sync id comes from the remote).
+    assert!(super::repo_root(&dir).is_some());
+    assert_eq!(
+        ops::remote_urls(&dir).unwrap()[0].url,
+        "https://example.com/a/b.git"
+    );
+    assert!(!marker.exists());
+    // Trusted: this folder alone is released (other tests hold their own).
+    super::trust::release_for_test(&dir);
+    assert!(ops::status(&dir).is_ok());
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn local_git_turns_long_paths_on_only_on_windows() {
     let dir = std::env::temp_dir();

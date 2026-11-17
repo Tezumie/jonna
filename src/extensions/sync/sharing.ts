@@ -12,7 +12,7 @@ import type { Disposable } from "../../core/lifecycle/index";
 import { hasTeams } from "../../core/ownServices";
 import { type Signal, signal } from "../../core/reactive/index";
 import { codeOf, messageOf } from "../../core/sync/errors";
-import { EMPTY_SHARE_BOOK, shareBook } from "../../core/team/shareBook";
+import { EMPTY_SHARE_BOOK, settledByStartingOver, shareBook } from "../../core/team/shareBook";
 import {
   keyFilesLine,
   keysDue,
@@ -174,6 +174,7 @@ export class ProjectSharing implements Disposable {
       shareBook.value = {
         ...shareBook.peek(),
         problem: shareErrorWords(code, messageOf(err)),
+        startOver: settledByStartingOver(code),
       };
     }
   }

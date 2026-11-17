@@ -79,6 +79,13 @@ export interface LayerContext {
   flush(): Promise<void>;
   /** Reports a conflict or one item's failure. */
   note(event: SyncNote): void;
+  /**
+   * Whether the bases were dropped because the account's sync says it was set up again
+   * (another epoch than the one the bases were of), and no pass has completed since. Not true
+   * for a computer that never synced. A layer then keeps what this computer has where the
+   * account's differs, instead of taking the account's side: the epoch is the service's word.
+   */
+  afterReset(): boolean;
   /** Whether the pass should end after the action under way. */
   stopped(): boolean;
   /**
@@ -107,6 +114,8 @@ export interface SyncLayer {
 interface Stored {
   epoch: number;
   bases: Record<string, object>;
+  /** The bases were dropped for another epoch; cleared by the first pass that completes. */
+  afterReset?: boolean;
   /**
    * How far the account was read when this was saved. Kept with the bases for whoever reads the
    * file; a start still reads the account from the beginning, since the records themselves
@@ -126,6 +135,8 @@ export class SyncEngine {
   private waitingForKeys = false;
   /** The service's "no room" of the pass under way (null: it had room). */
   private refused: unknown = null;
+  /** Records already reported as older copies (once each while the window lives). */
+  private readonly staleSaid = new Set<string>();
 
   constructor(
     private readonly backend: SyncBackend,
@@ -188,6 +199,7 @@ export class SyncEngine {
       const parsed = JSON.parse((await this.store.load()) ?? "null") as Partial<Stored> | null;
       if (parsed && typeof parsed.epoch === "number" && parsed.bases) {
         stored = { epoch: parsed.epoch, bases: parsed.bases };
+        if (parsed.afterReset === true) stored.afterReset = true;
       }
     } catch {
       // A damaged file: start from nothing; the layers then compare content, not history.
@@ -229,6 +241,10 @@ export class SyncEngine {
         this.mirror.clear();
         const fresh = this.cursor === 0;
         this.cursor = 0;
+        // Bases of another epoch are dropped on the service's word alone: remembered, so
+        // the layers keep what this computer has (`LayerContext.afterReset`). A computer
+        // with no bases at all (it joins, epoch 0 here) has nothing to keep against.
+        if (stored.epoch > 0) stored.afterReset = true;
         stored.epoch = epoch;
         stored.bases = {};
         this.dirty = true;
@@ -236,6 +252,9 @@ export class SyncEngine {
       }
       for (const record of [...page.records].sort((a, b) => a.seq - b.seq)) {
         this.mirror.set(key(record.collection, record.id), record);
+        // An older copy than this computer has seen (the backend refused its content): it
+        // counts as having none, so nothing here is replaced or removed for it. Said once.
+        if (record.stale) this.sayStale(record.collection, record.id);
         if (record.unreadable) {
           // Not read past: it is asked for again once this computer's keys caught up. Until
           // then the mirror says "can't be read", so nothing is written over it.
@@ -251,6 +270,16 @@ export class SyncEngine {
         throw new Error("The account's changes didn't move on. Sync will try again.");
       }
     }
+  }
+
+  private sayStale(collection: string, id: string): void {
+    const name = key(collection, id);
+    if (this.staleSaid.has(name)) return;
+    this.staleSaid.add(name);
+    this.options.note?.({
+      kind: "failure",
+      text: "The account gave back an older copy of a synced item than this computer has seen. It wasn't used, and nothing here was changed for it.",
+    });
   }
 
   private async pass(): Promise<void> {
@@ -286,6 +315,11 @@ export class SyncEngine {
         // One layer failing doesn't stop the others; the pass still reports it.
         failure ??= error;
       }
+    }
+    // Every layer ran: what differed was settled with this computer's side kept.
+    if (!failure && !ctx.stopped() && stored.afterReset) {
+      stored.afterReset = undefined;
+      this.dirty = true;
     }
     await this.save(stored);
     if (failure) throw failure;
@@ -349,6 +383,7 @@ export class SyncEngine {
         });
       },
       saw: (record, collection, id) => {
+        if (record?.stale) this.sayStale(collection, id);
         if (record) this.mirror.set(key(collection, id), record);
         else this.mirror.delete(key(collection, id));
       },
@@ -361,6 +396,7 @@ export class SyncEngine {
       },
       flush: () => this.save(stored),
       note: (event) => this.options.note?.(event),
+      afterReset: () => stored.afterReset === true,
       stopped: () => this.options.stopped?.() === true,
       full: () => this.refused !== null || this.options.full?.() === true,
       noRoom: (err) => {

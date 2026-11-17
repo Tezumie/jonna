@@ -8,6 +8,7 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::accounts;
+use crate::accounts::http::{read_capped, BodyError, JSON_CAP};
 use crate::error::{Error, Result};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -24,6 +25,9 @@ pub struct Api {
     /// The saved account session (`account.json`), where the tokens come from.
     session: PathBuf,
     client: reqwest::Client,
+    /// What a record read here must pass beyond opening (`records::Checks`): the counters
+    /// this computer has seen, and the key generations below which nothing is taken.
+    pub checks: super::records::Checks,
 }
 
 pub struct Reply {
@@ -54,6 +58,23 @@ pub enum Body<'a> {
     None,
     Json(&'a Value),
     Bytes(Vec<u8>),
+    /// No content of its own, only proof of this device's key (`{ id, proof }`): sent as
+    /// the header `X-Sync-Challenge` and as the body's `challenge`. For a DELETE, whose body
+    /// not everything on the way passes on.
+    Proof(&'a Value),
+}
+
+/// A proof as the header carries it: `<id>.<proof>`. None when it isn't one.
+fn proof_header(proof: &Value) -> Option<String> {
+    let part = |name: &str| {
+        proof[name].as_str().filter(|text| {
+            !text.is_empty()
+                && text
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
+    };
+    Some(format!("{}.{}", part("id")?, part("proof")?))
 }
 
 fn offline(e: reqwest::Error) -> Error {
@@ -70,6 +91,31 @@ pub fn unreadable() -> Error {
         "SyncOffline",
         "The sync service gave an answer that couldn't be read; trying again later.".into(),
     )
+}
+
+/// The most a download of chunks is read: the service fills a reply up to 24 MB (one chunk of
+/// up to 8 MB when it is alone), plus 26 bytes of frame for each of at most 2,000 chunks.
+const DOWNLOAD_CAP: usize = 48 * 1024 * 1024;
+
+/// A body that was cut off, or larger than any answer is.
+fn unread(e: BodyError) -> Error {
+    match e {
+        BodyError::TooLarge => Error::Sync(
+            "Sync",
+            "The sync service gave an answer larger than any answer should be.".into(),
+        ),
+        BodyError::Broken(e) => Error::Sync(
+            "SyncOffline",
+            format!("The sync service can't be reached ({e})."),
+        ),
+    }
+}
+
+/// A reply's JSON, read up to the cap. A body that isn't JSON reads as null, as before (the
+/// status says what happened); one past the cap is an error.
+async fn json_of(reply: reqwest::Response) -> Result<Value> {
+    let bytes = read_capped(reply, JSON_CAP).await.map_err(unread)?;
+    Ok(serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
 /// What a refusal means to the person using it.
@@ -90,6 +136,12 @@ fn refusal(status: u16, json: &Value) -> Error {
         // Stored data is being cleaned up: the same request works a moment later.
         (409, "gc") => Error::Sync("SyncRetry", text),
         (403, "proof_failed") => Error::Sync("SyncKeys", text),
+        // The service asks for proof of the device's key on this call and got none (a build
+        // from before it sent one).
+        (403, "proof_required") => Error::Sync(
+            "SyncKeys",
+            "The sync service needs a newer version of the app for this. Update the app and try again.".into(),
+        ),
         (429, _) => Error::Sync(
             "SyncOffline",
             "Sync is pausing for a moment (too many requests).".into(),
@@ -163,7 +215,9 @@ impl Api {
             prefix: String::new(),
             base: base.trim_end_matches('/').to_string(),
             session: accounts::session_file(data_dir),
-            client: reqwest::Client::new(),
+            // No redirect is followed: the service answers where it is asked.
+            client: accounts::http::client(),
+            checks: super::records::Checks::of(data_dir),
         }
     }
 
@@ -176,6 +230,8 @@ impl Api {
         }
         let mut api = Self::of("team", base, data_dir);
         api.prefix = format!("shares/{id}/");
+        // Shares came with the counters: every record of one carries its own.
+        api.checks.strict = true;
         Ok(api)
     }
 
@@ -214,6 +270,18 @@ impl Api {
         request = match body {
             Body::None => request.timeout(wait),
             Body::Json(v) => request.json(v).timeout(wait),
+            Body::Proof(proof) => {
+                let header = proof_header(proof).ok_or_else(|| {
+                    Error::Sync(
+                        "SyncKeys",
+                        "The proof of this device's key isn't one.".into(),
+                    )
+                })?;
+                request
+                    .header("X-Sync-Challenge", header)
+                    .json(&serde_json::json!({ "challenge": proof }))
+                    .timeout(wait)
+            }
             Body::Bytes(b) => request
                 .header("Content-Type", "application/octet-stream")
                 .body(b.clone())
@@ -258,8 +326,10 @@ impl Api {
     pub async fn call(&self, method: reqwest::Method, path: &str, body: Body<'_>) -> Result<Reply> {
         let reply = self.request(method, path, body).await?;
         let status = reply.status().as_u16();
-        let json = reply.json::<Value>().await.unwrap_or(Value::Null);
-        Ok(Reply { status, json })
+        Ok(Reply {
+            status,
+            json: json_of(reply).await?,
+        })
     }
 
     pub async fn get(&self, path: &str) -> Result<Value> {
@@ -284,6 +354,13 @@ impl Api {
             .into_ok()
     }
 
+    /// A DELETE that carries proof of this device's own key (removing a device).
+    pub async fn delete_proved(&self, path: &str, proof: &Value) -> Result<Value> {
+        self.call(reqwest::Method::DELETE, path, Body::Proof(proof))
+            .await?
+            .into_ok()
+    }
+
     /// Uploads framed chunks.
     pub async fn upload(&self, frames: Vec<u8>) -> Result<Value> {
         self.call(reqwest::Method::POST, "blobs", Body::Bytes(frames))
@@ -299,10 +376,10 @@ impl Api {
             .await?;
         let status = reply.status().as_u16();
         if !(200..300).contains(&status) {
-            let json = reply.json::<Value>().await.unwrap_or(Value::Null);
+            let json = json_of(reply).await?;
             return Err(refusal(status, &json));
         }
-        Ok(reply.bytes().await.map_err(offline)?.to_vec())
+        read_capped(reply, DOWNLOAD_CAP).await.map_err(unread)
     }
 }
 
@@ -330,6 +407,51 @@ mod tests {
             Error::Sync("Sync", _)
         ));
     }
+
+    #[test]
+    fn proof_of_the_devices_key_travels_as_a_header_and_its_refusals_say_what_to_do() {
+        let proof = serde_json::json!({ "id": "c-1_A", "proof": "AbC_-9" });
+        assert_eq!(proof_header(&proof).as_deref(), Some("c-1_A.AbC_-9"));
+        // Nothing that could end the header or start another.
+        for not in [
+            serde_json::json!({ "id": "c1" }),
+            serde_json::json!({ "id": "", "proof": "x" }),
+            serde_json::json!({ "id": "c1\r\nX: y", "proof": "x" }),
+            serde_json::json!({ "id": "c.1", "proof": "x" }),
+            serde_json::json!(null),
+        ] {
+            assert_eq!(proof_header(&not), None, "{not}");
+        }
+        match refusal(403, &serde_json::json!({ "error": "proof_required" })) {
+            Error::Sync(code, text) => {
+                assert_eq!(code, "SyncKeys");
+                assert!(text.contains("newer version"), "{text}");
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            refusal(403, &serde_json::json!({ "error": "proof_failed" })),
+            Error::Sync("SyncKeys", _)
+        ));
+    }
+
+    #[test]
+    fn an_answer_past_its_cap_is_an_error_and_not_a_reason_to_ask_again() {
+        // "Offline" is retried on a timer; an answer that is too large would be too large again.
+        assert!(matches!(
+            unread(BodyError::TooLarge),
+            Error::Sync("Sync", _)
+        ));
+        assert!(matches!(
+            unread(BodyError::Broken("reset".into())),
+            Error::Sync("SyncOffline", _)
+        ));
+    }
+
+    // A download's cap is above the largest reply the service makes (24 MB, or one chunk of
+    // 8 MB alone, and each chunk's frame), and a JSON reply's above a page of records.
+    const _: () = assert!(DOWNLOAD_CAP >= 24 * 1024 * 1024 + 8 * 1024 * 1024 + 2000 * 26);
+    const _: () = assert!(JSON_CAP >= 8 * 1024 * 1024);
 
     #[test]
     fn a_share_answers_under_its_own_path_and_the_vault_where_it_did() {

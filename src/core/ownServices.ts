@@ -30,13 +30,46 @@ export function hasSync(config: OwnServices = product): boolean {
 }
 
 /**
- * The accounts server in use, without a trailing slash: the `accounts.serverUrl` setting (for
- * developing the server) wins over the build's. Empty in a build without accounts, whatever
- * the setting says.
+ * Whether `url` names this computer itself (`localhost`, `127.0.0.1`, `[::1]`, a name ending
+ * in `.localhost`): where a server under development runs.
  */
-export function accountsServer(setting: string | undefined, config: OwnServices = product): string {
+export function isLoopbackServer(url: string): boolean {
+  let host: string;
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
+    host = parsed.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return (
+    host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]"
+  );
+}
+
+/** Whether this is a build with the development features (never a released one). */
+function developmentBuild(): boolean {
+  return typeof __DEV__ !== "undefined" && __DEV__;
+}
+
+/**
+ * The accounts server in use, without a trailing slash: the build's, or the
+ * `accounts.serverUrl` setting, which is for developing the server. The setting counts only
+ * when it names this computer itself, or in a development build: a settings file (which
+ * anything on the computer can write) must not be able to send the account's sign-in, and
+ * what the team publishes, to a server of someone's choosing. Empty in a build without
+ * accounts, whatever the setting says.
+ */
+export function accountsServer(
+  setting: string | undefined,
+  config: OwnServices = product,
+  development: boolean = developmentBuild(),
+): string {
   if (!hasAccounts(config)) return "";
-  return (setting?.trim() || config.accountsUrl.trim()).replace(/\/+$/, "");
+  const asked = setting?.trim() ?? "";
+  const honoured = asked !== "" && (development || isLoopbackServer(asked));
+  return (honoured ? asked : config.accountsUrl.trim()).replace(/\/+$/, "");
 }
 
 /** Whether the service has a page for plans. Without one the app says nothing of plans or payment. */

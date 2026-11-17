@@ -35,8 +35,32 @@ export interface SettingsPort {
   apply(edits: { key: string; value: unknown }[]): Promise<void>;
   /** Settings that stay on this computer. */
   skip(key: string): boolean;
+  /**
+   * Whether an entry stays on this computer going by its value too: a language block
+   * (`"[python]": {…}`) holding a setting that stays. Asked for this computer's value and for
+   * the account's; either saying so keeps the entry out of the pass. Absent: `skip` decides.
+   */
+  skipEntry?(key: string, value: unknown): boolean;
   /** The time now, in ms (absent: the clock's). */
   now?(): number;
+}
+
+/**
+ * `port.skip`, and the entries whose value (here or in the account) keeps them out: nothing is
+ * applied, uploaded or removed for those, on either side.
+ */
+function settingsSkip(
+  port: SettingsPort,
+  local: Readonly<Record<string, unknown>>,
+  remote: SettingsRecord | null,
+): (key: string) => boolean {
+  const check = port.skipEntry?.bind(port);
+  if (!check) return (key) => port.skip(key);
+  const held = new Set<string>();
+  for (const [key, value] of Object.entries(local)) if (check(key, value)) held.add(key);
+  for (const [key, entry] of Object.entries(remote?.keys ?? {}))
+    if (entry && !entry.d && check(key, entry.v)) held.add(key);
+  return (key) => held.has(key) || port.skip(key);
 }
 
 /** What this computer keeps of its settings' last sync. */
@@ -61,13 +85,24 @@ function replacedSentence(replaced: readonly { key: string; value: unknown }[]):
   return `This computer had no record of an earlier sync, so where its settings differed from the account's, the account's were kept: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`;
 }
 
+/** The sentence for settings here that stayed where the account's differed, after a reset. */
+function keptSentence(kept: readonly { key: string; value: unknown }[]): string {
+  const shown = kept.slice(0, 8).map(({ key }) => key);
+  const more = kept.length - shown.length;
+  return `The account's sync was set up again, so where this computer's settings differed from the account's, this computer's were kept and sent to the account: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}.`;
+}
+
 export function settingsLayer(port: SettingsPort): SyncLayer {
   const baseOf = (ctx: LayerContext) => ctx.base<SettingsBase>("settings", () => ({ keys: {} }));
   /**
    * Dates what changed here since the last sync, the first time it is seen changed. The
    * settings file's own time isn't a change's time: the app writes the file too.
    */
-  const stamp = (ctx: LayerContext, local: LocalSettings): SettingsBase => {
+  const stamp = (
+    ctx: LayerContext,
+    local: LocalSettings,
+    skip: (key: string) => boolean,
+  ): SettingsBase => {
     const base = baseOf(ctx);
     // No file has no opinion, and so nothing to date.
     if (local.missing) return base;
@@ -77,7 +112,7 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
       base: base.keys,
       stamps: base.stamps ?? {},
       seenAt: local.mtimeMs > 0 && local.mtimeMs <= now ? local.mtimeMs : now,
-      skip: port.skip,
+      skip,
     });
     if (next.changed) {
       base.stamps = next.stamps;
@@ -89,7 +124,7 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
     name: "settings",
     async observe(ctx) {
       const local = await port.read();
-      if (local) stamp(ctx, local);
+      if (local) stamp(ctx, local, settingsSkip(port, local.values, null));
     },
     async run(ctx) {
       const record = ctx.record("settings", "user");
@@ -101,7 +136,8 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
         const parsed = JSON.parse(record.text) as Partial<SettingsRecord>;
         if (parsed.keys && typeof parsed.keys === "object") remote = { keys: parsed.keys };
       }
-      const base = stamp(ctx, local);
+      const skip = settingsSkip(port, local.values, remote);
+      const base = stamp(ctx, local, skip);
       const localTimes: Record<string, number> = {};
       for (const [key, seen] of Object.entries(base.stamps ?? {})) localTimes[key] = seen.t;
       const result = mergeSettings({
@@ -113,12 +149,15 @@ export function settingsLayer(port: SettingsPort): SyncLayer {
         localTime: local.mtimeMs,
         localTimes,
         hasBase: !local.missing && (base.synced === true || Object.keys(base.keys).length > 0),
-        skip: port.skip,
+        // The account's sync "was set up again": the service's word, so what is here stays.
+        keepLocal: ctx.afterReset(),
+        skip,
       });
       if (result.apply.length > 0) await port.apply(result.apply);
       // Said once: after this pass the two agree, and there is a record of a sync.
       if (result.replaced.length > 0)
         ctx.note({ kind: "conflict", text: replacedSentence(result.replaced) });
+      if (result.kept.length > 0) ctx.note({ kind: "conflict", text: keptSentence(result.kept) });
       if (result.recordChanged) {
         // Readable by the service: how many settings, not which.
         const count = Object.values(result.record.keys).filter((k) => !k.d).length;

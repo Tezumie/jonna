@@ -13,6 +13,7 @@ pub mod ops;
 pub mod rebase;
 pub mod service;
 pub mod status;
+pub mod trust;
 mod watch;
 pub mod worktree;
 
@@ -32,6 +33,15 @@ use crate::error::{Error, Result};
 const LOCAL_CONFIG: &[&str] = &["-c", "core.longpaths=true"];
 #[cfg(not(windows))]
 const LOCAL_CONFIG: &[&str] = &[];
+
+/// A folder is never taken for a repository because of its own files: a folder holding `HEAD`,
+/// `objects`, `refs` and a `config` is a bare repository to git, which would then read that
+/// `config` and run what it names (`core.fsmonitor` on a `git status`). Such files can arrive
+/// in a folder without git (an archive, a synced snapshot, a teammate's shared copy). With
+/// this, git finds a repository only through a `.git` entry, or where the IDE names the git
+/// folder itself (`--git-dir`). Git passes `-c` on to the git programs it starts. Git before
+/// 2.38 doesn't know the setting and ignores it.
+const BARE_CONFIG: &[&str] = &["-c", "safe.bareRepository=explicit"];
 
 /// A `git` command in `dir`, configured for machine use.
 pub fn command(dir: &Path) -> Command {
@@ -56,6 +66,7 @@ pub fn command(dir: &Path) -> Command {
         // Merge / rebase --continue / revert never stop for an editor (no one could answer it).
         .env("GIT_EDITOR", "true")
         .args(["-c", "core.quotepath=false", "-c", "color.ui=false"])
+        .args(BARE_CONFIG)
         .stdin(Stdio::null());
     if remote.is_some() {
         // The IDE's sign-in prompts don't reach the remote (as in WSL): git there uses its own
@@ -90,7 +101,9 @@ pub fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
     // This machine's repositories only: a remote's or WSL's commands never run sandboxed here.
     let local = crate::remote::of_dir(dir).is_none() && crate::wsl::of_dir(dir).is_none();
     // Paused while the repository's settings differ from what was recorded (D392).
-    let checked = if local { guard::check(dir) } else { Ok(()) };
+    // Off until the folder is trusted (trust.rs), on this machine or another.
+    let checked =
+        trust::check(dir, args).and_then(|()| if local { guard::check(dir) } else { Ok(()) });
     // Only after git really ran (D407): a refused command's `settle` took the changed settings
     // as the IDE's own, and the next refresh unpaused the repository by itself.
     let ran = checked.is_ok();
@@ -183,6 +196,7 @@ const UNATTENDED_CONFIG: &[&str] = &[
 /// success; the error says when the time ran out.
 pub fn run_unattended(dir: &Path, args: &[&str], deadline: std::time::Duration) -> Result<String> {
     let started = std::time::Instant::now();
+    trust::check(dir, args)?;
     let mut cmd = command(dir);
     askpass::deny_env(&mut cmd);
     cmd.args(UNATTENDED_CONFIG)

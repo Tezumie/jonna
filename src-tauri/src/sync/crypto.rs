@@ -172,14 +172,35 @@ pub fn seal_to(public: &str, plain: &[u8]) -> Result<String> {
 
 /// Wraps the keyring for the recovery key: sealed to its public half, with a tag under its
 /// auth key, so the computer that later opens it knows one of the account's devices made it.
-pub fn recovery_wrap(public: &str, auth: &str, keyring: &[u8]) -> Result<String> {
+///
+/// `list_n`: the counter of the account's trusted list when the wrap is made. It goes inside
+/// what the tag covers (a field of the keyring's own object, which a version from before it
+/// skips), so a computer that joins with the recovery key, and has no list of its own to
+/// compare with, refuses a list older than the wrap knew (`recovery_floor`).
+pub fn recovery_wrap(public: &str, auth: &str, keyring: &[u8], list_n: u64) -> Result<String> {
     let key = unb64(auth)?;
+    let mut stated: serde_json::Value =
+        serde_json::from_slice(keyring).map_err(|_| keys_error("the keys aren't valid"))?;
+    stated[RECOVERY_FLOOR] = serde_json::json!(list_n);
+    let keyring = serde_json::to_vec(&stated)?;
+    let keyring = keyring.as_slice();
     let mut mac =
         <Hmac<Sha256> as Mac>::new_from_slice(&key).map_err(|_| keys_error("a key isn't valid"))?;
     mac.update(keyring);
     let mut plain = keyring.to_vec();
     plain.extend_from_slice(&mac.finalize().into_bytes());
     seal_to(public, &plain)
+}
+
+const RECOVERY_FLOOR: &str = "listN";
+
+/// The trusted list's counter a recovery wrap states (`opened`: what `open_recovery` gave,
+/// its tag checked). 0 when it states none: a wrap from before this, which sets no floor.
+pub fn recovery_floor(opened: &[u8]) -> u64 {
+    serde_json::from_slice::<serde_json::Value>(opened)
+        .ok()
+        .and_then(|v| v[RECOVERY_FLOOR].as_u64())
+        .unwrap_or(0)
 }
 
 /// A waiting computer's commitment to its part of the pairing code: published with its key,
@@ -388,6 +409,18 @@ impl Keyring {
             return false;
         }
         u32::from_be_bytes([sealed[1], sealed[2], sealed[3], sealed[4]]) > self.current()
+    }
+
+    /// The key generation a sealed item says it was sealed under (None: not a sealed item).
+    /// The header isn't itself authenticated, but an item only opens with the key of the
+    /// generation it names, so what opened was sealed under it.
+    pub fn generation_of(sealed: &[u8]) -> Option<u32> {
+        if sealed.len() < HEADER_LEN + NONCE_LEN || sealed[0] != FORMAT {
+            return None;
+        }
+        Some(u32::from_be_bytes([
+            sealed[1], sealed[2], sealed[3], sealed[4],
+        ]))
     }
 
     /// Seals `plain` for storing at `place` (a record's or a chunk's name).
@@ -608,8 +641,26 @@ mod tests {
     fn a_recovery_wrap_opens_only_when_a_device_made_it() {
         let recovery = PrivateKey::generate().unwrap();
         let ring = Keyring::generate().unwrap().to_bytes().unwrap();
-        let wrap = recovery_wrap(&recovery.public(), &recovery.auth_key().unwrap(), &ring).unwrap();
-        assert_eq!(recovery.open_recovery(&wrap).unwrap(), ring);
+        let auth = recovery.auth_key().unwrap();
+        let wrap = recovery_wrap(&recovery.public(), &auth, &ring, 41).unwrap();
+        let opened = recovery.open_recovery(&wrap).unwrap();
+        let (held, back) = (
+            Keyring::from_bytes(&ring).unwrap(),
+            Keyring::from_bytes(&opened).unwrap(),
+        );
+        assert!(back.extends(&held) && held.extends(&back));
+        // The trusted list's counter travels under the same tag: a list older than it is
+        // refused by a computer that joins with this key.
+        assert_eq!(recovery_floor(&opened), 41);
+        // A wrap from before the counter (the keyring alone under the tag) states no floor.
+        let mut plain = ring.clone();
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&unb64(&auth).unwrap()).unwrap();
+        mac.update(&ring);
+        plain.extend_from_slice(&mac.finalize().into_bytes());
+        let earlier = seal_to(&recovery.public(), &plain).unwrap();
+        let opened = recovery.open_recovery(&earlier).unwrap();
+        assert_eq!(recovery_floor(&opened), 0);
+        assert!(Keyring::from_bytes(&opened).is_ok());
         // Whoever stores it can seal anything to the public key, but can't make the tag.
         let forged = seal_to(
             &recovery.public(),
@@ -622,7 +673,7 @@ mod tests {
         ));
         let other = PrivateKey::generate().unwrap();
         let wrong_tag =
-            recovery_wrap(&recovery.public(), &other.auth_key().unwrap(), &ring).unwrap();
+            recovery_wrap(&recovery.public(), &other.auth_key().unwrap(), &ring, 41).unwrap();
         assert!(recovery.open_recovery(&wrong_tag).is_err());
         assert!(other.open_recovery(&wrap).is_err());
     }

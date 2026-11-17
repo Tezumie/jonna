@@ -19,9 +19,17 @@ import { accountsServer } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { type Signal, signal } from "../../core/reactive/index";
 import { parseJsonc } from "../../core/settings/jsonc";
+import { isLanguageOverrideKey } from "../../core/settings/languageOverrides";
 import { type SyncBackend, SyncEngine, type SyncLayer } from "../../core/sync/engine";
 import { codeOf, isFull, isRateLimited, messageOf, STANDING_CODES } from "../../core/sync/errors";
-import { planPrune, staysPinned } from "../../core/sync/history";
+import { keepMarksHonoured, planPrune, staysPinned } from "../../core/sync/history";
+import {
+  type IncomingItem,
+  incomingItems,
+  incomingNotice,
+  incomingRevision,
+  pathsToAccept,
+} from "../../core/sync/incoming";
 import {
   type ChatsPort,
   chatsLayer,
@@ -30,9 +38,10 @@ import {
   type SettingsPort,
   settingsLayer,
 } from "../../core/sync/layers";
-import { staysLocal } from "../../core/sync/localSettings";
+import { entrySyncs, type SyncSettingsFilter, settingSyncs } from "../../core/sync/localSettings";
 import { ONLY_VERIFIED_SETTING } from "../../core/team/shares";
 import type { WorkbenchServices } from "../../workbench/services";
+import { wentOffWords } from "./kept";
 import {
   backoffMs,
   buildOverview,
@@ -140,6 +149,11 @@ export class SyncController implements Disposable {
   readonly overview: Signal<SyncOverview> = signal<SyncOverview>(EMPTY_OVERVIEW);
   /** What sync did lately, newest first. Kept in memory only. */
   readonly log: Signal<SyncEvent[]> = signal<SyncEvent[]>([]);
+  /**
+   * What another of the account's computers synced here and the person hasn't accepted on
+   * this one (`core/sync/incoming.ts`): read after each pass and when the tab asks.
+   */
+  readonly incoming: Signal<IncomingItem[]> = signal<IncomingItem[]>([]);
   /**
    * Waiting computers whose code was asked for and hasn't come yet (device ids): the waiting
    * computer answers a moment later, and the status is asked for until it has.
@@ -360,6 +374,15 @@ export class SyncController implements Disposable {
 
   private settingsPort(): SettingsPort {
     const { settings } = this.services;
+    const listed = (key: string): ReadonlySet<string> => {
+      const value = settings.peek<unknown>(key);
+      return new Set(Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
+    };
+    const filter = (): SyncSettingsFilter => ({
+      known: (key) => settings.registry.get(key) !== undefined,
+      extra: listed("sync.extraSettings"),
+      ignored: listed("sync.ignoredSettings"),
+    });
     return {
       read: async () => {
         if (!this.on("settings")) return null;
@@ -384,12 +407,10 @@ export class SyncController implements Disposable {
         for (const { key, value } of edits) values[key] = value;
         await settings.updateMany(values, "user");
       },
-      skip: (key) => {
-        // Settings that run programs or point at this computer's paths never travel.
-        if (staysLocal(key)) return true;
-        const ignored = settings.peek<unknown>("sync.ignoredSettings");
-        return Array.isArray(ignored) && ignored.includes(key);
-      },
+      // Settings that run programs, point somewhere, loosen a protection or that this computer
+      // doesn't know never travel, in either direction (core/sync/localSettings.ts).
+      skip: (key) => !isLanguageOverrideKey(key) && !settingSyncs(key, filter()),
+      skipEntry: (key, value) => !entrySyncs(key, value, filter()),
       now: () => Date.now(),
     };
   }
@@ -618,12 +639,7 @@ export class SyncController implements Disposable {
       this.announceWaiting(status);
     }
     if (status.notice) {
-      const words =
-        status.notice === "removed"
-          ? "This computer was removed from sync on another one. Sync is off here; your files and chats are untouched."
-          : status.notice === "keysLost"
-            ? "This computer's sync keys are gone from its keychain, so sync is off here. Your files and chats are untouched. To sync again, join from this computer."
-            : "Sync was reset from the account page. It is off here until you turn it on again; your files and chats are untouched.";
+      const words = wentOffWords(status.notice);
       this.services.notifications.show("warning", words, {
         title: "Sync",
         actions: [{ label: "Open sync", run: () => this.showPage("overview") }],
@@ -685,7 +701,49 @@ export class SyncController implements Disposable {
       await this.engine.tick();
     } finally {
       this.readOverview();
+      await this.readIncoming();
     }
+  }
+
+  /**
+   * Reads what arrived by sync and waits to be accepted here, and says once (in the window
+   * that runs the loop) that some of it can run commands. Never fails: what was read last stays.
+   */
+  async readIncoming(): Promise<IncomingItem[]> {
+    try {
+      const files = await syncIpc.incoming();
+      const items = await incomingItems(files, (path) =>
+        syncIpc.userFileRead(path).catch(() => null),
+      );
+      if (JSON.stringify(items) !== JSON.stringify(this.incoming.peek()))
+        this.incoming.value = items;
+      const words = this.leader ? incomingNotice(items) : null;
+      if (words) {
+        await syncIpc.incomingTold();
+        this.services.notifications.show("info", words, {
+          title: "Sync",
+          actions: [{ label: "Review", run: () => this.showPage("overview") }],
+        });
+        this.note(words);
+      }
+    } catch {
+      // Not readable just now: asked again after the next pass.
+    }
+    return this.incoming.peek();
+  }
+
+  /**
+   * The person accepts what arrived (`id`: one item of `incoming`; null: all of it) on this
+   * computer. Returns how many items that was.
+   */
+  async acceptIncoming(id: string | null): Promise<number> {
+    const items = await this.readIncoming();
+    const paths = pathsToAccept(items, id);
+    await syncIpc.incomingAccept(paths);
+    // The shortcuts that waited come into use now (no file changed to say so).
+    incomingRevision.value++;
+    await this.readIncoming();
+    return id === null ? items.length : 1;
   }
 
   private async runPass(force: boolean): Promise<void> {
@@ -1258,12 +1316,16 @@ export class SyncController implements Disposable {
     if (!collection || this.isLapsed()) return;
     const days = this.services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
     const rows = this.snapshots.peek();
+    // The account page's mark counts for the newest few marked, not for any number.
+    const marked = keepMarksHonoured(
+      rows.map((r) => ({ id: r.id, time: r.summary.time, keep: r.keep })),
+    );
     const remove = planPrune(
       rows.map((r) => ({
         id: r.id,
         time: r.summary.time,
         // Under a name here, or marked to keep from the account page.
-        pinned: staysPinned(r.summary.pinned, r.keep),
+        pinned: staysPinned(r.summary.pinned, marked.has(r.id)),
         // An earlier day keeps each computer's last snapshot, not only the day's last.
         device: r.summary.device,
       })),

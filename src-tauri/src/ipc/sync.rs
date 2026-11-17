@@ -150,6 +150,21 @@ pub async fn sync_remove_device(
     vault(&state, &base).remove(&device).await
 }
 
+/// Turns sync back on with the keys that were put aside when it went off by itself, when
+/// the account lists this computer as before.
+#[tauri::command]
+pub async fn sync_kept_resume(state: State<'_, AppState>, base: String) -> Result<()> {
+    let _step = STEP.lock().await;
+    vault(&state, &base).resume_kept().await
+}
+
+/// Deletes the keys that were put aside when sync went off by itself: the person's word.
+#[tauri::command]
+pub async fn sync_kept_forget(state: State<'_, AppState>, base: String) -> Result<()> {
+    let _step = STEP.lock().await;
+    vault(&state, &base).forget_kept()
+}
+
 /// Replaces the recovery key and returns the new one to show.
 #[tauri::command]
 pub async fn sync_new_recovery_key(state: State<'_, AppState>, base: String) -> Result<String> {
@@ -162,6 +177,17 @@ pub async fn sync_new_recovery_key(state: State<'_, AppState>, base: String) -> 
 pub async fn sync_changes(state: State<'_, AppState>, base: String, since: u64) -> Result<Changes> {
     let v = vault(&state, &base);
     let mut changes = records::changes(&v.api, &v.keyring()?, since).await?;
+    // The life of the vault these changes are of must be the one this computer joined:
+    // "another epoch" from here would make the sync loop start from nothing and take the
+    // account's side wherever the two differ. Whether sync was reset is read with the
+    // account's state (`sync_status`), which then turns sync off here and keeps the keys.
+    if !v.same_epoch(changes.epoch) {
+        return Err(Error::Sync(
+            "SyncReset",
+            "The account's sync isn't the one this computer joined; checking where it stands."
+                .into(),
+        ));
+    }
     changes.records = changes.records.into_iter().map(without_keys).collect();
     Ok(changes)
 }
@@ -664,7 +690,43 @@ pub async fn sync_user_file_write(
     path: String,
     text: Option<String>,
 ) -> Result<Option<crate::sync::user_files::UserFile>> {
-    user_roots(&state).write(&path, text.as_deref())
+    let roots = user_roots(&state);
+    // Only the sync loop writes through here, so what it writes arrived by sync: listed as
+    // waiting (before it is there) until the person accepts it on this computer.
+    let incoming = crate::sync::incoming::Incoming::new(&state.dirs.data);
+    match text.as_deref() {
+        Some(text) => {
+            let before = roots.read(&path).ok().flatten();
+            incoming.downloading(&path, before.as_deref(), text)?;
+        }
+        None => incoming.removed(&path)?,
+    }
+    roots.write(&path, text.as_deref())
+}
+
+/// The user's files that are here as a sync download wrote them and that the person hasn't
+/// accepted on this computer: a skill or command among them approves no tools, and shortcuts
+/// that could run something wait.
+#[tauri::command]
+pub async fn sync_incoming(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::sync::incoming::IncomingFile>> {
+    Ok(crate::sync::incoming::Incoming::new(&state.dirs.data).list(&user_roots(&state)))
+}
+
+/// The person accepted these files (`paths` null: every one that waits) on this computer.
+#[tauri::command]
+pub async fn sync_incoming_accept(
+    state: State<'_, AppState>,
+    paths: Option<Vec<String>>,
+) -> Result<()> {
+    crate::sync::incoming::Incoming::new(&state.dirs.data).accept(paths.as_deref())
+}
+
+/// The person was told about what waits now (it is said once).
+#[tauri::command]
+pub async fn sync_incoming_told(state: State<'_, AppState>) -> Result<()> {
+    crate::sync::incoming::Incoming::new(&state.dirs.data).told()
 }
 
 /// What the front end's sync loop keeps between runs (what this computer last synced).
@@ -942,6 +1004,8 @@ mod tests {
             text: Some("{\"key\":\"PRIVATE\"}".into()),
             unreadable: false,
             damaged: false,
+            stale: false,
+            generation: None,
             refs: 0,
             device: None,
             updated_at: None,

@@ -684,7 +684,7 @@ taking the accounts server as `base`.
 - `project.rs` — a git remote's address in one form, whatever form it was written in; a
   folder's identity remote (`folder_remote`), and whether an address names the repository a
   folder is a clone of (`same_remote`: how a reader's folder is matched to a share).
-- `snapshot.rs` — a project's files as a snapshot (`create`, `estimate`, `fingerprint`,
+- `snapshot/` — a project's files as a snapshot (`create`, `estimate`, `fingerprint`,
   `manifest`, `list`, `restore`, `restore_file`, `rewrite` for a pin). Asks git; writes
   nothing inside `.git` to make one; the file list is stored in parts; a folder without git
   honours `.syncignore`, `.gitignore` and `.ignore`; a manifest's paths can't leave the
@@ -701,6 +701,10 @@ taking the accounts server as `base`.
   `pins` (teammates' keys, anchored by a marker in `sys/member`), `plan` (key files, a
   shown remote, what to do about a share's keys, the floor a reader keeps), `sharer`,
   `reader`. Commands in `ipc/share.rs`.
+- `incoming.rs` — which of those files are here as a sync download wrote them and weren't
+  accepted on this computer (`<data>/sync-incoming.json`, never synced, kept when sync goes
+  off): `downloading` (before the write), `list` (drops what was edited here since), `accept`,
+  `told`. Commands `sync_incoming`, `sync_incoming_accept`, `sync_incoming_told`.
 - `user_files.rs` — the user's own files that sync, under names that are the same on every
   computer (`scan`, which also says what it kept out and whether it saw everything;
   `read`, `write`); only those names resolve.

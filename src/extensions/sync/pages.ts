@@ -6,6 +6,7 @@ import { type Child, h, on } from "../../core/dom/index";
 import type { SyncDevice, SyncStatus } from "../../core/ipc/sync";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { hasPlanPage, hasTeamPage } from "../../core/ownServices";
+import type { IncomingItem } from "../../core/sync/incoming";
 import { type IconName, icon } from "../../ui/Icon";
 import type { MenuItem } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -370,6 +371,52 @@ function attentionRow(kit: PageKit, entry: AttentionItem): HTMLElement {
   );
 }
 
+const INCOMING_TAGS: Record<IncomingItem["kind"], string> = {
+  skill: "Skill",
+  command: "Command",
+  keybindings: "Shortcuts",
+  rules: "Rules",
+};
+
+/**
+ * What another of the account's computers synced here and the person hasn't accepted on this
+ * one (`core/sync/incoming.ts`): each with Accept, and all at once. Null when nothing waits.
+ */
+function incomingSection(kit: PageKit): HTMLElement | null {
+  const items = kit.controller.incoming.peek();
+  if (items.length === 0) return null;
+  const running = items.filter((entry) => entry.runs).length;
+  return section(
+    "From your other computers",
+    card(
+      body(
+        kit.text(
+          running > 0
+            ? "These arrived by sync and can run commands. Until you accept them here, their tools ask before they run and their shortcuts aren't in use."
+            : "These arrived by sync. They steer the agent and run nothing by themselves; accept them once you have looked.",
+          true,
+        ),
+      ),
+      ...items.map((entry) =>
+        item({
+          title: entry.name,
+          tags: [INCOMING_TAGS[entry.kind], ...(entry.runs ? ["Can run commands"] : [])],
+          details: [entry.detail],
+          attrs: { "data-incoming": entry.id },
+          actions: [kit.button("Accept", () => kit.run("sync.acceptIncoming", { id: entry.id }))],
+        }),
+      ),
+    ),
+    items.length > 1
+      ? h(
+          "div",
+          { class: "sync-section-foot" },
+          kit.link("Accept all", () => kit.run("sync.acceptIncoming")),
+        )
+      : null,
+  );
+}
+
 interface Stat {
   key: string;
   /** The number (or a time), large. */
@@ -460,6 +507,7 @@ function overviewPage(kit: PageKit, status: SyncStatus): Child[] {
   return [
     h("div", { class: "sync-stack" }, statusCard(kit), counts, storage),
     continueCallout(kit),
+    incomingSection(kit),
     attention.length === 0
       ? null
       : section("Needs attention", card(...attention.map((entry) => attentionRow(kit, entry)))),
@@ -992,7 +1040,7 @@ function contentPage(kit: PageKit): Child[] {
           title: "Settings that stay on this computer",
           details: [
             kept === 0 ? "None of your choice." : `${countOf(kept, "setting")} of your choice.`,
-            "Settings that run programs or point at paths on this computer don't sync.",
+            "Settings that run programs, point somewhere, choose a model or loosen a protection don't sync, nor do settings this computer doesn't know.",
           ],
           actions: [
             kit.button("Change", () =>

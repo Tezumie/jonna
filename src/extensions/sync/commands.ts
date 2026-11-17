@@ -13,6 +13,7 @@ import { Schema, s } from "../../core/schema/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { SnapshotRow, SyncController } from "./controller";
+import { FORGET_KEPT_WORDS } from "./kept";
 import {
   countOf,
   estimateWarning,
@@ -411,6 +412,28 @@ export function registerSyncCommands(
 
   sub.add(
     dispatcher.register({
+      id: "sync.acceptIncoming",
+      title: "Accept what arrived from your other computers…",
+      category: CATEGORY,
+      description:
+        "Accepts, on this computer, what another of the account's computers synced here (ide://sync `incoming`): a skill or command among it then approves the tools it names again, and keyboard shortcuts that could run something come into use. `id` is one item's id; without it, everything that waits. Only the person decides this: it is what stands between a computer that was taken over and commands running on this one.",
+      input: s.object({
+        id: s
+          .string()
+          .describe("One item's id (ide://sync incoming[].id); absent: everything that waits")
+          .optional(),
+      }),
+      effects: ["write"],
+      agent: "hidden",
+      run: async ({ id }) => {
+        const accepted = await sync().acceptIncoming(id ?? null);
+        return { accepted, waiting: sync().incoming.peek().length };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
       id: "sync.reviewDevice",
       title: "Check a waiting computer's code…",
       category: CATEGORY,
@@ -529,6 +552,51 @@ export function registerSyncCommands(
         if (!status.deviceId || (status.state !== "on" && status.state !== "pending"))
           throw new Error("Sync is already off on this computer.");
         return remove(base, status, status.deviceId);
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.resumeKept",
+      title: "Turn sync back on with the keys this computer kept",
+      category: CATEGORY,
+      description:
+        "After sync went off on this computer by itself (the account said it was reset, or that this computer was removed, or another account signed in), its sync keys are kept aside, out of use (ide://sync `kept`). When the account lists this computer as before (`kept.resumable`), this turns sync back on with them; otherwise it fails and sync is turned on again from the start. The person's own decision: hidden from agents.",
+      input: s.empty(),
+      effects: ["network"],
+      agent: "hidden",
+      run: async () => {
+        const base = await open();
+        await syncIpc.keptResume(base);
+        const status = await sync().refreshStatus();
+        return { on: status?.state === "on" };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.forgetKept",
+      title: "Remove the sync keys this computer kept…",
+      category: CATEGORY,
+      description:
+        "Deletes, after asking, the sync keys this computer kept aside when sync went off by itself (ide://sync `kept`). Without another computer that syncs or the recovery key, what the account still holds can't be read afterwards. Files and chats on this computer are untouched. The person's own decision: hidden from agents.",
+      input: s.empty(),
+      effects: ["write"],
+      agent: "hidden",
+      run: async () => {
+        const base = await open();
+        const ok = await confirmAction(
+          FORGET_KEPT_WORDS.title,
+          FORGET_KEPT_WORDS.message,
+          FORGET_KEPT_WORDS.confirm,
+          true,
+        );
+        if (!ok) return { removed: false, cancelled: true };
+        await syncIpc.keptForget(base);
+        await sync().refreshStatus();
+        return { removed: true };
       },
     }),
   );

@@ -3,9 +3,12 @@
 // endpoints and Anthropic's native API in agent.providers (LM Studio, llama.cpp, vLLM, OpenRouter,
 // OpenAI, Anthropic…; API keys are set
 // with "Agent: Set API key" and stay in Rust). Model choices are "<provider>/<model>".
+import { usableProviders } from "../../core/agent/providerId";
 import { aiIpc, type ModelDetails, type ModelInfo, type ProviderRef } from "../../core/ipc/agent";
-import { type ReadonlySignal, signal } from "../../core/reactive/index";
+import { hasBackend } from "../../core/ipc/invoke";
+import { effect, type ReadonlySignal, signal } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { PROVIDER_PRESETS } from "./providerPresets";
 
 export interface ModelChoice {
   /** "<providerId>/<modelId>" */
@@ -34,6 +37,26 @@ interface ConfiguredProvider {
 
 export const OLLAMA_ID = "ollama";
 
+/** How long the first listing waits for the settings files to be read before going on. */
+const SETTINGS_WAIT_MS = 8000;
+
+/**
+ * The providers whose earlier keys may move: the configured ones with their addresses, then
+ * the built-in ones with a fixed address that aren't configured.
+ */
+export function keyMoveList(configured: readonly ProviderRef[]): ProviderRef[] {
+  const out: ProviderRef[] = configured.map((p) => ({
+    id: p.id,
+    kind: p.kind,
+    baseUrl: p.baseUrl,
+  }));
+  const ids = new Set(out.map((p) => p.id));
+  for (const preset of PROVIDER_PRESETS)
+    if (preset.baseUrl && !preset.editAddress && !ids.has(preset.id))
+      out.push({ id: preset.id, kind: preset.kind ?? "openai", baseUrl: preset.baseUrl });
+  return out;
+}
+
 export class ProviderRegistry {
   private readonly modelList = signal<readonly ModelChoice[]>([]);
   private readonly statusList = signal<readonly ProviderStatus[]>([]);
@@ -44,6 +67,7 @@ export class ProviderRegistry {
   /** The provider list the refresh in flight is listing. */
   private refreshingKey = "";
   private refreshedAt = 0;
+  private moving: Promise<void> | null = null;
 
   constructor(private readonly services: WorkbenchServices) {}
 
@@ -57,10 +81,9 @@ export class ProviderRegistry {
         kind: "ollama",
         baseUrl: s.peek<string>("agent.ollama.url") || "http://127.0.0.1:11434",
       });
-    const configured = s.peek<ConfiguredProvider[]>("agent.providers");
-    for (const p of Array.isArray(configured) ? configured : []) {
-      if (!p || typeof p.id !== "string" || typeof p.baseUrl !== "string" || p.id === OLLAMA_ID)
-        continue;
+    // An id that could name another entry of the secrets store is left out (providerId.ts).
+    for (const p of usableProviders<ConfiguredProvider>(s.peek<unknown>("agent.providers"))) {
+      if (p.id === OLLAMA_ID) continue;
       out.push({
         id: p.id,
         name: p.name ?? p.id,
@@ -75,6 +98,51 @@ export class ProviderRegistry {
       });
     }
     return out;
+  }
+
+  /**
+   * Keys an earlier build kept under bare ids move to their own entries before the first
+   * listing, each for the address its provider has now (the backend does it once per profile
+   * and then never again, so a provider added later can't claim an old entry).
+   */
+  private keysMoved(): Promise<void> {
+    // Not before the settings files were read: the move happens once, and a provider the
+    // settings name that isn't known yet would leave its key behind for good.
+    this.moving ??= this.settingsRead()
+      .then((read) => {
+        if (read) return aiIpc.moveKeys(keyMoveList(this.providers())).then(() => {});
+        // Not read in time: nothing moves now, and the next listing asks again.
+        this.moving = null;
+        return undefined;
+      })
+      .catch(() => {});
+    return this.moving;
+  }
+
+  /**
+   * Whether the settings files were read (extensions start before they are). Waits for the
+   * first read, a few seconds at most, so a listing never hangs on it.
+   */
+  private settingsRead(): Promise<boolean> {
+    // (A host without the signal reads its settings before anything is listed.)
+    const loaded: ReadonlySignal<boolean> | undefined = this.services.settings.loaded;
+    if (!loaded || loaded.peek()) return Promise.resolve(true);
+    if (!hasBackend()) return Promise.resolve(false);
+    return new Promise((done) => {
+      let settled = false;
+      const settle = (read: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        // (Disposed after the effect's own run, which may still be on the stack here.)
+        queueMicrotask(() => stop.dispose());
+        done(read);
+      };
+      const timer = setTimeout(() => settle(false), SETTINGS_WAIT_MS);
+      const stop = effect(() => {
+        if (loaded.value) settle(true);
+      });
+    });
   }
 
   /** Refreshes when the last refresh is older than `maxAgeMs`; waits at most `waitMs` for it. */
@@ -92,6 +160,7 @@ export class ProviderRegistry {
       return this.refreshing.then(() => this.refresh());
     this.refreshingKey = key;
     this.refreshing ??= (async () => {
+      await this.keysMoved();
       const providers = this.providers();
       // First load (or a changed provider list) shows "loading"; background refreshes keep the
       // current list on screen until the new one arrives.

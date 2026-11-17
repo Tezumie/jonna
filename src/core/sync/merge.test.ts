@@ -353,3 +353,43 @@ test("conflictPath and fileRecordId", () => {
   assert.match(fileRecordId(long), /^[A-Za-z0-9_.-]+$/);
   assert.notEqual(fileRecordId(long), fileRecordId(other));
 });
+
+test("mergeSettings: after the account's sync 'was set up again', this computer's values stay", () => {
+  const remote = {
+    keys: {
+      theme: { v: "dark", t: 10 },
+      gone: { d: true as const, t: 10 },
+      same: { v: 1, t: 10 },
+    },
+  };
+  const r = mergeSettings({
+    local: { theme: "light", gone: "still here", same: 1 },
+    base: {},
+    remote,
+    localTime: 999,
+    keepLocal: true,
+    skip: none,
+  });
+  // Nothing here is replaced or removed; the account gets this computer's values.
+  assert.deepEqual(r.apply, []);
+  assert.deepEqual(r.replaced, []);
+  assert.deepEqual(r.kept, [
+    { key: "theme", value: "dark" },
+    { key: "gone", value: undefined },
+  ]);
+  assert.deepEqual(r.record.keys.theme, { v: "light", t: 999 });
+  assert.deepEqual(r.record.keys.gone, { v: "still here", t: 999 });
+  assert.equal(r.recordChanged, true);
+  assert.deepEqual(r.base, { theme: '"light"', gone: '"still here"', same: "1" });
+  // What only the account has still arrives: nothing here to keep against it.
+  const only = mergeSettings({
+    local: {},
+    base: {},
+    remote: { keys: { fresh: { v: 2, t: 10 } } },
+    localTime: 999,
+    keepLocal: true,
+    skip: none,
+  });
+  assert.deepEqual(only.apply, [{ key: "fresh", value: 2 }]);
+  assert.deepEqual(only.kept, []);
+});

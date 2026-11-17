@@ -9,6 +9,7 @@ mod anthropic;
 pub mod embed;
 pub mod env_keys;
 pub mod fim;
+pub mod key_slots;
 pub mod keychain;
 pub mod limits;
 mod ollama;

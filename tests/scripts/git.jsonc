@@ -3,6 +3,8 @@
 {
   "name": "git",
   "steps": [
+    // Git runs once the folder is trusted.
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
     { "run": "git.status", "expectError": true },
     { "run": "git.init", "expect": { "root": { "$exists": true } } },
     // A repo-local identity: CI machines have no global one.

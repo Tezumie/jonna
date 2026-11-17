@@ -145,6 +145,11 @@ export interface ShareCopyPlan {
 export const shareIpc = {
   /** This account's fingerprint; makes and publishes its member key when that wasn't done. */
   me: (base: string): Promise<ShareMe> => call<ShareMe>("share_me", { base }),
+  /**
+   * Starts over with a new member key, after sharing was refused because the account's own
+   * record of its keys couldn't be read. Teammates see this account's key as changed.
+   */
+  startOver: (base: string): Promise<void> => call<void>("share_start_over", { base }),
   /** The team's members, each with their fingerprint and where they stand. */
   members: (base: string): Promise<ShareMember[]> => call<ShareMember[]>("share_members", { base }),
   /**

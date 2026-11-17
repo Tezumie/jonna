@@ -614,6 +614,10 @@ gives them ports.
   (`SettingsPort`, `FilesPort`, `ChatsPort`).
 - `history.ts` — `planPrune`: which snapshots history keeps, counted in days worked, per
   computer.
+- `incoming.ts` — the user's files that are here as a sync download wrote them, not accepted
+  on this computer yet: `bindingCanRun` and `splitBindings` (which shortcuts wait),
+  `skillIsIncoming`, `commandIsIncoming` (no tool pre-approval), `incomingItems` and
+  `incomingNotice` (what the Sync tab lists and says once), `incomingRevision`.
 - `localSettings.ts` — `staysLocal`: the settings that never sync (what could make another
   computer run or send something).
 - `errors.ts` — telling the service's refusals apart (offline, slow down, per item, and

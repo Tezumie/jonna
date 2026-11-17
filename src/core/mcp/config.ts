@@ -178,8 +178,22 @@ export function serverSignature(name: string, c: McpServerConfig): string {
 /** What the approval card shows: the command or address, and what it's given. */
 export function describeServer(c: McpServerConfig): string {
   const lines = [c.url ?? [c.command, ...(c.args ?? [])].join(" ")];
+  if (c.cwd) lines.push(`cwd ${c.cwd}`);
   for (const [k, v] of Object.entries(c.env ?? {})) lines.push(`env ${k}=${v}`);
   for (const [k, v] of Object.entries(c.headers ?? {})) lines.push(`header ${k}: ${v}`);
   if (c.envFile) lines.push(`envFile ${c.envFile}`);
   return lines.join("\n");
+}
+
+/** The most of a server's description a person can be asked to read before saying yes. */
+export const REVIEWABLE_CHARS = 20_000;
+
+/**
+ * Whether what the approval card shows is all of it and can be read: the card shows the whole
+ * description (it scrolls), never a beginning. A server whose description is longer than a
+ * person would read isn't asked about (what was approved would be what wasn't looked at):
+ * it is refused instead.
+ */
+export function reviewable(c: McpServerConfig): boolean {
+  return describeServer(c).length <= REVIEWABLE_CHARS;
 }

@@ -12,6 +12,7 @@
 //! The saved session, its tokens (in the OS keychain) and the profile check with refresh are in
 //! `session.rs` (D414). The tokens never go to the webview; the frontend sees the profile only.
 
+pub mod http;
 mod session;
 
 pub use session::{access_token, check, profile, session_file, sign_out};
@@ -328,7 +329,21 @@ pub fn wait_for_code(p: &Pending) -> Result<String> {
             let _ = (&stream).write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
             continue;
         };
-        let ok = state.as_deref() == Some(p.state.as_str()) && code.is_some() && error.is_none();
+        // An answer that doesn't carry this sign-in's state isn't the server's (another page on
+        // this computer can ask the port anything): refused, and the wait goes on until the
+        // real answer or the timeout. Only an answer with the state can end the sign-in.
+        if state.as_deref() != Some(p.state.as_str()) {
+            let page = callback_page(false);
+            let _ = (&stream).write_all(
+                format!(
+                    "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                    page.len()
+                )
+                .as_bytes(),
+            );
+            continue;
+        }
+        let ok = code.is_some() && error.is_none();
         let page = callback_page(ok);
         let _ = (&stream).write_all(
             format!(
@@ -342,9 +357,7 @@ pub fn wait_for_code(p: &Pending) -> Result<String> {
         }
         return match (ok, code) {
             (true, Some(code)) => Ok(code),
-            _ => Err(Error::Invalid(
-                "Sign-in answer didn't match (state).".into(),
-            )),
+            _ => Err(Error::Invalid("Sign-in answer carried no code.".into())),
         };
     }
 }
@@ -356,11 +369,26 @@ struct TokenReply {
     refresh_token: Option<String>,
 }
 
+/// A reply that is an answer: `error_for_status` passes a redirect (which is never followed
+/// here), and a redirect's body isn't the server's answer.
+fn successful(reply: reqwest::Response) -> Result<reqwest::Response> {
+    if reply.status().is_success() {
+        return Ok(reply);
+    }
+    Err(Error::Invalid(format!(
+        "The account server answered {} where an answer was expected.",
+        reply.status().as_u16()
+    )))
+}
+
 /// Exchanges the code for a token, reads the profile and saves the session.
 pub async fn finish(p: &Pending, code: &str, file: &Path) -> Result<Profile> {
-    let client = reqwest::Client::new();
+    let client = http::client();
     let net = |e: reqwest::Error| Error::Invalid(format!("Couldn't reach the account server: {e}"));
-    let token: TokenReply = client
+    let read = |e: http::BodyError| {
+        Error::Invalid(format!("The account server's answer couldn't be read: {e}"))
+    };
+    let reply = client
         .post(format!("{}/oauth/token", p.base))
         .form(&[
             ("grant_type", "authorization_code"),
@@ -373,21 +401,17 @@ pub async fn finish(p: &Pending, code: &str, file: &Path) -> Result<Profile> {
         .await
         .map_err(net)?
         .error_for_status()
-        .map_err(net)?
-        .json()
-        .await
         .map_err(net)?;
-    let profile: Profile = client
+    let token: TokenReply = http::json_capped(successful(reply)?).await.map_err(read)?;
+    let reply = client
         .get(format!("{}/api/me", p.base))
         .bearer_auth(&token.access_token)
         .send()
         .await
         .map_err(net)?
         .error_for_status()
-        .map_err(net)?
-        .json()
-        .await
         .map_err(net)?;
+    let profile: Profile = http::json_capped(successful(reply)?).await.map_err(read)?;
     session::store(
         file,
         session::vault(),
@@ -528,5 +552,34 @@ mod tests {
         });
         assert_eq!(wait_for_code(&p).unwrap(), "c0de");
         assert!(browser.join().unwrap().contains("You're signed in"));
+    }
+
+    #[test]
+    fn a_callback_with_another_state_is_refused_and_the_wait_goes_on() {
+        let p = begin("http://127.0.0.1:9").unwrap();
+        let port = p.listener.local_addr().unwrap().port();
+        let state = p.state.clone();
+        let ask = move |query: String| {
+            let mut s = std::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            s.write_all(format!("GET /callback?{query} HTTP/1.1\r\n\r\n").as_bytes())
+                .unwrap();
+            let mut reply = String::new();
+            let _ = std::io::Read::read_to_string(&mut s, &mut reply);
+            reply
+        };
+        let browser = std::thread::spawn(move || {
+            // Another page on this computer: a wrong state, with a code and with an error.
+            let wrong = ask("code=theirs&state=not-it".into());
+            let refused = ask("error=access_denied&state=not-it".into());
+            let none = ask("code=theirs".into());
+            let real = ask(format!("code=c0de&state={state}"));
+            (wrong, refused, none, real)
+        });
+        assert_eq!(wait_for_code(&p).unwrap(), "c0de");
+        let (wrong, refused, none, real) = browser.join().unwrap();
+        for reply in [wrong, refused, none] {
+            assert!(reply.starts_with("HTTP/1.1 400 "), "{reply}");
+        }
+        assert!(real.starts_with("HTTP/1.1 200 ") && real.contains("You're signed in"));
     }
 }

@@ -286,6 +286,14 @@ export type GitIpc = ReturnType<typeof createGitIpc>;
 /** The workspace's own repository. */
 export const gitIpc: GitIpc = createGitIpc();
 
+/**
+ * Tells the backend whether the open workspace is trusted: its git runs in the workspace's
+ * folders only while it is (a folder is held from the moment it opens until this says so).
+ */
+export function setGitTrust(trusted: boolean): Promise<void> {
+  return invokeCall<void>("git_set_trust", { trusted });
+}
+
 export interface Worktree {
   path: string;
   head: string;

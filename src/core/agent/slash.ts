@@ -63,10 +63,12 @@ export type CommandOrigin = "user" | "project" | "team";
  * Whether a command file is trusted with what it asks for: its `allowed-tools` pre-approved and
  * its `!` lines run under them without asking. Only the user's own. A project's file can't
  * approve its own lines (a cloned repository's), and neither can a team's: other people wrote
- * both.
+ * both. Nor the user's own while it is as another of the account's computers synced it and
+ * wasn't accepted on this one (`incoming`): whoever holds the account's sync keys could have
+ * written it.
  */
-export function commandTrusted(origin: CommandOrigin): boolean {
-  return origin === "user";
+export function commandTrusted(origin: CommandOrigin, incoming = false): boolean {
+  return origin === "user" && !incoming;
 }
 
 /** The turn's tool settings for a command file; null when it changes nothing. */

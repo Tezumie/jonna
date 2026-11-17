@@ -115,6 +115,7 @@ pub fn interactive(
     }
     let todo_path = dir.join("todo");
     std::fs::write(&todo_path, list)?;
+    super::trust::check(repo, &["rebase"])?;
     let mut cmd = command(repo);
     cmd.env("GIT_SEQUENCE_EDITOR", "cp \"$IDE_REBASE_TODO\"")
         .env("IDE_REBASE_TODO", &todo_path)

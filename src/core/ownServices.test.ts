@@ -43,6 +43,30 @@ test("own services: the setting overrides the build's server, when the build has
     "https://a.example",
   );
   assert.equal(accountsServer(" http://127.0.0.1:8787/ ", config()), "http://127.0.0.1:8787");
+  // Only this computer itself: a settings file can't point the account at someone's server.
+  for (const local of ["http://localhost:5000", "http://[::1]:8787", "https://dev.localhost"]) {
+    assert.equal(accountsServer(local, config(), false), local);
+  }
+  for (const elsewhere of [
+    "https://evil.example",
+    "http://127.0.0.1.evil.example",
+    "http://localhost.evil.example:80",
+    "http://user@127.0.0.1@evil.example",
+    "http://192.168.1.5:8787",
+    "file:///localhost",
+    "not a url",
+  ]) {
+    assert.equal(
+      accountsServer(elsewhere, config(), false),
+      "https://accounts.example.com",
+      elsewhere,
+    );
+  }
+  // A development build takes any server (a staging one, another machine on the network).
+  assert.equal(
+    accountsServer("https://staging.example/", config(), true),
+    "https://staging.example",
+  );
   // No accounts in the build: a setting left in someone's file doesn't bring them back.
   assert.equal(accountsServer("", config({ accountsUrl: "" })), "");
   assert.equal(accountsServer("http://127.0.0.1:8787", config({ accountsUrl: "" })), "");

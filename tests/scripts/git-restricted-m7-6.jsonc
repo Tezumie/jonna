@@ -3,8 +3,11 @@
 {
   "name": "git-restricted-m7-6",
   "steps": [
+    // Not decided yet: git is off too (the backend refuses it, whoever asks).
+    { "run": "git.init", "expectError": "until this folder is trusted" },
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
     { "run": "git.init", "expect": { "root": { "$exists": true } } },
-    { "run": "git.status", "expect": { "branch": { "$exists": true } } },
+    { "run": "git.status", "expect": { "branch": { "$exists": true } }, "timeoutMs": 5000 },
     { "run": "workspace.setTrust", "input": { "trusted": false } },
     { "wait": 500 },
     { "run": "git.status", "expectError": "restricted mode" },

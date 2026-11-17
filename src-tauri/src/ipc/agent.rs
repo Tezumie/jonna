@@ -1,20 +1,27 @@
 //! Agent commands: model providers (keys stay on this side) and sessions/checkpoints in app data.
 
 use crate::agent::{FileSnapshot, SessionSummary};
-use crate::ai::{secrets, ChatEvent, ChatRequest, ModelDetails, ModelInfo, Provider};
+use crate::ai::{key_slots, secrets, ChatEvent, ChatRequest, ModelDetails, ModelInfo, Provider};
 use crate::error::Result;
 use crate::{agent, AppState};
 use tauri::ipc::Channel;
 use tauri::State;
 
 // Model provider commands (`crate::ai`). Keys are stored and read on this side only.
-fn key(state: &AppState, provider: &Provider) -> Option<String> {
-    let stored = secrets::get(&state.dirs.data.join("secrets.json"), &provider.id);
+/// The provider's key, from its own entry (`provider.<id>`, `ai/key_slots.rs`) and only for the
+/// address it was saved for: the id never picks another entry of the store, and a provider
+/// whose address changed gets an error saying the key must be entered again, not the key.
+fn key(state: &AppState, provider: &Provider) -> Result<Option<String>> {
+    let stored = key_slots::provider_key(
+        &state.dirs.data.join("secrets.json"),
+        &provider.id,
+        &provider.base_url,
+    )?;
     // The host without a window is started from a shell: with no key in the store, the
     // provider's conventional variable is one (`ai/env_keys.rs`). The app reads its store only.
     #[cfg(not(feature = "desktop"))]
     let stored = stored.or_else(|| crate::ai::env_keys::from_environment(&provider.base_url));
-    stored
+    Ok(stored)
 }
 
 #[tauri::command]
@@ -22,7 +29,7 @@ pub async fn ai_list_models(
     state: State<'_, AppState>,
     provider: Provider,
 ) -> Result<Vec<ModelInfo>> {
-    let key = key(&state, &provider);
+    let key = key(&state, &provider)?;
     state.ai.list_models(&provider, key).await
 }
 
@@ -32,7 +39,7 @@ pub async fn ai_model_details(
     provider: Provider,
     model: String,
 ) -> Result<ModelDetails> {
-    let key = key(&state, &provider);
+    let key = key(&state, &provider)?;
     state.ai.model_details(&provider, &model, key).await
 }
 
@@ -45,7 +52,7 @@ pub async fn ai_chat(
     request: ChatRequest,
     on_event: Channel<ChatEvent>,
 ) -> Result<()> {
-    let key = key(&state, &request.provider);
+    let key = key(&state, &request.provider)?;
     state
         .ai
         .chat(&request_id, webview.label(), request, key, move |event| {
@@ -63,7 +70,7 @@ pub async fn ai_image_generate(
     request_id: String,
     request: crate::ai::ImageRequest,
 ) -> Result<Vec<serde_json::Value>> {
-    let key = key(&state, &request.provider);
+    let key = key(&state, &request.provider)?;
     let images = state
         .ai
         .generate_image(&request_id, webview.label(), request, key)
@@ -83,7 +90,7 @@ pub async fn ai_fim(
     request_id: String,
     request: crate::ai::fim::FimRequest,
 ) -> Result<crate::ai::fim::FimReply> {
-    let key = key(&state, &request.provider);
+    let key = key(&state, &request.provider)?;
     state
         .ai
         .fim(&request_id, webview.label(), request, key)
@@ -150,7 +157,7 @@ pub async fn ai_transcribe(
     mime: String,
     language: Option<String>,
 ) -> Result<String> {
-    let key = key(&state, &provider);
+    let key = key(&state, &provider)?;
     let bytes = crate::ai::transcribe::decode_base64(&audio)?;
     crate::ai::transcribe::transcribe(
         &state.ai.client(),
@@ -172,7 +179,7 @@ pub async fn ai_embed(
     model: String,
     inputs: Vec<String>,
 ) -> Result<Vec<Vec<f32>>> {
-    let key = key(&state, &provider);
+    let key = key(&state, &provider)?;
     crate::ai::embed::embed(&state.ai.client(), &provider, key, &model, &inputs).await
 }
 
@@ -181,15 +188,45 @@ pub async fn ai_cancel(state: State<'_, AppState>, request_id: String) -> Result
     state.ai.cancel(&request_id)
 }
 
-/// Stores (or with `null`, removes) the API key for provider `id`.
+/// Stores (or with `null`, removes) a key the page may name (`ai/key_slots.rs`): a model
+/// provider's (`id` is the provider's; `base_url` is the address the key is for, needed to
+/// store one), an MCP server's password input or a web search key. Any other name is refused.
 #[tauri::command]
-pub async fn ai_set_key(state: State<'_, AppState>, id: String, key: Option<String>) -> Result<()> {
-    secrets::set(&state.dirs.data.join("secrets.json"), &id, key.as_deref())
+pub async fn ai_set_key(
+    state: State<'_, AppState>,
+    id: String,
+    key: Option<String>,
+    base_url: Option<String>,
+) -> Result<()> {
+    key_slots::set(
+        &state.dirs.data.join("secrets.json"),
+        &id,
+        key.as_deref(),
+        base_url.as_deref(),
+    )
 }
 
+/// Whether such a key is stored; for a provider, one saved for `base_url`.
 #[tauri::command]
-pub async fn ai_has_key(state: State<'_, AppState>, id: String) -> Result<bool> {
-    Ok(secrets::has(&state.dirs.data.join("secrets.json"), &id))
+pub async fn ai_has_key(
+    state: State<'_, AppState>,
+    id: String,
+    base_url: Option<String>,
+) -> Result<bool> {
+    key_slots::has(
+        &state.dirs.data.join("secrets.json"),
+        &id,
+        base_url.as_deref(),
+    )
+}
+
+/// Moves the provider keys an earlier build kept under bare ids to their own entries, each for
+/// the address its provider has in `providers` (the settings' and the built-in ones). Only the
+/// first call for a profile does anything (`key_slots::move_provider_keys`).
+#[tauri::command]
+pub async fn ai_move_keys(state: State<'_, AppState>, providers: Vec<Provider>) -> Result<usize> {
+    let listed: Vec<(String, String)> = providers.into_iter().map(|p| (p.id, p.base_url)).collect();
+    key_slots::move_provider_keys(&state.dirs.data.join("secrets.json"), &listed)
 }
 
 /// What a provider has said about its limits (D201): the rate-limit headers of its last
@@ -222,7 +259,7 @@ pub async fn ai_provider_limits(
         match crate::ai::limits::openrouter_credits(
             &state.ai.client(),
             &provider.base_url,
-            key(&state, &provider),
+            key(&state, &provider)?,
         )
         .await
         {

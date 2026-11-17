@@ -25,7 +25,7 @@ import { clipboardIpc, dialogIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { isWithin, joinPath, relativePath } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
-import { type ShareBook, shareBook } from "../../core/team/shareBook";
+import { type ShareBook, START_OVER_WORDS, shareBook } from "../../core/team/shareBook";
 import {
   acceptKeyWords,
   canRead,
@@ -46,10 +46,11 @@ import {
   unshareQuestion,
   verifyWords,
 } from "../../core/team/shares";
+import { fromTeammates } from "../../core/team/source";
 import { confirmAction, showDialog } from "../../ui/Dialog";
 import type { WorkbenchServices } from "../../workbench/services";
 import { SYNC_VIEW, type SyncCommandParts, syncGates } from "./commands";
-import { lapsedReason, planSituation, type SyncTeam, teamOf } from "./model";
+import { lapsedReason, planSituation, type SyncTeam, shareCommandAgent, teamOf } from "./model";
 import { newestFirst, sharedFileTitle, sharedLabel, sharedPath } from "./shareView.model";
 import { shareError } from "./sharing";
 import {
@@ -336,10 +337,10 @@ export function registerShareCommands(
       title: "Share this project's state now",
       category: SYNC,
       description:
-        "Writes the open project's state now to its share with the team (a project that is shared already: sync.project.share starts sharing, and is the person's to run), instead of waiting for the next snapshot: a snapshot of the folder when it changed since the last shared one, and the share's keys to teammates who can have them by now. Returns `snapshot` (its id, or null when nothing changed), `keyFiles` (key files left out), `waiting` (teammates without keys, each with `name` and `why`: noKey, keyChanged or notVerified) and `message`.",
+        "Writes the open project's state now to its share with the team (a project that is shared already: sync.project.share starts sharing, and is the person's to run), instead of waiting for the next snapshot: a snapshot of the folder when it changed since the last shared one, and the share's keys to teammates who can have them by now. Returns `snapshot` (its id, or null when nothing changed), `keyFiles` (key files left out), `waiting` (teammates without keys, each with `name` and `why`: noKey, keyChanged or notVerified) and `message`. What leaves the folder for other people is the person's to send: hidden from agents.",
       input: s.object({}),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("sync.project.shareNow"),
       run: async () => {
         await ready();
         refuseLapsed();
@@ -379,11 +380,12 @@ export function registerShareCommands(
         "Reads the account's team again and lists its members: each with `uid`, `name`, `you` (this account), `state` (where their key for sharing stands on this computer: nokey, they haven't opened the IDE with sync on yet; new, their key is known and wasn't compared; verified, their fingerprint was compared; changed, the service shows another key than the one this computer knows, so nothing is shared with them and nothing of theirs is read until the new key is accepted), `fingerprint` (30 digits in six groups of five, of the key this computer knows as that member's; null without one) and, when changed, `pendingFingerprint` (the new key's). A fingerprint is what teammates read out to each other to compare; no key is returned. `problem` says why the team couldn't be read just now (what was read before is returned). The same, without fingerprints, is in ide://team (`members`).",
       input: s.object({}),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.members"),
       run: async () => {
         await ready();
         const read = await book("now");
-        return {
+        // Names are what teammates chose: marked as theirs.
+        return fromTeammates({
           members: sortMembers(read.members).map((entry) => ({
             uid: entry.uid,
             name: entry.name,
@@ -393,7 +395,7 @@ export function registerShareCommands(
             pendingFingerprint: fingerprintGroups(entry.pendingFingerprint),
           })),
           problem: read.problem,
-        };
+        });
       },
     }),
   );
@@ -475,6 +477,40 @@ export function registerShareCommands(
 
   sub.add(
     dispatcher.register({
+      id: "team.startOver",
+      title: "Start over with a new key for sharing…",
+      category: TEAM,
+      description:
+        "For when sharing keeps being refused because the account's own record of its key for sharing, or of its teammates' keys, can't be read (the Team page says so under People). After asking, gives the account a new key for sharing and publishes it: teammates see this account's key as changed and must accept it by comparing fingerprints, and what this account shared has to be shared again. Teammates' keys this computer doesn't remember are taken as first seen. Projects, snapshots and chats are untouched. Only the person decides this, knowingly: hidden from agents.",
+      input: s.object({}),
+      effects: ["network"],
+      agent: "hidden",
+      needsScreen: true,
+      run: async () => {
+        const base = await ready();
+        refuseLapsed();
+        const ok = await confirmAction(
+          START_OVER_WORDS.title,
+          START_OVER_WORDS.message,
+          START_OVER_WORDS.confirm,
+          true,
+        );
+        if (!ok) return { startedOver: false, cancelled: true };
+        await asked(shareIpc.startOver(base));
+        sync().sharing.keysMayHaveMoved();
+        await book("now");
+        notifications.show(
+          "success",
+          "Your account has a new key for sharing. Ask your teammates to accept it, and share your projects again.",
+          { title: TEAM },
+        );
+        return { startedOver: true };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
       id: "team.copyFingerprint",
       title: "Copy your fingerprint",
       category: TEAM,
@@ -510,11 +546,14 @@ export function registerShareCommands(
         "Reads again and lists the projects the account's team shares: each with its `id`, `project` (the sharer's sync id of it), `name`, `owner` (the sharer's name), `mine` (shared by this account), `state` (mine; ready: its keys are here and it can be read; waiting: the sharer's computer hasn't handed this account the keys yet, which it does the next time it syncs; keyChanged: the sharer's key isn't the one this computer knows, so nothing of theirs is read until the new key is accepted under People) and `latest` (the newest snapshot's label: `time` in ms, `computer`, `kind`, `files`, `bytes`, `branch`; null without one). Labels only: nothing of a project's content. `problem` says why the list couldn't be read just now. The same is in ide://team (`shares`). team.share.snapshots lists a share's snapshots.",
       input: s.object({}),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.shares.list"),
       run: async () => {
         await ready();
         const read = await book("now");
-        return { shares: sortShares(read.shares).map(shareLabel), problem: read.problem };
+        return fromTeammates({
+          shares: sortShares(read.shares).map(shareLabel),
+          problem: read.problem,
+        });
       },
     }),
   );
@@ -528,12 +567,12 @@ export function registerShareCommands(
         "Lists the snapshots of a project the team shares (a share keeps its latest ten), newest first: each with `id`, `time` in ms, `computer`, `branch`, `kind` (git or folder), `files` and `bytes`. Needs the share's keys (its `state` ready or mine in team.shares.list); otherwise it says why it can't be read. Nothing is written. team.share.files lists one snapshot's files.",
       input: s.object({ id: s.string().describe("The share's id (ide://team shares)") }),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.share.snapshots"),
       run: async ({ id }) => {
         const base = await ready();
         const found = await readable(id);
         const snapshots = newestFirst(await asked(shareIpc.snapshots(base, id)));
-        return {
+        return fromTeammates({
           id,
           name: found.name,
           owner: found.owner.name,
@@ -546,7 +585,7 @@ export function registerShareCommands(
             files: summary.files,
             bytes: summary.bytes,
           })),
-        };
+        });
       },
     }),
   );
@@ -567,7 +606,7 @@ export function registerShareCommands(
           .optional(),
       }),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.share.files"),
       run: async ({ id, snapshot, filter }) => {
         const base = await ready();
         const found = await readable(id);
@@ -577,7 +616,8 @@ export function registerShareCommands(
         const all = sortFiles(asRows(read.files));
         const counts = countFiles(all);
         const matched = filterFiles(all, filter ?? "");
-        return {
+        // File names are the sharer's: marked as theirs.
+        return fromTeammates({
           id,
           snapshot,
           compared,
@@ -587,7 +627,7 @@ export function registerShareCommands(
           skipped: read.skipped.slice(0, FILES_RETURNED).map(([path, why]) => ({ path, why })),
           files: matched.slice(0, FILES_RETURNED),
           more: Math.max(0, matched.length - FILES_RETURNED),
-        };
+        });
       },
     }),
   );
@@ -598,14 +638,14 @@ export function registerShareCommands(
       title: "Open a shared snapshot's file",
       category: TEAM,
       description:
-        "Opens one file of a snapshot of a project the team shares, read only; nothing is written anywhere. When the open folder is that same project (the sharer's own folder of it, or a clone of the same repository, told by its git remote), it opens as a diff: the shared snapshot's file (left) beside the folder's file now (right); `diff` is true. Otherwise the file's text opens by itself in a read-only tab. A file that isn't text or is larger than 2 MB isn't opened (`opened` false, with `reason`: binary or large). Paths come from team.share.files.",
+        "Opens one file of a snapshot of a project the team shares, read only; nothing is written anywhere. When the open folder is that same project (the sharer's own folder of it, or a clone of the same repository, told by its git remote), it opens as a diff: the shared snapshot's file (left) beside the folder's file now (right); `diff` is true. Otherwise the file's text opens by itself in a read-only tab. A file that isn't text or is larger than 2 MB isn't opened (`opened` false, with `reason`: binary or large). Paths come from team.share.files. It puts a teammate's text into a tab: the person's to do, hidden from agents.",
       input: s.object({
         id: s.string().describe("The share's id (ide://team shares)"),
         snapshot: s.string().describe("The snapshot's id (team.share.snapshots)"),
         path: s.string().describe("The file, relative to the project's folder"),
       }),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.share.openFile"),
       needsScreen: true,
       run: async ({ id, snapshot, path }, ctx) => {
         const base = await ready();
@@ -674,7 +714,7 @@ export function registerShareCommands(
         snapshot: s.string().describe("A snapshot of it to open (team.share.snapshots)").optional(),
       }),
       effects: ["network"],
-      agent: "discoverable",
+      agent: shareCommandAgent("team.share.view"),
       needsScreen: true,
       run: async ({ id, snapshot }) => {
         const base = await ready();

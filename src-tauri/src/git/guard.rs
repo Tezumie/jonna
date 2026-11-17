@@ -90,7 +90,7 @@ fn save(g: &Guard) {
 
 /// A path as the record compares it: canonical where it can be (not a network path: that
 /// would connect), `/` separators, lower case on Windows.
-fn key(p: &Path) -> String {
+pub(super) fn key(p: &Path) -> String {
     let lexical = crate::exec::sandbox_read::lexical(p);
     let resolved = if crate::fs::is_unc(&lexical.to_string_lossy()) {
         lexical
@@ -108,7 +108,7 @@ fn key(p: &Path) -> String {
     }
 }
 
-fn holds(folder: &str, inner: &str) -> bool {
+pub(super) fn holds(folder: &str, inner: &str) -> bool {
     inner == folder || inner.starts_with(&format!("{folder}/"))
 }
 
@@ -447,7 +447,7 @@ fn reads_config(args: &[&str]) -> bool {
 }
 
 /// The subcommand in git's arguments (after `-c name=value` and other options).
-fn subcommand<'a>(args: &[&'a str]) -> Option<&'a str> {
+pub(super) fn subcommand<'a>(args: &[&'a str]) -> Option<&'a str> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {

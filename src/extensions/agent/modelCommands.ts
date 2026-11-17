@@ -2,6 +2,7 @@
 // (including external ACP agents and feature models), add an OpenAI-compatible provider, store
 // an API key.
 
+import { validProviderId } from "../../core/agent/providerId";
 import { aiIpc } from "../../core/ipc/agent";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -275,6 +276,10 @@ export function registerModelCommands(
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "") ||
           "provider");
+      if (!validProviderId(pid)) {
+        notifications.show("warning", `"${pid}" can't be a provider's id. Choose another name.`);
+        return null;
+      }
       // Hosted APIs need a key: ask for it now (stored by the native side, never in settings).
       if (preset?.needsKey || apiKey) {
         const key =
@@ -284,7 +289,8 @@ export function registerModelCommands(
             placeholder: preset?.keyPlaceholder ?? "sk-…",
           }));
         if (key === undefined) return null;
-        if (key.trim()) await aiIpc.setKey(pid, key.trim());
+        // Saved for this address: the key is never sent to another one.
+        if (key.trim()) await aiIpc.setKey(pid, key.trim(), url.trim());
       }
       const list = (settings.peek<unknown[]>("agent.providers") ?? []).filter(
         (p) => (p as { id?: string } | null)?.id !== pid,
@@ -339,7 +345,12 @@ export function registerModelCommands(
         placeholder: "sk-…",
       });
       if (key === undefined) return null;
-      await aiIpc.setKey(pid, key.trim() || null);
+      const address = providers.providers().find((p) => p.id === pid)?.baseUrl;
+      if (key.trim() && !address) {
+        notifications.show("warning", `${pid} isn't one of the model providers.`);
+        return null;
+      }
+      await aiIpc.setKey(pid, key.trim() || null, address);
       await providers.refresh();
       return { provider: pid, stored: !!key.trim() };
     },

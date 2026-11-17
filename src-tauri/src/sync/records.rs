@@ -2,14 +2,125 @@
 //! each with a version the server counts. A write names the version it was made from; when
 //! someone else wrote in between, the caller gets the other version to merge with.
 
+//!
+//! Opening with the account's keys isn't all a record must pass. The service could hand back
+//! a record under another's name, an older version of it, or one sealed with keys from before
+//! a device was removed. So: a record is opened under the name that was asked for; every record
+//! carries a counter inside its sealed text that only goes up (`seen`), and a copy with a
+//! lower one than this computer has seen is never used; and a collection may have a floor, a
+//! key generation below which nothing is taken (`Checks`).
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::api::Api;
 use super::crypto::{b64, unb64, Keyring};
+use super::seen::{self, Found};
 use crate::error::{Error, Result};
 
 const PURPOSE: &str = "records";
+
+/// What a record read through an `Api` must pass beyond opening with the keys.
+#[derive(Debug, Clone, Default)]
+pub struct Checks {
+    /// Where the counters this computer has seen are kept (None: nothing is compared).
+    pub seen: Option<PathBuf>,
+    /// Every computer of the account writes counters (the trusted list says so), so a record
+    /// without one, where one was seen, is an older copy. While some computer runs a version
+    /// from before the counters, a record without one is taken as that computer's write.
+    pub strict: bool,
+    /// By collection: the key generation below which a record isn't taken (after a device
+    /// was removed, the records of these collections were sealed again with the new keys).
+    pub floors: BTreeMap<String, u32>,
+}
+
+impl Checks {
+    pub fn of(data_dir: &Path) -> Self {
+        Self {
+            seen: Some(data_dir.join("sync").join("seen.json")),
+            ..Default::default()
+        }
+    }
+}
+
+/// What a record's counter says about it, against the highest this computer has seen.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Take,
+    /// No counter, from a computer on an older version: taken, and what was seen is forgotten
+    /// (so the record isn't refused later for it).
+    TakeAndForget,
+    /// An older copy than one this computer has seen.
+    Stale,
+}
+
+fn verdict(counter: u64, highest: u64, strict: bool) -> Verdict {
+    match (counter, highest) {
+        (0, 0) => Verdict::Take,
+        (0, _) if strict => Verdict::Stale,
+        (0, _) => Verdict::TakeAndForget,
+        (c, h) if c < h => Verdict::Stale,
+        _ => Verdict::Take,
+    }
+}
+
+const COUNTER_FIELD: &str = "{\"~n\":";
+
+/// `text` (a JSON object, as every record is) with its counter as the first field. Readers
+/// from before the counters skip a field they don't know. None: not an object, sent as it is.
+fn with_counter(text: &str, counter: u64) -> Option<String> {
+    let rest = text.strip_prefix('{')?;
+    let comma = if rest.trim_start().starts_with('}') {
+        ""
+    } else {
+        ","
+    };
+    Some(format!("{COUNTER_FIELD}{counter}{comma}{rest}"))
+}
+
+/// A record's text without its counter, and the counter (0: it carries none).
+fn split_counter(text: &str) -> (u64, String) {
+    let Some(rest) = text.strip_prefix(COUNTER_FIELD) else {
+        return (0, text.to_string());
+    };
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let (Ok(counter), after) = (rest[..digits].parse::<u64>(), &rest[digits..]) else {
+        return (0, text.to_string());
+    };
+    match after.strip_prefix(',') {
+        Some(fields) => (counter, format!("{{{fields}")),
+        None if after.trim_start().starts_with('}') => (counter, format!("{{{after}")),
+        None => (0, text.to_string()),
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// The counter of a write over a record whose highest seen is `highest`: above it, and never
+/// below the time. A computer that never saw the record (it was removed from the account and
+/// is made again) so still writes above what any computer wrote before.
+fn next_counter(highest: u64, now_ms: u64) -> u64 {
+    highest.saturating_add(1).max(now_ms)
+}
+
+/// The name a keyring's counters are kept under: another vault, or a share, has its own.
+fn scope(ring: &Keyring) -> Result<String> {
+    ring.name_of("counters seen")
+}
+
+fn stale() -> Error {
+    Error::Sync(
+        "SyncStale",
+        "The sync service gave back an older copy of a synced item; it wasn't used.".into(),
+    )
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +137,12 @@ pub struct Record {
     /// Its content opens with no key, held or to come (cut short, altered, from a reset
     /// account): treated as having no content, so the next write replaces it.
     pub damaged: bool,
+    /// An older copy than one this computer has seen, or sealed with keys from before the
+    /// collection's floor: its content is never used (no text), and the next write replaces it.
+    pub stale: bool,
+    /// The key generation it was sealed under, when it opened.
+    #[serde(skip)]
+    pub generation: Option<u32>,
     /// How many chunks it names.
     pub refs: u64,
     pub device: Option<String>,
@@ -120,24 +237,108 @@ pub async fn set_keep(api: &Api, collection: &str, id: &str, keep: bool) -> Resu
     Ok(())
 }
 
-fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
+/// What reading records needs beside the keys: the checks, the name the keyring's counters
+/// are kept under, and what was found (kept by `Reading::keep` before anything is handed on).
+struct Reading<'a> {
+    ring: &'a Keyring,
+    checks: &'a Checks,
+    scope: String,
+    found: Found,
+}
+
+impl<'a> Reading<'a> {
+    fn new(ring: &'a Keyring, checks: &'a Checks) -> Result<Self> {
+        Ok(Self {
+            ring,
+            checks,
+            scope: scope(ring)?,
+            found: Found::default(),
+        })
+    }
+
+    fn keep(&mut self) -> Result<()> {
+        match &self.checks.seen {
+            Some(path) => seen::keep(path, &self.scope, std::mem::take(&mut self.found)),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether a record that opened (sealed under `generation`, carrying `counter`) is the
+    /// newest this computer knows of, noting what it found.
+    fn current(&mut self, collection: &str, place: &str, generation: u32, counter: u64) -> bool {
+        if self
+            .checks
+            .floors
+            .get(collection)
+            .is_some_and(|floor| generation < *floor)
+        {
+            return false;
+        }
+        let Some(path) = &self.checks.seen else {
+            return true;
+        };
+        let highest = seen::highest(path, &self.scope, place);
+        match verdict(counter, highest, self.checks.strict) {
+            Verdict::Stale => false,
+            Verdict::TakeAndForget => {
+                self.found.forget(place);
+                true
+            }
+            Verdict::Take => {
+                if counter > highest {
+                    self.found.raise(place, counter);
+                }
+                true
+            }
+        }
+    }
+}
+
+/// A record out of a reply. `asked`: the name that was asked for. A reply that names another
+/// record is refused, and the content is opened under the name asked, so a valid record of
+/// another name never stands in for it. A page of changes has no name to compare with: each
+/// record there is opened under the name it states, which is the name it then goes by.
+fn parse(reading: &mut Reading, v: &Value, asked: Option<(&str, &str)>) -> Result<Record> {
     let field = |name: &str| {
         v.get(name)
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string()
     };
-    let collection = field("collection");
-    let id = field("id");
+    let (collection, id) = match asked {
+        Some((collection, id)) => {
+            let named = |name: &str, asked: &str| {
+                v.get(name)
+                    .and_then(Value::as_str)
+                    .is_none_or(|n| n == asked)
+            };
+            if !named("collection", collection) || !named("id", id) {
+                return Err(super::api::unreadable());
+            }
+            (collection.to_string(), id.to_string())
+        }
+        None => (field("collection"), field("id")),
+    };
     let deleted = v.get("deleted").and_then(Value::as_bool).unwrap_or(false);
     let mut text = None;
     let mut unreadable = false;
     let mut damaged = false;
+    let mut stale = false;
+    let mut generation = None;
     if let Some(blob) = v.get("blob").and_then(Value::as_str) {
+        let place = place(&collection, &id);
         match unb64(blob) {
-            Ok(sealed) => match ring.open(PURPOSE, &place(&collection, &id), &sealed) {
-                Ok(plain) => text = Some(String::from_utf8_lossy(&plain).into_owned()),
-                Err(_) if ring.awaits(&sealed) => unreadable = true,
+            Ok(sealed) => match reading.ring.open(PURPOSE, &place, &sealed) {
+                Ok(plain) => {
+                    let (counter, plain) = split_counter(&String::from_utf8_lossy(&plain));
+                    generation = Keyring::generation_of(&sealed);
+                    if reading.current(&collection, &place, generation.unwrap_or(0), counter) {
+                        text = Some(plain);
+                    } else {
+                        stale = true;
+                    }
+                }
+                Err(_) if reading.ring.awaits(&sealed) => unreadable = true,
                 Err(_) => damaged = true,
             },
             Err(_) => damaged = true,
@@ -152,6 +353,8 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
         text,
         unreadable,
         damaged,
+        stale,
+        generation,
         refs: v.get("refs").and_then(Value::as_u64).unwrap_or(0),
         device: v.get("device").and_then(Value::as_str).map(str::to_string),
         updated_at: v.get("updatedAt").and_then(Value::as_u64),
@@ -160,7 +363,23 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
     })
 }
 
+/// One record, as the account has it. An older copy than one this computer has seen is an
+/// error here: whoever asks for one record means to use it or to build on it.
 pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Result<Option<Record>> {
+    match fetch(api, ring, collection, id).await? {
+        Some(record) if record.stale => Err(stale()),
+        other => Ok(other),
+    }
+}
+
+/// The version a record is at, whatever is in it (None: it doesn't exist): for a write that
+/// replaces a record knowingly, when what is there is exactly what couldn't be used.
+pub async fn version(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Result<Option<u64>> {
+    Ok(fetch(api, ring, collection, id).await?.map(|r| r.version))
+}
+
+/// `get`, with an older copy handed back marked (`stale`, no text) instead of refused.
+async fn fetch(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Result<Option<Record>> {
     named(collection, id)?;
     let reply = api
         .call(
@@ -178,7 +397,10 @@ pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Resul
     if !v.is_object() || !v["version"].is_u64() {
         return Err(super::api::unreadable());
     }
-    Ok(Some(parse(ring, &v)?))
+    let mut reading = Reading::new(ring, &api.checks)?;
+    let record = parse(&mut reading, &v, Some((collection, id)))?;
+    reading.keep()?;
+    Ok(Some(record))
 }
 
 /// A page of changes as the service gives it, refused when it isn't in the shape a page has:
@@ -196,16 +418,18 @@ fn changes_page(v: &Value) -> Result<&Vec<Value>> {
 pub async fn changes(api: &Api, ring: &Keyring, since: u64) -> Result<Changes> {
     let v = api.get(&format!("records?since={since}")).await?;
     let mut records = Vec::new();
+    let mut reading = Reading::new(ring, &api.checks)?;
     for r in changes_page(&v)? {
-        let mut record = parse(ring, r)?;
+        let mut record = parse(&mut reading, r, None)?;
         // (A name the service made up that couldn't stand in an address is never asked for.)
         if !record.deleted
             && record.text.is_none()
             && !record.unreadable
             && !record.damaged
+            && !record.stale
             && named(&record.collection, &record.id).is_ok()
         {
-            if let Some(full) = get(api, ring, &record.collection, &record.id).await? {
+            if let Some(full) = fetch(api, ring, &record.collection, &record.id).await? {
                 // Only when it is still the version this page spoke of; a later one comes later.
                 if full.version == record.version {
                     record = Record {
@@ -217,6 +441,8 @@ pub async fn changes(api: &Api, ring: &Keyring, since: u64) -> Result<Changes> {
         }
         records.push(record);
     }
+    // Kept before the page is handed on: what is used now is refused as "older" never again.
+    reading.keep()?;
     let number = |name: &str| v.get(name).and_then(Value::as_u64).unwrap_or(0);
     Ok(Changes {
         epoch: number("epoch"),
@@ -258,13 +484,24 @@ pub async fn put_labeled(
     if let (Some(info), Some(_)) = (info, text) {
         body["info"] = info.clone();
     }
+    let place = place(collection, id);
+    let mut reading = Reading::new(ring, &api.checks)?;
+    // The counter this write carries: above the highest this computer has seen in the record.
+    let mut counter = None;
     match text {
         Some(t) => {
-            body["blob"] = json!(b64(&ring.seal(
-                PURPOSE,
-                &place(collection, id),
-                t.as_bytes()
-            )?))
+            let counted = api.checks.seen.as_ref().and_then(|path| {
+                let next = next_counter(seen::highest(path, &reading.scope, &place), now_ms());
+                with_counter(t, next).map(|text| (next, text))
+            });
+            let sealed = match &counted {
+                Some((next, text)) => {
+                    counter = Some(*next);
+                    ring.seal(PURPOSE, &place, text.as_bytes())?
+                }
+                None => ring.seal(PURPOSE, &place, t.as_bytes())?,
+            };
+            body["blob"] = json!(b64(&sealed));
         }
         None => body["deleted"] = json!(true),
     }
@@ -278,8 +515,10 @@ pub async fn put_labeled(
     if reply.status == 409 && reply.error() == "conflict" {
         let current = match reply.json.get("current") {
             Some(Value::Null) | None => None,
-            Some(c) => Some(parse(ring, c)?),
+            // Opened under the name that was written to, whatever the reply calls it.
+            Some(c) => Some(parse(&mut reading, c, Some((collection, id)))?),
         };
+        reading.keep()?;
         return Ok(Put::Conflict { current });
     }
     if reply.status == 409 && reply.error() == "gc" {
@@ -292,6 +531,12 @@ pub async fn put_labeled(
         });
     }
     let v = reply.into_ok()?;
+    // Only now that the account has it: a counter noted for a write that never arrived
+    // would make the record as it still is look older than what this computer has seen.
+    if let Some(counter) = counter {
+        reading.found.raise(&place, counter);
+        reading.keep()?;
+    }
     Ok(Put::Done {
         version: v.get("version").and_then(Value::as_u64).unwrap_or(0),
         seq: v.get("seq").and_then(Value::as_u64).unwrap_or(0),
@@ -339,9 +584,226 @@ where
     ))
 }
 
+/// Seals a record again when it was sealed with keys older than the newest (after a device
+/// was removed: what the removed device's keys could make is then told from what the
+/// account's computers hold now). Records that name chunks are left: their content is large
+/// and a write here would drop the names. True: it is (now) sealed with the newest keys, or
+/// there is nothing to seal.
+pub async fn reseal(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Result<bool> {
+    for _ in 0..6 {
+        let Some(now) = get(api, ring, collection, id).await? else {
+            return Ok(true);
+        };
+        if now.deleted || now.damaged {
+            return Ok(true);
+        }
+        let Some(text) = now.text.as_deref() else {
+            return Ok(false);
+        };
+        if now.refs > 0 {
+            return Ok(false);
+        }
+        if now.generation.is_some_and(|g| g >= ring.current()) {
+            return Ok(true);
+        }
+        let label = now.info.as_ref();
+        match put_labeled(
+            api,
+            ring,
+            collection,
+            id,
+            Some(now.version),
+            Some(text),
+            None,
+            label,
+        )
+        .await?
+        {
+            Put::Done { .. } => return Ok(true),
+            Put::Conflict { .. } | Put::Gc { .. } => continue,
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sealed(ring: &Keyring, collection: &str, id: &str, text: &str) -> String {
+        b64(&ring
+            .seal(PURPOSE, &place(collection, id), text.as_bytes())
+            .unwrap())
+    }
+
+    fn checks(name: &str) -> Checks {
+        let dir = std::env::temp_dir().join(format!("ide-records-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        Checks::of(&dir)
+    }
+
+    #[test]
+    fn a_reply_is_opened_under_the_name_that_was_asked_for() {
+        let ring = Keyring::generate().unwrap();
+        let checks = Checks::default();
+        let mut reading = Reading::new(&ring, &checks).unwrap();
+        // Project B's snapshot, a valid record of this account.
+        let other = json!({
+            "collection": "snap.B", "id": "y", "version": 4,
+            "blob": sealed(&ring, "snap.B", "y", "{\"files\":[]}"),
+        });
+        // Asked for by its own name: read.
+        let own = parse(&mut reading, &other, Some(("snap.B", "y"))).unwrap();
+        assert_eq!(own.text.as_deref(), Some("{\"files\":[]}"));
+        // Handed back for another name: refused, whatever the reply calls itself.
+        assert!(parse(&mut reading, &other, Some(("snap.A", "x"))).is_err());
+        let renamed = json!({
+            "collection": "snap.A", "id": "x", "version": 4,
+            "blob": other["blob"],
+        });
+        let as_a = parse(&mut reading, &renamed, Some(("snap.A", "x"))).unwrap();
+        assert!(
+            as_a.text.is_none() && as_a.damaged,
+            "B's content never reads as A's"
+        );
+        // A reply without names is opened under the names asked.
+        let unnamed = json!({ "version": 4, "blob": other["blob"] });
+        let read = parse(&mut reading, &unnamed, Some(("snap.B", "y"))).unwrap();
+        assert_eq!(
+            (read.collection.as_str(), read.id.as_str()),
+            ("snap.B", "y")
+        );
+        assert!(read.text.is_some());
+    }
+
+    #[test]
+    fn the_counter_travels_inside_the_text_and_comes_off_again() {
+        assert_eq!(
+            with_counter("{\"keys\":{}}", 7).as_deref(),
+            Some("{\"~n\":7,\"keys\":{}}")
+        );
+        assert_eq!(with_counter("{}", 7).as_deref(), Some("{\"~n\":7}"));
+        assert_eq!(with_counter("[1]", 7), None);
+        for text in ["{\"keys\":{\"a\":1}}", "{}", "{ }", "{\"~x\":1}"] {
+            let counted = with_counter(text, 1_800_000_000_123).unwrap();
+            // What an older version reads is still the same object, with a field it skips.
+            let old: Value = serde_json::from_str(&counted).unwrap();
+            assert_eq!(old["~n"], 1_800_000_000_123u64);
+            assert_eq!(
+                split_counter(&counted),
+                (1_800_000_000_123, text.to_string())
+            );
+        }
+        // Text from before the counters, or anything that only looks like one, is left alone.
+        for text in [
+            "{\"keys\":{}}",
+            "{\"~n\":x}",
+            "{\"~n\":5",
+            "{\"~n\":5x}",
+            "[]",
+        ] {
+            assert_eq!(split_counter(text), (0, text.to_string()), "{text}");
+        }
+        assert_eq!(next_counter(5, 3), 6);
+        assert_eq!(next_counter(5, 900), 900);
+        assert_eq!(next_counter(u64::MAX, 1), u64::MAX);
+    }
+
+    #[test]
+    fn an_older_copy_than_one_seen_is_stale() {
+        assert_eq!(verdict(0, 0, true), Verdict::Take);
+        assert_eq!(verdict(5, 0, true), Verdict::Take);
+        assert_eq!(verdict(5, 5, true), Verdict::Take);
+        assert_eq!(verdict(6, 5, false), Verdict::Take);
+        assert_eq!(verdict(4, 5, true), Verdict::Stale);
+        assert_eq!(verdict(4, 5, false), Verdict::Stale);
+        // No counter where one was seen: an older copy once every computer writes them; a
+        // computer on an older version's write until then.
+        assert_eq!(verdict(0, 5, true), Verdict::Stale);
+        assert_eq!(verdict(0, 5, false), Verdict::TakeAndForget);
+    }
+
+    #[test]
+    fn a_replayed_record_is_never_used_and_the_counter_outlives_the_reading() {
+        let ring = Keyring::generate().unwrap();
+        let mut checks = checks("replay");
+        checks.strict = true;
+        let reply = |text: &str, version: u64| {
+            json!({
+                "collection": "files", "id": "a", "version": version,
+                "blob": sealed(&ring, "files", "a", text),
+            })
+        };
+        let old = reply(&with_counter("{\"deleted\":true}", 100).unwrap(), 3);
+        let new = reply(&with_counter("{\"content\":\"x\"}", 200).unwrap(), 4);
+        let bare = reply("{\"deleted\":true}", 2);
+        let read_with = |checks: &Checks, v: &Value| {
+            let mut reading = Reading::new(&ring, checks).unwrap();
+            let record = parse(&mut reading, v, None).unwrap();
+            reading.keep().unwrap();
+            record
+        };
+        let read = |v: &Value| read_with(&checks, v);
+        // In order: each is the newest when it is read.
+        assert_eq!(read(&old).text.as_deref(), Some("{\"deleted\":true}"));
+        assert_eq!(read(&new).text.as_deref(), Some("{\"content\":\"x\"}"));
+        // The old tombstone again, and one from before the counters: older copies.
+        for replayed in [&old, &bare] {
+            let record = read(replayed);
+            assert!(record.stale && record.text.is_none() && !record.unreadable);
+        }
+        // The newest again (the same page read twice) is still the newest.
+        assert!(read(&new).text.is_some());
+        // Another record is its own count.
+        let other = json!({
+            "collection": "files", "id": "b", "version": 1,
+            "blob": sealed(&ring, "files", "b", "{}"),
+        });
+        assert!(read(&other).text.is_some());
+        // While a computer on an older version may still write: its write is taken, and the
+        // record starts again from nothing.
+        let mut lenient = checks.clone();
+        lenient.strict = false;
+        assert!(read_with(&lenient, &bare).text.is_some());
+        assert!(read_with(&lenient, &old).text.is_some());
+        if let Some(path) = &checks.seen {
+            let _ = std::fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_record_sealed_below_its_collections_floor_is_never_used() {
+        let ring = Keyring::generate().unwrap();
+        let next = ring.rotated().unwrap();
+        let mut checks = Checks::default();
+        let old = json!({
+            "collection": "sys", "id": "devices", "version": 9,
+            "blob": sealed(&ring, "sys", "devices", "{\"devices\":[]}"),
+        });
+        let read = |checks: &Checks, v: &Value| {
+            let mut reading = Reading::new(&next, checks).unwrap();
+            parse(&mut reading, v, None).unwrap()
+        };
+        // The newer keyring holds the older generation: without a floor it opens.
+        let record = read(&checks, &old);
+        assert_eq!(record.generation, Some(1));
+        assert!(record.text.is_some());
+        // With the floor (the list was sealed again after a device was removed): refused.
+        checks.floors.insert("sys".into(), 2);
+        let record = read(&checks, &old);
+        assert!(record.stale && record.text.is_none());
+        // Other collections have no floor, and what is sealed with the new keys passes.
+        let chat = json!({
+            "collection": "chats.p", "id": "c", "version": 1,
+            "blob": sealed(&ring, "chats.p", "c", "{}"),
+        });
+        assert!(read(&checks, &chat).text.is_some());
+        let new = json!({
+            "collection": "sys", "id": "devices", "version": 10,
+            "blob": sealed(&next, "sys", "devices", "{\"devices\":[]}"),
+        });
+        assert!(read(&checks, &new).text.is_some());
+    }
 
     #[test]
     fn only_a_plain_yes_marks_a_record_to_keep() {

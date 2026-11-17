@@ -17,10 +17,12 @@ export type SkillScope = "user" | "workspace" | "team";
 /**
  * Whether a skill's `allowed-tools` run without asking while it is active (D221): only the
  * user's own. A project's skill can't approve its own tools (a cloned repository's), and
- * neither can a team's: both were written by other people.
+ * neither can a team's: both were written by other people. Nor can the user's own while it
+ * is as another of the account's computers synced it and wasn't accepted on this one
+ * (`incoming`): whoever holds the account's sync keys could have written it.
  */
-export function skillPreApproves(skill: { scope: SkillScope }): boolean {
-  return skill.scope === "user";
+export function skillPreApproves(skill: { scope: SkillScope; incoming?: boolean }): boolean {
+  return skill.scope === "user" && skill.incoming !== true;
 }
 
 export interface SkillMeta {
@@ -271,6 +273,11 @@ export interface FoundSkill extends SkillMeta {
   nested?: string;
   /** One that comes with the IDE (D255): no folder on disk; a skill of the same name replaces it. */
   builtin?: boolean;
+  /**
+   * The user's own, as another of the account's computers synced it, not accepted on this one
+   * yet: it works, and pre-approves no tools (`skillPreApproves`).
+   */
+  incoming?: boolean;
 }
 
 export interface SkillProblem {
@@ -454,7 +461,9 @@ export function renderSkillForAgent(
     ? `\n(The skill lists allowed-tools: ${skill.allowedTools.join(", ")}. ${
         skillPreApproves(skill)
           ? "They run without asking for the rest of this turn."
-          : `A ${skill.scope === "team" ? "team" : "project"}'s skill can't pre-approve tools: they still ask as usual.`
+          : skill.scope === "user"
+            ? "This skill arrived from another of the user's computers and wasn't accepted on this one yet (the Sync tab lists it): its tools still ask as usual."
+            : `A ${skill.scope === "team" ? "team" : "project"}'s skill can't pre-approve tools: they still ask as usual.`
       })`
     : "";
   const list = others.length

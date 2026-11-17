@@ -113,7 +113,9 @@ export function registerMcpSampling(
       ? all
       : (
           await Promise.all(
-            all.map(async (p) => ((await aiIpc.hasKey(p.id).catch(() => false)) ? [p] : [])),
+            all.map(async (p) =>
+              (await aiIpc.hasKey(p.id, p.baseUrl).catch(() => false)) ? [p] : [],
+            ),
           )
         ).flat();
     return pickVoiceProvider(

@@ -2,6 +2,7 @@
 // the first-run card call these), finding Ollama and the agent CLIs, pulling a starter model, and
 // opening the "AI models" page. Keys go to the native side (never into settings).
 
+import { validProviderId } from "../../core/agent/providerId";
 import { aiIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import { execIpc } from "../../core/ipc/process";
@@ -136,19 +137,21 @@ export function registerSetupCommands(
       const label = name?.trim() || preset?.name || new URL(url).hostname;
       const pid = id ?? providerId(label);
       if (pid === OLLAMA_ID) return { ok: false, error: "Ollama is found automatically." };
+      if (!validProviderId(pid)) return { ok: false, error: "Choose another name for it." };
       const kind = preset?.kind ?? (/api\.anthropic\.com/.test(url) ? "anthropic" : "openai");
       const key = apiKey?.trim() ?? "";
-      if (preset?.needsKey && !key && !(await aiIpc.hasKey(pid).catch(() => false)))
+      // A key saved for another address counts as none: it is typed again for this one.
+      if (preset?.needsKey && !key && !(await aiIpc.hasKey(pid, url).catch(() => false)))
         return { ok: false, error: `Paste your ${label} API key.` };
       const already = providers.providers().some((p) => p.id === pid);
       // A new key is checked under a scratch id first: a mistyped key never replaces a working
       // one, and nothing is saved for a provider that doesn't answer.
       const probe = key ? `${pid}.check` : pid;
-      if (key) await aiIpc.setKey(probe, key);
+      if (key) await aiIpc.setKey(probe, key, url);
       try {
         const models = await aiIpc.listModels({ id: probe, kind, baseUrl: url });
         if (key) {
-          await aiIpc.setKey(pid, key);
+          await aiIpc.setKey(pid, key, url);
           await aiIpc.setKey(probe, null).catch(() => {});
         }
         await settings.update(

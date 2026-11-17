@@ -25,6 +25,7 @@ import {
   signal,
 } from "../../core/reactive/index";
 import type { FileDecoration, WorkbenchServices } from "../../workbench/services";
+import { gitOffReason } from "../../workbench/trustModel";
 import { buildDecorations, type GroupedChanges, groupChanges } from "./model";
 import { repositoryFolderName, statusPollMs } from "./repoPaths";
 
@@ -114,13 +115,14 @@ export class GitController implements GitRepo {
       this.store.add(workspace.onDidOpen(() => void this.open()));
       this.store.add(workspace.onDidClose(() => this.close()));
       if (workspace.root.peek()) void this.open();
-      // Trusted or restricted later: git starts, or stops reading the repository.
-      let restricted = services.trust.state.peek() === "restricted";
+      // Trusted or restricted later: git starts, or stops reading the repository (and says
+      // why it is off: not decided yet, or restricted).
+      let trust = services.trust.state.peek();
       this.store.add(
         effect(() => {
-          const now = services.trust.state.value === "restricted";
-          if (now !== restricted) {
-            restricted = now;
+          const now = services.trust.state.value;
+          if (now !== trust) {
+            trust = now;
             if (workspace.root.peek()) void this.open();
           }
           return undefined;
@@ -215,10 +217,11 @@ export class GitController implements GitRepo {
     let problem: string | null = null;
     let paused = false;
     // Restricted mode (D207 audit, VS Code's way): git runs the repository's own config —
-    // core.fsmonitor, filters, hooks, sshCommand — so it's off until the folder is trusted.
-    if (this.services.trust.state.peek() === "restricted") {
-      this.problem.value =
-        "Git is off in restricted mode: it would run this repository's own settings. Trust the folder (Manage workspace trust) to use it.";
+    // core.fsmonitor, filters, hooks, sshCommand — so it's off until the folder is trusted:
+    // while nobody has answered as much as after a "no" (the backend refuses it then too).
+    const off = gitOffReason(this.services.trust.state.peek());
+    if (off !== null) {
+      this.problem.value = off;
       this.paused.value = false;
       this.repo.value = null;
       this.status.value = null;
@@ -226,6 +229,9 @@ export class GitController implements GitRepo {
       return null;
     }
     try {
+      // The backend holds a folder's git from the moment it opens until it hears the folder
+      // is trusted: asked only once that has arrived.
+      await this.services.trust.whenPublished();
       repo = this.found
         ? { root: this.found.root, gitDir: this.found.gitDir }
         : await this.ipc.open();

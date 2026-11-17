@@ -785,6 +785,7 @@ pub fn remote_op<F: FnMut(&str)>(repo: &Path, args: &[&str], mut line: F) -> Res
     // Checked and settled like `run` (D407): `push -u` records the upstream it sets, so publishing
     // a branch doesn't pause the repository on the user's own action.
     let local = crate::remote::of_dir(repo).is_none() && crate::wsl::of_dir(repo).is_none();
+    super::trust::check(repo, args)?;
     if local {
         super::guard::check(repo)?;
     }

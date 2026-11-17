@@ -43,6 +43,8 @@ pub async fn workspace_open(state: State<'_, AppState>, path: String) -> Result<
         state
             .workspace
             .open_remote(&canonical, &r.authority.as_string())?;
+        // Git is off there until the window says the folder is trusted (git/trust.rs).
+        crate::git::trust::set(false, &state.workspace.all_folders());
         // The file list is the server's.
         state.index.close();
         let location = state
@@ -54,6 +56,9 @@ pub async fn workspace_open(state: State<'_, AppState>, path: String) -> Result<
         return Ok(canonical);
     }
     let root = state.workspace.open(&path)?;
+    // Git is off in the folder until the window says it is trusted (git/trust.rs): held
+    // here, before anything can ask, rather than when the window gets to it.
+    crate::git::trust::set(false, &state.workspace.all_folders());
     state.index.open(root.clone());
     let root = root.to_string_lossy().into_owned();
     // Other launches find this window by its folder (D209).
@@ -69,6 +74,18 @@ pub async fn workspace_folders_set(
     state: State<'_, AppState>,
     paths: Vec<String>,
 ) -> Result<Vec<fs::FolderStatus>> {
+    // Folders that join are held for git until the window answers for the workspace again
+    // (git/trust.rs); the ones already here keep their answer meanwhile.
+    let before = state.workspace.all_folders();
+    let hold_joined = |state: &AppState| {
+        let joined: Vec<std::path::PathBuf> = state
+            .workspace
+            .all_folders()
+            .into_iter()
+            .filter(|f| !before.contains(f))
+            .collect();
+        crate::git::trust::hold(&joined);
+    };
     if state.workspace.remote().is_some() {
         // The server checks each folder and indexes them.
         let statuses = remote::fs::set_folders(&paths).await?;
@@ -77,9 +94,11 @@ pub async fn workspace_folders_set(
             .filter_map(|s| s.canonical.clone())
             .collect();
         state.workspace.set_remote_folders(&kept)?;
+        hold_joined(&state);
         return Ok(statuses);
     }
     let statuses = state.workspace.set_folders(&paths)?;
+    hold_joined(&state);
     state.index.set_folders(state.workspace.folders());
     Ok(statuses)
 }
@@ -238,6 +257,7 @@ pub async fn workspace_close(state: State<'_, AppState>) -> Result<()> {
         // A lost connection has nothing open there any more.
         let _ = remote::fs::close().await;
     }
+    crate::git::trust::set(true, &[]);
     state.workspace.close()
 }
 

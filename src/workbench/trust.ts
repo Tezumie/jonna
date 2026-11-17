@@ -7,6 +7,7 @@
 // off until the user trusts the folder. Settings that start programs (language servers, agents,
 // MCP servers) are user-only already, so a folder's settings can't set them.
 import type { ContextKeyService } from "../core/context/index";
+import { setGitTrust } from "../core/ipc/git";
 import { type Disposable, DisposableStore, toDisposable } from "../core/lifecycle/index";
 import { pathKey } from "../core/paths/index";
 import { effect, type Signal, signal } from "../core/reactive/index";
@@ -52,6 +53,8 @@ export class WorkspaceTrust implements Disposable {
   readonly inheritedFrom: Signal<string | null> = signal<string | null>(null);
   private readonly store = new DisposableStore();
   private asking: Promise<boolean> | null = null;
+  /** The last state sent to the backend has arrived (see `publish`). */
+  private published: Promise<void> = Promise.resolve();
   /** Aborts an open trust dialog (the folder closed, or trust was set another way). */
   private dialog: AbortController | null = null;
   /** Folders asked about when they opened this session (a dismissed question isn't repeated). */
@@ -85,6 +88,9 @@ export class WorkspaceTrust implements Disposable {
       this.state.value = state;
       this.inheritedFrom.value =
         decisions.length === 1 ? (decisions[0]?.inheritedFrom ?? null) : null;
+      // Each time, not only when the state changes: a folder that joined is held for git by
+      // the backend until it hears the answer for the workspace as it is now.
+      this.publish();
     };
     this.store.add(workspace.onDidOpen(update));
     this.store.add(workspace.onDidChangeFolders(update));
@@ -175,6 +181,22 @@ export class WorkspaceTrust implements Disposable {
     this.dialog?.abort();
     this.state.value = trusted ? "trusted" : "restricted";
     this.inheritedFrom.value = null;
+    this.publish();
+  }
+
+  /**
+   * Tells the backend the state (its git runs in the open folders only while they are
+   * trusted, and holds a folder from the moment it opens). One call after the other, so the
+   * last state is the one that stays.
+   */
+  private publish(): void {
+    const trusted = this.state.peek() === "trusted";
+    this.published = this.published.then(() => setGitTrust(trusted)).catch(() => {});
+  }
+
+  /** Resolves once the backend has the state as it is now (before git is asked anything). */
+  whenPublished(): Promise<void> {
+    return this.published;
   }
 
   /**

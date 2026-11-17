@@ -78,12 +78,17 @@ fn conflict_mark(name: &str) -> Option<std::ops::Range<usize>> {
 }
 
 /// A file kept beside the one it lost to; never synced itself.
-fn is_conflict_copy(name: &str) -> bool {
+pub(super) fn is_conflict_copy(name: &str) -> bool {
     conflict_mark(name).is_some()
 }
 
 fn hash(bytes: &[u8]) -> String {
     super::crypto::b64(&Sha256::digest(bytes)[..16])
+}
+
+/// A file's content as the scans name it (for telling whether a file is still as it was).
+pub(super) fn content_hash(bytes: &[u8]) -> String {
+    hash(bytes)
 }
 
 /// Names that were refused here because, on this file system, they are another file's name

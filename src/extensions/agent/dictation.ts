@@ -35,7 +35,7 @@ let keyedProviders: { ids: Set<string>; at: number } | null = null;
 
 async function providersWithKeys(providers: ProviderRegistry): Promise<Set<string>> {
   const all = providers.providers();
-  const has = await Promise.all(all.map((p) => aiIpc.hasKey(p.id).catch(() => false)));
+  const has = await Promise.all(all.map((p) => aiIpc.hasKey(p.id, p.baseUrl).catch(() => false)));
   const ids = new Set(all.filter((_, i) => has[i]).map((p) => p.id));
   keyedProviders = { ids, at: Date.now() };
   return ids;

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Profile, TokenReply, CLIENT_ID};
+use super::{http, Profile, TokenReply, CLIENT_ID};
 use crate::ai::keychain::Vault;
 use crate::error::{Error, Result};
 use crate::store::atomic_write_private;
@@ -150,7 +150,7 @@ pub async fn sign_out(file: &Path) -> Result<()> {
     if let Some(session) = read_session(file) {
         if let Some(tokens) = tokens_of(file, &session, vault) {
             let token = tokens.refresh.unwrap_or(tokens.access);
-            let _ = reqwest::Client::new()
+            let _ = http::client()
                 .post(format!("{}/oauth/revoke", session.base))
                 .form(&[("token", token.as_str()), ("client_id", CLIENT_ID)])
                 .timeout(Duration::from_secs(5))
@@ -191,7 +191,7 @@ async fn fetch_me(client: &reqwest::Client, base: &str, access: &str) -> Me {
     if !reply.status().is_success() {
         return Me::Unreachable;
     }
-    match reply.json::<Profile>().await {
+    match http::json_capped::<Profile>(reply).await {
         Ok(p) => Me::Profile(Box::new(p)),
         Err(_) => Me::Unreachable,
     }
@@ -225,7 +225,7 @@ async fn refresh_tokens(client: &reqwest::Client, base: &str, refresh: &str) -> 
     if !status.is_success() {
         return Refreshed::Unreachable;
     }
-    match reply.json::<TokenReply>().await {
+    match http::json_capped::<TokenReply>(reply).await {
         // A server that doesn't rotate keeps the refresh token it had.
         Ok(t) => Refreshed::Tokens(Tokens {
             access: t.access_token,
@@ -246,7 +246,7 @@ async fn check_with(file: &Path, base: &str, vault: Option<&dyn Vault>) -> Resul
     let Some(mut tokens) = tokens_of(file, &session, vault) else {
         return Ok(Some(session.profile));
     };
-    let client = reqwest::Client::new();
+    let client = http::client();
     match fetch_me(&client, &session.base, &tokens.access).await {
         Me::Profile(p) => {
             store(file, vault, &session.base, &p, &tokens)?;

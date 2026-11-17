@@ -13,7 +13,8 @@
       "expect": { "compactFolders": { "$contains": "deep/nest/inner" } },
       "timeoutMs": 10000
     },
-    // Git stash round trip.
+    // Git stash round trip (git runs once the folder is trusted).
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
     { "run": "git.init", "expect": { "root": { "$exists": true } } },
     {
       "run": "terminal.runCommand",

@@ -122,12 +122,12 @@ export class GitRepositories implements Disposable {
     this.store.add({ dispose: () => clearTimeout(this.discoverTimer) });
     if (workspace.root.peek()) void this.listen();
     // Nested repositories are looked for once the folder is trusted (git is off in restricted mode).
-    let restricted = services.trust.state.peek() === "restricted";
+    let trusted = services.trust.state.peek() === "trusted";
     this.store.add(
       effect(() => {
-        const now = services.trust.state.value === "restricted";
-        if (now !== restricted) {
-          restricted = now;
+        const now = services.trust.state.value === "trusted";
+        if (now !== trusted) {
+          trusted = now;
           void this.discover();
         }
         return undefined;
@@ -274,7 +274,7 @@ export class GitRepositories implements Disposable {
   async discover(): Promise<readonly GitController[]> {
     const token = ++this.discoverToken;
     const { settings, workspace } = this.services;
-    if (!workspace.root.peek() || this.services.trust.state.peek() === "restricted") {
+    if (!workspace.root.peek() || this.services.trust.state.peek() !== "trusted") {
       this.setNested([]);
       return this.nested.peek();
     }

@@ -9,7 +9,7 @@ import { Channel, call } from "./invoke";
 export type ProviderKind = "ollama" | "openai" | "anthropic";
 
 export interface ProviderRef {
-  /** Settings id; also the key under which its API key is stored. */
+  /** Settings id; its API key is stored under it (`provider.<id>`), for `baseUrl`'s address. */
   id: string;
   kind: ProviderKind;
   baseUrl: string;
@@ -236,8 +236,22 @@ export const aiIpc = {
   /** One provider's limits; OpenRouter's key credits are fetched (network) by Rust with its key. */
   providerLimits: (provider: ProviderRef): Promise<ProviderLimits> =>
     call<ProviderLimits>("ai_provider_limits", { provider }),
-  setKey: (id: string, key: string | null): Promise<void> => call<void>("ai_set_key", { id, key }),
-  hasKey: (id: string): Promise<boolean> => call<boolean>("ai_has_key", { id }),
+  /**
+   * Stores (null: removes) a key. `id` is a provider's id, an MCP input's secret id or a web
+   * search key's; nothing else is accepted. A provider's key is saved for `baseUrl` (required
+   * to store one) and is only ever sent to that address (scheme, host and port).
+   */
+  setKey: (id: string, key: string | null, baseUrl?: string): Promise<void> =>
+    call<void>("ai_set_key", { id, key, ...(baseUrl !== undefined && { baseUrl }) }),
+  /** Whether a key is stored; for a provider, one saved for `baseUrl`. */
+  hasKey: (id: string, baseUrl?: string): Promise<boolean> =>
+    call<boolean>("ai_has_key", { id, ...(baseUrl !== undefined && { baseUrl }) }),
+  /**
+   * Once per profile: moves provider keys kept under bare ids by earlier builds to their own
+   * entries, each for the address its provider has in `providers`. Later calls do nothing.
+   */
+  moveKeys: (providers: ProviderRef[]): Promise<number> =>
+    call<number>("ai_move_keys", { providers }),
   /** One GET of an http(s) page (redirects followed, body capped) for agent context (D130). */
   webFetch: (url: string, maxBytes?: number): Promise<FetchedPage> =>
     call<FetchedPage>("web_fetch", { url, ...(maxBytes !== undefined && { maxBytes }) }),

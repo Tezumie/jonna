@@ -59,6 +59,14 @@ export interface SettingsMergeInput {
    * the account's word is taken where the two differ.
    */
   hasBase?: boolean;
+  /**
+   * The memory of a sync was dropped because the account's sync says it was set up again
+   * (another epoch), not because this computer is new to it. That is the service's word:
+   * where the two differ, this computer's value stays and goes to the account (`kept`),
+   * instead of the account's replacing it. A service that could force "set up again" could
+   * otherwise bring back older settings on every computer.
+   */
+  keepLocal?: boolean;
   /** Settings that stay on this computer. */
   skip: (key: string) => boolean;
 }
@@ -75,6 +83,11 @@ export interface SettingsMergeResult {
    * in `apply` too): to be said, so they aren't lost unseen.
    */
   replaced: { key: string; value: unknown }[];
+  /**
+   * Values this computer kept where the account's differed, after the account's sync was set
+   * up again (`keepLocal`): `value` is the account's, which wasn't applied. To be said.
+   */
+  kept: { key: string; value: unknown }[];
 }
 
 /** When a setting changed here was first seen changed: the value it had then, and the time. */
@@ -117,6 +130,7 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
   const base: Record<string, string> = {};
   const apply: { key: string; value: unknown }[] = [];
   const replaced: { key: string; value: unknown }[] = [];
+  const kept: { key: string; value: unknown }[] = [];
   const hasBase = input.hasBase ?? Object.keys(input.base).length > 0;
   let recordChanged = false;
   const keys = new Set([
@@ -146,11 +160,18 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
       if (remote !== undefined) base[key] = remote;
     };
     if (!hasBase && entry !== undefined && local !== undefined && local !== remote) {
-      // No memory of a sync, and the two differ (the account has another value, or says the
-      // setting was removed): nothing tells an old value here from a new one, so the account's
-      // stands, and a setting removed elsewhere isn't brought back.
-      replaced.push({ key, value: input.local[key] });
-      takeRemote();
+      if (input.keepLocal) {
+        // The memory is gone on the service's word (the account's sync was "set up again"):
+        // what is here stays, and is what the account gets.
+        kept.push({ key, value: entry.d ? undefined : entry.v });
+        takeLocal();
+      } else {
+        // No memory of a sync, and the two differ (the account has another value, or says
+        // the setting was removed): nothing tells an old value here from a new one, so the
+        // account's stands, and a setting removed elsewhere isn't brought back.
+        replaced.push({ key, value: input.local[key] });
+        takeRemote();
+      }
     } else if (localChanged && remoteChanged) {
       if (local === remote) {
         if (local !== undefined) base[key] = local;
@@ -160,7 +181,7 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
     else if (remoteChanged) takeRemote();
     else if (before !== undefined) base[key] = before;
   }
-  return { record, recordChanged, apply, base, replaced };
+  return { record, recordChanged, apply, base, replaced, kept };
 }
 
 // ---------------------------------------------------------------- files

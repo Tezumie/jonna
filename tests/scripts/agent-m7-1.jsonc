@@ -186,7 +186,8 @@
       "expect": { "pending": [{ "$contains": "AGENTS.md" }] }
     },
     { "run": "agent.rejectAll", "expect": { "rejected": { "$length": 1 } } },
-    // @git: the uncommitted diff goes with the message.
+    // @git: the uncommitted diff goes with the message. (Git runs once the folder is trusted.)
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
     { "run": "git.init", "expect": { "root": { "$exists": true } } },
     {
       "run": "terminal.runCommand",

@@ -235,7 +235,11 @@ its commands through the dispatcher.
 
 **Commands:** `sync.show {page?, project?}` (`page`: overview, projects, content, team, computers,
 security, storage, activity; `project` shows that project's detail), `sync.turnOn {name?}`, `sync.join {name?}`, `sync.useRecoveryKey`,
-`sync.closeStep`, `sync.reviewDevice {device}` (starts checking a waiting computer: both then show
+`sync.closeStep`, `sync.acceptIncoming {id?}` (hidden from agents: accepts on this computer what
+another of the account's computers synced here, one item of `ide://sync` `incoming` or all of
+it; until then a skill or command among it approves no tools and shortcuts that could run
+something aren't in use; Overview lists it as "From your other computers", and it is said once
+in a notification; `core/sync/incoming.ts`), `sync.reviewDevice {device}` (starts checking a waiting computer: both then show
 the code), `sync.approveDevice {device}` (only after `sync.reviewDevice`), `sync.removeDevice
 {device}`, `sync.turnOff`, `sync.newRecoveryKey`, `sync.syncNow`, `sync.project.enable` (a copied
 folder is asked about first: the same project, or one of its own), `sync.project.disable`,

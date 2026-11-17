@@ -36,10 +36,12 @@ import { mergeTurnTools } from "../../core/agent/slash";
 import { subagentSystem, subagentTools } from "../../core/agent/subagents";
 import { skillsIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
+import { syncIpc } from "../../core/ipc/sync";
 import { appIpc } from "../../core/ipc/system";
 import type { Disposable, DisposableStore } from "../../core/lifecycle/index";
 import {
   basename,
+  dirname,
   isWithin,
   joinPath,
   relativePath,
@@ -49,6 +51,7 @@ import {
 import { product } from "../../core/product";
 import { effect, signal, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { skillIsIncoming } from "../../core/sync/incoming";
 import { activeTeam, teamKey, teamLabel, teamPath } from "../../core/team/source";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderLabelsOf } from "../../workbench/workspaceFolder";
@@ -394,7 +397,34 @@ export class SkillsService {
 
   /** The skill called `name` (null when there's none): nested ones found so far too. */
   async find(name: string): Promise<FoundSkill | null> {
-    return (await this.known()).find((x) => x.name === name) ?? null;
+    const skill = (await this.known()).find((x) => x.name === name) ?? null;
+    return skill ? this.here(skill) : null;
+  }
+
+  /**
+   * `skills` as they stand on this computer now: the user's own that are as a sync download
+   * left them, not accepted here, are marked (`incoming`) and so approve no tools. Asked each
+   * time and never kept: a download lists a file before it writes it, and accepting holds at
+   * once. When it can't be asked, a skill that asks for tools is taken as not accepted.
+   */
+  async hereAll(skills: readonly FoundSkill[]): Promise<FoundSkill[]> {
+    const mine = (x: FoundSkill) => x.scope === "user" && !x.builtin && x.allowedTools.length > 0;
+    if (!skills.some(mine)) return [...skills];
+    const own = await this.userDir();
+    if (!own) return [...skills];
+    const files = await syncIpc.incoming().catch(() => null);
+    return skills.map((x) =>
+      mine(x) &&
+      samePath(dirname(x.dir), own) &&
+      (files === null || skillIsIncoming(files, basename(x.dir)))
+        ? { ...x, incoming: true }
+        : x,
+    );
+  }
+
+  /** One skill as it stands on this computer now (`hereAll`). */
+  async here(skill: FoundSkill): Promise<FoundSkill> {
+    return (await this.hereAll([skill]))[0] ?? skill;
   }
 
   /** Where the agent sees a skill: workspace-relative in the folder, `~/…` for a user one. */
@@ -473,7 +503,7 @@ export class SkillsService {
   }> {
     const off = disabledSkills(this.services);
     const { shadowed, problems } = await this.all();
-    const skills = await this.known();
+    const skills = await this.hereAll(await this.known());
     return {
       folders: (await this.folders()).map((f) => ({
         dir: f.dir,
@@ -557,7 +587,9 @@ export function useSkillTool(skills: SkillsService, subagents?: SubagentRegistry
       const name = typeof args.name === "string" ? args.name.trim().replace(/^\//, "") : "";
       const { services } = host;
       const all = await skills.known();
-      const skill = all.find((x) => x.name === name);
+      const found = all.find((x) => x.name === name);
+      // As it stands here now: one that arrived by sync and wasn't accepted approves no tools.
+      const skill = found ? await skills.here(found) : undefined;
       const off = disabledSkills(services);
       if (!skill || off.has(name)) {
         const names = modelSkills(all, off).map((x) => x.name);

@@ -24,6 +24,29 @@ export function staysPinned(name: string | null | undefined, keep: boolean | und
   return !!name || keep === true;
 }
 
+/** How many snapshots of a project the service's "keep" mark can exempt from history. */
+export const KEEP_MARKS_HONOURED = 50;
+
+/**
+ * The snapshots whose "keep" mark counts: the newest `cap` of those marked. The mark is the
+ * service's word, beside the record and not sealed, so it can't be allowed to switch history
+ * off: marked on every snapshot, it would keep them all, for ever. Past the cap a marked
+ * snapshot ages like any other. (A name it was pinned under is sealed content, and always
+ * counts.)
+ */
+export function keepMarksHonoured(
+  snapshots: readonly { id: string; time: number; keep?: boolean }[],
+  cap = KEEP_MARKS_HONOURED,
+): Set<string> {
+  return new Set(
+    snapshots
+      .filter((s) => s.keep === true)
+      .sort((a, b) => b.time - a.time)
+      .slice(0, Math.max(0, cap))
+      .map((s) => s.id),
+  );
+}
+
 /** The day a time falls on, in the computer's own time zone ("2026-11-15"). */
 export function dayOf(time: number): string {
   const d = new Date(time);

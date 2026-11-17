@@ -3,6 +3,8 @@
 {
   "name": "editor-m7-4",
   "steps": [
+    // Git runs once the folder is trusted.
+    { "run": "workspace.setTrust", "input": { "trusted": true } },
     { "run": "git.init", "expect": { "root": { "$exists": true } } },
     {
       "run": "terminal.runCommand",

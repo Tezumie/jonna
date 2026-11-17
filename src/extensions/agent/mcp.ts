@@ -31,6 +31,7 @@ import {
   mergeServers,
   parseEnvFile,
   type ResolvedServer,
+  reviewable,
   secretId,
   serverSignature,
   substitute,
@@ -288,12 +289,14 @@ export class McpClients {
     const sig = serverSignature(server.name, server.config);
     if (this.approved.has(sig)) return true;
     if (this.declined.has(sig) || !session) return false;
-    const what = describeServer(server.config);
+    // Too long to read: never asked about, since a yes would cover what wasn't shown.
+    if (!reviewable(server.config)) return false;
     const answer = await session.ask({
       title: `Start MCP server ${server.name} from ${server.source.label}?`,
       heading: `Start MCP server ${server.name}?`,
       detail: `Configured in ${server.source.label}. It runs with your permissions.`,
-      code: what.slice(0, 1200),
+      // All of it (the card scrolls): what is approved is what was shown.
+      code: describeServer(server.config),
       kind: "tool",
       always: server.source.kind === "team" ? "always in this folder" : "always for this folder",
       evenWithFullAccess: true,
@@ -407,6 +410,14 @@ export class McpClients {
       // Only `${input:…}` may lead to a stored secret: a config naming one itself is refused.
       if (usesRawSecret(server.config)) {
         status({ state: "failed", tools: 0, error: "uses ${secret:…}; declare an input instead" });
+        continue;
+      }
+      if (asksBeforeStart(source.kind) && !reviewable(server.config)) {
+        status({
+          state: "failed",
+          tools: 0,
+          error: "its command is too long to review before starting",
+        });
         continue;
       }
       if (!(await this.approve(server, session))) {

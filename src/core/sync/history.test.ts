@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type DatedSnapshot, planPrune, staysPinned } from "./history";
+import {
+  type DatedSnapshot,
+  KEEP_MARKS_HONOURED,
+  keepMarksHonoured,
+  planPrune,
+  staysPinned,
+} from "./history";
 
 /** A snapshot on day `day` at hour `hour` (days are numbers here: no time zones). */
 const at = (day: number, hour: number, pinned = false): DatedSnapshot => ({
@@ -94,4 +100,25 @@ test("planPrune: a snapshot kept from the account page is never removed", () => 
   // The mark doesn't save the day's other snapshots, nor count toward the days kept.
   const sameDay = [row(1, 8, false), row(1, 9, true), row(2, 9, false)];
   assert.deepEqual(planPrune(sameDay, 1, day), ["d1h8"]);
+});
+
+test("keepMarksHonoured: the service's mark exempts the newest few marked, not any number", () => {
+  const marked = Array.from({ length: 60 }, (_, i) => ({ id: `s${i}`, time: i, keep: true }));
+  const honoured = keepMarksHonoured([...marked, { id: "plain", time: 999, keep: false }]);
+  assert.equal(honoured.size, KEEP_MARKS_HONOURED);
+  // The newest marked stay exempt; the oldest ten age like any other snapshot.
+  assert.equal(honoured.has("s59"), true);
+  assert.equal(honoured.has("s10"), true);
+  assert.equal(honoured.has("s9"), false);
+  assert.equal(honoured.has("plain"), false);
+  // Every snapshot marked (a service that marks them all): history still removes old ones.
+  const rows = marked.map((s) => ({
+    id: s.id,
+    time: s.time * 86_400_000,
+    pinned: staysPinned(undefined, honoured.has(s.id)),
+  }));
+  const removed = planPrune(rows, 2, (t) => String(Math.floor(t / 86_400_000)));
+  // (Of the ten unmarked days, the last two are within the history kept.)
+  assert.deepEqual(removed.sort(), ["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]);
+  assert.equal(keepMarksHonoured(marked, 0).size, 0);
 });

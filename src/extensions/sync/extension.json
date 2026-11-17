@@ -33,6 +33,11 @@
         "category": "Sync"
       },
       {
+        "id": "sync.acceptIncoming",
+        "title": "Accept what arrived from your other computers…",
+        "category": "Sync"
+      },
+      {
         "id": "sync.reviewDevice",
         "title": "Check a waiting computer's code…",
         "category": "Sync"
@@ -55,6 +60,16 @@
       {
         "id": "sync.turnOff",
         "title": "Turn off sync on this computer…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.resumeKept",
+        "title": "Turn sync back on with the keys this computer kept",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.forgetKept",
+        "title": "Remove the sync keys this computer kept…",
         "category": "Sync"
       },
       {
@@ -195,6 +210,11 @@
       {
         "id": "team.member.acceptKey",
         "title": "Accept a teammate's new key…",
+        "category": "Team"
+      },
+      {
+        "id": "team.startOver",
+        "title": "Start over with a new key for sharing…",
         "category": "Team"
       },
       {
@@ -339,6 +359,17 @@
           "type": "string"
         },
         "title": "Settings that stay here"
+      },
+      "sync.extraSettings": {
+        "type": "array",
+        "default": [],
+        "scope": "user",
+        "description": "Settings this computer doesn't know that sync all the same: their keys, for example an extension's \"myExtension.lineLength\". A setting nothing here knows otherwise stays where it was set. Each computer has its own list, and settings that run programs, point somewhere or loosen a protection never sync.",
+        "order": 11.5,
+        "items": {
+          "type": "string"
+        },
+        "title": "Other settings that sync"
       },
       "sync.historyDays": {
         "type": "number",

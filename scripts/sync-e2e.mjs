@@ -1313,7 +1313,8 @@ try {
     const mine = await share(desk, "me");
     const theirs = await share(mateDesk, "me");
     check(
-      /^(\d{4} ){4}\d{4}$/.test(mine.fingerprint) && mine.published && theirs.published,
+      // Thirty digits in six groups of five.
+      /^(\d{5} ){5}\d{5}$/.test(mine.fingerprint) && mine.published && theirs.published,
       JSON.stringify([mine, theirs]),
     );
     check(mine.fingerprint !== theirs.fingerprint, "two accounts, two keys");
@@ -1350,6 +1351,15 @@ try {
     await writeFile(join(project, "b.txt"), "two\n");
     git(project, "add", "-A");
     git(project, "commit", "-q", "-m", "first");
+    // Work a share never carries: another branch's commit, and a stash.
+    git(project, "checkout", "-q", "-b", "side");
+    await writeFile(join(project, "side.txt"), "only on the side branch\n");
+    git(project, "add", "-A");
+    git(project, "commit", "-q", "-m", "on the side");
+    const sideCommit = git(project, "rev-parse", "HEAD");
+    git(project, "checkout", "-q", "-");
+    await writeFile(join(project, "a.txt"), "one\nan idea put away\n");
+    git(project, "stash", "push", "-q", "-m", "put away");
     await writeFile(join(project, "a.txt"), "one\nchanged, not committed\n");
     await writeFile(join(project, "new.txt"), "untracked\n");
     await writeFile(join(project, ".env"), "TOKEN=hunter2\n");
@@ -1430,16 +1440,35 @@ try {
 
     // A copy in a new folder: the commit, the change, the new file; no key file.
     const copy = join(scratch, "mate-copy");
-    const opened = await share(mateDesk, "open_copy", { id, snapshot, target: copy });
+    // Without a clone (the project has no remote): the snapshot alone.
+    const opened = await share(mateDesk, "open_copy", { id, snapshot, target: copy, clone: false });
     check(!opened.cloned && opened.restored.files === 2, JSON.stringify(opened));
     const [here, there] = [await tree(copy), await tree(project)];
     delete there[".env"];
     check(JSON.stringify(here) === JSON.stringify(there), `files: ${JSON.stringify(here)}`);
     check(git(copy, "rev-parse", "HEAD") === git(project, "rev-parse", "HEAD"), "the same commit");
+    // Only what the commit checked out needs came along: no other branch, no stash.
+    check(git(copy, "stash", "list") === "", `stashes in the copy: ${git(copy, "stash", "list")}`);
+    check(git(copy, "branch", "--list", "side") === "", "the other branch isn't in the copy");
+    check(
+      !git(copy, "rev-list", "--all").split("\n").includes(sideCommit),
+      "the other branch's commit isn't in the copy",
+    );
     await fails(
-      share(mateDesk, "open_copy", { id, snapshot, target: copy }),
+      share(mateDesk, "open_copy", { id, snapshot, target: copy, clone: false }),
       "ShareTargetNotEmpty",
       "a copy into a folder that has files",
+    );
+    // A clone needs the address that was shown to the person.
+    await fails(
+      share(mateDesk, "open_copy", {
+        id,
+        snapshot,
+        target: join(scratch, "mate-clone"),
+        clone: true,
+      }),
+      "Invalid",
+      "a clone without its address",
     );
     // A reader writes nothing to a share: it has none of its own under that name.
     await mateDesk.call("workspace_open", { path: copy });

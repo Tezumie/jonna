@@ -1302,3 +1302,72 @@ test("files and settings: a write refused for want of room ends the sending, not
   await engine.tick();
   assert.equal(account.records.size, 5, "the settings and the three files, once there is room");
 });
+
+test("settings: 'the account's sync was set up again' never brings older settings back", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = settingsPort({ theme: "dark", tabSize: 4 }, clock);
+  const notes: SyncNote[] = [];
+  const store = memoryStore();
+  const engine = new SyncEngine(account.backend(), store, [settingsLayer(a)], {
+    note: (event) => notes.push(event),
+  });
+  await engine.tick();
+  const earlier = account.records.get("settings/user")?.text ?? "";
+  a.values.theme = "light";
+  a.mtimeMs = 200;
+  await engine.tick();
+  assert.match(account.records.get("settings/user")?.text ?? "", /light/);
+  // The service says "another epoch" and hands the earlier record back. The epoch is its
+  // word alone: this computer never turned sync off.
+  const now = account.records.get("settings/user");
+  assert.ok(now);
+  account.records.set("settings/user", { ...now, text: earlier });
+  account.epoch++;
+  await engine.tick();
+  assert.equal(a.values.theme, "light", "what is here stays");
+  assert.match(account.records.get("settings/user")?.text ?? "", /light/, "and is sent again");
+  assert.equal(notes.length, 1);
+  assert.match(notes[0]?.text ?? "", /set up again.*this computer's were kept.*: theme\.$/);
+  // Settled by that pass: the next one is an ordinary pass.
+  assert.equal(JSON.parse(store.text ?? "{}").afterReset, undefined);
+  await engine.tick();
+  assert.equal(notes.length, 1, "said once");
+  // A computer that joins (nothing kept, no epoch) still takes the account's values.
+  const b = settingsPort({ theme: "solarized" }, clock);
+  const joining = new SyncEngine(account.backend(), memoryStore(), [settingsLayer(b)]);
+  await joining.tick();
+  assert.equal(b.values.theme, "light");
+});
+
+test("engine: an older copy of a record counts as having no content, and is said once", async () => {
+  const account = new FakeAccount();
+  const clock = { now: 100 };
+  const a = filesPort({ "AGENTS.md": "rules" }, clock);
+  const notes: SyncNote[] = [];
+  const inner = account.backend();
+  let replay = false;
+  const engine = new SyncEngine(
+    {
+      // The backend refused the record's content (`stale`): an older tombstone, replayed.
+      changes: async (since) => {
+        const page = await inner.changes(since);
+        return replay
+          ? { ...page, records: page.records.map((r) => ({ ...r, text: null, stale: true })) }
+          : page;
+      },
+      put: inner.put,
+    },
+    memoryStore(),
+    [filesLayer(a)],
+    { note: (event) => notes.push(event) },
+  );
+  await engine.tick();
+  replay = true;
+  engine.reset();
+  await engine.tick();
+  await engine.tick();
+  assert.equal(a.files["AGENTS.md"], "rules", "nothing here is removed or replaced for it");
+  assert.equal(notes.length, 1, "said once");
+  assert.match(notes[0]?.text ?? "", /older copy/);
+});

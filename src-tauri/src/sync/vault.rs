@@ -48,6 +48,50 @@ struct TrustChange {
     pin: Option<(String, String)>,
     /// The list may be made new (only the first device, at setup).
     create: bool,
+    /// Devices whose app writes a counter into every record (each says so for itself).
+    counted: Vec<String>,
+    /// The key generation the records of `FLOORED` were all sealed again with.
+    floors: Option<u32>,
+    /// The account's member key for sharing, and the counter of its last pins write.
+    member: Option<MemberAnchor>,
+}
+
+/// What the trusted list says of the account's key for sharing (`share`): its public half,
+/// and the counter of the last write of the teammates' pinned keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MemberAnchor {
+    pub key: String,
+    pub pins: u64,
+    /// Another key takes the place of the one named (the person started over, knowingly).
+    pub replace: bool,
+}
+
+/// Why this computer's keys were put aside, and whose they are: sync is off here, and the
+/// keys are neither used nor deleted until the person says which.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+struct Aside {
+    /// "reset", "removed", "account" (another account signed in) or "server".
+    reason: String,
+    /// When, by this computer's clock (ms).
+    at: u64,
+}
+
+/// The collections with a floor: after a device was removed their records are sealed again
+/// with the new keys, and one sealed with older keys is no longer taken.
+const FLOORED: [&str; 3] = ["sys", "settings", "files"];
+/// The collections sealed again after new keys (small records without chunks).
+const SEALED_AGAIN: [&str; 4] = ["sys", "settings", "files", "shares"];
+/// How long keys put aside are kept before they are deleted.
+const ASIDE_KEPT_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+const ASIDE_DEVICE_SECRET: &str = "sync-device-key.aside";
+const ASIDE_KEYRING_SECRET: &str = "sync-keyring.aside";
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -77,6 +121,24 @@ struct Local {
     pending_trust: Vec<TrustChange>,
     /// A new recovery key whose wrap the service doesn't have yet: (public key, wrap).
     pending_recovery: Option<(String, String)>,
+    /// The key generation the trusted list was sealed under when it was last taken: a list
+    /// sealed with older keys (from before a device was removed) is refused.
+    list_generation: u32,
+    /// The floors the trusted list stated, as last read (`records::Checks::floors`).
+    floors: std::collections::BTreeMap<String, u32>,
+    /// Every device on the trusted list writes counters (`records::Checks::strict`).
+    strict: bool,
+    /// This computer removed a device and the new keys aren't made yet: made at the next
+    /// status check, whatever the service says is needed.
+    rotation_owed: bool,
+    /// Approved devices the trusted list doesn't name, and when this computer first saw each
+    /// (its own clock): how long new keys wait for one that may still be joining.
+    first_seen: Vec<(String, String, u64)>,
+    /// The account's member key and pins counter as the trusted list stated them.
+    member: Option<String>,
+    member_pins: u64,
+    /// Set while these keys are put aside (sync is off here; nothing above is in use).
+    aside: Option<Aside>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -120,6 +182,23 @@ pub struct Status {
     /// The account's subscription ended: until then (ms) what is synced can still be read, and
     /// nothing can be written. None while the subscription runs.
     pub lapsed_until: Option<u64>,
+    /// This computer's keys, put aside when sync went off by itself.
+    pub kept: Option<Kept>,
+}
+
+/// Keys put aside: sync is off here, and they are kept until the person removes them, turns
+/// sync on again, or `until` passes.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Kept {
+    /// "reset", "removed", "account" or "server".
+    pub reason: String,
+    pub at: u64,
+    /// When they are deleted (ms).
+    pub until: u64,
+    /// The account lists this computer as before: sync can be turned back on with them.
+    pub resumable: bool,
+    pub device_name: String,
 }
 
 /// What `prepare` made and `setup` sends: nothing reaches the server until the recovery key
@@ -157,6 +236,20 @@ struct Trusted {
     /// The recovery key's public half and its auth key.
     recovery: Option<(String, String)>,
     n: u64,
+    /// Devices whose app writes a counter into every record.
+    counted: Vec<String>,
+    /// By collection: the key generation its records were all sealed again with.
+    floors: std::collections::BTreeMap<String, u32>,
+    /// The account's member key for sharing (its public half), and its pins counter.
+    member: Option<String>,
+    pins: u64,
+}
+
+impl Trusted {
+    /// Whether every device on the list writes counters.
+    fn all_counted(&self) -> bool {
+        !self.devices.is_empty() && self.devices.iter().all(|(id, _)| self.counted.contains(id))
+    }
 }
 
 pub struct Vault {
@@ -198,16 +291,72 @@ fn trusted_text(list: &Trusted) -> String {
         "recovery": list.recovery.as_ref().map(|r| &r.0),
         "recoveryAuth": list.recovery.as_ref().map(|r| &r.1),
         "n": list.n,
+        "counted": list.counted,
+        "floors": list.floors,
+        "member": list.member,
+        "pins": list.pins,
     })
     .to_string()
 }
 
+/// The list after `change`, not yet counted up (`n` is the caller's).
+fn changed_list(before: &Trusted, change: &TrustChange) -> Trusted {
+    let mut next = before.clone();
+    next.devices
+        .retain(|(id, _)| !change.remove.contains(id) && !change.add.iter().any(|(a, _)| a == id));
+    next.devices.extend(change.add.iter().cloned());
+    if let Some(pin) = &change.pin {
+        next.recovery = Some(pin.clone());
+    }
+    for id in &change.counted {
+        if !next.counted.contains(id) {
+            next.counted.push(id.clone());
+        }
+    }
+    // Only a device on the list counts.
+    let devices = next.devices.clone();
+    next.counted
+        .retain(|id| devices.iter().any(|(d, _)| d == id));
+    if let Some(generation) = change.floors {
+        for collection in FLOORED {
+            let floor = next.floors.entry(collection.to_string()).or_insert(0);
+            *floor = (*floor).max(generation);
+        }
+    }
+    if let Some(anchor) = &change.member {
+        if anchor.replace || next.member.is_none() {
+            next.member = Some(anchor.key.clone());
+            next.pins = if anchor.replace {
+                anchor.pins
+            } else {
+                next.pins.max(anchor.pins)
+            };
+        } else if next.member.as_deref() == Some(anchor.key.as_str()) {
+            next.pins = next.pins.max(anchor.pins);
+        }
+    }
+    next
+}
+
+/// Whether an approved device the trusted list doesn't name may only be new, so new keys
+/// wait for the write that adds it: this computer first saw it less than ten minutes ago, by
+/// its own clock. (The service's word for when a device was added would let it hold new
+/// keys back for as long as it liked.)
+fn may_be_joining(first_seen_ms: u64, now_ms: u64) -> bool {
+    now_ms.saturating_sub(first_seen_ms) <= JOIN_GRACE_MS
+}
+
 impl Vault {
     pub fn new(base: &str, data: &Path) -> Self {
-        Self {
+        let mut vault = Self {
             api: Api::new(base, data),
             data: data.to_path_buf(),
-        }
+        };
+        // What a record must pass here, as the trusted list last said it.
+        let local = vault.local();
+        vault.api.checks.strict = local.strict;
+        vault.api.checks.floors = local.floors;
+        vault
     }
 
     fn local_file(&self) -> PathBuf {
@@ -218,11 +367,116 @@ impl Vault {
         self.data.join("secrets.json")
     }
 
-    fn local(&self) -> Local {
+    fn stored_local(&self) -> Local {
         std::fs::read_to_string(self.local_file())
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default()
+    }
+
+    /// This computer's state in sync. Keys that were put aside are not it: sync is off then.
+    fn local(&self) -> Local {
+        let local = self.stored_local();
+        if local.aside.is_some() {
+            return Local::default();
+        }
+        local
+    }
+
+    /// The state that was put aside with its keys, if any.
+    fn kept(&self) -> Option<(Local, Aside)> {
+        let local = self.stored_local();
+        let aside = local.aside.clone()?;
+        Some((local, aside))
+    }
+
+    /// Sync went off here by itself (the account says it was reset, or that this computer
+    /// was removed; another account signed in). That is the service's word, or a passing
+    /// state, and these may be the only copy of the account's keys: they are put aside, out
+    /// of use, instead of deleted. A computer that never held the keys has nothing to keep.
+    fn leave(&self, local: &Local, reason: &str) -> Result<()> {
+        if !local.joined {
+            return self.forget();
+        }
+        let secrets = self.secrets_file();
+        for (name, aside) in [
+            (DEVICE_SECRET, ASIDE_DEVICE_SECRET),
+            (KEYRING_SECRET, ASIDE_KEYRING_SECRET),
+        ] {
+            // Put aside before it is taken out of use: never in neither place.
+            if let Some(value) = secrets::get(&secrets, name) {
+                secrets::set(&secrets, aside, Some(&value))?;
+            }
+            secrets::set(&secrets, name, None)?;
+        }
+        let mut kept = local.clone();
+        kept.aside = Some(Aside {
+            reason: reason.to_string(),
+            at: now_ms(),
+        });
+        self.save_local(&kept)
+    }
+
+    /// Deletes the keys that were put aside and what was kept with them. Only when the
+    /// person said so, turned sync on again from the start, or the time they are kept passed.
+    pub fn forget_kept(&self) -> Result<()> {
+        if self.kept().is_none() {
+            return Ok(());
+        }
+        secrets::set(&self.secrets_file(), ASIDE_DEVICE_SECRET, None)?;
+        secrets::set(&self.secrets_file(), ASIDE_KEYRING_SECRET, None)?;
+        match std::fs::remove_dir_all(self.data.join("sync")) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Whether the account, as the service states it now, still has this computer as the
+    /// keys put aside knew it: the same account and server, the same life of the vault, the
+    /// device listed.
+    fn resumable(&self, kept: &Local, uid: &str, server: &Value) -> bool {
+        kept.uid == uid
+            && kept.base == self.api.base()
+            && server["exists"].as_bool() == Some(true)
+            && server["epoch"].as_u64() == Some(kept.epoch)
+            && server["devices"].as_array().is_some_and(|l| {
+                l.iter().any(|d| {
+                    d["id"].as_str() == Some(kept.device_id.as_str())
+                        && d["status"].as_str() == Some("approved")
+                })
+            })
+    }
+
+    /// Turns sync back on with the keys that were put aside, when the account has this
+    /// computer as before (what turned sync off has passed: an outage, a wrong answer,
+    /// signing in as someone else for a while).
+    pub async fn resume_kept(&self) -> Result<()> {
+        let (mut local, _) = self.kept().ok_or_else(|| {
+            Error::Sync("SyncOff", "No sync keys are kept on this computer.".into())
+        })?;
+        let uid = self.uid().ok_or_else(signed_out)?;
+        let server = self.server_state().await?;
+        if !self.resumable(&local, &uid, &server) {
+            return Err(Error::Sync(
+                "SyncKeys",
+                "The account doesn't list this computer as it was, so the keys that were kept can't be used. Turn sync on again from the start.".into(),
+            ));
+        }
+        let secrets = self.secrets_file();
+        for (name, aside) in [
+            (DEVICE_SECRET, ASIDE_DEVICE_SECRET),
+            (KEYRING_SECRET, ASIDE_KEYRING_SECRET),
+        ] {
+            let value = secrets::get(&secrets, aside).ok_or_else(|| {
+                keys_error("The keys that were kept are gone from where they were kept.")
+            })?;
+            secrets::set(&secrets, name, Some(&value))?;
+        }
+        local.aside = None;
+        self.save_local(&local)?;
+        secrets::set(&secrets, ASIDE_DEVICE_SECRET, None)?;
+        secrets::set(&secrets, ASIDE_KEYRING_SECRET, None)
     }
 
     fn save_local(&self, local: &Local) -> Result<()> {
@@ -280,6 +534,48 @@ impl Vault {
         (local.joined && local.base == self.api.base()).then_some(local.uid)
     }
 
+    /// Whether `epoch` (as a page of changes states it) is the life of the vault this
+    /// computer joined. (0 here: joined before epochs were kept; nothing to compare.)
+    pub fn same_epoch(&self, epoch: u64) -> bool {
+        epoch_matches(self.local().epoch, epoch)
+    }
+
+    /// What the trusted list says of the account's key for sharing, as this computer last
+    /// read it: the member key's public half (None: the list names none yet) and the pins
+    /// counter. Err while this computer has read no list at all: nothing about sharing is
+    /// decided before it has (a new computer reads it as soon as it holds the keys).
+    pub(super) fn member_anchor(&self) -> Result<(Option<String>, u64)> {
+        let local = self.local();
+        if !local.joined || local.trusted_n == 0 {
+            return Err(keys_error(
+                "The account's list of trusted devices hasn't been read on this computer yet; try again in a moment.",
+            ));
+        }
+        Ok((local.member, local.member_pins))
+    }
+
+    /// States the member key and pins counter in the trusted list, which can't be rolled
+    /// back or withheld without this computer noticing: what a computer with nothing kept
+    /// of its own holds `sys/member` and `sys/team` against. `replace`: another key takes
+    /// the place of the one named (the person started over).
+    pub(super) async fn anchor_member(&self, key: &str, pins: u64, replace: bool) -> Result<()> {
+        let mut local = self.local();
+        if !replace && local.member.as_deref() == Some(key) && local.member_pins >= pins {
+            return Ok(());
+        }
+        let ring = self.keyring()?;
+        let change = TrustChange {
+            member: Some(MemberAnchor {
+                key: key.to_string(),
+                pins,
+                replace,
+            }),
+            ..Default::default()
+        };
+        // (What the list says after the write is kept here by the write itself.)
+        self.write_trust(&mut local, &ring, &change).await
+    }
+
     /// A file under this profile's sync folder (caches; removed when sync goes off here).
     pub fn sync_file(&self, name: &str) -> PathBuf {
         self.data.join("sync").join(name)
@@ -310,6 +606,13 @@ impl Vault {
             challenge["nonce"].as_str().unwrap_or(""),
         )?;
         Ok(json!({ "id": challenge["id"], "proof": answer }))
+    }
+
+    /// Proof that this session's own device key is held here, for a call that changes who
+    /// holds the account's keys (approving, new keys, a new recovery key, removing a device):
+    /// a stolen sign-in alone can't make one. A proof works once, so each call gets its own.
+    async fn own_proof(&self) -> Result<Value> {
+        self.proof(&self.device_key()?).await
     }
 
     /// The account's state as the service gives it, refused when it isn't in the shape a
@@ -356,8 +659,15 @@ impl Vault {
         let mut local = self.local();
         let mut notice = None;
         // Another account signed in here, or another server: that state isn't this one's.
+        // Its keys are kept aside: signing in as someone else for a while, or a server named
+        // in a setting, must not delete what may be the account's only keys.
         if !local.uid.is_empty() && (local.uid != uid || local.base != self.api.base()) {
-            self.forget()?;
+            let reason = if local.uid != uid {
+                "account"
+            } else {
+                "server"
+            };
+            self.leave(&local, reason)?;
             local = Local::default();
         }
         let exists = server["exists"].as_bool().unwrap_or(false);
@@ -377,13 +687,31 @@ impl Vault {
                 self.forget()?;
                 local = Local::default();
             } else if !exists || (local.epoch != 0 && local.epoch != epoch) {
-                self.forget()?;
+                // The service's word alone: sync goes off here and says why, and the keys are
+                // put aside (`leave`), not deleted.
+                self.leave(&local, "reset")?;
                 local = Local::default();
                 notice = Some("reset".to_string());
             } else if mine.is_none() {
-                self.forget()?;
+                self.leave(&local, "removed")?;
                 local = Local::default();
                 notice = Some("removed".to_string());
+            }
+        }
+        // Keys put aside earlier: said for as long as they are kept, and deleted after that.
+        let mut kept = None;
+        if let Some((was, aside)) = self.kept() {
+            let until = aside.at.saturating_add(ASIDE_KEPT_MS);
+            if now_ms() > until {
+                self.forget_kept()?;
+            } else {
+                kept = Some(Kept {
+                    resumable: self.resumable(&was, &uid, &server),
+                    reason: aside.reason,
+                    at: aside.at,
+                    until,
+                    device_name: was.device_name,
+                });
             }
         }
 
@@ -448,6 +776,7 @@ impl Vault {
             storage_limit: server["storageLimit"].as_u64().unwrap_or(0),
             epoch,
             lapsed_until,
+            kept,
         })
     }
 
@@ -572,17 +901,118 @@ impl Vault {
             }
         }
         if let Some((public, wrap)) = local.pending_recovery.clone() {
-            let body =
-                json!({ "publicKey": public, "wrap": wrap, "keyVersion": local.key_version });
-            if self.api.put("recovery", &body).await.is_ok_and(|r| r.ok()) {
+            if self.put_recovery(local, &public, &wrap).await.is_ok() {
                 local.pending_recovery = None;
             }
         }
         let _ = self.save_local(local);
-        let _ = self.trusted(local, ring).await;
-        if server["rotationNeeded"].as_bool().unwrap_or(false) {
-            let _ = self.rotate().await;
+        if let Ok(list) = self.trusted(local, ring).await {
+            // What this computer has to say in the list that the list doesn't say yet.
+            let upkeep = self.upkeep(local, &list);
+            if upkeep != TrustChange::default() {
+                let _ = self.write_trust(local, ring, &upkeep).await;
+            }
         }
+        // New keys: the service asks for them, or this computer removed a device and owes them.
+        if server["rotationNeeded"].as_bool().unwrap_or(false) || local.rotation_owed {
+            let _ = self.rotate(local).await;
+        }
+        // After new keys (made here or elsewhere): the small records sealed again with them.
+        if let Ok(ring) = self.keyring() {
+            let _ = self.seal_again(local, &ring).await;
+        }
+    }
+
+    /// The changes this computer owes the trusted list for itself: that its app writes
+    /// counters, and the member key and pins counter it knows when the list names none (an
+    /// older version wrote the list since, and dropped what it didn't know).
+    fn upkeep(&self, local: &Local, list: &Trusted) -> TrustChange {
+        let mut change = TrustChange::default();
+        if list.devices.iter().any(|(id, _)| *id == local.device_id)
+            && !list.counted.contains(&local.device_id)
+        {
+            change.counted.push(local.device_id.clone());
+        }
+        if let Some(key) = &local.member {
+            let behind =
+                list.member.as_deref() == Some(key.as_str()) && list.pins < local.member_pins;
+            if list.member.is_none() || behind {
+                change.member = Some(MemberAnchor {
+                    key: key.clone(),
+                    pins: local.member_pins,
+                    replace: false,
+                });
+            }
+        }
+        change
+    }
+
+    async fn put_recovery(&self, local: &Local, public: &str, wrap: &str) -> Result<()> {
+        let body = json!({
+            "publicKey": public,
+            "wrap": wrap,
+            "keyVersion": local.key_version,
+            "challenge": self.own_proof().await?,
+        });
+        self.api.put("recovery", &body).await?.into_ok()?;
+        Ok(())
+    }
+
+    /// Seals the small records of the account again when they were sealed with keys older
+    /// than the newest (`SEALED_AGAIN`), then states the floor in the trusted list: from then
+    /// on no computer of the account takes a record of `FLOORED` sealed with older keys, which
+    /// a removed device could still make. Done by whichever computer finds the floors behind
+    /// the keys; doing it twice changes nothing.
+    async fn seal_again(&self, local: &mut Local, ring: &Keyring) -> Result<()> {
+        let want = ring.current();
+        // (With the first keys there is nothing older to tell from.)
+        if want <= 1
+            || FLOORED
+                .iter()
+                .all(|c| local.floors.get(*c).copied().unwrap_or(0) >= want)
+        {
+            return Ok(());
+        }
+        let mut names = Vec::new();
+        let mut since = 0;
+        // (The bound only stops an answer that never ends.)
+        for _ in 0..2000 {
+            let page = self.api.get(&format!("records?since={since}")).await?;
+            let records = page["records"]
+                .as_array()
+                .ok_or_else(super::api::unreadable)?;
+            let mut last = since;
+            for record in records {
+                last = last.max(record["seq"].as_u64().unwrap_or(0));
+                let collection = record["collection"].as_str().unwrap_or("");
+                let id = record["id"].as_str().unwrap_or("");
+                if SEALED_AGAIN.contains(&collection)
+                    && record["deleted"].as_bool() != Some(true)
+                    && records::named(collection, id).is_ok()
+                {
+                    names.push((collection.to_string(), id.to_string()));
+                }
+            }
+            if page["more"].as_bool() != Some(true) || last <= since {
+                break;
+            }
+            since = last;
+        }
+        names.sort();
+        names.dedup();
+        for (collection, id) in &names {
+            if !records::reseal(&self.api, ring, collection, id).await? {
+                // One that can't be read or keeps changing: the floor waits for it.
+                return Err(keys_error(
+                    "A synced item couldn't be sealed with the new keys yet; trying again later.",
+                ));
+            }
+        }
+        let change = TrustChange {
+            floors: Some(want),
+            ..Default::default()
+        };
+        self.write_trust(local, ring, &change).await
     }
 
     /// This computer waiting: once an approving computer has published its key and value,
@@ -672,10 +1102,12 @@ impl Vault {
             setting_up: true,
             key_version: 1,
             pending_trust: vec![TrustChange {
-                add: vec![(device_id, public.clone())],
-                remove: vec![],
+                add: vec![(device_id.clone(), public.clone())],
                 pin: Some(pin.clone()),
                 create: true,
+                // The first device writes counters from its first record on.
+                counted: vec![device_id],
+                ..Default::default()
             }],
             ..Default::default()
         };
@@ -686,8 +1118,11 @@ impl Vault {
         body["wrap"] = json!(crypto::box_to(&prepared.device, &public, &bytes)?);
         body["recovery"] = json!({
             "publicKey": pin.0,
-            "wrap": crypto::recovery_wrap(&pin.0, &pin.1, &bytes)?,
+            "wrap": crypto::recovery_wrap(&pin.0, &pin.1, &bytes, 0)?,
         });
+        // Turning sync on from the start is the person's word that keys put aside earlier
+        // (another life of the vault, another account) are done with.
+        self.forget_kept()?;
         // Everything is kept before it is sent: a reply that never arrives leaves a vault
         // this computer can still open at its next check.
         secrets::set(
@@ -751,6 +1186,8 @@ impl Vault {
         let mut local = self.local();
         let key = if local.device_id.is_empty() || local.uid != uid {
             let key = PrivateKey::generate()?;
+            // Joining from the start: keys put aside earlier are done with (see `setup`).
+            self.forget_kept()?;
             local = Local {
                 base: self.api.base().to_string(),
                 uid,
@@ -834,8 +1271,12 @@ impl Vault {
         let stored = self.api.get("recovery").await?;
         // Opens only when one of the account's devices wrapped it: keys made up by whoever
         // stores the wrap carry no valid tag.
-        let ring =
-            Keyring::from_bytes(&recovery.open_recovery(stored["wrap"].as_str().unwrap_or(""))?)?;
+        let opened = recovery.open_recovery(stored["wrap"].as_str().unwrap_or(""))?;
+        let ring = Keyring::from_bytes(&opened)?;
+        // The wrap says, under the same tag, how far the trusted list had counted when it was
+        // made: a list older than that isn't the account's current one (this computer has
+        // no list of its own to compare with).
+        local.trusted_n = local.trusted_n.max(crypto::recovery_floor(&opened));
         let version = stored["keyVersion"].as_u64().unwrap_or(0);
         let public = key.public();
         let body = json!({
@@ -863,10 +1304,7 @@ impl Vault {
             // Not reachable just now: checked again with everything else at the next status.
             Err(Error::Sync("SyncOffline", _)) => return Ok(()),
             _ => {
-                let _ = self
-                    .api
-                    .delete(&format!("devices/{}", local.device_id))
-                    .await;
+                let _ = self.delete_device(&local.device_id).await;
                 self.forget()?;
                 return Err(Error::Sync(
                     "SyncRecoveryKey",
@@ -896,6 +1334,7 @@ impl Vault {
             // The keys as this computer holds them: stale ones are refused, not passed on.
             "keyVersion": local.key_version,
             "publicKey": review.public,
+            "challenge": self.own_proof().await?,
         });
         self.api
             .post(&format!("devices/{device_id}/approve"), &body)
@@ -929,16 +1368,32 @@ impl Vault {
                 ..Default::default()
             };
             self.write_trust(&mut local, &ring, &change).await?;
+            // New keys are owed from here on, and made whatever the service says of them:
+            // remembered first, so a window closed now still makes them at its next check.
+            local.rotation_owed = true;
+            self.save_local(&local)?;
         }
         REVIEWS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|r| r.device != device_id);
-        self.api.delete(&format!("devices/{device_id}")).await?;
+        // With proof of this computer's key when it has one (a computer still waiting to be
+        // approved withdraws without).
+        match self.device_key() {
+            Ok(_) => self.delete_device(device_id).await?,
+            Err(_) => {
+                self.api.delete(&format!("devices/{device_id}")).await?;
+            }
+        }
         if own {
+            // The person turned sync off here: their word, so the keys go.
             self.forget()?;
-        } else {
-            let _ = self.rotate().await;
+        } else if self.keyring().is_ok() {
+            // Best effort now; owed (and done at the next status check) until it worked.
+            let _ = self.rotate(&mut local).await;
+            if let Ok(ring) = self.keyring() {
+                let _ = self.seal_again(&mut local, &ring).await;
+            }
         }
         Ok(())
     }
@@ -949,7 +1404,6 @@ impl Vault {
         let mut local = self.local();
         let recovery = PrivateKey::generate()?;
         let pin = (recovery.public(), recovery.auth_key()?);
-        let wrap = crypto::recovery_wrap(&pin.0, &pin.1, &ring.to_bytes()?)?;
         // The account's devices name it first; the service gets its wrap next, and again at
         // the next check should that not arrive. Either way the key shown is the one that works.
         let change = TrustChange {
@@ -957,10 +1411,11 @@ impl Vault {
             ..Default::default()
         };
         self.write_trust(&mut local, &ring, &change).await?;
+        // (The wrap states the list's counter as it is now, with the key in it.)
+        let wrap = crypto::recovery_wrap(&pin.0, &pin.1, &ring.to_bytes()?, local.trusted_n)?;
         local.pending_recovery = Some((pin.0.clone(), wrap.clone()));
         self.save_local(&local)?;
-        let body = json!({ "publicKey": pin.0, "wrap": wrap, "keyVersion": local.key_version });
-        if self.api.put("recovery", &body).await.is_ok_and(|r| r.ok()) {
+        if self.put_recovery(&local, &pin.0, &wrap).await.is_ok() {
             local.pending_recovery = None;
             self.save_local(&local)?;
         }
@@ -983,15 +1438,39 @@ impl Vault {
             .filter(|r| !r.deleted && !r.unreadable)
             .ok_or_else(untrusted)?;
         let list = parse_trusted(record.text.as_deref()).ok_or_else(untrusted)?;
-        if list.n < local.trusted_n {
+        let generation = record.generation.unwrap_or(0);
+        if !list_continues(local, &list, generation) {
             return Err(untrusted());
         }
-        if list.n != local.trusted_n || list.devices != local.trusted {
-            local.trusted_n = list.n;
-            local.trusted = list.devices.clone();
+        self.take_list(local, &list, generation)?;
+        Ok(list)
+    }
+
+    /// Keeps what a list that was taken says: its counter and devices, the generation it was
+    /// sealed under, and what every record is checked against from here on.
+    fn take_list(&self, local: &mut Local, list: &Trusted, generation: u32) -> Result<()> {
+        let before = serde_json::to_string(local)?;
+        local.trusted_n = list.n;
+        local.trusted = list.devices.clone();
+        local.list_generation = local.list_generation.max(generation);
+        local.strict = list.all_counted();
+        // Floors only go up: a list an older version wrote names none, and takes none away.
+        for (collection, floor) in &list.floors {
+            let mine = local.floors.entry(collection.clone()).or_insert(0);
+            *mine = (*mine).max(*floor);
+        }
+        match &list.member {
+            Some(key) if local.member.as_deref() != Some(key.as_str()) => {
+                local.member = Some(key.clone());
+                local.member_pins = list.pins;
+            }
+            Some(_) => local.member_pins = local.member_pins.max(list.pins),
+            None => {}
+        }
+        if serde_json::to_string(local)? != before {
             self.save_local(local)?;
         }
-        Ok(list)
+        Ok(())
     }
 
     /// Changes the trusted list; when that fails the change is kept and done again at the
@@ -1026,14 +1505,7 @@ impl Vault {
                 }
             };
             missing = false;
-            let mut next = before.clone();
-            next.devices.retain(|(id, _)| {
-                !change.remove.contains(id) && !change.add.iter().any(|(a, _)| a == id)
-            });
-            next.devices.extend(change.add.iter().cloned());
-            if let Some(pin) = &change.pin {
-                next.recovery = Some(pin.clone());
-            }
+            let mut next = changed_list(&before, change);
             if next == before {
                 written = Some(before);
                 return None;
@@ -1051,9 +1523,8 @@ impl Vault {
         }
         if let Some(list) = written {
             if list.n >= local.trusted_n {
-                local.trusted_n = list.n;
-                local.trusted = list.devices;
-                self.save_local(local)?;
+                // (Written with the newest keys this computer holds, or read as it is.)
+                self.take_list(local, &list, 0)?;
             }
         }
         Ok(())
@@ -1062,16 +1533,24 @@ impl Vault {
     /// A new key generation, boxed from this device for every device on the account's sealed
     /// list and wrapped for the recovery key that list names. A device the service lists as
     /// approved that isn't on the list never gets the keys: it is taken off instead.
-    async fn rotate(&self) -> Result<()> {
+    ///
+    /// Made when the service asks for them, and whenever this computer removed a device
+    /// (`rotation_owed`), whatever the service says: a service that sided with the removed
+    /// device would simply not ask.
+    async fn rotate(&self, local: &mut Local) -> Result<()> {
         let ring = self.keyring()?;
-        let mut local = self.local();
         let key = self.device_key()?;
         let server = self.server_state().await?;
-        if !server["rotationNeeded"].as_bool().unwrap_or(false) {
+        if !server["rotationNeeded"].as_bool().unwrap_or(false) && !local.rotation_owed {
+            // (Another computer made them: what was waited for then says nothing later.)
+            if !local.first_seen.is_empty() {
+                local.first_seen.clear();
+                self.save_local(local)?;
+            }
             return Ok(());
         }
         // Nothing is decided from a list that is missing, unreadable or old.
-        let trusted = self.trusted(&mut local, &ring).await?;
+        let trusted = self.trusted(local, &ring).await?;
         if !trusted.devices.iter().any(|(id, _)| *id == local.device_id) {
             return Err(keys_error(
                 "This computer isn't on the account's list of trusted devices; nothing was changed.",
@@ -1081,55 +1560,61 @@ impl Vault {
         let (recovery, recovery_auth) = trusted.recovery.clone().ok_or_else(|| {
             keys_error("This account's recovery key needs replacing: make a new recovery key.")
         })?;
-        // A device that joined moments ago is approved before the list names it (the write
-        // that adds it is still owed, here or on the computer that approved it). New keys wait
-        // for that write: made now they would leave it out, and it would be taken off. Nothing
-        // is handed to it meanwhile; the next check makes the keys.
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis() as u64);
-        let joining = server["devices"]
+        let approved: Vec<(String, String)> = server["devices"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|d| d["status"].as_str() == Some("approved"))
-            .filter(|d| {
-                let id = d["id"].as_str().unwrap_or("");
-                let public = d["publicKey"].as_str().unwrap_or("");
-                !trusted.devices.iter().any(|(t, k)| t == id && k == public)
+            .map(|d| {
+                (
+                    d["id"].as_str().unwrap_or("").to_string(),
+                    d["publicKey"].as_str().unwrap_or("").to_string(),
+                )
             })
-            .any(|d| may_be_joining(d, &local.pending_trust, now_ms));
-        if joining {
+            .collect();
+        let plan = rotation_plan(
+            &approved,
+            &trusted.devices,
+            &local.pending_trust,
+            &local.first_seen,
+            now_ms(),
+        );
+        if plan.first_seen != local.first_seen {
+            local.first_seen = plan.first_seen.clone();
+            self.save_local(local)?;
+        }
+        // A device that joined moments ago is approved before the list names it (the write
+        // that adds it is on its way from the computer that approved it). New keys wait for
+        // that write, a few minutes by this computer's clock: made now they would leave it
+        // out, and it would be taken off. Nothing is handed to it meanwhile.
+        if plan.wait {
             return Ok(());
         }
         let next = ring.rotated()?;
         let bytes = next.to_bytes()?;
         let mut wraps = serde_json::Map::new();
-        for d in server["devices"].as_array().into_iter().flatten() {
-            if d["status"].as_str() != Some("approved") {
-                continue;
-            }
-            let id = d["id"].as_str().unwrap_or("");
-            let public = d["publicKey"].as_str().unwrap_or("");
-            if trusted.devices.iter().any(|(t, k)| t == id && k == public) {
-                wraps.insert(id.to_string(), json!(crypto::box_to(&key, public, &bytes)?));
-            } else {
-                // Listed as approved by the service, approved by none of the account's devices.
-                self.api.delete(&format!("devices/{id}")).await?;
-            }
+        for (id, public) in &plan.wrap {
+            wraps.insert(id.clone(), json!(crypto::box_to(&key, public, &bytes)?));
+        }
+        for id in &plan.remove {
+            // Listed as approved by the service, approved by none of the account's devices.
+            self.delete_device(id).await?;
         }
         let body = json!({
             "expectKeyVersion": server["keyVersion"],
             "wraps": wraps,
-            "recoveryWrap": crypto::recovery_wrap(&recovery, &recovery_auth, &bytes)?,
+            "recoveryWrap": crypto::recovery_wrap(&recovery, &recovery_auth, &bytes, trusted.n)?,
             "recoveryPublicKey": recovery,
+            "challenge": self.own_proof().await?,
         });
         let reply = self.api.post("keyring", &body).await?.into_ok()?;
         self.store_keyring(&next)?;
         local.key_version = reply["keyVersion"]
             .as_u64()
             .unwrap_or(local.key_version + 1);
-        self.save_local(&local)?;
+        local.rotation_owed = false;
+        local.first_seen.clear();
+        self.save_local(local)?;
         // The list again, sealed with the new keys and one higher: what the removed device
         // holds can no longer make a list the others would take.
         let floor = local.trusted_n;
@@ -1139,28 +1624,84 @@ impl Vault {
             Some(trusted_text(&list))
         })
         .await;
-        let _ = self.trusted(&mut local, &next).await;
+        let _ = self.trusted(local, &next).await;
+        Ok(())
+    }
+
+    /// Removes a device from the account, with proof of this computer's own key.
+    async fn delete_device(&self, device_id: &str) -> Result<()> {
+        let proof = self.own_proof().await?;
+        self.api
+            .delete_proved(&format!("devices/{device_id}"), &proof)
+            .await?;
         Ok(())
     }
 }
 
-/// How long after a device was added it may be approved and not yet on the trusted list
-/// without being taken for one the account's devices never approved.
+fn epoch_matches(joined: u64, stated: u64) -> bool {
+    joined == 0 || joined == stated
+}
+
+/// How long new keys wait for an approved device the trusted list doesn't name yet.
 const JOIN_GRACE_MS: u64 = 10 * 60 * 1000;
 
-/// Whether an approved device the trusted list doesn't name may only be new: this computer
-/// still owes the write that adds it, or the service says it was added within the last minutes
-/// (approved on another computer, or joined with the recovery key, whose write is on its way).
-/// The time is the service's word, which is fine here: it only makes new keys wait, and never
-/// gets a device any keys.
-fn may_be_joining(device: &Value, owed: &[TrustChange], now_ms: u64) -> bool {
-    let id = device["id"].as_str().unwrap_or("");
-    let public = device["publicKey"].as_str().unwrap_or("");
-    owed.iter()
-        .any(|change| change.add.iter().any(|(a, k)| a == id && k == public))
-        || device["createdAt"]
-            .as_u64()
-            .is_some_and(|at| now_ms.abs_diff(at) <= JOIN_GRACE_MS)
+/// What making new keys does about the devices the service lists as approved.
+#[derive(Debug, PartialEq, Eq)]
+struct RotationPlan {
+    /// Devices that get the new keys: on the trusted list with that key, or approved by this
+    /// computer itself (it compared the code), the list's write still owed.
+    wrap: Vec<(String, String)>,
+    /// Devices none of the account's computers approved: taken off.
+    remove: Vec<String>,
+    /// One of them may only be new (`may_be_joining`): the keys are made at a later check.
+    wait: bool,
+    /// When each unlisted device was first seen here, to keep.
+    first_seen: Vec<(String, String, u64)>,
+}
+
+fn rotation_plan(
+    approved: &[(String, String)],
+    trusted: &[(String, String)],
+    owed: &[TrustChange],
+    first_seen: &[(String, String, u64)],
+    now_ms: u64,
+) -> RotationPlan {
+    let mut plan = RotationPlan {
+        wrap: Vec::new(),
+        remove: Vec::new(),
+        wait: false,
+        // Kept until the keys are made, also for devices no longer listed: the wait is
+        // counted from the first of them, so a new unlisted device every few minutes
+        // doesn't start it again.
+        first_seen: first_seen.to_vec(),
+    };
+    let waiting_since = first_seen
+        .iter()
+        .map(|(_, _, at)| *at)
+        .min()
+        .unwrap_or(now_ms);
+    let mut unlisted = Vec::new();
+    for (id, public) in approved {
+        let listed = trusted.iter().any(|(t, k)| t == id && k == public);
+        let own_approval = owed
+            .iter()
+            .any(|change| change.add.iter().any(|(a, k)| a == id && k == public));
+        if listed || own_approval {
+            plan.wrap.push((id.clone(), public.clone()));
+            continue;
+        }
+        if !first_seen.iter().any(|(i, k, _)| i == id && k == public) && plan.first_seen.len() < 64
+        {
+            plan.first_seen.push((id.clone(), public.clone(), now_ms));
+        }
+        unlisted.push(id.clone());
+    }
+    if !unlisted.is_empty() && may_be_joining(waiting_since, now_ms) {
+        plan.wait = true;
+    } else {
+        plan.remove = unlisted;
+    }
+    plan
 }
 
 fn parse_trusted(text: Option<&str>) -> Option<Trusted> {
@@ -1181,7 +1722,32 @@ fn parse_trusted(text: Option<&str>) -> Option<Trusted> {
             .zip(v["recoveryAuth"].as_str())
             .map(|(public, auth)| (public.to_string(), auth.to_string())),
         n: v["n"].as_u64().unwrap_or(0),
+        counted: v["counted"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|id| id.as_str().map(str::to_string))
+            .collect(),
+        floors: v["floors"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(collection, floor)| {
+                Some((collection.clone(), u32::try_from(floor.as_u64()?).ok()?))
+            })
+            .collect(),
+        member: v["member"].as_str().map(str::to_string),
+        pins: v["pins"].as_u64().unwrap_or(0),
     })
+}
+
+/// Whether a list read from the account may take the place of the one this computer holds:
+/// not older by its counter, not sealed with older keys than the last one taken, and not
+/// sealed below the floor it states for its own collection.
+fn list_continues(local: &Local, list: &Trusted, generation: u32) -> bool {
+    list.n >= local.trusted_n
+        && generation >= local.list_generation
+        && generation >= list.floors.get(TRUSTED.0).copied().unwrap_or(0)
 }
 
 /// Whether what was typed back proves the recovery key was kept: the whole key, or its last
@@ -1205,33 +1771,284 @@ fn recovery_confirmed(key: &str, typed: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn pair(id: &str, key: &str) -> (String, String) {
+        (id.to_string(), key.to_string())
+    }
+
     #[test]
-    fn a_device_that_just_joined_is_not_taken_for_an_unapproved_one() {
+    fn new_keys_wait_for_a_joining_device_by_this_computers_clock_and_not_for_long() {
         let now = 1_800_000_000_000u64;
-        let device = |created: u64| json!({ "id": "d2", "publicKey": "key2", "status": "approved", "createdAt": created });
-        // Added within the last minutes (or a little ahead, by the clocks): new keys wait.
-        assert!(may_be_joining(&device(now - 60_000), &[], now));
-        assert!(may_be_joining(&device(now + 30_000), &[], now));
-        // Long there and still on no list: not new.
-        assert!(!may_be_joining(&device(now - JOIN_GRACE_MS - 1), &[], now));
-        assert!(!may_be_joining(&device(now + JOIN_GRACE_MS + 1), &[], now));
-        assert!(!may_be_joining(
-            &json!({ "id": "d2", "publicKey": "key2" }),
-            &[],
-            now
-        ));
-        // This computer approved it and still owes the list's write, however long ago.
+        let trusted = [pair("d1", "key1")];
+        let approved = [pair("d1", "key1"), pair("d2", "key2")];
+        // First seen now: it may only be new, so the keys wait, and the time is noted.
+        let plan = rotation_plan(&approved, &trusted, &[], &[], now);
+        assert!(plan.wait && plan.remove.is_empty());
+        assert_eq!(plan.first_seen, vec![("d2".into(), "key2".into(), now)]);
+        // Still within the minutes allowed.
+        let later = rotation_plan(&approved, &trusted, &[], &plan.first_seen, now + 60_000);
+        assert!(later.wait);
+        // Past them: the keys are made, and the device nobody approved is taken off.
+        // (Whatever the service says of when it was added: nothing of the service's is asked.)
+        let past = now + JOIN_GRACE_MS + 1;
+        let late = rotation_plan(&approved, &trusted, &[], &plan.first_seen, past);
+        assert!(!late.wait);
+        assert_eq!(late.wrap, vec![pair("d1", "key1")]);
+        assert_eq!(late.remove, vec!["d2".to_string()]);
+        // Another unlisted device every few minutes doesn't start the wait again.
+        let another = [pair("d1", "key1"), pair("d3", "key3")];
+        let again = rotation_plan(&another, &trusted, &[], &plan.first_seen, past);
+        assert!(!again.wait);
+        assert_eq!(again.remove, vec!["d3".to_string()]);
+        // A device this computer approved itself (the list's write still owed) gets the
+        // keys and holds nothing up, however long the write is owed.
         let owed = [TrustChange {
-            add: vec![("d2".into(), "key2".into())],
+            add: vec![pair("d2", "key2")],
             ..Default::default()
         }];
-        assert!(may_be_joining(&device(1), &owed, now));
+        let own = rotation_plan(&approved, &trusted, &owed, &[], past);
+        assert!(!own.wait && own.remove.is_empty());
+        assert_eq!(own.wrap, vec![pair("d1", "key1"), pair("d2", "key2")]);
         // Owed for another key: not this device.
         let other = [TrustChange {
-            add: vec![("d2".into(), "another".into())],
+            add: vec![pair("d2", "another")],
             ..Default::default()
         }];
-        assert!(!may_be_joining(&device(1), &other, now));
+        assert!(rotation_plan(&approved, &trusted, &other, &[], now).wait);
+        // Nothing unlisted: nothing waits.
+        assert!(!rotation_plan(&trusted, &trusted, &[], &[], now).wait);
+    }
+
+    #[test]
+    fn a_list_sealed_with_older_keys_or_counted_lower_is_not_taken() {
+        let list = |n: u64| Trusted {
+            devices: vec![pair("d1", "key1")],
+            n,
+            ..Default::default()
+        };
+        let local = Local {
+            trusted_n: 7,
+            list_generation: 3,
+            ..Default::default()
+        };
+        assert!(list_continues(&local, &list(7), 3));
+        assert!(list_continues(&local, &list(8), 4));
+        // Rolled back by its counter.
+        assert!(!list_continues(&local, &list(6), 3));
+        // A list a removed device could still make: counted higher, sealed with the keys
+        // from before it was removed.
+        assert!(!list_continues(&local, &list(99), 2));
+        // Sealed below the floor it states itself.
+        let mut floored = list(8);
+        floored.floors.insert("sys".into(), 5);
+        assert!(!list_continues(&local, &floored, 4));
+        assert!(list_continues(&local, &floored, 5));
+        // A computer that never took a list takes the first it can open.
+        assert!(list_continues(&Local::default(), &list(1), 1));
+    }
+
+    #[test]
+    fn the_list_states_counters_floors_and_the_member_key() {
+        let before = Trusted {
+            devices: vec![pair("d1", "key1"), pair("d2", "key2")],
+            n: 3,
+            counted: vec!["d1".into()],
+            ..Default::default()
+        };
+        assert!(!before.all_counted());
+        // Each device says for itself that it writes counters; a stranger's word is dropped.
+        let counted = changed_list(
+            &before,
+            &TrustChange {
+                counted: vec!["d2".into(), "nobody".into()],
+                ..Default::default()
+            },
+        );
+        assert!(counted.all_counted());
+        assert_eq!(counted.counted, vec!["d1".to_string(), "d2".to_string()]);
+        // A removed device no longer counts.
+        let removed = changed_list(
+            &counted,
+            &TrustChange {
+                remove: vec!["d2".into()],
+                ..Default::default()
+            },
+        );
+        assert_eq!(removed.counted, vec!["d1".to_string()]);
+        assert!(removed.all_counted());
+        // Floors go up only.
+        let up = |list: &Trusted, g: u32| {
+            changed_list(
+                list,
+                &TrustChange {
+                    floors: Some(g),
+                    ..Default::default()
+                },
+            )
+        };
+        let floored = up(&before, 3);
+        assert_eq!(floored.floors.get("sys"), Some(&3));
+        assert_eq!(floored.floors.get("files"), Some(&3));
+        assert_eq!(floored.floors.get("chats"), None);
+        assert_eq!(up(&floored, 2), floored);
+        // The member key is named once; another key takes its place only when the person
+        // started over, and the pins counter only goes up otherwise.
+        let anchor = |key: &str, pins: u64, replace: bool| TrustChange {
+            member: Some(MemberAnchor {
+                key: key.into(),
+                pins,
+                replace,
+            }),
+            ..Default::default()
+        };
+        let named = changed_list(&before, &anchor("m1", 0, false));
+        assert_eq!((named.member.as_deref(), named.pins), (Some("m1"), 0));
+        let raised = changed_list(&named, &anchor("m1", 4, false));
+        assert_eq!(raised.pins, 4);
+        assert_eq!(changed_list(&raised, &anchor("m1", 2, false)), raised);
+        assert_eq!(changed_list(&raised, &anchor("other", 9, false)), raised);
+        let replaced = changed_list(&raised, &anchor("m2", 5, true));
+        assert_eq!((replaced.member.as_deref(), replaced.pins), (Some("m2"), 5));
+        // All of it survives being written and read.
+        let mut full = up(&replaced, 3);
+        full.counted = vec!["d1".into()];
+        assert_eq!(parse_trusted(Some(&trusted_text(&full))).unwrap(), full);
+    }
+
+    #[test]
+    fn changes_of_another_life_of_the_vault_are_not_this_computers() {
+        assert!(epoch_matches(4, 4));
+        // A page that says "epoch 5" to a computer that joined 4: not taken as a reset by
+        // the sync loop (which would start from nothing and take the account's side).
+        assert!(!epoch_matches(4, 5));
+        assert!(!epoch_matches(4, 3));
+        assert!(epoch_matches(0, 7));
+    }
+
+    fn temp_vault(name: &str) -> (Vault, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("ide-vault-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        (Vault::new("https://accounts.example", &dir), dir)
+    }
+
+    #[test]
+    fn keys_are_put_aside_when_the_service_says_sync_is_gone_and_only_the_person_deletes_them() {
+        let (vault, dir) = temp_vault("aside");
+        let device = PrivateKey::generate().unwrap();
+        let ring = Keyring::generate().unwrap();
+        secrets::set(
+            &vault.secrets_file(),
+            DEVICE_SECRET,
+            Some(&device.to_text()),
+        )
+        .unwrap();
+        vault.store_keyring(&ring).unwrap();
+        let local = Local {
+            base: "https://accounts.example".into(),
+            uid: "u1".into(),
+            epoch: 4,
+            device_id: "d1".into(),
+            device_name: "Laptop".into(),
+            joined: true,
+            trusted_n: 9,
+            ..Default::default()
+        };
+        vault.save_local(&local).unwrap();
+        std::fs::write(vault.sync_file("front.json"), "{}").unwrap();
+        // "No vault", "another epoch", "this device isn't listed": the service's word.
+        vault.leave(&local, "reset").unwrap();
+        // Sync is off here: nothing of it is in use.
+        assert!(vault.keyring().is_err());
+        assert!(vault.device_key().is_err());
+        assert!(vault.device().is_none());
+        assert!(vault.local().device_id.is_empty());
+        // And nothing is gone: the keys, the state and what was kept with it.
+        let (kept, aside) = vault.kept().unwrap();
+        assert_eq!(aside.reason, "reset");
+        assert_eq!((kept.device_id.as_str(), kept.trusted_n), ("d1", 9));
+        assert_eq!(
+            secrets::get(&vault.secrets_file(), ASIDE_DEVICE_SECRET).as_deref(),
+            Some(device.to_text().as_str())
+        );
+        assert!(secrets::get(&vault.secrets_file(), ASIDE_KEYRING_SECRET).is_some());
+        assert!(vault.sync_file("front.json").exists());
+        // The account lists this computer as before (it was an outage, or a wrong answer).
+        let listed = json!({ "exists": true, "epoch": 4, "devices": [{ "id": "d1", "status": "approved" }] });
+        assert!(vault.resumable(&kept, "u1", &listed));
+        for not in [
+            json!({ "exists": false, "epoch": 4, "devices": [] }),
+            json!({ "exists": true, "epoch": 5, "devices": [{ "id": "d1", "status": "approved" }] }),
+            json!({ "exists": true, "epoch": 4, "devices": [{ "id": "d2", "status": "approved" }] }),
+            json!({ "exists": true, "epoch": 4, "devices": [{ "id": "d1", "status": "pending" }] }),
+        ] {
+            assert!(!vault.resumable(&kept, "u1", &not), "{not}");
+        }
+        assert!(!vault.resumable(&kept, "someone-else", &listed));
+        // Only the person's word deletes them.
+        vault.forget_kept().unwrap();
+        assert!(vault.kept().is_none());
+        assert!(secrets::get(&vault.secrets_file(), ASIDE_DEVICE_SECRET).is_none());
+        assert!(secrets::get(&vault.secrets_file(), ASIDE_KEYRING_SECRET).is_none());
+        assert!(!vault.sync_file("front.json").exists());
+        // A computer that never held the keys has nothing to keep.
+        let waiting = Local {
+            device_id: "d9".into(),
+            ..Default::default()
+        };
+        vault.save_local(&waiting).unwrap();
+        vault.leave(&waiting, "removed").unwrap();
+        assert!(vault.kept().is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn what_the_trusted_list_says_is_what_records_are_checked_against() {
+        let (vault, dir) = temp_vault("checks");
+        let mut local = Local {
+            joined: true,
+            device_id: "d1".into(),
+            ..Default::default()
+        };
+        let mut list = Trusted {
+            devices: vec![pair("d1", "key1")],
+            n: 2,
+            counted: vec!["d1".into()],
+            member: Some("m1".into()),
+            pins: 3,
+            ..Default::default()
+        };
+        list.floors.insert("files".into(), 2);
+        vault.take_list(&mut local, &list, 2).unwrap();
+        // A list an older version wrote since (it names no floors, counters or member key)
+        // takes nothing away except "every computer writes counters".
+        let plain = Trusted {
+            devices: vec![pair("d1", "key1")],
+            n: 3,
+            ..Default::default()
+        };
+        vault.take_list(&mut local, &plain, 2).unwrap();
+        assert_eq!(local.floors.get("files"), Some(&2));
+        assert_eq!(
+            (local.member.as_deref(), local.member_pins),
+            (Some("m1"), 3)
+        );
+        assert_eq!(local.list_generation, 2);
+        assert!(!local.strict);
+        vault.take_list(&mut local, &list, 2).unwrap();
+        // The next call's client has them.
+        let again = Vault::new("https://accounts.example", &dir);
+        assert!(again.api.checks.strict);
+        assert_eq!(again.api.checks.floors.get("files"), Some(&2));
+        assert_eq!(again.member_anchor().unwrap(), (Some("m1".to_string()), 3));
+        // What this computer still has to say in a list that doesn't say it.
+        let upkeep = again.upkeep(&local, &plain);
+        assert_eq!(upkeep.counted, vec!["d1".to_string()]);
+        assert_eq!(
+            upkeep.member.map(|m| (m.key, m.pins)),
+            Some(("m1".into(), 3))
+        );
+        assert_eq!(again.upkeep(&local, &list), TrustChange::default());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1257,6 +2074,7 @@ mod tests {
             devices: vec![("a".into(), "k".into())],
             recovery: Some(("r".into(), "auth".into())),
             n: 7,
+            ..Default::default()
         };
         assert_eq!(parse_trusted(Some(&trusted_text(&pinned))).unwrap(), pinned);
         // Nothing to read is "no list", which callers refuse to decide from.

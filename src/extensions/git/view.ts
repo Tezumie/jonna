@@ -17,6 +17,7 @@ import { showContextMenu } from "../../ui/Menu";
 import { setTooltip } from "../../ui/Tooltip";
 import { Tree } from "../../ui/Tree";
 import type { WorkbenchServices } from "../../workbench/services";
+import { gitOffReason } from "../../workbench/trustModel";
 import { CommitForm, type CommitText } from "./commitForm";
 import type { GitController, GitRepo } from "./controller";
 import {
@@ -105,6 +106,13 @@ export class ScmView {
       icon("shield"),
       "Trust git settings",
     );
+    // Git is off until the folder is trusted: the way to answer, where it says so.
+    const folderTrustButton = h(
+      "button",
+      { class: "button button-primary scm-empty-button", type: "button", hidden: true },
+      icon("shield"),
+      "Manage workspace trust",
+    );
     const publishText = h(
       "div",
       { class: "empty-state-text" },
@@ -117,6 +125,7 @@ export class ScmView {
       h("div", { class: "empty-state-title" }, "No repository"),
       emptyText,
       trustButton,
+      folderTrustButton,
       initButton,
       publishText,
       publishButton,
@@ -145,6 +154,7 @@ export class ScmView {
 
     this.store.add(on(initButton, "click", () => this.run("git.init")));
     this.store.add(on(trustButton, "click", () => this.run("git.trustSettings")));
+    this.store.add(on(folderTrustButton, "click", () => this.run("workspace.manageTrust")));
     this.store.add(on(publishButton, "click", () => this.run("git.publish")));
 
     this.tree = this.store.add(
@@ -229,6 +239,8 @@ export class ScmView {
             : "Open a folder to see its changes.";
         initButton.hidden = !hasRoot || problem !== null;
         trustButton.hidden = !git.paused.value;
+        folderTrustButton.hidden =
+          !hasRoot || repo !== null || gitOffReason(services.trust.state.value) === null;
         publishButton.hidden = initButton.hidden;
         publishText.hidden = initButton.hidden;
         return undefined;

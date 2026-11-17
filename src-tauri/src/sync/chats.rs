@@ -138,6 +138,59 @@ pub async fn same(
     Ok(ids == entry.file.chunks)
 }
 
+/// What a chat's file says besides the conversation, and that a chat from somewhere else must
+/// not bring along: whatever grants something, or names a file or a folder outside the chat.
+/// These are dropped (the chat reads as it would without them: nothing granted, nothing
+/// waiting).
+const GRANTS_OR_NAMES_PATHS: &[&str] = &[
+    // Edits waiting for review: paths and their original text, written back on "reject".
+    "changeset",
+    // What the agent last saw of each file, which lets it write a file without reading it.
+    "seen",
+    // "Go on past the chat's budget" was said on the other computer.
+    "budgetAllowed",
+    // An external agent's session to pick up again, with the folder it runs in.
+    "acpResume",
+    // Rules and skills already told, by their paths there: told again here.
+    "attachedRules",
+    "toldSkills",
+];
+
+/// Makes a chat that arrived from the account (another computer's, so possibly someone
+/// else's who got into one) a conversation and nothing more: its folder is this computer's
+/// (`workspace`), it applies no edits without review, and nothing of
+/// `GRANTS_OR_NAMES_PATHS` comes with it. The one place every downloaded chat passes; a chat
+/// copied from a share goes through it too.
+pub(crate) fn neutralise(chat: &mut Value, workspace: Option<&str>) {
+    let Some(top) = chat.as_object_mut() else {
+        return;
+    };
+    for field in GRANTS_OR_NAMES_PATHS {
+        top.remove(*field);
+    }
+    // Applying edits without review is switched on per chat, on the computer it is used on.
+    if top.contains_key("autoApply") {
+        top.insert("autoApply".into(), Value::Bool(false));
+    }
+    // Checkpoints are this computer's own snapshots, named by a turn's number.
+    if let Some(checkpoints) = top.get_mut("checkpoints") {
+        match checkpoints.as_array_mut() {
+            Some(turns) => turns.retain(Value::is_u64),
+            None => *checkpoints = Value::Array(Vec::new()),
+        }
+    }
+    if let Some(meta) = top.get_mut("meta").and_then(Value::as_object_mut) {
+        match workspace {
+            Some(w) => meta.insert("workspace".into(), Value::String(w.to_string())),
+            None => meta.insert("workspace".into(), Value::Null),
+        };
+        // A worktree is a folder on the other computer.
+        meta.remove("worktree");
+        // The count of edits waiting for review: there are none here.
+        meta.remove("pending");
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 /// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`
 /// (the same id, or a new one for a copy). `workspace` replaces the chat's project folder,
@@ -184,14 +237,7 @@ pub async fn pull(
     let entry: Entry = serde_json::from_str(text)?;
     let bytes = chunks::read(api, ring, &entry.file).await?;
     let mut chat: Value = serde_json::from_slice(&bytes)?;
-    if let Some(meta) = chat.get_mut("meta").and_then(Value::as_object_mut) {
-        match workspace {
-            Some(w) => meta.insert("workspace".into(), Value::String(w.to_string())),
-            None => meta.insert("workspace".into(), Value::Null),
-        };
-        // A worktree is a folder on the other computer.
-        meta.remove("worktree");
-    }
+    neutralise(&mut chat, workspace);
     // Images first: a chat that names an image it doesn't have yet shows a gap.
     for (image, stored) in &entry.media {
         if !image
@@ -215,4 +261,71 @@ pub async fn pull(
     }
     agent::save_session_if(data, save_as, &serde_json::to_string(&chat)?, None)?;
     Ok(Some(record.version))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_downloaded_chat_grants_nothing_and_names_no_paths() {
+        let mut chat = json!({
+            "meta": {
+                "title": "Fix the build",
+                "updated": 7,
+                "workspace": "/home/other/project",
+                "worktree": { "path": "/home/other/wt", "branch": "x" },
+                "pending": 2,
+                "model": "openai/gpt",
+            },
+            "items": [{ "type": "user", "id": "u1", "text": "hello" }],
+            "turn": 3,
+            "autoApply": true,
+            "chatMode": "agent",
+            "changeset": [{ "path": "C:/Users/me/.ssh/config", "original": "", "proposed": "x" }],
+            "applied": { "1#a.ts": { "added": 1, "removed": 0 } },
+            "checkpoints": [1, 2, "../../elsewhere", { "turn": 3 }],
+            "seen": { "/etc/passwd": "fp" },
+            "attachedRules": { "/home/other/rules.md": 1 },
+            "toldSkills": { "deploy": 1 },
+            "budgetAllowed": true,
+            "acpResume": { "agent": "a", "id": "s", "root": "/home/other" },
+            "plan": [{ "text": "step" }],
+        });
+        neutralise(&mut chat, Some("D:/work/project"));
+        assert_eq!(chat["autoApply"], json!(false));
+        for gone in [
+            "changeset",
+            "seen",
+            "attachedRules",
+            "toldSkills",
+            "budgetAllowed",
+            "acpResume",
+        ] {
+            assert!(chat.get(gone).is_none(), "{gone}");
+        }
+        assert_eq!(chat["checkpoints"], json!([1, 2]));
+        assert_eq!(chat["meta"]["workspace"], json!("D:/work/project"));
+        assert!(chat["meta"].get("worktree").is_none());
+        assert!(chat["meta"].get("pending").is_none());
+        // The conversation itself is as it was.
+        assert_eq!(chat["meta"]["title"], json!("Fix the build"));
+        assert_eq!(chat["meta"]["model"], json!("openai/gpt"));
+        assert_eq!(chat["items"][0]["text"], json!("hello"));
+        assert_eq!(chat["turn"], json!(3));
+        assert_eq!(chat["chatMode"], json!("agent"));
+        assert_eq!(chat["plan"][0]["text"], json!("step"));
+        assert_eq!(chat["applied"]["1#a.ts"]["added"], json!(1));
+
+        // No folder here: none in the chat; odd shapes are left standing, not trusted.
+        let mut chat = json!({ "meta": { "workspace": "/x" }, "checkpoints": "all" });
+        neutralise(&mut chat, None);
+        assert_eq!(chat["meta"]["workspace"], Value::Null);
+        assert_eq!(chat["checkpoints"], json!([]));
+        assert!(chat.get("autoApply").is_none());
+        let mut odd = json!(["not", "a", "chat"]);
+        neutralise(&mut odd, None);
+        assert_eq!(odd, json!(["not", "a", "chat"]));
+    }
 }

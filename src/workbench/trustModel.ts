@@ -32,6 +32,20 @@ export function trustOf(
   return { state: "unknown" };
 }
 
+/**
+ * Why git is off in an open folder with this trust, or null when it may run. Git runs what a
+ * repository's own settings name (core.fsmonitor on every status, hooks, filters, sshCommand),
+ * so it runs only once the folder's authors are trusted: not in restricted mode (VS Code's
+ * way), and not while the question is still open either — files that arrived in the folder
+ * (an archive, a synced snapshot, a teammate's copy) would otherwise run before the answer.
+ */
+export function gitOffReason(state: TrustState): string | null {
+  if (state === "trusted") return null;
+  return state === "restricted"
+    ? "Git is off in restricted mode: it would run this repository's own settings. Trust the folder (Manage workspace trust) to use it."
+    : "Git is off until this folder is trusted: it would run this repository's own settings. Trust the folder (Manage workspace trust) to use it.";
+}
+
 /** The decisions after the user answered for `root` (and maybe trusted its parent too). */
 export function withDecision(
   decisions: Readonly<Record<string, boolean>> | undefined,

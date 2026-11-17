@@ -10,6 +10,7 @@ export const SHARE_COMMANDS: readonly string[] = [
   "team.members",
   "team.member.verify",
   "team.member.acceptKey",
+  "team.startOver",
   "team.copyFingerprint",
   "team.shares.list",
   "team.share.snapshots",
@@ -18,6 +19,28 @@ export const SHARE_COMMANDS: readonly string[] = [
   "team.share.view",
   "team.share.openCopy",
 ];
+
+/**
+ * The sharing commands an agent may find and run: the ones that read labels and lists and
+ * change nothing, each returning what teammates wrote marked as theirs (`fromTeammates`;
+ * `team.share.view` returns counts only).
+ * Everything else is the person's: what shares, stops sharing or writes to a share
+ * (`sync.project.shareNow` uploads the folder's state), what settles whose key is whose, and
+ * what puts a teammate's file into a tab or a folder (`team.share.openFile`,
+ * `team.share.openCopy`), where its text would sit unmarked within an agent's reach.
+ */
+export const SHARE_COMMANDS_AGENTS_MAY_RUN: readonly string[] = [
+  "team.members",
+  "team.shares.list",
+  "team.share.snapshots",
+  "team.share.files",
+  "team.share.view",
+];
+
+/** How a sharing command is registered for agents. */
+export function shareCommandAgent(id: string): "discoverable" | "hidden" {
+  return SHARE_COMMANDS_AGENTS_MAY_RUN.includes(id) ? "discoverable" : "hidden";
+}
 
 /**
  * The extension's manifest for this build (docs/own-services.md): a build whose service has

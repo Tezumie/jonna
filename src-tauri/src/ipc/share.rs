@@ -43,6 +43,13 @@ pub async fn share_me(state: State<'_, AppState>, base: String) -> Result<Me> {
     shares(&state, &base)?.me().await
 }
 
+/// Starts over with a new member key (the person's word, after sharing was refused because
+/// the account's own record of its keys couldn't be read): teammates see the key as changed.
+#[tauri::command]
+pub async fn share_start_over(state: State<'_, AppState>, base: String) -> Result<()> {
+    shares(&state, &base)?.start_over().await
+}
+
 /// The team's members, each with their fingerprint and where they stand for this account
 /// ("nokey", "new", "verified", "changed").
 #[tauri::command]
