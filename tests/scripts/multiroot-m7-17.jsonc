@@ -24,6 +24,8 @@
       "expect": { "added": [{ "name": "mr-api" }] },
       "timeoutMs": 15000
     },
+    // A folder that joins is asked about like one that opens: git stays off in it until then.
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
     {
       "state": "ide://workspace",
       "expect": {

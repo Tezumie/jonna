@@ -60,6 +60,8 @@
     // Deleting back to "fimDone" with no suggestion session: the cached rest shows again, and
     // the model isn't asked.
     { "run": "editor.runAction", "input": { "action": "deleteLeft" } },
+    // (The editor shows it once the change settled: looking at once, over and over, races that.)
+    { "wait": 600 },
     {
       "run": "dev.inspectDom",
       "input": { "selector": ".monaco-editor .ghost-text-decoration", "limit": 20 },
