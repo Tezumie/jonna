@@ -1,5 +1,5 @@
 // The Team page's own command: publishing to the team's library by picking, step by step (the
-// kind, which of the user's own, on for everyone or not). It drives the picker and then runs
+// kind, which of the user's own, and, for the team's owner, who it is on for). It drives the picker and then runs
 // the team extension's `team.publish` for each thing chosen, through the dispatcher: nothing is
 // imported from that extension, and what may be published is decided there, not here.
 import { parseExtensionsJson } from "../../core/extensions/recommendations";
@@ -19,6 +19,8 @@ import type { SyncCommandParts } from "./commands";
 import { countOf } from "./model";
 import {
   kindHeading,
+  modeChoices,
+  modeInput,
   type OwnItem,
   ownItems,
   type PublishOutcome,
@@ -190,7 +192,7 @@ export function registerTeamPageCommands(
       title: "Publish to the team's library…",
       category: "Sync",
       description:
-        "Asks, step by step, what of the user's own to publish to their team's library (publishers only): the kind (rules, skills, commands, agents, output styles, snippets, MCP servers, default settings, recommended extensions; `kind` skips that step), which of their own items of that kind, and whether it is on for every member from the start. Then runs team.publish for each one chosen and says what was published and what wasn't, with why (a server with a secret written out, a setting a team can't set, a newer version someone else published meanwhile). Needs the person at the picker; team.publish is the command without questions.",
+        "Asks, step by step, what of the user's own to publish to their team's library (publishers only): the kind (rules, skills, commands, agents, output styles, snippets, MCP servers, default settings, recommended extensions; `kind` skips that step), which of their own items of that kind, and, for the team's owner, who it is on for: optional (members add it), on by default (members can switch it off) or required (always on); a member who can publish isn't asked, theirs is optional. Then runs team.publish for each one chosen and says what was published and what wasn't, with why (a server with a secret written out, a setting a team can't set, a newer version someone else published meanwhile, an item only the owner may change). Needs the person at the picker; team.publish is the command without questions.",
       input: s.object({
         kind: s
           .enum(TEAM_KINDS)
@@ -288,7 +290,8 @@ export function registerTeamPageCommands(
           chosen = picked;
         }
 
-        // On for everyone from the start? What is in the library already may stay as it is.
+        // Who is it on for? The owner's to say; what is in the library already may stay as it
+        // is. A member who can publish isn't asked: theirs is optional.
         const there = team.items.some(
           (entry) =>
             entry.kind === kind &&
@@ -299,39 +302,27 @@ export function registerTeamPageCommands(
                     entry.path === choice.path || entry.path.startsWith(`${choice.path}/`),
                 )),
         );
-        const answer = await quickInput.pick(
-          [
-            ...(there
-              ? [
-                  {
-                    id: "keep",
-                    label: "Keep as it is",
-                    description: "What is in the library already stays a default, or not, as now",
-                  },
-                ]
-              : []),
-            { id: "yes", label: "Yes", description: "On for every member; each can turn it off" },
-            { id: "no", label: "No", description: "Each member adds it when they want it" },
-          ],
-          { placeholder: "On for everyone from the start?" },
-        );
-        if (!answer) return cancelled;
-        const isDefault = answer.id === "keep" ? {} : { isDefault: answer.id === "yes" };
+        const offer = modeChoices(team.team.role === "owner", there);
+        const answer = offer
+          ? await quickInput.pick(offer, { placeholder: "Who is it on for?" })
+          : null;
+        if (offer && !answer) return cancelled;
+        const mode = modeInput(answer?.id ?? null);
 
         const names = chosen.map((choice) => choice.path);
         const requests: { what: string; input: Record<string, unknown> }[] =
           kind === "settings"
-            ? [{ what: "settings.json", input: { kind, keys: names, ...isDefault } }]
+            ? [{ what: "settings.json", input: { kind, keys: names, ...mode } }]
             : kind === "mcp"
-              ? [{ what: "mcp.json", input: { kind, servers: names, ...isDefault } }]
+              ? [{ what: "mcp.json", input: { kind, servers: names, ...mode } }]
               : kind === "extensions"
                 ? [
                     {
                       what: "extensions.json",
-                      input: { kind, recommendations: names, ...isDefault },
+                      input: { kind, recommendations: names, ...mode },
                     },
                   ]
-                : names.map((path) => ({ what: path, input: { kind, path, ...isDefault } }));
+                : names.map((path) => ({ what: path, input: { kind, path, ...mode } }));
         const outcomes: PublishOutcome[] = [];
         for (const request of requests) {
           outcomes.push(

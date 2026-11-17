@@ -165,7 +165,7 @@ its commands through the dispatcher.
   kept per version) in a read-only monospace block with its own scroll; a skill previews its
   `SKILL.md` and lists its other files by name. A skill's files without a `SKILL.md` are one row
   without a switch. For a publisher a ⋯ menu: Make a default / Stop being a default
-  (`team.setDefault`), Remove from the library… (`team.unpublish`, which asks).
+  (`team.setMode`: optional, a default, or required; the owner only), Remove from the library… (`team.unpublish`, which asks).
 - Lapsed (the state's `state` is "lapsed", or the account's sync is ended): the library stays
   listed and what is on can still be chosen; Publish… and the ⋯ menu are gone, and one line in
   the card says why.

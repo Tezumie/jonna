@@ -307,6 +307,7 @@ mod tests {
             kind: kind.into(),
             path: path.into(),
             is_default: true,
+            required: false,
             version,
             size: 0,
             by: String::new(),

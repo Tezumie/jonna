@@ -86,7 +86,7 @@ export const teamExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://team", {
         description:
-          "The library of the account's team: what the team published so every member's IDE works the same way. `team`: null (in no team, or signed out), or its `name`, the account's `role` (owner or member) and whether it is a `publisher` (may change the library); never the members. `state`: on, or lapsed (the team's subscription ended: the library still applies and can be read, not changed). `items`: each with its `id`, `kind` (rules, skills, commands, agents, outputStyles, snippets, mcp, settings, extensions), `path` (its name, like the user's own files: skills/review/SKILL.md), `isDefault` (on for every member from the start), `active` (on here: a default this person didn't turn off, or one they added; a skill's files follow its SKILL.md), `version`, `by` (who published it) and `updatedAt` (ms). `lastRefresh` (ms, when the library was last read from the service) and `problem` (why it couldn't be read, else null; what is on this computer keeps applying). Never an item's text: team.readItem returns one. Items that are on are read only and the team's, not the user's own: a team's skill or command never pre-approves tools, its MCP servers ask before starting, its settings are defaults under the user's.",
+          "The library of the account's team: what the team published so every member's IDE works the same way. `team`: null (in no team, or signed out), or its `name`, the account's `role` (owner or member) and whether it is a `publisher` (may change the library); never the members. `state`: on, or lapsed (the team's subscription ended: the library still applies and can be read, not changed). `items`: each with its `id`, `kind` (rules, skills, commands, agents, outputStyles, snippets, mcp, settings, extensions), `path` (its name, like the user's own files: skills/review/SKILL.md), `isDefault` (on for every member from the start; a member may turn it off), `required` (on for every member, always: it can't be turned off; what is on for everyone is the team's owner's to decide), `active` (on here: a required item, a default this person didn't turn off, or one they added; a skill's files follow its SKILL.md), `version`, `by` (who published it) and `updatedAt` (ms). `lastRefresh` (ms, when the library was last read from the service) and `problem` (why it couldn't be read, else null; what is on this computer keeps applying). Never an item's text: team.readItem returns one. Items that are on are read only and the team's, not the user's own: a team's skill or command never pre-approves tools, its MCP servers ask before starting, its settings are defaults under the user's.",
         get: () => {
           const team = controller.team.peek();
           const active = controller.active.peek();
@@ -98,6 +98,7 @@ export const teamExtension: BuiltinExtension<WorkbenchServices> = {
               kind: item.kind,
               path: item.path,
               isDefault: item.isDefault,
+              required: item.required,
               active: active.has(item.id),
               version: item.version,
               by: item.by,

@@ -40,6 +40,10 @@ pub struct Item {
     pub path: String,
     #[serde(default)]
     pub is_default: bool,
+    /// On for every member, always (a member can't switch it off). Which items are on is the
+    /// front end's to work out: this only travels.
+    #[serde(default)]
+    pub required: bool,
     #[serde(default)]
     pub version: u64,
     #[serde(default)]
@@ -114,6 +118,7 @@ fn item_of(value: &Value) -> Option<Item> {
         kind,
         path,
         is_default: value.get("isDefault").and_then(Value::as_bool) == Some(true),
+        required: value.get("required").and_then(Value::as_bool) == Some(true),
         version: number_of(value, "version").unwrap_or(0),
         size,
         by,
@@ -187,6 +192,10 @@ pub fn parse_listing(json: &Value) -> Option<Listing> {
     })
 }
 
+/// Said when a member who can publish tries to change what is on for everyone (the front end
+/// refuses with the same sentence before it asks the service).
+const OWNER_DECIDES: &str = "Only the team's owner can change what is on for everyone. You can publish this as an optional item.";
+
 /// What a refusal means to the person using it.
 fn refusal(status: u16, json: &Value) -> Error {
     let code = json.get("error").and_then(Value::as_str).unwrap_or("");
@@ -205,6 +214,7 @@ fn refusal(status: u16, json: &Value) -> Error {
             "TeamNotPublisher",
             "Only the team's publishers can change its library.".into(),
         ),
+        (403, "not_owner") => Error::Sync("TeamNotOwner", OWNER_DECIDES.into()),
         (402, "sync_lapsed") => Error::Sync(
             "TeamLapsed",
             "The team's subscription ended: its library can be read, not changed.".into(),
@@ -287,6 +297,8 @@ pub async fn item_text(api: &Api, id: &str) -> Result<(u64, String)> {
 }
 
 /// Publishes an item over the version it was made from (`expect`; None: it must be new).
+/// `is_default`: on for every member from the start; `required`: and never switched off.
+#[allow(clippy::too_many_arguments)]
 pub async fn put(
     api: &Api,
     id: &str,
@@ -294,6 +306,7 @@ pub async fn put(
     path: &str,
     text: &str,
     is_default: bool,
+    required: bool,
     expect: Option<u64>,
 ) -> Result<Put> {
     if !paths::valid_id(id) || paths::check(kind, path).is_none() {
@@ -309,6 +322,7 @@ pub async fn put(
         "path": path,
         "text": text,
         "isDefault": is_default,
+        "required": required,
         "expect": expect,
     });
     let reply = api.put(&format!("library/{id}"), &body).await?;
@@ -385,6 +399,8 @@ mod tests {
         assert_eq!(ids, ["a", "b", "j"]);
         assert_eq!(listing.items[0].by, "Ada");
         assert!(listing.items[0].is_default);
+        // Absent: not required.
+        assert!(!listing.items[0].required);
         assert_eq!(listing.items[0].updated_at, Some(1_800_000_000_000));
         // Without a team there is nothing to read.
         assert_eq!(parse_listing(&json!({ "items": [] })), None);
@@ -394,6 +410,29 @@ mod tests {
                 .state,
             "lapsed"
         );
+    }
+
+    #[test]
+    fn required_travels_with_an_item() {
+        let mut must = listed("a", "rules", "AGENTS.md");
+        must["required"] = json!(true);
+        let mut not = listed("b", "commands", "commands/ship.md");
+        // Only a plain true is one.
+        not["required"] = json!("yes");
+        let listing =
+            parse_listing(&json!({ "team": { "id": "t1" }, "items": [must, not] })).unwrap();
+        assert!(listing.items[0].required);
+        assert!(!listing.items[1].required);
+        // As this computer keeps it, and as the front end reads it: `required`.
+        let kept = serde_json::to_value(&listing.items[0]).unwrap();
+        assert_eq!(kept["required"], json!(true));
+        assert_eq!(kept["isDefault"], json!(true));
+        // A list kept by an older build has no such field: not required.
+        let old: Item = serde_json::from_value(
+            json!({ "id": "a", "kind": "rules", "path": "AGENTS.md", "isDefault": true }),
+        )
+        .unwrap();
+        assert!(!old.required);
     }
 
     #[test]
@@ -444,6 +483,11 @@ mod tests {
             other => panic!("unexpected: {other:?}"),
         };
         assert_eq!(code(403, "not_publisher"), "TeamNotPublisher");
+        assert_eq!(code(403, "not_owner"), "TeamNotOwner");
+        match refusal(403, &json!({ "error": "not_owner" })) {
+            Error::Sync(_, said) => assert_eq!(said, OWNER_DECIDES),
+            other => panic!("unexpected: {other:?}"),
+        }
         assert_eq!(code(402, "sync_lapsed"), "TeamLapsed");
         assert_eq!(code(409, "name_taken"), "TeamNameTaken");
         assert_eq!(code(409, "conflict"), "TeamConflict");

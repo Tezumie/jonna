@@ -38,8 +38,15 @@ and at most every 10 minutes while the window has the focus (coming back to it, 
 only acts while it is focused). The periodic check asks only for the profile; the library's list
 is read when its `libraryRev` differs from the cached one (or texts are still missing).
 
-**Which items are on:** an item marked default, unless this person turned it off, plus the ones
-they added. Two settings hold that, as lists of item ids, and never sync (`staysLocal`):
+**Which items are on:** a required item, always; an item marked default, unless this person
+turned it off; plus the ones they added (`activeIds`, `core/team/items.ts`: the decision is
+made here, Rust only carries the flags). An item's mode is optional, default or required
+(`modeOf`): `isDefault` and `required` in its JSON, a required item carrying both so a build
+that doesn't know `required` still has it on. Only the team's owner decides what is on for
+everyone: a member who can publish publishes and updates optional items (`ownerOnlyRefusal`,
+checked before anything is sent; the service answers 403 `not_owner` with the same sentence).
+Required default settings still sit under the user's own: only the item as a whole can't be
+switched off. Two settings hold what this person chose, as lists of item ids, and never sync (`staysLocal`):
 `team.added` and `team.off`. A skill is every item under `skills/<skill>/`; its `SKILL.md` is
 its switch (adding or turning off any of its files acts on that one, and the others follow); a
 skill's files without a `SKILL.md` in the library are never on.
@@ -79,12 +86,15 @@ Extensions view's reasons ("Recommended by your team (name)").
 
 **Commands:** `team.refresh` (returns `team`, `items`, `active`, `fetched`, `failed`,
 `problem`), `team.readItem {id}` (the text, from the cache) — both open to agents. The person's
-own, hidden from agents: `team.addItem {id}`, `team.turnOnItem {id}`, `team.turnOffItem {id}`;
-and for publishers `team.publish {kind, path?, isDefault?, keys?, recommendations?, servers?}`
-(one of the user's own files, read through the user-files calls; a conflict is reported, never
-overwritten), `team.setDefault {id, isDefault}`, `team.unpublish {id}` (asks first; a skill's
-`SKILL.md` removes the whole skill).
+own, hidden from agents: `team.addItem {id}`, `team.turnOnItem {id}`, `team.turnOffItem {id}`
+(refused for a required item); for publishers
+`team.publish {kind, path?, mode?, keys?, recommendations?, servers?}` (one of the user's own
+files, read through the user-files calls; `mode`: optional, default or required, the last two
+and anything over an item that is one being the owner's; `isDefault` is still read as the older
+word for it; a conflict is reported, never overwritten) and `team.unpublish {id}` (asks first;
+a skill's `SKILL.md` removes the whole skill); and for the owner `team.setMode {id, mode}`
+(returns `mode`, `changed`, `version`).
 **Settings:** `team.added`, `team.off`.
 **State:** `ide://team` (`team`: name, role, publisher; `state`; `items`: id, kind, path,
-isDefault, active, version, by, updatedAt; `lastRefresh`; `problem`). Never an item's text,
+isDefault, required, active, version, by, updatedAt; `lastRefresh`; `problem`). Never an item's text,
 never the members.

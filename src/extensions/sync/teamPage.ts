@@ -8,6 +8,7 @@ import { type Child, h, on } from "../../core/dom/index";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, type Signal, signal } from "../../core/reactive/index";
 import { activeTeam } from "../../core/team/source";
+import { icon } from "../../ui/Icon";
 import type { MenuItem } from "../../ui/Menu";
 import type { WorkbenchServices } from "../../workbench/services";
 import { teamOf } from "./model";
@@ -15,11 +16,17 @@ import { body, card, empty, item, manageTeam, type PageKit, section } from "./pa
 import type { SyncSession } from "./session";
 import {
   emptyLibraryWords,
+  filterGroups,
+  hasFilter,
   lapsedLibraryLine,
+  modeActions,
+  modeTag,
   NO_LIBRARY,
+  requiredWords,
   roleWords,
   rowFacts,
   TEAM_INVITED,
+  TEAM_PRECEDENCE,
   TEAM_PURPOSE,
   TEAM_START,
   type TeamAbilities,
@@ -54,6 +61,8 @@ export class TeamLibraryReader implements Disposable {
   readonly library: Signal<TeamLibrary> = signal<TeamLibrary>(NO_LIBRARY, sameJson);
   /** Moves when a preview's text arrived (or failed): the tab draws again. */
   readonly previews: Signal<number> = signal(0);
+  /** What is typed in the page's filter box: kept through redraws, gone with the tab. */
+  filter = "";
   private readonly store = new DisposableStore();
   /** By item id and version: a newer version is read again. */
   private readonly texts = new Map<string, TeamPreview>();
@@ -271,32 +280,56 @@ function previewOf(kit: PageKit, row: TeamRow): HTMLElement {
   );
 }
 
+/** A required row has no switch: a lock, and why, in its place. */
+function alwaysOn(row: TeamRow): HTMLElement {
+  const why = requiredWords(row.kind);
+  return h(
+    "span",
+    {
+      class: "sync-team-switch sync-team-locked",
+      role: "note",
+      title: why,
+      "aria-label": `Always on. ${why}`,
+      "data-team-locked": "",
+    },
+    icon("lock"),
+    h("span", { class: "sync-check-label" }, "Always on"),
+  );
+}
+
 function libraryRow(kit: PageKit, row: TeamRow, abilities: TeamAbilities): HTMLElement {
   const working = kit.session.working.peek() !== null;
-  const box = h("input", {
-    class: "checkbox",
-    type: "checkbox",
-    "aria-label": `${row.name}: on for you on this computer`,
-  });
-  box.checked = row.on;
-  box.disabled = working || !row.switchable || !abilities.choose;
-  kit.drawn.add(
-    on(box, "change", () => void kit.run(toggleCommand(row, box.checked), { id: row.id })),
-  );
-  const state = h(
-    "label",
-    { class: "sync-check sync-team-switch" },
-    box,
-    h("span", { class: "sync-check-label" }, row.on ? "On" : "Off"),
-  );
+  let state: HTMLElement;
+  if (row.mode === "required" && row.switchable) state = alwaysOn(row);
+  else {
+    const box = h("input", {
+      class: "checkbox",
+      type: "checkbox",
+      "aria-label": `${row.name}: on for you on this computer`,
+    });
+    box.checked = row.on;
+    box.disabled = working || !row.switchable || !abilities.choose;
+    kit.drawn.add(
+      on(box, "change", () => void kit.run(toggleCommand(row, box.checked), { id: row.id })),
+    );
+    state = h(
+      "label",
+      { class: "sync-check sync-team-switch" },
+      box,
+      h("span", { class: "sync-check-label" }, row.on ? "On" : "Off"),
+    );
+  }
 
   const menu: MenuItem[] = [];
-  if (abilities.publish) {
-    if (row.switchable)
+  // Who it is on for is the owner's to say; a member who can publish only removes.
+  if (abilities.decide && row.switchable)
+    for (const action of modeActions(row.mode))
       menu.push({
-        label: row.isDefault ? "Stop being a default" : "Make a default",
-        run: () => void kit.run("team.setDefault", { id: row.id, isDefault: !row.isDefault }),
+        label: action.label,
+        ...(action.mode === "required" && { icon: "lock" as const }),
+        run: () => void kit.run("team.setMode", { id: row.id, mode: action.mode }),
       });
+  if (abilities.publish) {
     menu.push({
       label: "Remove from the library…",
       icon: "trash-2",
@@ -320,9 +353,10 @@ function libraryRow(kit: PageKit, row: TeamRow, abilities: TeamAbilities): HTMLE
     }),
   );
 
+  const tag = modeTag(row.mode);
   return item({
     title: row.name,
-    tags: [...(row.isDefault ? ["Default"] : []), ...(row.switchable ? [] : ["No SKILL.md"])],
+    tags: row.switchable ? (tag === null ? [] : [tag]) : ["No SKILL.md"],
     details: [
       [
         rowFacts(row),
@@ -338,6 +372,7 @@ function libraryRow(kit: PageKit, row: TeamRow, abilities: TeamAbilities): HTMLE
       "data-team-item": row.id,
       "data-kind": row.kind,
       "data-on": String(row.on),
+      "data-mode": row.mode,
     },
     below: [details],
     actions: [
@@ -371,18 +406,71 @@ export function teamPage(kit: PageKit): Child[] {
   }
   const abilities = teamAbilities(library, kit.lapsed);
   const groups = teamGroups(library.items);
-  return [
-    section(null, headCard(kit, library, abilities)),
-    ...(groups.length === 0
-      ? [section("Library", card(empty(emptyLibraryWords(abilities.publish))))]
-      : groups.map((group) =>
-          h(
-            "section",
-            { class: "sync-section", "data-team-kind": group.kind },
-            h("h2", { class: "settings-section-title" }, group.heading),
-            group.note ? h("p", { class: "sync-section-note" }, group.note) : null,
-            card(...group.rows.map((row) => libraryRow(kit, row, abilities))),
-          ),
-        )),
-  ];
+  const head = section(
+    null,
+    h("p", { class: "sync-section-note", "data-team-precedence": "" }, TEAM_PRECEDENCE),
+    headCard(kit, library, abilities),
+  );
+  if (groups.length === 0)
+    return [head, section("Library", card(empty(emptyLibraryWords(abilities.publish))))];
+
+  // Every row is built once; the filter only chooses which of them their cards hold, so a
+  // preview left open and the box being typed in stay as they are.
+  const parts = groups.map((group) => {
+    const rows = new Map(group.rows.map((row) => [row.id, libraryRow(kit, row, abilities)]));
+    const list = card();
+    const el = h(
+      "section",
+      { class: "sync-section", "data-team-kind": group.kind },
+      h("h2", { class: "settings-section-title" }, group.heading),
+      group.note ? h("p", { class: "sync-section-note" }, group.note) : null,
+      list,
+    );
+    return { kind: group.kind, rows, list, el };
+  });
+  const none = section(null, card(empty("Nothing matches. Clear the filter to see everything.")));
+  none.setAttribute("data-team-filter", "none");
+  const filtered = hasFilter(groups);
+  const show = () => {
+    const shown = filterGroups(groups, filtered ? kit.team.filter : "");
+    for (const part of parts) {
+      const rows = shown.find((group) => group.kind === part.kind)?.rows ?? [];
+      part.list.replaceChildren(...rows.flatMap((row) => part.rows.get(row.id) ?? []));
+      part.el.hidden = rows.length === 0;
+    }
+    none.hidden = shown.length > 0;
+  };
+  show();
+  return [head, filtered ? filterBox(kit, show) : null, ...parts.map((part) => part.el), none];
+}
+
+/** The filter above a long library: by name and kind, as it is typed. */
+function filterBox(kit: PageKit, changed: () => void): HTMLElement {
+  const input = h("input", {
+    class: "input settings-search-input",
+    type: "search",
+    placeholder: "Filter by name or kind",
+    "aria-label": "Filter the team's library by name or kind",
+    spellcheck: "false",
+    autocomplete: "off",
+    // The view keeps the caret of a field so named through a redraw.
+    "data-field": "team-filter",
+  });
+  input.value = kit.team.filter;
+  kit.drawn.add(
+    on(input, "input", () => {
+      kit.team.filter = input.value;
+      changed();
+    }),
+  );
+  kit.drawn.add(
+    on(input, "keydown", (event) => {
+      if (event.key !== "Escape" || input.value === "") return;
+      event.stopPropagation();
+      input.value = "";
+      kit.team.filter = "";
+      changed();
+    }),
+  );
+  return h("div", { class: "settings-search sync-team-filter" }, icon("search"), input);
 }

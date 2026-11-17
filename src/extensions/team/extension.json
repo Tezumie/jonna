@@ -38,8 +38,8 @@
         "category": "Team"
       },
       {
-        "id": "team.setDefault",
-        "title": "Make an item of the team's library a default (or not)",
+        "id": "team.setMode",
+        "title": "Change who an item of the team's library is on for",
         "category": "Team"
       },
       {
@@ -63,7 +63,7 @@
         "type": "array",
         "default": [],
         "scope": "user",
-        "description": "Defaults of your team's library you turned off on this computer (their ids). Kept here by the team's commands; it never syncs.",
+        "description": "Defaults of your team's library you turned off on this computer (their ids). Kept here by the team's commands; it never syncs. An item your team requires stays on whatever is listed here.",
         "items": {
           "type": "string"
         },

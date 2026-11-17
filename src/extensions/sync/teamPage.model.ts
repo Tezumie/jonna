@@ -1,9 +1,18 @@
 // The Team page's words and rules, DOM-free: the team's library as `ide://team` gives it, its
-// items as the rows the page lists (by kind, a skill as one row), what a switch does, what this
-// account may do, and what the publish picker offers and reports. The library itself is the
+// items as the rows the page lists (by kind, a skill as one row), who a row is on for (its
+// mode), what a switch does, what this account may do, the filter, and what the publish picker
+// offers and reports. The library itself is the
 // team extension's (extensions/team); this page reads its state and runs its commands, and
 // imports nothing from it.
-import { isTeamKind, kindOfPath, skillOf, type TeamKind } from "../../core/team/items";
+import {
+  isTeamKind,
+  kindOfPath,
+  modeOf,
+  skillOf,
+  TEAM_MODES,
+  type TeamKind,
+  type TeamMode,
+} from "../../core/team/items";
 import { countOf } from "./model";
 
 // ------------------------------------------------------------ the library, as the state gives it
@@ -13,7 +22,9 @@ export interface TeamLibraryItem {
   kind: TeamKind;
   path: string;
   isDefault: boolean;
-  /** On here: a default this person didn't turn off, or one they added. */
+  /** On for every member, always: it can't be switched off. */
+  required: boolean;
+  /** On here: required, a default this person didn't turn off, or one they added. */
   active: boolean;
   version: number;
   by: string;
@@ -58,6 +69,7 @@ export function teamLibraryOf(raw: unknown): TeamLibrary {
       kind: x.kind,
       path: x.path,
       isDefault: x.isDefault === true,
+      required: x.required === true,
       active: x.active === true,
       version: typeof x.version === "number" ? x.version : 0,
       by: typeof x.by === "string" ? x.by : "",
@@ -104,7 +116,7 @@ export const TEAM_GROUPS: readonly {
   {
     kind: "mcp",
     heading: "MCP servers",
-    note: "A team's servers ask before they start, and ask each person for their own keys.",
+    note: "A team's servers ask before they start. Each member signs in to a server themselves: keys are never in the library.",
   },
   {
     kind: "settings",
@@ -134,8 +146,10 @@ export interface TeamRow {
   /** The path of the item `id` names. */
   path: string;
   isDefault: boolean;
+  /** Who it is on for: optional, default, or required (always on, no switch). */
+  mode: TeamMode;
   on: boolean;
-  /** Who published the newest part of it, and when. */
+  /** Who published the newest part of it (the name the service gives them), and when. */
   by: string;
   updatedAt: number | null;
   /** How many files it is (1, or a skill's). */
@@ -173,6 +187,8 @@ function skillRow(skill: string, files: readonly TeamLibraryItem[]): TeamRow | n
     name: skill,
     path: first.path,
     isDefault: main?.isDefault === true,
+    // A skill is on as its SKILL.md says; files without one are nobody's.
+    mode: main ? modeOf(main) : "optional",
     on: main?.active === true,
     by: newest.by,
     updatedAt: newest.updatedAt,
@@ -209,6 +225,7 @@ export function teamGroups(items: readonly TeamLibraryItem[]): TeamGroup[] {
         name: rowName(kind, item.path),
         path: item.path,
         isDefault: item.isDefault,
+        mode: modeOf(item),
         on: item.active,
         by: item.by,
         updatedAt: item.updatedAt,
@@ -240,13 +257,85 @@ export function toggleCommand(
   return row.isDefault ? "team.turnOnItem" : "team.addItem";
 }
 
+// ------------------------------------------------------------ modes
+
+/** Under the page's heading: whose word counts. */
+export const TEAM_PRECEDENCE =
+  "Your own files and settings win over the team's. Required items are always on.";
+
+/** A row's mode as its tag; nothing for an optional item. */
+export function modeTag(mode: TeamMode): string | null {
+  return mode === "required" ? "Required" : mode === "default" ? "Default" : null;
+}
+
+/**
+ * What a required row says in place of its switch (the tooltip). Required default settings
+ * are still defaults: the item can't be switched off as a whole, and each value is under the
+ * person's own.
+ */
+export function requiredWords(kind: TeamKind): string {
+  return kind === "settings"
+    ? "Your team requires these settings, so they can't be switched off here. They are still defaults: where you set a value of your own, yours wins."
+    : "Your team requires this item, so it can't be switched off here.";
+}
+
+const MODE_ACTIONS: Record<TeamMode, string> = {
+  optional: "Make optional",
+  default: "Make a default",
+  required: "Make required",
+};
+
+/** The owner's menu for a row: the modes it isn't in, each as what `team.setMode` is given. */
+export function modeActions(mode: TeamMode): { mode: TeamMode; label: string }[] {
+  return TEAM_MODES.filter((other) => other !== mode).map((other) => ({
+    mode: other,
+    label: MODE_ACTIONS[other],
+  }));
+}
+
+// ------------------------------------------------------------ the filter
+
+/** A library with more rows than this gets a filter box above it. */
+export const FILTER_FROM = 12;
+
+export function rowCount(groups: readonly TeamGroup[]): number {
+  return groups.reduce((n, group) => n + group.rows.length, 0);
+}
+
+/** Whether the library is long enough for a filter box. */
+export function hasFilter(groups: readonly TeamGroup[]): boolean {
+  return rowCount(groups) > FILTER_FROM;
+}
+
+/**
+ * The rows that match `query`, by name and by kind, whatever the case: every word of it is in
+ * the row's name or in its kind's heading ("mcp" and "servers" both find the MCP servers).
+ * Groups left without a row are left out; an empty query keeps everything.
+ */
+export function filterGroups(groups: readonly TeamGroup[], query: string): TeamGroup[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [...groups];
+  const out: TeamGroup[] = [];
+  for (const group of groups) {
+    const kind = `${group.heading} ${group.kind}`.toLowerCase();
+    const rows = group.rows.filter((row) => {
+      const name = row.name.toLowerCase();
+      return words.every((word) => name.includes(word) || kind.includes(word));
+    });
+    if (rows.length > 0) out.push({ ...group, rows });
+  }
+  return out;
+}
+
 // ------------------------------------------------------------ who may do what
 
 export interface TeamAbilities {
   /** Turning items on and off on this computer: anyone in the team, lapsed or not. */
   choose: boolean;
-  /** Publishing, changing defaults, removing: publishers, while the subscription runs. */
+  /** Publishing optional items, removing: publishers, while the subscription runs. */
   publish: boolean;
+  /** Saying what is on for everyone (default, required): the team's owner, who can publish. */
+  decide: boolean;
   /** The team's subscription ended: said in one line, and nothing of the library changes. */
   lapsed: boolean;
 }
@@ -254,9 +343,11 @@ export interface TeamAbilities {
 /** What this account may do with the library (`lapsed`: the account's sync is ended too). */
 export function teamAbilities(library: TeamLibrary, lapsed = false): TeamAbilities {
   const ended = library.state === "lapsed" || lapsed;
+  const publish = library.team?.publisher === true && !ended;
   return {
     choose: library.team !== null,
-    publish: library.team?.publisher === true && !ended,
+    publish,
+    decide: publish && library.team?.role === "owner",
     lapsed: library.team !== null && ended,
   };
 }
@@ -319,6 +410,55 @@ export function ownItems(kind: TeamKind, files: readonly string[]): OwnItem[] {
     .filter((path) => kindOfPath(path) === kind)
     .sort()
     .map((path) => ({ path, label: rowName(kind, path) }));
+}
+
+/** One answer to "who is it on for?" in the publish picker. */
+export interface ModeChoice {
+  /** A mode, or "keep": what is in the library already stays as it is. */
+  id: TeamMode | "keep";
+  label: string;
+  description: string;
+}
+
+/**
+ * What the publish picker asks about who the item is on for. The owner chooses (`there`: it is
+ * in the library already, so it may stay as it is); a member who can publish isn't asked (null):
+ * theirs is optional.
+ */
+export function modeChoices(owner: boolean, there: boolean): ModeChoice[] | null {
+  if (!owner) return null;
+  return [
+    ...(there
+      ? [
+          {
+            id: "keep" as const,
+            label: "Keep as it is",
+            description: "What is in the library already stays optional, a default or required",
+          },
+        ]
+      : []),
+    {
+      id: "optional",
+      label: "Optional (members add it)",
+      description: "Off until a member adds it",
+    },
+    {
+      id: "default",
+      label: "On by default (members can switch it off)",
+      description: "On for every member from the start",
+    },
+    {
+      id: "required",
+      label: "Required (always on)",
+      description: "On for every member; nobody can switch it off",
+    },
+  ];
+}
+
+/** What `team.publish` is given for an answer (`null`: a publisher who isn't asked). */
+export function modeInput(answer: ModeChoice["id"] | null): { mode?: TeamMode } {
+  if (answer === null) return { mode: "optional" };
+  return answer === "keep" ? {} : { mode: answer };
 }
 
 /** What one `team.publish` came to: what went, and what didn't with why. */

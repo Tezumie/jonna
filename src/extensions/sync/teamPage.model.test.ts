@@ -2,16 +2,26 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   emptyLibraryWords,
+  FILTER_FROM,
+  filterGroups,
+  hasFilter,
   kindHeading,
   lapsedLibraryLine,
+  modeActions,
+  modeChoices,
+  modeInput,
+  modeTag,
   NO_LIBRARY,
   ownItems,
   publishFailure,
   publishOutcome,
   publishReport,
+  requiredWords,
   roleWords,
+  rowCount,
   rowFacts,
   TEAM_GROUPS,
+  TEAM_PRECEDENCE,
   type TeamLibrary,
   type TeamLibraryItem,
   teamAbilities,
@@ -30,6 +40,7 @@ const entry = (
   kind,
   path,
   isDefault: false,
+  required: false,
   active: false,
   version: 1,
   by: "Ada",
@@ -69,6 +80,7 @@ test("team page: the state is narrowed, whatever it holds", () => {
       kind: "commands",
       path: "commands/ship.md",
       isDefault: true,
+      required: false,
       active: true,
       version: 0,
       by: "",
@@ -136,6 +148,8 @@ test("team page: the library by kind, in the page's order, empty kinds left out"
   assert.equal(note("skills"), note("commands"));
   assert.match(note("settings") ?? "", /^Defaults, not locks: your own settings win\./);
   assert.match(note("mcp") ?? "", /ask before they start/);
+  // Keys are each member's own, and never in the library.
+  assert.match(note("mcp") ?? "", /signs in to a server themselves: keys are never in the library/);
   assert.equal(note("rules"), null);
 });
 
@@ -202,27 +216,43 @@ test("team page: who may do what", () => {
   const publisher = { name: "Studio", role: "member" as const, publisher: true };
   const owner = { name: "Studio", role: "owner" as const, publisher: true };
   // A member chooses what is on here, and can't change the library.
-  assert.deepEqual(teamAbilities(libraryOf()), { choose: true, publish: false, lapsed: false });
+  assert.deepEqual(teamAbilities(libraryOf()), {
+    choose: true,
+    publish: false,
+    decide: false,
+    lapsed: false,
+  });
+  // A member who can publish publishes; what is on for everyone is the owner's to say.
   assert.deepEqual(teamAbilities(libraryOf({ team: publisher })), {
     choose: true,
     publish: true,
+    decide: false,
+    lapsed: false,
+  });
+  assert.deepEqual(teamAbilities(libraryOf({ team: owner })), {
+    choose: true,
+    publish: true,
+    decide: true,
     lapsed: false,
   });
   // Lapsed: the library stays and what is on can still be chosen; nobody publishes.
   assert.deepEqual(teamAbilities(libraryOf({ team: owner, state: "lapsed" })), {
     choose: true,
     publish: false,
+    decide: false,
     lapsed: true,
   });
   assert.deepEqual(teamAbilities(libraryOf({ team: publisher }), true), {
     choose: true,
     publish: false,
+    decide: false,
     lapsed: true,
   });
   // In no team: nothing.
   assert.deepEqual(teamAbilities(NO_LIBRARY, true), {
     choose: false,
     publish: false,
+    decide: false,
     lapsed: false,
   });
   assert.equal(roleWords(owner), "You own this team");
@@ -308,4 +338,149 @@ test("team page: what a publish came to, in one sentence", () => {
     "Published 4 files to the library of Studio.",
   );
   assert.deepEqual(publishOutcome("x", null).refused, [{ what: "x", why: "nothing came back" }]);
+});
+
+test("team page: a row's mode, its tag, and what its owner can make it", () => {
+  const read = teamLibraryOf({
+    team: { name: "Studio", role: "owner", publisher: true },
+    items: [
+      { id: "a", kind: "commands", path: "commands/a.md", isDefault: true, required: true },
+      { id: "b", kind: "commands", path: "commands/b.md", isDefault: true, required: "yes" },
+    ],
+  });
+  assert.deepEqual(
+    read.items.map((item) => item.required),
+    [true, false],
+  );
+  const groups = teamGroups([
+    entry("req", "commands", "commands/a.md", { isDefault: true, required: true, active: true }),
+    entry("def", "commands", "commands/b.md", { isDefault: true, active: true }),
+    entry("opt", "commands", "commands/c.md"),
+    // A skill is on as its SKILL.md says, whatever its other files carry.
+    entry("main", "skills", "skills/review/SKILL.md", { required: true, active: true }),
+    entry("file", "skills", "skills/review/run.py"),
+    entry("lone", "skills", "skills/draft/a.md", { required: true }),
+  ]);
+  const modes = (kind: string) =>
+    groups.find((group) => group.kind === kind)?.rows.map((row) => [row.name, row.mode]);
+  assert.deepEqual(modes("commands"), [
+    ["a", "required"],
+    ["b", "default"],
+    ["c", "optional"],
+  ]);
+  assert.deepEqual(modes("skills"), [
+    ["draft", "optional"],
+    ["review", "required"],
+  ]);
+  assert.equal(modeTag("required"), "Required");
+  assert.equal(modeTag("default"), "Default");
+  assert.equal(modeTag("optional"), null);
+  // The owner's menu: the two modes the row isn't in, as team.setMode takes them.
+  assert.deepEqual(modeActions("optional"), [
+    { mode: "default", label: "Make a default" },
+    { mode: "required", label: "Make required" },
+  ]);
+  assert.deepEqual(modeActions("default"), [
+    { mode: "optional", label: "Make optional" },
+    { mode: "required", label: "Make required" },
+  ]);
+  assert.deepEqual(modeActions("required"), [
+    { mode: "optional", label: "Make optional" },
+    { mode: "default", label: "Make a default" },
+  ]);
+  // In place of a required row's switch.
+  assert.equal(
+    requiredWords("commands"),
+    "Your team requires this item, so it can't be switched off here.",
+  );
+  assert.match(
+    requiredWords("settings"),
+    /still defaults: where you set a value of your own, yours wins\.$/,
+  );
+  assert.equal(
+    TEAM_PRECEDENCE,
+    "Your own files and settings win over the team's. Required items are always on.",
+  );
+});
+
+test("team page: who published a row, and when", () => {
+  const rows = teamGroups([
+    entry("a", "commands", "commands/a.md", { by: "Ada Lovelace", updatedAt: 7_000 }),
+    entry("b", "commands", "commands/b.md", { by: "", updatedAt: null }),
+  ])[0]?.rows;
+  const [a, b] = rows ?? [];
+  // The time is the row's own (the page draws it so it stays current).
+  assert.equal(a && rowFacts(a), "Published by Ada Lovelace");
+  assert.equal(a?.updatedAt, 7_000);
+  // A service that names nobody: the date alone.
+  assert.equal(b && rowFacts(b), "Published");
+  assert.equal(b?.updatedAt, null);
+});
+
+test("team page: the filter, by name and kind", () => {
+  const few = teamGroups([
+    entry("c1", "commands", "commands/ship.md"),
+    entry("c2", "commands", "commands/Audit.md"),
+    entry("a1", "agents", "agents/shipper.md"),
+    entry("m", "mcp", "mcp.json"),
+    entry("o", "outputStyles", "output-styles/terse.md"),
+    entry("s1", "skills", "skills/review/SKILL.md"),
+    entry("s2", "skills", "skills/review/run.py"),
+  ]);
+  // A skill is one row however many files it is.
+  assert.equal(rowCount(few), 6);
+  assert.equal(hasFilter(few), false);
+  // A box only above a library of more than a dozen rows.
+  const library = (rows: number) =>
+    teamGroups(
+      Array.from({ length: rows }, (_, n) => entry(`c${n}`, "commands", `commands/c${n}.md`)),
+    );
+  assert.equal(hasFilter(library(FILTER_FROM)), false);
+  assert.equal(hasFilter(library(FILTER_FROM + 1)), true);
+
+  const names = (query: string) =>
+    filterGroups(few, query).map((group) => [group.kind, group.rows.map((row) => row.name)]);
+  // Nothing typed (or only spaces): everything, as it was.
+  assert.deepEqual(filterGroups(few, ""), few);
+  assert.deepEqual(filterGroups(few, "   "), few);
+  // By name, whatever the case; groups without a match are left out.
+  assert.deepEqual(names("SHIP"), [
+    ["commands", ["ship"]],
+    ["agents", ["shipper"]],
+  ]);
+  assert.deepEqual(names("audit"), [["commands", ["Audit"]]]);
+  // By kind: the heading's words, or the kind's own.
+  assert.deepEqual(names("commands"), [["commands", ["Audit", "ship"]]]);
+  assert.deepEqual(names("servers"), [["mcp", ["mcp.json"]]]);
+  assert.deepEqual(names("output styles"), [["outputStyles", ["terse"]]]);
+  assert.deepEqual(names("outputstyles"), [["outputStyles", ["terse"]]]);
+  // Every word must be found: a kind and a name narrow each other.
+  assert.deepEqual(names("commands ship"), [["commands", ["ship"]]]);
+  assert.deepEqual(names("agents audit"), []);
+  // Nothing matches.
+  assert.deepEqual(names("zzz"), []);
+});
+
+test("team page: what the publish picker asks about who it is on for", () => {
+  // The owner chooses; "keep" only for what is in the library already.
+  assert.deepEqual(
+    modeChoices(true, false)?.map((choice) => [choice.id, choice.label]),
+    [
+      ["optional", "Optional (members add it)"],
+      ["default", "On by default (members can switch it off)"],
+      ["required", "Required (always on)"],
+    ],
+  );
+  assert.deepEqual(
+    modeChoices(true, true)?.map((choice) => choice.id),
+    ["keep", "optional", "default", "required"],
+  );
+  assert.equal(modeChoices(true, true)?.[0]?.label, "Keep as it is");
+  // A member who can publish isn't asked: optional.
+  assert.equal(modeChoices(false, false), null);
+  assert.equal(modeChoices(false, true), null);
+  assert.deepEqual(modeInput(null), { mode: "optional" });
+  assert.deepEqual(modeInput("keep"), {});
+  assert.deepEqual(modeInput("required"), { mode: "required" });
+  assert.deepEqual(modeInput("default"), { mode: "default" });
 });

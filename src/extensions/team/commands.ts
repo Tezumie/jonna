@@ -1,7 +1,8 @@
 // The team library's commands. Reading (team.refresh, team.readItem) is open to agents; what
 // changes which of other people's files are on here (add, turn on, turn off) and what changes
-// the library for everyone (publish, set default, unpublish) is the person's own to do: hidden
-// from agents.
+// the library for everyone (publish, set mode, unpublish) is the person's own to do: hidden
+// from agents. What is on for everyone (a default, a required item) is the team's owner's to
+// decide: a member who can publish publishes and updates optional items.
 import { fsIpc } from "../../core/ipc/fs";
 import { syncIpc } from "../../core/ipc/sync";
 import { teamIpc } from "../../core/ipc/team";
@@ -14,11 +15,20 @@ import {
   addItem,
   itemId,
   MAX_TEAM_ITEM_BYTES,
+  modeAt,
+  modeFlags,
+  modeGiven,
+  modeOf,
+  OWNER_DECIDES,
+  ownerOnlyRefusal,
+  REQUIRED_STAYS_ON,
   skillOf,
   switchOf,
   TEAM_KINDS,
+  TEAM_MODES,
   type TeamItem,
   type TeamKind,
+  type TeamMode,
   turnOffItem,
 } from "../../core/team/items";
 import { mcpForTeam } from "../../core/team/mcp";
@@ -78,6 +88,21 @@ export function registerTeamCommands(
       );
     return team;
   };
+  /** Refused with a sentence unless this account decides what is on for everyone. */
+  const owner = () => {
+    const team = publisher();
+    if (team.role !== "owner") throw new Error(OWNER_DECIDES);
+    return team;
+  };
+  /** Refused, before anything is sent, when publishing `path` as `mode` is the owner's to do. */
+  const mayPublishAs = (kind: TeamKind, path: string, mode: TeamMode | undefined) => {
+    const refusal = ownerOnlyRefusal(
+      inTeam().role === "owner",
+      mode,
+      modeAt(controller.items.peek(), kind, path),
+    );
+    if (refusal) throw new Error(refusal);
+  };
   const describe = (item: TeamItem) => ({
     id: item.id,
     kind: item.kind,
@@ -85,16 +110,25 @@ export function registerTeamCommands(
     active: controller.active.peek().has(item.id),
   });
 
-  /** One file into the library, over the version it was made from. A conflict is reported. */
+  /**
+   * One file into the library, over the version it was made from, as `mode` (undefined: as it
+   * is; a new item is optional). A conflict is reported.
+   */
   const put = async (
     kind: TeamKind,
     path: string,
     text: string,
-    isDefault: boolean | undefined,
+    mode: TeamMode | undefined,
   ): Promise<{ published: Published } | { conflict: Conflict }> => {
     if (new TextEncoder().encode(text).length > MAX_TEAM_ITEM_BYTES)
       throw new Error(`${path} is too large for the library (256 KiB an item at most).`);
+    // Here too: the list may have been read again since the command looked.
+    mayPublishAs(kind, path, mode);
     const existing = controller.items.peek().find((x) => x.kind === kind && x.path === path);
+    const flags =
+      mode !== undefined
+        ? modeFlags(mode)
+        : { isDefault: existing?.isDefault ?? false, required: existing?.required ?? false };
     const result = await teamIpc.put(
       controller.base(),
       {
@@ -102,7 +136,7 @@ export function registerTeamCommands(
         kind,
         path,
         text,
-        isDefault: isDefault ?? existing?.isDefault ?? false,
+        ...flags,
       },
       existing?.version ?? null,
     );
@@ -206,14 +240,18 @@ export function registerTeamCommands(
   choice(
     "team.turnOnItem",
     "Turn an item of the team's library back on",
-    "Turns back on an item of the team's library this person turned off (a default: taken out of the setting team.off; any other item: added, as team.addItem does). A skill is turned on whole.",
+    "Turns back on an item of the team's library this person turned off (a default: taken out of the setting team.off; any other item: added, as team.addItem does). A skill is turned on whole. A required item is on already.",
     (item) => addItem(item, controller.items.peek(), controller.choices()),
   );
   choice(
     "team.turnOffItem",
     "Turn off an item of the team's library",
-    "Turns off, on this computer only, an item of the team's library: a default goes into the setting team.off, an added one is taken out of team.added. A skill is turned off whole. Nothing changes for the rest of the team, and the item stays in the library.",
-    (item) => turnOffItem(item, controller.items.peek(), controller.choices()),
+    "Turns off, on this computer only, an item of the team's library: a default goes into the setting team.off, an added one is taken out of team.added. A skill is turned off whole. Nothing changes for the rest of the team, and the item stays in the library. An item the team requires (`required` in ide://team) can't be turned off: refused with a sentence.",
+    (item) => {
+      const items = controller.items.peek();
+      if ((switchOf(item, items) ?? item).required) throw new Error(REQUIRED_STAYS_ON);
+      return turnOffItem(item, items, controller.choices());
+    },
   );
 
   sub.add(
@@ -222,7 +260,7 @@ export function registerTeamCommands(
       title: "Publish to the team's library",
       category: CATEGORY,
       description:
-        "Publishes one of the user's own files to the team's library, for every member (publishers only; refused with a sentence otherwise). `kind` and `path` name it as the user's own files are named: rules (the user's AGENTS.md), skills (`skills/<skill>` for the whole skill, every file of it, or one file `skills/<skill>/<file>`), commands (`commands/<name>.md`), agents (`agents/<name>.md`), outputStyles (`output-styles/<name>.md`), snippets (`snippets/<name>.json` or `.code-snippets`), mcp (the user's mcp.json; `servers` picks some by name), settings (`keys`: the user's current values of those settings, merged into the team's settings.json), extensions (`recommendations`: extension ids, replacing the team's list). `isDefault` makes it on for every member from the start (kept as it was when left out). Never publishes a secret: an MCP server with a key or token written out is refused, saying which (write it as ${input:name}); settings that stay on a computer (programs to run, hooks, servers, paths, what may run without asking), the account's and sync's own, and ones this build doesn't know are left out. A newer version published by someone else meanwhile is reported as a conflict and not overwritten.",
+        "Publishes one of the user's own files to the team's library, for every member (publishers only; refused with a sentence otherwise). `kind` and `path` name it as the user's own files are named: rules (the user's AGENTS.md), skills (`skills/<skill>` for the whole skill, every file of it, or one file `skills/<skill>/<file>`), commands (`commands/<name>.md`), agents (`agents/<name>.md`), outputStyles (`output-styles/<name>.md`), snippets (`snippets/<name>.json` or `.code-snippets`), mcp (the user's mcp.json; `servers` picks some by name), settings (`keys`: the user's current values of those settings, merged into the team's settings.json), extensions (`recommendations`: extension ids, replacing the team's list). `mode` says who it is on for: optional (off until a member adds it), default (on for every member, who may switch it off) or required (on for every member, always); left out, an item keeps its mode and a new one is optional. Only the team's owner decides what is on for everyone: a member who can publish publishes and updates optional items, and is refused with a sentence, before anything is sent, for default or required and for an item that is one. `isDefault` is the older word for `mode` (true: default, false: optional). Never publishes a secret: an MCP server with a key or token written out is refused, saying which (write it as ${input:name}); settings that stay on a computer (programs to run, hooks, servers, paths, what may run without asking), the account's and sync's own, and ones this build doesn't know are left out. A newer version published by someone else meanwhile is reported as a conflict and not overwritten.",
       input: s.object({
         kind: s.enum(TEAM_KINDS).describe("What it is"),
         path: s
@@ -231,7 +269,14 @@ export function registerTeamCommands(
             "Its name, e.g. commands/ship.md or skills/review (not needed for rules, mcp, settings, extensions)",
           )
           .optional(),
-        isDefault: s.boolean().describe("On for every member from the start").optional(),
+        mode: s
+          .enum(TEAM_MODES)
+          .describe("Who it is on for: optional, default or required (the owner's to say)")
+          .optional(),
+        isDefault: s
+          .boolean()
+          .describe("Deprecated, use `mode`: true is default, false is optional")
+          .optional(),
         keys: s
           .array(s.string({ maxLength: 200 }), { maxItems: 200 })
           .describe("settings: the setting keys to publish the user's current values of")
@@ -248,9 +293,19 @@ export function registerTeamCommands(
       effects: ["network"],
       agent: "hidden",
       palette: false,
-      run: async ({ kind, path: given, isDefault, keys, recommendations, servers }) => {
+      run: async ({
+        kind,
+        path: given,
+        mode: modeIn,
+        isDefault,
+        keys,
+        recommendations,
+        servers,
+      }) => {
         publisher();
+        const mode = modeGiven(modeIn, isDefault);
         const path = publishPath(kind, given);
+        mayPublishAs(kind, path, mode);
         const files: { path: string; text: string }[] = [];
         const skipped: string[] = [];
         const refused: string[] = [];
@@ -326,7 +381,7 @@ export function registerTeamCommands(
         let failed: string | null = null;
         for (const file of files) {
           try {
-            const done = await put(kind, file.path, file.text, isDefault);
+            const done = await put(kind, file.path, file.text, mode);
             if ("published" in done) published.push(done.published);
             else conflicts.push(done.conflict);
           } catch (err) {
@@ -355,24 +410,24 @@ export function registerTeamCommands(
 
   sub.add(
     dispatcher.register({
-      id: "team.setDefault",
-      title: "Make an item of the team's library a default (or not)",
+      id: "team.setMode",
+      title: "Change who an item of the team's library is on for",
       category: CATEGORY,
       description:
-        "Changes whether an item of the team's library is on for every member from the start (publishers only). A skill is one thing: the id of any of its files sets it for the skill. Members who turned a default off keep it off; members who added it keep it on. A newer version published by someone else meanwhile is reported as a conflict and nothing is changed.",
+        "Changes who an item of the team's library is on for (the team's owner only; refused with a sentence otherwise): optional (off until a member adds it), default (on for every member, who may switch it off) or required (on for every member, always: nobody can switch it off). A skill is one thing: the id of any of its files sets it for the skill. Members who turned a default off keep it off, and members who added an item keep it on; a required item is on for everyone whatever they chose. Required default settings still sit under each person's own settings: their own value wins, and only the item as a whole can't be switched off. A newer version published by someone else meanwhile is reported as a conflict and nothing is changed.",
       input: s.object({
         id: s.string({ maxLength: 64 }).describe("The item's id (ide://team)"),
-        isDefault: s.boolean(),
+        mode: s.enum(TEAM_MODES).describe("optional, default or required"),
       }),
       effects: ["network"],
       agent: "hidden",
       palette: false,
-      run: async ({ id, isDefault }) => {
-        publisher();
+      run: async ({ id, mode }) => {
+        owner();
         const asked = find(id);
-        // A skill's switch is its SKILL.md: that one carries whether the skill is a default.
+        // A skill's switch is its SKILL.md: that one carries who the skill is on for.
         let item = switchOf(asked, controller.items.peek()) ?? asked;
-        if (item.isDefault === isDefault) return { ...describe(item), isDefault, changed: false };
+        if (modeOf(item) === mode) return { ...describe(item), mode, changed: false };
         if (controller.cachedVersion(item.id) !== item.version) {
           await controller.refresh({ fromServer: true, force: true });
           item = find(item.id);
@@ -380,16 +435,17 @@ export function registerTeamCommands(
         const text = await controller.text(item.id);
         if (text === null || controller.cachedVersion(item.id) !== item.version)
           throw new Error(`${item.path} isn't on this computer yet: run team.refresh first.`);
-        const done = await put(item.kind, item.path, text, isDefault);
+        const done = await put(item.kind, item.path, text, mode);
         await controller.refresh({ fromServer: true, force: true });
         if ("conflict" in done)
           return {
             ...describe(item),
+            mode: modeOf(item),
             changed: false,
             conflict: done.conflict,
             message: `Not changed: someone published a newer version of ${item.path} meanwhile. The library was read again; try again.`,
           };
-        return { ...describe(item), isDefault, changed: true, version: done.published.version };
+        return { ...describe(item), mode, changed: true, version: done.published.version };
       },
     }),
   );

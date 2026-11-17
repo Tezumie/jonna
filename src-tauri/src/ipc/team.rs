@@ -177,6 +177,7 @@ pub async fn team_item_text(
 
 /// Publishes an item over the version it was made from (`expect`; null: it must be new).
 /// A newer version published meanwhile comes back as a conflict; nothing is overwritten.
+/// `required`: on for every member and never switched off (left out: not required).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn team_put(
@@ -187,6 +188,7 @@ pub async fn team_put(
     path: String,
     text: String,
     is_default: bool,
+    required: Option<bool>,
     expect: Option<u64>,
 ) -> Result<Put> {
     team::put(
@@ -196,6 +198,7 @@ pub async fn team_put(
         &path,
         &text,
         is_default,
+        required == Some(true),
         expect,
     )
     .await

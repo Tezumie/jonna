@@ -53,10 +53,20 @@ export const teamIpc = {
   /** An item's text from the cache (null when it isn't here yet). */
   itemText: (team: string, id: string): Promise<string | null> =>
     call<string | null>("team_item_text", { team, id }),
-  /** Publishes an item over the version it was made from (`expect`; null: it must be new). */
+  /**
+   * Publishes an item over the version it was made from (`expect`; null: it must be new).
+   * `isDefault`: on for every member from the start; `required`: and never switched off.
+   */
   put: (
     base: string,
-    item: { id: string; kind: string; path: string; text: string; isDefault: boolean },
+    item: {
+      id: string;
+      kind: string;
+      path: string;
+      text: string;
+      isDefault: boolean;
+      required: boolean;
+    },
     expect: number | null,
   ): Promise<TeamPut> => call<TeamPut>("team_put", { base, ...item, expect }),
   /** Takes an item out of the library. */
