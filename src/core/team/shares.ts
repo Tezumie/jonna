@@ -117,11 +117,31 @@ export function memberActions(member: Pick<ShareMember, "state" | "you">): Membe
   }
 }
 
-/** A fingerprint as it is read out: its digits in groups of four ("1234 5678 …"); null: none. */
+/**
+ * A fingerprint as it is read out: its thirty digits in six groups of five
+ * ("12345 67890 …"); null: none.
+ */
 export function fingerprintGroups(fingerprint: string | null | undefined): string | null {
   const digits = (fingerprint ?? "").replace(/\D/g, "");
   if (!digits) return null;
-  return digits.match(/.{1,4}/g)?.join(" ") ?? digits;
+  return digits.match(/.{1,5}/g)?.join(" ") ?? digits;
+}
+
+/** What asking before a copy is cloned says: where from, and whose address it is. */
+export function cloneQuestion(
+  remote: string,
+  sharer: string,
+  name: string,
+  mine = false,
+): { title: string; message: string } {
+  const who = sharer.trim() || "the teammate who shares it";
+  return {
+    title: `Clone ${name.trim() || "the project"} first?`,
+    message: [
+      `Clone from ${remote} first? It is the address ${mine ? "you work" : `${who} works`} from.`,
+      "Your computer then asks that address for the repository, with the access to it you already have: nothing asks you to sign in, and it gives up when the address doesn't answer. Choose No to copy without cloning: the copy then holds only what the snapshot itself carries.",
+    ].join("\n\n"),
+  };
 }
 
 /** Whether two fingerprints are the same digits, however they are grouped. */

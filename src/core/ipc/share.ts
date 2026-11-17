@@ -6,8 +6,12 @@
 // A failed call's `code` says why: "ShareNoTeam", "ShareNotMember", "ShareWaiting" (the share's
 // keys haven't reached this account), "ShareKeyChanged" (the sharer's key isn't the one this
 // account pinned), "ShareNoMemberKey", "ShareNotSharer", "ShareGone", "ShareNotShared",
-// "ShareTooMany", "ShareKeys" (keys that don't fit: refused), "ShareTargetNotEmpty", and sync's
-// own ("SyncLapsed", "SyncFull", "SyncOff", "SyncOffline", "SyncSignedOut"…).
+// "ShareTooMany", "ShareKeys" (keys that don't fit, or are older than the ones this computer
+// saw: refused), "ShareTargetNotEmpty", "SharePins" (the list of teammates' keys couldn't be
+// read as far as it was written: nothing is shared or read), "ShareKeyFilesInHistory" (commits
+// that weren't pushed hold key files, which the message names: the snapshot isn't shared),
+// "ShareRemoteChanged" (a copy's clone address isn't the one that was shown), and sync's own
+// ("SyncLapsed", "SyncFull", "SyncOff", "SyncOffline", "SyncSignedOut"…).
 import { call } from "./invoke";
 import type {
   SnapshotFile,
@@ -18,7 +22,10 @@ import type {
 } from "./sync";
 
 export interface ShareMe {
-  /** This account's member key as a teammate checks it: 20 digits, five groups of four. */
+  /**
+   * This account's member key as a teammate checks it: 30 digits, six groups of five. It is
+   * of the key and of whose key it is (the account).
+   */
   fingerprint: string;
   /** The service has the key (false while the subscription is ended: it takes none then). */
   published: boolean;
@@ -121,9 +128,18 @@ export interface ShareCopy {
   path: string;
   /** The folder was cloned from the project's remote first. */
   cloned: boolean;
-  /** Said when there was a remote and it couldn't be cloned from. */
+  /** Said when a clone was asked for and the remote couldn't be cloned from. */
   note: string | null;
   restored: SnapshotRestored;
+}
+
+/** What a copy of a shared snapshot would do first. */
+export interface ShareCopyPlan {
+  /**
+   * The address the folder would be cloned from (the one the sharer works from), to show
+   * and ask about. Null: the project has no remote that can be shown.
+   */
+  remote: string | null;
 }
 
 export const shareIpc = {
@@ -195,9 +211,39 @@ export const shareIpc = {
   ): Promise<SnapshotFileText | null> =>
     call<SnapshotFileText | null>("share_file_text", { base, id, snapshot, path }),
   /**
-   * A copy of a share's snapshot in the new or empty folder `target`: cloned from the
-   * project's remote when there is one, then the snapshot on top. The folder is not trusted.
+   * What a copy of a share's snapshot would do first: the address it would clone from, for
+   * the person to see and agree to. Nothing is written, and nothing is asked of that address.
    */
-  openCopy: (base: string, id: string, snapshot: string, target: string): Promise<ShareCopy> =>
-    call<ShareCopy>("share_open_copy", { base, id, snapshot, target }),
+  copyPlan: (base: string, id: string, snapshot: string): Promise<ShareCopyPlan> =>
+    call<ShareCopyPlan>("share_copy_plan", { base, id, snapshot }),
+  /**
+   * Whether the open folder `root` is a clone of the repository the share is of (their git
+   * remotes are one address). A reader's own sync id of the project is never the sharer's,
+   * so this is how a reader's folder is known to be the shared project.
+   */
+  matchesFolder: (base: string, id: string, root: string): Promise<boolean> =>
+    call<boolean>("share_matches_folder", { base, id, root }),
+  /**
+   * A copy of a share's snapshot in the new or empty folder `target`. `cloneFrom`: the
+   * address `copyPlan` gave, once the person agreed to clone from it (refused with
+   * "ShareRemoteChanged" when the share names another by now); null: nothing reaches out to
+   * it. The clone asks nobody to sign in and is stopped when it takes too long; the copy is
+   * then made of what the snapshot carries, and `note` says so. Then the snapshot goes on
+   * top. The folder is not trusted.
+   */
+  openCopy: (
+    base: string,
+    id: string,
+    snapshot: string,
+    target: string,
+    cloneFrom: string | null,
+  ): Promise<ShareCopy> =>
+    call<ShareCopy>("share_open_copy", {
+      base,
+      id,
+      snapshot,
+      target,
+      clone: cloneFrom !== null,
+      remote: cloneFrom,
+    }),
 };

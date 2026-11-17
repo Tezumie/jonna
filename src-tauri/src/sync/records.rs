@@ -69,6 +69,38 @@ fn place(collection: &str, id: &str) -> String {
     format!("{collection}/{id}")
 }
 
+/// A collection's name as the service takes one: letters, digits, `:`, `.`, `_` and `-`, at
+/// most 80, and not `.` or `..`.
+pub fn valid_collection(text: &str) -> bool {
+    (1..=80).contains(&text.len())
+        && text != "."
+        && text != ".."
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '.' | '_' | '-'))
+}
+
+/// A record's id as the service takes one: letters, digits, `_`, `-` and `.`, at most 80,
+/// not starting with a dot.
+pub fn valid_id(text: &str) -> bool {
+    (1..=80).contains(&text.len())
+        && !text.starts_with('.')
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+/// The one place every call that names a record goes through, before anything is asked:
+/// both names go into an address, where `x/../sys` would be read as another record (the
+/// account's own keys) than the one a caller was allowed to name. A name is one part of
+/// the address or it is refused.
+pub fn named(collection: &str, id: &str) -> Result<()> {
+    if valid_collection(collection) && valid_id(id) {
+        return Ok(());
+    }
+    Err(Error::Invalid("that isn't a synced item's name".into()))
+}
+
 /// Whether the service marks a record as one to keep. Only a plain `true` counts: a reply
 /// without the mark (an older service), or with anything else in its place, keeps nothing.
 fn kept(v: &Value) -> bool {
@@ -78,6 +110,7 @@ fn kept(v: &Value) -> bool {
 /// Sets or clears the service's "keep" mark on a record (a snapshot pinned from the account
 /// page). The record's content and version are untouched.
 pub async fn set_keep(api: &Api, collection: &str, id: &str, keep: bool) -> Result<()> {
+    named(collection, id)?;
     api.post(
         "keep",
         &json!({ "collection": collection, "id": id, "keep": keep }),
@@ -128,6 +161,7 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
 }
 
 pub async fn get(api: &Api, ring: &Keyring, collection: &str, id: &str) -> Result<Option<Record>> {
+    named(collection, id)?;
     let reply = api
         .call(
             reqwest::Method::GET,
@@ -164,7 +198,13 @@ pub async fn changes(api: &Api, ring: &Keyring, since: u64) -> Result<Changes> {
     let mut records = Vec::new();
     for r in changes_page(&v)? {
         let mut record = parse(ring, r)?;
-        if !record.deleted && record.text.is_none() && !record.unreadable && !record.damaged {
+        // (A name the service made up that couldn't stand in an address is never asked for.)
+        if !record.deleted
+            && record.text.is_none()
+            && !record.unreadable
+            && !record.damaged
+            && named(&record.collection, &record.id).is_ok()
+        {
             if let Some(full) = get(api, ring, &record.collection, &record.id).await? {
                 // Only when it is still the version this page spoke of; a later one comes later.
                 if full.version == record.version {
@@ -213,6 +253,7 @@ pub async fn put_labeled(
     refs: Option<(&[String], u64)>,
     info: Option<&Value>,
 ) -> Result<Put> {
+    named(collection, id)?;
     let mut body = json!({ "expect": expect });
     if let (Some(info), Some(_)) = (info, text) {
         body["info"] = info.clone();
@@ -313,6 +354,48 @@ mod tests {
             json!({ "id": "a", "keep": 1 }),
         ] {
             assert!(!kept(&not), "{not}");
+        }
+    }
+
+    #[test]
+    fn a_records_name_is_one_part_of_an_address_or_refused() {
+        for (collection, id) in [
+            ("settings", "user"),
+            ("sys", "member"),
+            ("shares", "AbC-123_x"),
+            ("snap.AbCdEfGhIjKlMnOpQrStUv", "1800000000000-abc123"),
+            ("chats:p.1", "a.b"),
+            (&"c".repeat(80)[..], &"i".repeat(80)[..]),
+        ] {
+            assert!(named(collection, id).is_ok(), "{collection}/{id}");
+        }
+        for (collection, id) in [
+            // Another record than the one named, once the address is read.
+            ("x/../sys", "member"),
+            ("..", "member"),
+            (".", "member"),
+            ("sys/member", "x"),
+            ("x", "../sys/member"),
+            ("x", ".."),
+            ("x", "."),
+            ("x", ".hidden"),
+            ("x", "a/b"),
+            ("x\\..\\sys", "member"),
+            ("sys%2Fmember", "x"),
+            ("x", "member?since=0"),
+            ("x", "member#"),
+            ("x y", "member"),
+            ("x", "mem ber"),
+            ("x", "é"),
+            ("", "member"),
+            ("x", ""),
+            (&"c".repeat(81)[..], "x"),
+            ("x", &"i".repeat(81)[..]),
+        ] {
+            assert!(
+                matches!(named(collection, id), Err(Error::Invalid(_))),
+                "{collection}/{id}"
+            );
         }
     }
 

@@ -17,9 +17,23 @@ fn vault(state: &AppState, base: &str) -> Vault {
     Vault::new(base, &state.dirs.data)
 }
 
-/// The collections a front end may write: not the ones the backend keeps for itself.
-fn writable(collection: &str) -> Result<()> {
-    if collection == "sys" || collection == "shares" {
+/// Whether a collection is the backend's own: `sys` (the account's member key, the pins of
+/// its teammates' keys, its trusted devices) and `shares` (the keyrings of the projects it
+/// shares). Their records are read and written in Rust only (`sync::vault`, `sync::share`).
+/// The name is compared as it is: `named` has made sure it is one part of an address, so no
+/// other spelling reaches the same collection.
+fn backend_only(collection: &str) -> bool {
+    collection == "sys" || collection == "shares"
+}
+
+/// The record a front end's command names (`collection`/`id`), before anything is asked:
+/// both are names the service takes (`records::named`: one part of an address each, so
+/// `x/../sys` names nothing), and the collection isn't one the backend keeps for itself. No
+/// command of the front end reads the content of such a record, writes it, deletes it, or
+/// uses it as a snapshot or a chat.
+fn front_end_record(collection: &str, id: &str) -> Result<()> {
+    records::named(collection, id)?;
+    if backend_only(collection) {
         return Err(Error::Invalid(
             "that collection isn't the front end's".into(),
         ));
@@ -27,14 +41,27 @@ fn writable(collection: &str) -> Result<()> {
     Ok(())
 }
 
-/// A record as the front end gets it: the ones that hold keys (the account's member key, the
-/// keyrings of the projects it shares) without their content. Those are read here only
-/// (`sync::share`); the front end sees that they are there and what version they are.
+/// A record as the front end gets it: the backend's own (which hold keys, or say whose keys
+/// are trusted) without their content. The front end sees that they are there and what
+/// version they are. Every record handed to the front end passes here: a listed one, one
+/// asked for, and the one a refused write comes back with (`for_front_end`).
 fn without_keys(mut record: Record) -> Record {
-    if record.collection == "shares" || (record.collection == "sys" && record.id == "member") {
+    if backend_only(&record.collection) {
         record.text = None;
+        record.info = None;
     }
     record
+}
+
+/// What a write came to, as the front end gets it: a conflict hands back the record as it
+/// is now, which is a record like any other.
+fn for_front_end(put: Put) -> Put {
+    match put {
+        Put::Conflict { current } => Put::Conflict {
+            current: current.map(without_keys),
+        },
+        other => other,
+    }
 }
 
 /// Where sync stands for this device and account, catching up with changes made elsewhere.
@@ -164,7 +191,7 @@ pub async fn sync_record_put(
     text: Option<String>,
     info: Option<serde_json::Value>,
 ) -> Result<Put> {
-    writable(&collection)?;
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     records::put_labeled(
         &v.api,
@@ -177,6 +204,7 @@ pub async fn sync_record_put(
         info.as_ref(),
     )
     .await
+    .map(for_front_end)
 }
 
 /// Uploads a chat as the record `collection`/`id` (null when the chat has no file).
@@ -188,7 +216,7 @@ pub async fn sync_chat_push(
     id: String,
     expect: Option<u64>,
 ) -> Result<Option<Put>> {
-    writable(&collection)?;
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     crate::sync::chats::push(
         &v.api,
@@ -199,6 +227,7 @@ pub async fn sync_chat_push(
         expect,
     )
     .await
+    .map(|put| put.map(for_front_end))
 }
 
 /// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`,
@@ -213,6 +242,7 @@ pub async fn sync_chat_pull(
     workspace: Option<String>,
     if_stamp: Option<String>,
 ) -> Result<Option<u64>> {
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     crate::sync::chats::pull(
         &v.api,
@@ -322,7 +352,11 @@ pub async fn sync_snapshot_create(
     baseline: Option<bool>,
 ) -> Result<Option<crate::sync::snapshot::Created>> {
     use crate::sync::snapshot;
-    writable(&collection)?;
+    if !records::valid_collection(&collection) || backend_only(&collection) {
+        return Err(Error::Invalid(
+            "that collection isn't the front end's".into(),
+        ));
+    }
     let _one = SNAPSHOT.lock().await;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
@@ -370,6 +404,7 @@ pub async fn sync_snapshot_create(
             now_ms: now_ms(),
             leave_out: None,
             remote_as: None,
+            head_only: false,
         },
     )
     .await?;
@@ -400,6 +435,7 @@ pub async fn sync_snapshot_files(
     id: String,
 ) -> Result<Vec<crate::sync::snapshot::ListedFile>> {
     use crate::sync::snapshot;
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
     let summary = snapshot::summary(&v.api, &ring, &collection, &id).await?;
@@ -420,6 +456,7 @@ pub async fn sync_snapshot_compare(
     root: String,
 ) -> Result<crate::sync::snapshot::Compared> {
     use crate::sync::snapshot;
+    front_end_record(&collection, &id)?;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
@@ -444,6 +481,7 @@ pub async fn sync_snapshot_file_text(
     path: String,
 ) -> Result<Option<crate::sync::snapshot::FileText>> {
     use crate::sync::snapshot;
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
     let summary = snapshot::summary(&v.api, &ring, &collection, &id).await?;
@@ -477,6 +515,7 @@ pub async fn sync_snapshot_restore(
     stash: bool,
 ) -> Result<crate::sync::snapshot::Restored> {
     use crate::sync::snapshot;
+    front_end_record(&collection, &id)?;
     let _one = SNAPSHOT.lock().await;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
@@ -493,6 +532,8 @@ pub async fn sync_snapshot_restore(
             stash,
             as_restored: is_as_restored(&state, &root),
             from: &summary.device_name,
+            // The account's own snapshot: its remote is the person's own.
+            network: true,
         },
     )
     .await?;
@@ -531,6 +572,7 @@ pub async fn sync_snapshot_restore_file(
     path: String,
 ) -> Result<()> {
     use crate::sync::snapshot;
+    front_end_record(&collection, &id)?;
     let root = snapshot_root(&state, &root)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
@@ -549,7 +591,7 @@ pub async fn sync_snapshot_pin(
     name: Option<String>,
 ) -> Result<()> {
     use crate::sync::snapshot;
-    writable(&collection)?;
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     let ring = v.keyring()?;
     let record = records::get(&v.api, &ring, &collection, &id)
@@ -723,15 +765,10 @@ pub async fn sync_project(
     if let Some(id) = stored {
         return Ok(Some(ProjectIdentity { id, kind: "file" }));
     }
-    let remotes = crate::git::ops::remote_urls(&root).unwrap_or_default();
-    let mut named: Vec<&crate::git::ops::RemoteUrl> = remotes.iter().collect();
-    // `origin` first, then by name.
-    named.sort_by(|a, b| (a.name != "origin", &a.name).cmp(&(b.name != "origin", &b.name)));
-    for remote in named {
-        if let Some(address) = crate::sync::project::normalize_remote(&remote.url) {
-            let id = vault(&state, &base).keyring()?.name_of(&address)?;
-            return Ok(Some(ProjectIdentity { id, kind: "remote" }));
-        }
+    // `origin` first, then by name (the same rule a share is matched to a folder by).
+    if let Some(address) = crate::sync::project::folder_remote(&root) {
+        let id = vault(&state, &base).keyring()?.name_of(&address)?;
+        return Ok(Some(ProjectIdentity { id, kind: "remote" }));
     }
     if !create {
         return Ok(None);
@@ -779,6 +816,7 @@ pub async fn sync_chat_same(
     collection: String,
     id: String,
 ) -> Result<bool> {
+    front_end_record(&collection, &id)?;
     let v = vault(&state, &base);
     crate::sync::chats::same(&v.api, &v.keyring()?, &state.dirs.data, &collection, &id).await
 }
@@ -888,4 +926,114 @@ pub async fn sync_folders_exist(paths: Vec<String>) -> Result<Vec<bool>> {
         .take(500)
         .map(|p| std::path::Path::new(p).is_dir())
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(collection: &str, id: &str) -> Record {
+        Record {
+            collection: collection.into(),
+            id: id.into(),
+            version: 3,
+            seq: 9,
+            deleted: false,
+            text: Some("{\"key\":\"PRIVATE\"}".into()),
+            unreadable: false,
+            damaged: false,
+            refs: 0,
+            device: None,
+            updated_at: None,
+            info: Some(serde_json::json!({ "name": "x" })),
+            keep: false,
+        }
+    }
+
+    #[test]
+    fn the_backends_own_records_are_never_the_front_ends() {
+        // Named as they are.
+        for (collection, id) in [
+            ("sys", "member"),
+            ("sys", "team"),
+            ("sys", "devices"),
+            ("shares", "AbCdEf"),
+        ] {
+            assert!(
+                front_end_record(collection, id).is_err(),
+                "{collection}/{id}"
+            );
+        }
+        // Named so that the address would be read as one of them: refused as no name at all,
+        // before anything is asked.
+        for (collection, id) in [
+            ("x/../sys", "member"),
+            ("x/../shares", "AbCdEf"),
+            ("x", "../sys/member"),
+            ("sys/member", "x"),
+            ("./sys", "member"),
+            ("sys/", "member"),
+            ("x\\..\\sys", "member"),
+            ("%73ys", "member"),
+            ("..", "sys"),
+        ] {
+            assert!(
+                front_end_record(collection, id).is_err(),
+                "{collection}/{id}"
+            );
+        }
+        for (collection, id) in [
+            ("settings", "user"),
+            ("chats", "abc"),
+            ("snap.AbC", "1800000000000-abc123"),
+            // Another collection, whatever it looks like: the service compares names as written.
+            ("system", "member"),
+            ("Sys", "member"),
+        ] {
+            assert!(
+                front_end_record(collection, id).is_ok(),
+                "{collection}/{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_record_with_keys_reaches_the_front_end_without_its_content() {
+        for (collection, id) in [
+            ("sys", "member"),
+            ("sys", "team"),
+            ("sys", "devices"),
+            ("shares", "p1"),
+        ] {
+            let shown = without_keys(record(collection, id));
+            assert_eq!(shown.text, None, "{collection}/{id}");
+            assert_eq!(shown.info, None);
+            assert_eq!(
+                shown.version, 3,
+                "that it is there, and its version, are said"
+            );
+        }
+        assert!(without_keys(record("settings", "user")).text.is_some());
+        // The record a refused write comes back with is a record like any other.
+        match for_front_end(Put::Conflict {
+            current: Some(record("sys", "member")),
+        }) {
+            Put::Conflict {
+                current: Some(shown),
+            } => assert_eq!(shown.text, None),
+            other => panic!("unexpected: {other:?}"),
+        }
+        match for_front_end(Put::Conflict {
+            current: Some(record("settings", "user")),
+        }) {
+            Put::Conflict {
+                current: Some(shown),
+            } => assert!(shown.text.is_some()),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            for_front_end(Put::Done { version: 1, seq: 2 }),
+            Put::Done { version: 1, seq: 2 }
+        ));
+    }
 }

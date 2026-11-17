@@ -166,6 +166,8 @@ const COMMANDS: &[&str] = &[
     "share_snapshots",
     "share_snapshot_files",
     "share_file_text",
+    "share_copy_plan",
+    "share_matches_folder",
     "share_open_copy",
     "state_load",
     "state_save",

@@ -12,6 +12,7 @@ import type {
 import {
   acceptKeyWords,
   canRead,
+  cloneQuestion,
   copyReport,
   fingerprintGroups,
   KEY_FILES_NOTE,
@@ -54,8 +55,8 @@ const member = (uid: string, name: string, state: ShareMemberState, you = false)
   name,
   you,
   state,
-  fingerprint: state === "nokey" ? null : "1234 5678 9012 3456 7890",
-  pendingFingerprint: state === "changed" ? "1111 2222 3333 4444 5555" : null,
+  fingerprint: state === "nokey" ? null : "12345 67890 12345 67890 12345 67890",
+  pendingFingerprint: state === "changed" ? "11111 22222 33333 44444 55555 66666" : null,
   pinnedAt: state === "nokey" ? null : 5,
 });
 
@@ -134,13 +135,20 @@ test("sharing: a member's state as a tag, a line, and what can be done", () => {
   assert.match(memberLine({ state: "new", you: true }), /This is you/);
 });
 
-test("sharing: a fingerprint is read in groups of four, and compared by its digits", () => {
-  assert.equal(fingerprintGroups("12345678901234567890"), "1234 5678 9012 3456 7890");
-  assert.equal(fingerprintGroups("1234 5678 9012 3456 7890"), "1234 5678 9012 3456 7890");
-  assert.equal(fingerprintGroups("1234-5678"), "1234 5678");
+test("sharing: a fingerprint is read in six groups of five, and compared by its digits", () => {
+  const thirty = "123456789012345678901234567890";
+  const grouped = "12345 67890 12345 67890 12345 67890";
+  assert.equal(fingerprintGroups(thirty), grouped);
+  // As the backend hands it over (grouped already), and however else it was typed.
+  assert.equal(fingerprintGroups(grouped), grouped);
+  assert.equal(fingerprintGroups("1234 5678 9012 3456 7890 1234 5678 90"), grouped);
+  assert.equal(fingerprintGroups(grouped)?.split(" ").length, 6);
+  assert.equal(fingerprintGroups("12345-67890"), "12345 67890");
   assert.equal(fingerprintGroups(null), null);
   assert.equal(fingerprintGroups(""), null);
 
+  assert.equal(sameFingerprint(grouped, thirty), true);
+  assert.equal(sameFingerprint(grouped, "12345 67890 12345 67890 12345 67891"), false);
   assert.equal(sameFingerprint("1234 5678", "12345678"), true);
   assert.equal(sameFingerprint("1234 5678", "1234 5679"), false);
   // Nothing equals nothing: two missing fingerprints are not "the same".
@@ -169,21 +177,38 @@ test("sharing: members are listed with you first, then a changed key, then by na
 });
 
 test("sharing: the dialogs show the fingerprint that is acted on", () => {
-  const verify = verifyWords("Ana", "12345678901234567890");
+  const verify = verifyWords("Ana", "123456789012345678901234567890");
   assert.equal(verify.title, "Mark Ana as verified?");
-  assert.match(verify.message, /1234 5678 9012 3456 7890/);
+  assert.match(verify.message, /12345 67890 12345 67890 12345 67890/);
   assert.match(verify.message, /Sync, Team, People/);
   assert.match(verify.message, /every digit matches/);
 
-  const accept = acceptKeyWords("Ana", "1111 2222 3333 4444 5555");
+  const accept = acceptKeyWords("Ana", "11111 22222 33333 44444 55555 66666");
   assert.equal(accept.title, "Accept the new key of Ana?");
   assert.match(accept.message, /changed/);
   assert.match(accept.message, /reset sync/);
   assert.match(accept.message, /something is wrong/);
-  assert.match(accept.message, /1111 2222 3333 4444 5555/);
+  assert.match(accept.message, /11111 22222 33333 44444 55555 66666/);
   assert.match(accept.message, /not verified afterwards/);
   // A member without a name.
   assert.equal(verifyWords(" ", "1").title, "Mark this teammate as verified?");
+});
+
+test("sharing: a copy asks before it clones, showing the address and whose it is", () => {
+  const asked = cloneQuestion("https://example.com/owner/repo.git", "Ana", "notes");
+  assert.equal(asked.title, "Clone notes first?");
+  assert.match(
+    asked.message,
+    /^Clone from https:\/\/example\.com\/owner\/repo\.git first\? It is the address Ana works from\./,
+  );
+  assert.match(asked.message, /nothing asks you to sign in/);
+  assert.match(asked.message, /Choose No to copy without cloning/);
+  // Without names.
+  const bare = cloneQuestion("git@example.com:o/r.git", " ", "");
+  assert.equal(bare.title, "Clone the project first?");
+  assert.match(bare.message, /the address the teammate who shares it works from/);
+  // A copy of a project this account shares itself.
+  assert.match(cloneQuestion("git@example.com:o/r.git", "Me", "x", true).message, /you work from/);
 });
 
 test("sharing: why someone is waiting for a share's keys", () => {

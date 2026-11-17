@@ -227,7 +227,7 @@ impl Pins {
                     "This member's key changed. Accept the new key first, then compare its fingerprint.".into(),
                 ));
             }
-            if !same_fingerprint(&fingerprint(&pin.key)?, shown) {
+            if !same_fingerprint(&fingerprint(uid, &pin.key)?, shown) {
                 return Err(not_the_fingerprint());
             }
         }
@@ -248,7 +248,7 @@ impl Pins {
                 "This member's key didn't change.".into(),
             ));
         };
-        if !same_fingerprint(&fingerprint(&next)?, shown) {
+        if !same_fingerprint(&fingerprint(uid, &next)?, shown) {
             return Err(not_the_fingerprint());
         }
         *pin = Pin {
@@ -273,14 +273,50 @@ fn not_the_fingerprint() -> Error {
     )
 }
 
-/// The pins to go on from, given the sealed record as read and what this computer kept of
-/// the last one it read or wrote (`kept`). The record is sealed with the account's keys, so
-/// whoever stores it can't write one, only withhold it or hand back an older one: then what
-/// this computer kept is used and written back. Otherwise the record is the truth, and what
-/// this computer kept only fills in members the record doesn't name. The second value says
-/// the result differs from the record and should be written.
-pub fn reconcile(remote: Remote, kept: Option<&Pins>) -> (Pins, bool) {
-    let kept = kept.filter(|k| !k.members.is_empty());
+/// The refusal when the pins can't be read as far as the account's member record says they
+/// were written: nothing is pinned, boxed or opened from what the service shows instead.
+pub fn unreadable() -> Error {
+    Error::Sync(
+        "SharePins",
+        "The list of your teammates' keys couldn't be read from the account (it is missing, damaged, or older than it should be), so nothing was shared or read. Try again; if it stays, the account's synced data was lost or changed outside the app.".into(),
+    )
+}
+
+/// The pins to go on from, given the sealed record as read, what this computer kept of the
+/// last one it read or wrote (`kept`), and `marker`: the counter of the last pins write as
+/// the account's member record (`sys/member`) says it, 0 when pins were never written.
+///
+/// The record is sealed with the account's keys, so whoever stores it can't write one, only
+/// withhold it or hand back an older one: then what this computer kept is used and written
+/// back. Otherwise the record is the truth, and what this computer kept only fills in
+/// members the record doesn't name. The second value says the result differs from the record
+/// and should be written.
+///
+/// A computer that kept nothing (a new one of the account, or one whose sync folder was
+/// removed) can't tell "no pins yet" from "the record was withheld" by the record alone, and
+/// would pin whatever keys the service shows. The marker tells them apart: it is in the
+/// record that holds the member key itself, which can't be withheld without the account
+/// getting a new member key that every teammate sees as changed. When the marker says pins
+/// were written and neither the record nor what was kept reaches it, this fails closed
+/// (`unreadable`): never back to first sight.
+pub fn reconcile(remote: Remote, kept: Option<&Pins>, marker: u64) -> Result<(Pins, bool)> {
+    let (pins, write) = reconcile_unanchored(remote, kept);
+    if pins.n < marker {
+        return Err(unreadable());
+    }
+    Ok((pins, write))
+}
+
+/// The marker the member record should hold after `pins` was read or written, when it is
+/// not there yet: the marker only ever goes up (two computers may both write it).
+pub fn marker_to_write(marker: u64, pins: &Pins) -> Option<u64> {
+    (pins.n > marker).then_some(pins.n)
+}
+
+fn reconcile_unanchored(remote: Remote, kept: Option<&Pins>) -> (Pins, bool) {
+    // (Kept pins without a member matter only by their counter, which the record has too
+    // whenever it is there.)
+    let kept = kept.filter(|k| !k.members.is_empty() || k.n > 0);
     match (remote, kept) {
         (Remote::Read(read), Some(kept)) if kept.n > read.n => (kept.clone(), true),
         (Remote::Read(mut read), Some(kept)) => {
@@ -389,7 +425,7 @@ mod tests {
         let mut pins = Pins::default();
         let mut first = FirstSights::new();
         pins.observe(&[member("a", Some(&old))], me, 100, &mut first);
-        pins.set_verified("a", &fingerprint(&old).unwrap(), true)
+        pins.set_verified("a", &fingerprint("a", &old).unwrap(), true)
             .unwrap();
         // The service shows another key for the same member.
         let shown = [member("a", Some(&new))];
@@ -404,14 +440,14 @@ mod tests {
         // The new key can't be verified before it was accepted, nor accepted under the old
         // key's fingerprint (what the person looked at must be what is accepted).
         assert!(matches!(
-            pins.set_verified("a", &fingerprint(&new).unwrap(), true),
+            pins.set_verified("a", &fingerprint("a", &new).unwrap(), true),
             Err(Error::Sync("ShareKeyChanged", _))
         ));
         assert!(pins
-            .accept_changed_key("a", &fingerprint(&old).unwrap(), 300)
+            .accept_changed_key("a", &fingerprint("a", &old).unwrap(), 300)
             .is_err());
         assert_eq!(pins.members["a"].key, old);
-        pins.accept_changed_key("a", &fingerprint(&new).unwrap(), 300)
+        pins.accept_changed_key("a", &fingerprint("a", &new).unwrap(), 300)
             .unwrap();
         assert_eq!(
             pins.members["a"],
@@ -429,7 +465,7 @@ mod tests {
         );
         // Nothing left to accept.
         assert!(pins
-            .accept_changed_key("a", &fingerprint(&new).unwrap(), 400)
+            .accept_changed_key("a", &fingerprint("a", &new).unwrap(), 400)
             .is_err());
         assert!(pins.accept_changed_key("nobody", "", 400).is_err());
     }
@@ -458,16 +494,16 @@ mod tests {
         let mut first = FirstSights::new();
         pins.observe(&[member("a", Some(&a))], "me", 1, &mut first);
         assert!(matches!(
-            pins.set_verified("a", &fingerprint(&b).unwrap(), true),
+            pins.set_verified("a", &fingerprint("a", &b).unwrap(), true),
             Err(Error::Sync("ShareKeyChanged", _))
         ));
         assert!(!pins.members["a"].verified);
         assert!(pins
-            .set_verified("a", &fingerprint(&a).unwrap().replace(' ', ""), true)
+            .set_verified("a", &fingerprint("a", &a).unwrap().replace(' ', ""), true)
             .unwrap());
         assert_eq!(pins.state("a", Some(&a)), MemberState::Verified);
         assert!(!pins
-            .set_verified("a", &fingerprint(&a).unwrap(), true)
+            .set_verified("a", &fingerprint("a", &a).unwrap(), true)
             .unwrap());
         // Taking it back needs no fingerprint.
         assert!(pins.set_verified("a", "", false).unwrap());
@@ -555,7 +591,7 @@ mod tests {
             n: 4,
             ..record.clone()
         };
-        let (pins, write) = reconcile(Remote::Read(newer.clone()), Some(&kept));
+        let (pins, write) = reconcile(Remote::Read(newer.clone()), Some(&kept), 4).unwrap();
         assert_eq!((pins, write), (newer, false));
     }
 
@@ -577,7 +613,7 @@ mod tests {
         );
         // "There is no such record", or one nothing opens: what this computer kept goes on.
         for remote in [Remote::Absent, Remote::Damaged] {
-            let (pins, write) = reconcile(remote, Some(&kept));
+            let (pins, write) = reconcile(remote, Some(&kept), 5).unwrap();
             assert_eq!(pins, kept);
             assert!(write, "written back");
         }
@@ -586,7 +622,7 @@ mod tests {
             n: 4,
             ..Default::default()
         };
-        let (pins, write) = reconcile(Remote::Read(older), Some(&kept));
+        let (pins, write) = reconcile(Remote::Read(older), Some(&kept), 5).unwrap();
         assert_eq!((pins, write), (kept.clone(), true));
         // The record is as new: it is the truth, and a member only this computer knows is added.
         let mut record = Pins {
@@ -602,14 +638,116 @@ mod tests {
                 pending: None,
             },
         );
-        let (pins, write) = reconcile(Remote::Read(record), Some(&kept));
+        let (pins, write) = reconcile(Remote::Read(record), Some(&kept), 5).unwrap();
         assert!(write && pins.members.contains_key("a") && pins.members.contains_key("b"));
-        // Nothing kept and nothing there: an empty list, nothing to write.
-        assert_eq!(reconcile(Remote::Absent, None), (Pins::default(), false));
+        // Nothing kept and nothing there, and the member record says no pins were ever
+        // written: an empty list, nothing to write.
         assert_eq!(
-            reconcile(Remote::Damaged, Some(&Pins::default())),
+            reconcile(Remote::Absent, None, 0).unwrap(),
             (Pins::default(), false)
         );
+        assert_eq!(
+            reconcile(Remote::Damaged, Some(&Pins::default()), 0).unwrap(),
+            (Pins::default(), false)
+        );
+    }
+
+    fn pinned(n: u64, uid: &str) -> Pins {
+        let mut pins = Pins {
+            n,
+            ..Default::default()
+        };
+        pins.members.insert(
+            uid.into(),
+            Pin {
+                key: key(),
+                at: 1,
+                verified: true,
+                pending: None,
+            },
+        );
+        pins
+    }
+
+    fn refused(result: Result<(Pins, bool)>) -> bool {
+        matches!(result, Err(Error::Sync("SharePins", _)))
+    }
+
+    #[test]
+    fn a_computer_that_kept_nothing_never_falls_back_to_first_sight() {
+        // The member record says pins were written (the counter of the last write is 3), and
+        // this computer kept none (a new computer of the account, or its sync folder went).
+        // The record withheld, or garbled: nothing is pinned from what the service shows.
+        assert!(refused(reconcile(Remote::Absent, None, 3)));
+        assert!(refused(reconcile(Remote::Damaged, None, 3)));
+        // An older record handed back (from before a member was pinned or verified).
+        assert!(refused(reconcile(Remote::Read(pinned(2, "a")), None, 3)));
+        assert!(refused(reconcile(Remote::Read(Pins::default()), None, 1)));
+        // The record as the marker says, or newer (written, and the marker not yet): read.
+        for n in [3, 4, 9] {
+            let record = pinned(n, "a");
+            assert_eq!(
+                reconcile(Remote::Read(record.clone()), None, 3).unwrap(),
+                (record, false)
+            );
+        }
+        // A brand-new member key (its record made just now says 0): first sight is allowed.
+        assert_eq!(
+            reconcile(Remote::Absent, None, 0).unwrap(),
+            (Pins::default(), false)
+        );
+    }
+
+    #[test]
+    fn what_this_computer_kept_still_counts_and_must_reach_the_marker_too() {
+        let kept = pinned(5, "a");
+        // Kept as far as the marker: used and written back, as without a marker.
+        for remote in [
+            Remote::Absent,
+            Remote::Damaged,
+            Remote::Read(pinned(4, "b")),
+        ] {
+            let (pins, write) = reconcile(remote, Some(&kept), 5).unwrap();
+            assert_eq!((pins, write), (kept.clone(), true));
+        }
+        // Kept, and behind the marker too (another computer wrote since, and the record is
+        // withheld): what was kept is not the list as it is now.
+        assert!(refused(reconcile(Remote::Absent, Some(&kept), 6)));
+        assert!(refused(reconcile(Remote::Damaged, Some(&kept), 6)));
+        assert!(refused(reconcile(
+            Remote::Read(pinned(4, "b")),
+            Some(&kept),
+            6
+        )));
+        // An empty list this computer kept under a counter counts by its counter: the record
+        // withheld, it is what goes on and is written back.
+        let empty = Pins {
+            n: 2,
+            ..Default::default()
+        };
+        let (pins, write) = reconcile(Remote::Absent, Some(&empty), 2).unwrap();
+        assert_eq!((pins, write), (empty, true));
+    }
+
+    #[test]
+    fn two_computers_writing_pins_leave_the_marker_at_the_newest_write() {
+        // Both read the record at 7 with the marker at 7. The first writes 8; the second's
+        // write is refused (the record moved), reads 8, and writes 9.
+        let (first, second) = (pinned(8, "a"), pinned(9, "a"));
+        // Each then raises the marker to what it wrote, never lowers it, whoever comes last.
+        assert_eq!(marker_to_write(7, &first), Some(8));
+        assert_eq!(marker_to_write(8, &second), Some(9));
+        assert_eq!(marker_to_write(9, &first), None, "the first, coming late");
+        assert_eq!(marker_to_write(9, &second), None);
+        // In between (the record at 9, the marker still at 7 or 8: a write is under way, or
+        // was cut short): the record is ahead of the marker, which is read, never refused.
+        for marker in [7, 8, 9] {
+            assert!(reconcile(Remote::Read(second.clone()), None, marker).is_ok());
+        }
+        // The marker is read before the record: a marker read after a newer write than the
+        // record read would refuse an honest record. (Marker 9, record 8 is only ever a
+        // record handed back.)
+        assert!(refused(reconcile(Remote::Read(first), None, 9)));
     }
 
     #[test]
@@ -629,9 +767,9 @@ mod tests {
             1,
             &mut first,
         );
-        pins.set_verified("ver", &fingerprint(&keys[1]).unwrap(), true)
+        pins.set_verified("ver", &fingerprint("ver", &keys[1]).unwrap(), true)
             .unwrap();
-        pins.set_verified("chg", &fingerprint(&keys[2]).unwrap(), true)
+        pins.set_verified("chg", &fingerprint("chg", &keys[2]).unwrap(), true)
             .unwrap();
         let members = [
             member(me, Some(&keys[3])),

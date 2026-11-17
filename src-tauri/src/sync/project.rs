@@ -41,9 +41,86 @@ pub fn normalize_remote(url: &str) -> Option<String> {
     Some(format!("{}/{}", host.to_ascii_lowercase(), path))
 }
 
+/// The address a folder's identity comes from, normalised: `origin`'s, else the first
+/// remote's by name, among those that are an address anywhere but on this computer. None:
+/// no git, or no such remote.
+pub fn folder_remote(root: &std::path::Path) -> Option<String> {
+    let remotes = crate::git::ops::remote_urls(root).unwrap_or_default();
+    identity_remote(remotes.iter().map(|r| (r.name.as_str(), r.url.as_str())))
+}
+
+/// `folder_remote`'s choice among (name, address) pairs.
+pub fn identity_remote<'a>(remotes: impl Iterator<Item = (&'a str, &'a str)>) -> Option<String> {
+    let mut named: Vec<(&str, &str)> = remotes.collect();
+    // `origin` first, then by name.
+    named.sort_by(|a, b| (a.0 != "origin", a.0).cmp(&(b.0 != "origin", b.0)));
+    named.into_iter().find_map(|(_, url)| normalize_remote(url))
+}
+
+/// Whether a remote's address (`address`, as git or a share has it) names the repository a
+/// folder is a clone of (`folder`: its identity remote, normalised, `folder_remote`). False
+/// when either is missing or the address only means something on one computer.
+pub fn same_remote(address: Option<&str>, folder: Option<&str>) -> bool {
+    match (address.and_then(normalize_remote), folder) {
+        (Some(address), Some(folder)) => address == folder,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::normalize_remote as n;
+    use super::{identity_remote, same_remote};
+
+    #[test]
+    fn a_folder_is_the_shared_project_when_their_remotes_are_one_repository() {
+        // The sharer's share says the HTTPS form; the reader cloned over SSH.
+        let folder = identity_remote([("origin", "git@github.com:Owner/Repo")].into_iter());
+        assert_eq!(folder.as_deref(), Some("github.com/Owner/Repo"));
+        assert!(same_remote(
+            Some("https://GitHub.com/Owner/Repo.git"),
+            folder.as_deref()
+        ));
+        assert!(same_remote(
+            Some("ssh://git@github.com:22/Owner/Repo.git"),
+            folder.as_deref()
+        ));
+        assert!(!same_remote(
+            Some("https://github.com/Owner/Other.git"),
+            folder.as_deref()
+        ));
+        assert!(!same_remote(
+            Some("https://gitlab.com/Owner/Repo.git"),
+            folder.as_deref()
+        ));
+        // Either without a remote that is an address: never the same project.
+        assert!(!same_remote(None, folder.as_deref()));
+        assert!(!same_remote(Some("https://github.com/Owner/Repo"), None));
+        assert!(!same_remote(None, None));
+        assert!(!same_remote(Some("/srv/git/repo"), Some("/srv/git/repo")));
+        assert!(!same_remote(Some("C:\\repos\\x"), Some("C:\\repos\\x")));
+        assert!(!same_remote(Some("../repo"), Some("../repo")));
+        assert!(!same_remote(Some(""), Some("")));
+        // The folder's identity: origin, else the first by name that is an address.
+        let pick = |remotes: &[(&str, &str)]| identity_remote(remotes.iter().copied());
+        assert_eq!(
+            pick(&[
+                ("backup", "https://example.com/a/b"),
+                ("origin", "git@github.com:Owner/Repo.git")
+            ]),
+            Some("github.com/Owner/Repo".into())
+        );
+        assert_eq!(
+            pick(&[
+                ("origin", "/srv/git/repo.git"),
+                ("zeta", "https://example.com/z/z"),
+                ("alpha", "https://example.com/a/b.git")
+            ]),
+            Some("example.com/a/b".into())
+        );
+        assert_eq!(pick(&[("origin", "/srv/git/repo.git")]), None);
+        assert_eq!(pick(&[]), None);
+    }
 
     #[test]
     fn every_form_of_one_repository_is_one_address() {

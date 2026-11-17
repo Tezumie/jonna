@@ -5,13 +5,18 @@ use std::path::{Path, PathBuf};
 
 use super::keys::{open_wrap, split_share_id, valid_key, valid_record_id};
 use super::pins::{Member, MemberState};
-use super::plan;
+use super::plan::{self, Floor};
 use super::{
-    failed, gone, read_info, snapshot_records, Info, Opened, OpenedCopy, Read, SharedFile,
-    SharedFiles, SharedSnapshot, Shares, SNAP, STEP,
+    failed, gone, read_info, snapshot_records, CopyPlan, Info, Opened, OpenedCopy, Read,
+    SharedFile, SharedFiles, SharedSnapshot, Shares, SNAP, STEP,
 };
 use crate::error::{Error, Result};
+use crate::sync::project;
 use crate::sync::snapshot::{self, FileText, Manifest, Summary};
+
+/// A clone for a copy is stopped after this long (a server that never answers, a repository
+/// without end): the copy is then made of what the snapshot carries.
+const CLONE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 impl Shares {
     /// Opens a share: its client, and its keyring. For the sharer the keyring is the one in
@@ -81,7 +86,19 @@ impl Shares {
             self.ensure_member_key(None).await?;
             return Err(waiting());
         };
-        let ring = open_wrap(&key, &pinned, id, generation, text).map_err(|_| wrong_keys())?;
+        let opened = open_wrap(&key, &pinned, id, generation, text).map_err(|_| wrong_keys())?;
+        // The generation is whatever the service attached, so it has a floor here: never an
+        // older generation than this computer saw of these keys, and never an earlier life
+        // of the share (one stopped and made again under the same id) handed over again.
+        self.check_floor(
+            id,
+            Floor {
+                made_at: opened.made_at,
+                tag: opened.ring.name_of("share-keyring")?,
+                generation,
+            },
+        )?;
+        let ring = opened.ring;
         self.hold(id, &ring, generation);
         Ok(Opened {
             api,
@@ -127,8 +144,56 @@ impl Shares {
             summary = snapshot::summary(&opened.api, &opened.ring, SNAP, snap).await;
         }
         let summary = summary.map_err(gone)?;
+        // Read within what a snapshot holds (`snapshot::manifest`): the list is a
+        // teammate's, and nothing in it is taken as given.
         let manifest = snapshot::manifest(&opened.api, &opened.ring, &summary).await?;
         Ok((opened, summary, manifest))
+    }
+
+    /// The address a copy of this share would be cloned from: what the share says of the
+    /// project, else what the snapshot says, and only as the sharer's computer would have
+    /// written it (an ordinary address, with no sign-in in it). None: nothing to clone from.
+    async fn copy_remote(&self, opened: &Opened, manifest: &Manifest) -> Option<String> {
+        manifest.git.as_ref()?;
+        let said = match read_info(&opened.api, &opened.ring).await {
+            Ok(Read::Text { text, .. }) => serde_json::from_str::<Info>(&text)
+                .ok()
+                .and_then(|i| i.remote),
+            _ => None,
+        };
+        said.or_else(|| manifest.git.as_ref().and_then(|g| g.remote.clone()))
+            .filter(|url| plan::public_remote(url).as_deref() == Some(url.as_str()))
+    }
+
+    /// What a copy of a share's snapshot would do first: the address it would clone from,
+    /// for the person to see and agree to before anything reaches out to it. Nothing is
+    /// written and nothing is asked of that address.
+    pub async fn copy_plan(&self, id: &str, snap: &str) -> Result<CopyPlan> {
+        let (opened, _, manifest) = self.manifest(id, snap).await?;
+        snapshot::within_bytes(&manifest, snapshot::MAX_COPY_BYTES)?;
+        Ok(CopyPlan {
+            remote: self.copy_remote(&opened, &manifest).await,
+        })
+    }
+
+    /// Whether the folder `root` is a clone of the repository a share is of: the share's
+    /// remote and the folder's are the same address once both are normalised (as a project's
+    /// identity is). False when either has none. A reader's own sync id for the project
+    /// differs from the sharer's (each is made under the account's own keys), so this is how
+    /// a reader's open folder is known to be the shared project.
+    pub async fn matches_folder(&self, id: &str, root: &Path) -> Result<bool> {
+        let opened = self.open(id, false).await?;
+        let said = match read_info(&opened.api, &opened.ring).await.map_err(gone)? {
+            Read::Text { text, .. } => serde_json::from_str::<Info>(&text)
+                .ok()
+                .and_then(|i| i.remote),
+            _ => None,
+        };
+        let root = root.to_path_buf();
+        let here = tokio::task::spawn_blocking(move || project::folder_remote(&root))
+            .await
+            .map_err(|e| failed("Sync", &e.to_string()))?;
+        Ok(project::same_remote(said.as_deref(), here.as_deref()))
     }
 
     /// The files a snapshot of a share holds; with `root` (the reader's own copy of the
@@ -181,60 +246,74 @@ impl Shares {
     }
 
     /// A copy of a share's snapshot in `target`, which must be new or empty: cloned from the
-    /// project's remote when the share names an ordinary one, then the snapshot restored on
-    /// top (the vault's own restore, with its rules for paths). Nothing here marks the folder
-    /// as trusted or runs anything from it; a reader's computer writes nothing to the share.
-    /// The caller holds the one-snapshot-at-a-time guard.
-    pub async fn open_copy(&self, id: &str, snap: &str, target: &Path) -> Result<OpenedCopy> {
+    /// project's remote first when the person agreed to that (`clone_from`: the address they
+    /// were shown, `copy_plan`), then the snapshot restored on top (the vault's own restore,
+    /// with its rules for paths). Nothing here marks the folder as trusted or runs anything
+    /// from it; a reader's computer writes nothing to the share.
+    ///
+    /// The address is one the sharer chose. It is cloned from only when it is still the one
+    /// that was shown, with no prompt of any kind and for a bounded time
+    /// (`git::run_unattended`), and without `one` (the one-snapshot-at-a-time guard) held:
+    /// a server that never answers doesn't hold up this computer's own snapshots. The
+    /// restore then asks nothing of that address either. `one` is taken for the restore.
+    pub async fn open_copy(
+        &self,
+        id: &str,
+        snap: &str,
+        target: &Path,
+        clone_from: Option<&str>,
+        one: &tokio::sync::Mutex<()>,
+    ) -> Result<OpenedCopy> {
         let (opened, summary, manifest) = self.manifest(id, snap).await?;
+        // Refused before anything is written: more than a copy may bring.
+        snapshot::within_bytes(&manifest, snapshot::MAX_COPY_BYTES)?;
+        let remote = self.copy_remote(&opened, &manifest).await;
+        if let Some(shown) = clone_from {
+            if remote.as_deref() != Some(shown) {
+                return Err(failed(
+                    "ShareRemoteChanged",
+                    "The address this project would be cloned from isn't the one that was shown any more. Open the copy again.",
+                ));
+            }
+        }
         empty_folder(target)?;
         let mut cloned = false;
         let mut note = None;
-        if manifest.git.is_some() {
-            let said = match read_info(&opened.api, &opened.ring).await {
-                Ok(Read::Text { text, .. }) => serde_json::from_str::<Info>(&text)
-                    .ok()
-                    .and_then(|i| i.remote),
-                _ => None,
-            };
-            let remote = said
-                .or_else(|| manifest.git.as_ref().and_then(|g| g.remote.clone()))
-                // As the sharer's computer would have written it, or not used at all.
-                .filter(|url| plan::public_remote(url).as_deref() == Some(url.as_str()));
-            if let Some(url) = remote {
-                let parent = target.parent().unwrap_or(target).to_path_buf();
-                let folder = target.to_string_lossy().to_string();
-                let outcome = tokio::task::spawn_blocking(move || {
-                    crate::git::run(
-                        &parent,
-                        &[
-                            "clone",
-                            "-q",
-                            "--no-recurse-submodules",
-                            "--",
-                            &url,
-                            &folder,
-                        ],
-                        None,
-                    )
-                })
-                .await
-                .map_err(|e| failed("Sync", &e.to_string()))?;
-                match outcome {
-                    Ok(_) => cloned = true,
-                    Err(_) => {
-                        // Whatever the clone left goes: the restore starts an empty repository
-                        // and takes what the snapshot itself carries.
-                        std::fs::remove_dir_all(target)?;
-                        std::fs::create_dir_all(target)?;
-                        note = Some(
-                            "The project's repository couldn't be cloned (no access to it from this computer?). The copy holds what the snapshot carries."
-                                .to_string(),
-                        );
-                    }
+        if let Some(url) = clone_from {
+            let url = url.to_string();
+            let parent = target.parent().unwrap_or(target).to_path_buf();
+            let folder = target.to_string_lossy().to_string();
+            let outcome = tokio::task::spawn_blocking(move || {
+                crate::git::run_unattended(
+                    &parent,
+                    &[
+                        "clone",
+                        "-q",
+                        "--no-recurse-submodules",
+                        "--",
+                        &url,
+                        &folder,
+                    ],
+                    CLONE_DEADLINE,
+                )
+            })
+            .await
+            .map_err(|e| failed("Sync", &e.to_string()))?;
+            match outcome {
+                Ok(_) => cloned = true,
+                Err(_) => {
+                    // Whatever the clone left goes: the restore starts an empty repository
+                    // and takes what the snapshot itself carries.
+                    std::fs::remove_dir_all(target)?;
+                    std::fs::create_dir_all(target)?;
+                    note = Some(
+                        "The project's repository couldn't be cloned (no access to it from this computer without signing in, or it took too long). The copy holds what the snapshot carries."
+                            .to_string(),
+                    );
                 }
             }
         }
+        let _one = one.lock().await;
         let restored = snapshot::restore(
             &opened.api,
             &opened.ring,
@@ -245,6 +324,9 @@ impl Shares {
                 stash: false,
                 as_restored: false,
                 from: &summary.device_name,
+                // Nothing more is asked of an address the sharer chose: what the clone
+                // brought and what the snapshot carries is what the copy is made of.
+                network: false,
             },
         )
         .await
@@ -303,6 +385,86 @@ fn empty_folder(target: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_clone_for_a_copy_asks_nobody_and_gives_up_in_time() {
+        let base = std::env::temp_dir().join(format!("share-clone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        // No way to ask for a sign-in reaches the command: not the IDE's prompts, not the
+        // user's askpass program, not a terminal, not a credential manager's window.
+        let mut cmd = crate::git::command(&base);
+        crate::git::askpass::deny_env(&mut cmd);
+        let env = |name: &str| {
+            cmd.get_envs()
+                .find(|(key, _)| key.to_str() == Some(name))
+                .map(|(_, value)| value.map(|v| v.to_string_lossy().to_string()))
+        };
+        assert_eq!(env("GIT_ASKPASS"), Some(None), "taken away");
+        assert_eq!(env("SSH_ASKPASS"), Some(None), "taken away");
+        assert_eq!(env("GIT_TERMINAL_PROMPT"), Some(Some("0".into())));
+        assert_eq!(env("SSH_ASKPASS_REQUIRE"), Some(Some("never".into())));
+        assert_eq!(env("GCM_INTERACTIVE"), Some(Some("never".into())));
+
+        // A command that doesn't end is stopped when its time is up.
+        let started = std::time::Instant::now();
+        let hung = crate::git::run_unattended(
+            &base,
+            &["-c", "alias.wait=!sleep 20", "wait"],
+            std::time::Duration::from_millis(1500),
+        );
+        assert!(
+            matches!(&hung, Err(Error::Git(text)) if text.contains("took too long")),
+            "{hung:?}"
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(15));
+
+        // An address that is a path on this computer is never cloned from, whatever let it
+        // through: the same clone works when it is the person's own command.
+        let source = base.join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        let git = |args: &[&str]| crate::git::run(&source, args, None).unwrap();
+        git(&["init", "-q"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first",
+        ]);
+        let path = source.to_string_lossy().replace('\\', "/");
+        let url = format!(
+            "file://{}{path}",
+            if path.starts_with('/') { "" } else { "/" }
+        );
+        let minute = std::time::Duration::from_secs(60);
+        let refused = crate::git::run_unattended(
+            &base,
+            &[
+                "clone",
+                "-q",
+                "--no-recurse-submodules",
+                "--",
+                &url,
+                "refused",
+            ],
+            minute,
+        );
+        assert!(refused.is_err(), "{refused:?}");
+        assert!(!base.join("refused").join(".git").exists());
+        crate::git::run(&base, &["clone", "-q", "--", &url, "allowed"], None).unwrap();
+        assert!(base.join("allowed").join(".git").exists());
+        // It still runs what needs no asking.
+        let version = crate::git::run_unattended(&base, &["--version"], minute).unwrap();
+        assert!(version.contains("git version"), "{version}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn a_copy_goes_into_a_new_or_empty_folder_only() {

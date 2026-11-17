@@ -129,6 +129,27 @@ fn share_id_fits_a_path(id: &str) -> bool {
             .is_some_and(|(owner, project)| plain(owner) && plain(project))
 }
 
+/// Whether a call's path is made of plain parts: each of letters, digits, `.`, `_`, `-` and
+/// `:`, none of them empty, `.` or `..`, with at most a plain query after them. Whatever a
+/// caller put into a path (a device's id, a record's name), the address asked is then the one
+/// that was written: nothing in it names another place once it is read. (The empty path is
+/// the area itself.)
+fn plain_path(path: &str) -> bool {
+    let (parts, query) = match path.split_once('?') {
+        Some((parts, query)) => (parts, Some(query)),
+        None => (path, None),
+    };
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ':');
+    let parts_fit = parts.is_empty()
+        || parts
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != ".." && part.chars().all(plain));
+    let query_fits = query.is_none_or(|q| {
+        !q.is_empty() && q.chars().all(|c| plain(c) || c == '=' || c == '&') && !q.contains("..")
+    });
+    path.len() <= 600 && parts_fit && query_fits
+}
+
 impl Api {
     pub fn new(base: &str, data_dir: &Path) -> Self {
         Self::of("sync", base, data_dir)
@@ -208,6 +229,10 @@ impl Api {
         path: &str,
         body: Body<'_>,
     ) -> Result<reqwest::Response> {
+        // Every request passes here: a path that could be read as another place is never sent.
+        if !plain_path(path) {
+            return Err(Error::Invalid("that isn't a call of the service".into()));
+        }
         let mut reply = self.send(&method, path, &body, &self.token()?).await?;
         // "Slow down": waited out a few times before it is an error.
         for wait in [5, 15, 30] {
@@ -350,6 +375,42 @@ mod tests {
                 Api::share("https://example.test", data, bad).is_err(),
                 "{bad}"
             );
+        }
+    }
+
+    #[test]
+    fn a_calls_path_is_made_of_plain_parts() {
+        for ok in [
+            "",
+            "state",
+            "records?since=0",
+            "records/settings/user",
+            "records/snap.AbC/1800000000000-abc123",
+            "devices/AbC_d-1/approve",
+            "blobs/have",
+            "shares/proj-1",
+            "library/item_1",
+        ] {
+            assert!(plain_path(ok), "{ok}");
+        }
+        for bad in [
+            "records/x/../sys/member",
+            "devices/../records/sys/member",
+            "devices/x/../../recovery",
+            "records/./sys/member",
+            "records//member",
+            "/records",
+            "records/",
+            "records/a b/c",
+            "records/a%2Fb/c",
+            "records/a\\b/c",
+            "records/a/b#c",
+            "records/a/b?x=1?y=2",
+            "records?since=0/../x",
+            "records?",
+            "devices/a;b",
+        ] {
+            assert!(!plain_path(bad), "{bad}");
         }
     }
 

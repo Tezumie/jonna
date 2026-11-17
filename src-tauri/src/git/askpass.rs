@@ -275,6 +275,20 @@ pub fn apply_env(cmd: &mut Command) {
         .env(ENV_TOKEN, &server.token);
 }
 
+/// Takes every way to ask for a sign-in away from a git command: the IDE's prompts, the
+/// user's own askpass program, and a credential manager's windows. For a command nobody
+/// asked to sign in for (`git::run_unattended`): what the stored credentials and keys give
+/// without asking still works.
+pub fn deny_env(cmd: &mut Command) {
+    for name in ["GIT_ASKPASS", "SSH_ASKPASS", ENV_PORT, ENV_TOKEN] {
+        cmd.env_remove(name);
+    }
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        // Git Credential Manager: answer from what it has stored, never with a window.
+        .env("GCM_INTERACTIVE", "never");
+}
+
 /// The IDE binary started as git's or ssh's askpass: asks the running IDE and prints the answer.
 /// Returns the exit code, or None when this isn't an askpass run (start the app as usual).
 pub fn client() -> Option<i32> {

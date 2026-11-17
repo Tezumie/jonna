@@ -581,6 +581,8 @@ macro_rules! all_commands {
                 ipc::share::share_snapshots,
                 ipc::share::share_snapshot_files,
                 ipc::share::share_file_text,
+                ipc::share::share_copy_plan,
+                ipc::share::share_matches_folder,
                 ipc::share::share_open_copy,
                 ipc::app::state_load,
                 ipc::app::state_save,

@@ -271,9 +271,65 @@ pub async fn fetch(api: &Api, ring: &Keyring, ids: &[String]) -> Result<HashMap<
     Ok(out)
 }
 
-/// The content `stored` names, whole.
-pub async fn read(api: &Api, ring: &Keyring, stored: &Stored) -> Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(stored.size as usize);
+/// Room made before anything arrived is at most this much: a length is only what whoever
+/// wrote the item says it is.
+const FIRST_ROOM: usize = 1024 * 1024;
+
+fn wrong_size() -> Error {
+    Error::Sync("Sync", "A synced item isn't the size it should be.".into())
+}
+
+/// Whether `stored` can be content cut into chunks at all: content of that length never has
+/// more chunks than this. (Otherwise one small chunk named a hundred thousand times would be
+/// fetched and laid end to end before its length was looked at.)
+pub fn plausible(stored: &Stored) -> Result<()> {
+    let most = stored.size / CHUNK_BYTES as u64 + 1;
+    if stored.chunks.len() as u64 > most {
+        return Err(wrong_size());
+    }
+    Ok(())
+}
+
+/// Counts what arrives of an item against the length it was said to have.
+struct Tally {
+    size: u64,
+    got: u64,
+}
+
+impl Tally {
+    fn new(stored: &Stored) -> Result<Self> {
+        plausible(stored)?;
+        Ok(Self {
+            size: stored.size,
+            got: 0,
+        })
+    }
+
+    /// One more piece: refused the moment the item is longer than it was said to be, or a
+    /// piece is larger than a chunk can be.
+    fn take(&mut self, piece: usize) -> Result<()> {
+        self.got = self.got.saturating_add(piece as u64);
+        if piece > CHUNK_BYTES || self.got > self.size {
+            return Err(wrong_size());
+        }
+        Ok(())
+    }
+
+    fn done(&self) -> Result<()> {
+        if self.got != self.size {
+            return Err(wrong_size());
+        }
+        Ok(())
+    }
+}
+
+/// Hands the content `stored` names to `sink`, piece by piece in order: a large item is never
+/// in memory whole. It stops with an error as soon as more arrives than `stored` says.
+pub async fn read_into<F>(api: &Api, ring: &Keyring, stored: &Stored, mut sink: F) -> Result<()>
+where
+    F: FnMut(&[u8]) -> Result<()>,
+{
+    let mut tally = Tally::new(stored)?;
     // A few requests at once, each for a few chunks, taken in order: a large item downloads
     // faster without sitting in memory twice.
     let owned: Vec<Vec<String>> = stored.chunks.chunks(2).map(<[String]>::to_vec).collect();
@@ -283,16 +339,40 @@ pub async fn read(api: &Api, ring: &Keyring, stored: &Stored) -> Result<Vec<u8>>
     while let Some(next) = groups.next().await {
         let (group, got) = next?;
         for id in &group {
-            out.extend_from_slice(got.get(id).map(Vec::as_slice).unwrap_or_default());
+            let piece = got.get(id).map(Vec::as_slice).unwrap_or_default();
+            tally.take(piece.len())?;
+            sink(piece)?;
         }
     }
-    if out.len() as u64 != stored.size {
+    tally.done()
+}
+
+/// The content `stored` names, whole.
+pub async fn read(api: &Api, ring: &Keyring, stored: &Stored) -> Result<Vec<u8>> {
+    // Never room for what the length says before it arrived: a made-up length would end the
+    // process (a failed allocation can't be caught).
+    let room = usize::try_from(stored.size)
+        .unwrap_or(usize::MAX)
+        .min(FIRST_ROOM);
+    let mut out = Vec::with_capacity(room);
+    read_into(api, ring, stored, |piece| {
+        out.extend_from_slice(piece);
+        Ok(())
+    })
+    .await?;
+    Ok(out)
+}
+
+/// `read`, for content that may be at most `most` bytes: more is refused before anything is
+/// fetched (and, as always, as soon as more arrives than was said).
+pub async fn read_within(api: &Api, ring: &Keyring, stored: &Stored, most: u64) -> Result<Vec<u8>> {
+    if stored.size > most {
         return Err(Error::Sync(
             "Sync",
-            "A synced item isn't the size it should be.".into(),
+            "A synced item is larger than such an item may be.".into(),
         ));
     }
-    Ok(out)
+    read(api, ring, stored).await
 }
 
 #[cfg(test)]
@@ -309,6 +389,51 @@ mod tests {
         assert_eq!(got, vec![(a, &b"hello"[..]), (b, &b""[..])]);
         assert!(unframe(&buf[..buf.len() - 3]).is_err());
         assert!(unframe(&buf[..10]).is_err());
+    }
+
+    #[test]
+    fn a_length_that_was_made_up_is_refused_before_and_while_reading() {
+        let id = "a".repeat(ID_LEN);
+        let stored = |chunks: usize, size: u64| Stored {
+            chunks: vec![id.clone(); chunks],
+            size,
+        };
+        let chunk = CHUNK_BYTES as u64;
+        // As content is cut: none for nothing, one up to a chunk, one more for each further.
+        for honest in [
+            stored(0, 0),
+            stored(1, 1),
+            stored(1, chunk),
+            stored(2, chunk + 1),
+            stored(25, 100 * 1024 * 1024),
+        ] {
+            assert!(plausible(&honest).is_ok(), "{}", honest.size);
+        }
+        // One chunk named again and again under a small length (or a huge one: 400 GB of it).
+        assert!(plausible(&stored(3, 10)).is_err());
+        assert!(plausible(&stored(100_000, 100_000 * chunk / 2)).is_err());
+        assert!(plausible(&stored(2, chunk - 1)).is_err());
+        // While reading: stopped the moment more arrived than was said, not after all of it.
+        assert!(
+            Tally::new(&stored(2, 10)).is_err(),
+            "two chunks of ten bytes"
+        );
+        let mut tally = Tally::new(&stored(1, 10)).unwrap();
+        assert!(tally.take(6).is_ok());
+        assert!(tally.take(5).is_err(), "eleven bytes of ten");
+        // A piece larger than a chunk can be, under a length that would allow it.
+        let mut tally = Tally::new(&stored(1, 3 * chunk)).unwrap();
+        assert!(tally.take(CHUNK_BYTES + 1).is_err());
+        // Less than was said is an error at the end, as before.
+        let mut tally = Tally::new(&stored(1, 10)).unwrap();
+        assert!(tally.take(9).is_ok() && tally.done().is_err());
+        let mut tally = Tally::new(&stored(1, 10)).unwrap();
+        assert!(tally.take(10).is_ok() && tally.done().is_ok());
+        // A length nobody could hold doesn't make room for itself.
+        let room = usize::try_from(u64::MAX)
+            .unwrap_or(usize::MAX)
+            .min(FIRST_ROOM);
+        assert_eq!(room, FIRST_ROOM);
     }
 
     #[test]

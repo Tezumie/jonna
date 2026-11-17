@@ -120,6 +120,8 @@
     "allow-share-snapshots",
     "allow-share-snapshot-files",
     "allow-share-file-text",
+    "allow-share-copy-plan",
+    "allow-share-matches-folder",
     "allow-share-open-copy",
     "allow-state-load",
     "allow-state-save",

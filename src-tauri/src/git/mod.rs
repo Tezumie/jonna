@@ -160,6 +160,108 @@ fn run_git(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
     }
 }
 
+/// What `run_unattended` puts before the command: no askpass program from the settings, no
+/// transport that reads a local path or runs a program, and a transfer that stalls gives up.
+const UNATTENDED_CONFIG: &[&str] = &[
+    "-c",
+    "core.askPass=",
+    "-c",
+    "protocol.file.allow=never",
+    "-c",
+    "protocol.ext.allow=never",
+    "-c",
+    "http.lowSpeedLimit=1000",
+    "-c",
+    "http.lowSpeedTime=60",
+];
+
+/// Runs git against an address someone else chose (a clone for a copy of a teammate's
+/// share): with no prompt of any kind, the IDE's own included, so nobody is asked to sign in
+/// to a host they didn't pick, and stopped when it takes longer than `deadline` (a server
+/// that never answers, a repository without end). Stored credentials and keys still answer
+/// without asking: a private repository both people can reach needs them. Stdout on
+/// success; the error says when the time ran out.
+pub fn run_unattended(dir: &Path, args: &[&str], deadline: std::time::Duration) -> Result<String> {
+    let started = std::time::Instant::now();
+    let mut cmd = command(dir);
+    askpass::deny_env(&mut cmd);
+    cmd.args(UNATTENDED_CONFIG)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let result = wait_until(cmd, started + deadline);
+    let error = match &result {
+        Err(Error::Git(msg)) => Some(msg.clone()),
+        Err(Error::GitMissing) => Some("git isn't installed".to_string()),
+        Err(Error::Io(e)) => Some(e.to_string()),
+        _ => None,
+    };
+    journal::record(args, started.elapsed(), error.as_deref());
+    result
+}
+
+/// Spawns `cmd` and waits for it until `until`; then it is killed. Its output is read on
+/// threads of their own, which are not waited for after a kill: a helper process git started
+/// may still hold the pipes for a moment.
+fn wait_until(mut cmd: Command, until: std::time::Instant) -> Result<String> {
+    use std::io::Read;
+    let mut child = cmd.spawn().map_err(spawn_error)?;
+    let read = |pipe: Option<Box<dyn Read + Send>>| {
+        let (send, receive) = std::sync::mpsc::channel::<Vec<u8>>();
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut out);
+            }
+            let _ = send.send(out);
+        });
+        receive
+    };
+    let out = read(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let err = read(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() >= until => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Git(
+                    "git took too long and was stopped (the server didn't answer in time)".into(),
+                ));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => {
+                let _ = child.kill();
+                return Err(Error::Io(e));
+            }
+        }
+    };
+    // Ended by itself: what it wrote is there (bounded, should a helper linger).
+    let grace = std::time::Duration::from_secs(5);
+    let stdout = out.recv_timeout(grace).unwrap_or_default();
+    let stderr = err.recv_timeout(grace).unwrap_or_default();
+    if status.success() {
+        Ok(String::from_utf8_lossy(&stdout).into_owned())
+    } else {
+        let text = String::from_utf8_lossy(&stderr).trim().to_string();
+        Err(Error::Git(if text.is_empty() {
+            format!("git failed ({status})")
+        } else {
+            text
+        }))
+    }
+}
+
 /// The repository containing `dir`, or None if it isn't in one (or git is missing).
 pub fn repo_root(dir: &Path) -> Option<PathBuf> {
     run(dir, &["rev-parse", "--show-toplevel"], None)

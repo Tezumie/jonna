@@ -29,6 +29,7 @@ import { type ShareBook, shareBook } from "../../core/team/shareBook";
 import {
   acceptKeyWords,
   canRead,
+  cloneQuestion,
   copyReport,
   fingerprintGroups,
   parseTeamShareScheme,
@@ -64,6 +65,8 @@ const SYNC = "Sync";
 const TEAM = "Team";
 /** A shared snapshot's files as text, kept while they are open: this many at most. */
 const TEXTS_KEPT = 12;
+/** Whether a share is of the open folder's repository is remembered for this many pairs. */
+const MATCHES_KEPT = 50;
 /** `team.share.files` returns at most this many files (what differs first). */
 const FILES_RETURNED = 2000;
 /** What a refusal of these says changed where a share stands: the list is read again. */
@@ -152,13 +155,38 @@ export function registerShareCommands(
     return found;
   };
 
+  /** Whether a share is of the repository a folder is a clone of, by share and folder. */
+  const matches = new Map<string, Promise<boolean>>();
+  sub.add({ dispose: () => matches.clear() });
+
   /**
-   * The open folder, when it is the project a share is of (the same sync project id): what a
-   * shared snapshot's files are compared with. Null otherwise: nothing is compared.
+   * The open folder, when it is the project a share is of: what a shared snapshot's files are
+   * compared with. Null otherwise: nothing is compared. The sharer's own folder is known by
+   * its sync project id. A teammate's never is (a project's id is made under each account's
+   * own keys), so theirs is known by its git remote: a clone of the same repository
+   * (`share_matches_folder`), asked once for a share and a folder.
    */
-  const folderOf = (of: ShareInfo): string | null => {
+  const folderOf = async (base: string, of: ShareInfo): Promise<string | null> => {
     const open = sync().project.peek();
-    return open?.id && open.id === of.project ? open.root : null;
+    if (open?.id && open.id === of.project) return open.root;
+    const root = open?.root ?? services.workspace.root.peek();
+    if (!root) return null;
+    const key = `${of.id}\n${root}`;
+    let same = matches.get(key);
+    if (!same) {
+      const read = shareIpc.matchesFolder(base, of.id, root).catch(() => {
+        // Not known just now (offline, keys not here yet): asked again next time.
+        if (matches.get(key) === read) matches.delete(key);
+        return false;
+      });
+      same = read;
+      matches.set(key, read);
+      for (const oldest of matches.keys()) {
+        if (matches.size <= MATCHES_KEPT) break;
+        matches.delete(oldest);
+      }
+    }
+    return (await same) ? root : null;
   };
 
   const snapshotOf = async (
@@ -227,7 +255,7 @@ export function registerShareCommands(
       title: "Share this project with your team",
       category: SYNC,
       description:
-        "Starts sharing the open project with the account's team: the team's members can then see its snapshots and open a copy of it, read only; they can't change it, and nothing of theirs comes back. Its snapshots are from then on also written to the share after each one taken for the account. Key files (.env, keys and tokens) are left out of what is shared, whatever the ignore files say. The project must sync from this computer, and the account must be in a team. With the `team.shareOnlyVerified` setting on, only teammates whose fingerprint was compared get the share's keys. Returns the share's `id`, the first `snapshot` (null when the folder had nothing to share yet), `keyFiles` (how many key files were left out), `waiting` (teammates who have no keys yet, each with `name` and `why`: noKey, keyChanged or notVerified) and `message`. Sharing is the person's own decision: hidden from agents.",
+        "Starts sharing the open project with the account's team: the team's members can then see its snapshots and open a copy of it, read only; they can't change it, and nothing of theirs comes back. Its snapshots are from then on also written to the share after each one taken for the account. Key files (.env, keys and tokens) are left out of what is shared, whatever the ignore files say. Of commits that weren't pushed, only those the commit checked out builds on are shared (no other branch, no stash); when they hold key files the snapshot isn't shared and the failure names the files (push or remove them first). The project must sync from this computer, and the account must be in a team. With the `team.shareOnlyVerified` setting on, only teammates whose fingerprint was compared get the share's keys. Returns the share's `id`, the first `snapshot` (null when the folder had nothing to share yet), `keyFiles` (how many key files were left out), `waiting` (teammates who have no keys yet, each with `name` and `why`: noKey, keyChanged or notVerified) and `message`. Sharing is the person's own decision: hidden from agents.",
       input: s.object({}),
       effects: ["network"],
       agent: "hidden",
@@ -348,7 +376,7 @@ export function registerShareCommands(
       title: "List the team's members",
       category: TEAM,
       description:
-        "Reads the account's team again and lists its members: each with `uid`, `name`, `you` (this account), `state` (where their key for sharing stands on this computer: nokey, they haven't opened the IDE with sync on yet; new, their key is known and wasn't compared; verified, their fingerprint was compared; changed, the service shows another key than the one this computer knows, so nothing is shared with them and nothing of theirs is read until the new key is accepted), `fingerprint` (20 digits in five groups of four, of the key this computer knows; null without one) and, when changed, `pendingFingerprint` (the new key's). A fingerprint is what teammates read out to each other to compare; no key is returned. `problem` says why the team couldn't be read just now (what was read before is returned). The same, without fingerprints, is in ide://team (`members`).",
+        "Reads the account's team again and lists its members: each with `uid`, `name`, `you` (this account), `state` (where their key for sharing stands on this computer: nokey, they haven't opened the IDE with sync on yet; new, their key is known and wasn't compared; verified, their fingerprint was compared; changed, the service shows another key than the one this computer knows, so nothing is shared with them and nothing of theirs is read until the new key is accepted), `fingerprint` (30 digits in six groups of five, of the key this computer knows as that member's; null without one) and, when changed, `pendingFingerprint` (the new key's). A fingerprint is what teammates read out to each other to compare; no key is returned. `problem` says why the team couldn't be read just now (what was read before is returned). The same, without fingerprints, is in ide://team (`members`).",
       input: s.object({}),
       effects: ["network"],
       agent: "discoverable",
@@ -451,7 +479,7 @@ export function registerShareCommands(
       title: "Copy your fingerprint",
       category: TEAM,
       description:
-        "Copies this account's own fingerprint (20 digits in five groups of four) to the clipboard: what a teammate compares with the one their IDE shows for this account. A fingerprint isn't a secret; reading it out is safer than sending it, since a message can be changed on the way.",
+        "Copies this account's own fingerprint (30 digits in six groups of five) to the clipboard: what a teammate compares with the one their IDE shows for this account. A fingerprint isn't a secret; reading it out is safer than sending it, since a message can be changed on the way.",
       input: s.object({}),
       effects: [],
       agent: "hidden",
@@ -529,7 +557,7 @@ export function registerShareCommands(
       title: "List a shared snapshot's files",
       category: TEAM,
       description:
-        "Lists what a snapshot of a project the team shares holds, without changing anything. Returns `compared` (true when the open folder is that same project, by its sync id: the files are then compared with the folder), `summary` (a sentence), `counts` (`total`, and when compared `differ`, `missing`, `same`, `unknown`), `truncated` (files left uncompared because the snapshot names more than are compared), `skipped` (what the snapshot left out, each `path` with `why`: a key file, too large…) and `files`: each with `path`, `size` in bytes, `deleted` (the snapshot records a deletion) and `state` (same, differs, missing, or unknown: not compared, as every file is when `compared` is false). Files that differ come first; at most 2,000 are returned and `more` counts the rest (`filter` narrows the list to paths holding its words). For a git project a snapshot holds only the files that differed from its commit. team.share.openFile opens one.",
+        "Lists what a snapshot of a project the team shares holds, without changing anything. Returns `compared` (true when the open folder is that same project: the sharer's own folder of it, or a teammate's clone of the same repository, told by its git remote; the files are then compared with the folder), `summary` (a sentence), `counts` (`total`, and when compared `differ`, `missing`, `same`, `unknown`), `truncated` (files left uncompared because the snapshot names more than are compared), `skipped` (what the snapshot left out, each `path` with `why`: a key file, too large…) and `files`: each with `path`, `size` in bytes, `deleted` (the snapshot records a deletion) and `state` (same, differs, missing, or unknown: not compared, as every file is when `compared` is false). Files that differ come first; at most 2,000 are returned and `more` counts the rest (`filter` narrows the list to paths holding its words). For a git project a snapshot holds only the files that differed from its commit. team.share.openFile opens one.",
       input: s.object({
         id: s.string().describe("The share's id (ide://team shares)"),
         snapshot: s.string().describe("The snapshot's id (team.share.snapshots)"),
@@ -543,7 +571,7 @@ export function registerShareCommands(
       run: async ({ id, snapshot, filter }) => {
         const base = await ready();
         const found = await readable(id);
-        const root = folderOf(found);
+        const root = await folderOf(base, found);
         const read = await asked(shareIpc.snapshotFiles(base, id, snapshot, root));
         const compared = root !== null;
         const all = sortFiles(asRows(read.files));
@@ -570,7 +598,7 @@ export function registerShareCommands(
       title: "Open a shared snapshot's file",
       category: TEAM,
       description:
-        "Opens one file of a snapshot of a project the team shares, read only; nothing is written anywhere. When the open folder is that same project (by its sync id), it opens as a diff: the shared snapshot's file (left) beside the folder's file now (right); `diff` is true. Otherwise the file's text opens by itself in a read-only tab. A file that isn't text or is larger than 2 MB isn't opened (`opened` false, with `reason`: binary or large). Paths come from team.share.files.",
+        "Opens one file of a snapshot of a project the team shares, read only; nothing is written anywhere. When the open folder is that same project (the sharer's own folder of it, or a clone of the same repository, told by its git remote), it opens as a diff: the shared snapshot's file (left) beside the folder's file now (right); `diff` is true. Otherwise the file's text opens by itself in a read-only tab. A file that isn't text or is larger than 2 MB isn't opened (`opened` false, with `reason`: binary or large). Paths come from team.share.files.",
       input: s.object({
         id: s.string().describe("The share's id (ide://team shares)"),
         snapshot: s.string().describe("The snapshot's id (team.share.snapshots)"),
@@ -591,7 +619,7 @@ export function registerShareCommands(
           notifications.show("info", textRefusal(file, reason, false), { title: TEAM });
           return { opened: false, path: file, reason };
         }
-        const root = folderOf(found);
+        const root = await folderOf(base, found);
         const full = root ? joinPath(root, file) : null;
         if (root && full && isWithin(root, full)) {
           // In neither: there is nothing to show on either side.
@@ -619,7 +647,7 @@ export function registerShareCommands(
   /** Reads the files of the shared snapshot being looked at into the tab's list. */
   const loadFiles = async (base: string, of: ShareInfo, snapshot: string): Promise<void> => {
     const look = session.shares.snapshot;
-    const root = folderOf(of);
+    const root = await folderOf(base, of);
     const turn = look.begin(snapshot, root !== null);
     try {
       const read = await asked(shareIpc.snapshotFiles(base, of.id, snapshot, root));
@@ -640,7 +668,7 @@ export function registerShareCommands(
       title: "View a shared project",
       category: TEAM,
       description:
-        "Opens the Sync tab's Team page on a project the team shares: its snapshots, newest first, or, with `snapshot`, that snapshot's files (compared with the open folder when the folder is that same project). A file there opens read only (team.share.openFile), and a copy of a snapshot can be opened in a folder of its own. Nothing is changed. Needs the share's keys; otherwise it says why it can't be read. Returns how many `snapshots` the share has and, with `snapshot`, the files' `counts`.",
+        "Opens the Sync tab's Team page on a project the team shares: its snapshots, newest first, or, with `snapshot`, that snapshot's files (compared with the open folder when the folder is that same project: a clone of the same repository counts). A file there opens read only (team.share.openFile), and a copy of a snapshot can be opened in a folder of its own. Nothing is changed. Needs the share's keys; otherwise it says why it can't be read. Returns how many `snapshots` the share has and, with `snapshot`, the files' `counts`.",
       input: s.object({
         id: s.string().describe("The share's id (ide://team shares)"),
         snapshot: s.string().describe("A snapshot of it to open (team.share.snapshots)").optional(),
@@ -692,7 +720,7 @@ export function registerShareCommands(
       title: "Open a copy of a shared project…",
       category: TEAM,
       description:
-        "Makes a copy of a snapshot of a project the team shares in a new or empty folder the person chooses (`target`, else the folder dialog): when the project has a git remote the folder is cloned from it first, then the snapshot is put on top (its commit checked out, its changed files written). Then says what happened and offers to open the folder, which opens like any folder someone else made: not trusted until the person says so. Nothing goes back to the share. Without `snapshot`, the newest. Returns `copied`, the `path`, `cloned`, `note` (why it couldn't be cloned, when there was a remote), `files` written and `opened`. Needs the person: hidden from agents.",
+        "Makes a copy of a snapshot of a project the team shares in a new or empty folder the person chooses (`target`, else the folder dialog). When the project has a git remote, its address is shown and the person is asked whether to clone from it first (it is the address the sharer works from): on yes the folder is cloned from it, with the access this computer already has, no sign-in prompt and a time limit; on no nothing reaches out to that address. Then the snapshot is put on top (its commit checked out, its changed files written). Then says what happened and offers to open the folder, which opens like any folder someone else made: not trusted until the person says so. Nothing goes back to the share. Without `snapshot`, the newest. Returns `copied`, the `path`, `cloned`, `note` (why it couldn't be cloned, when a clone was asked for), `files` written and `opened`. Needs the person: hidden from agents.",
       input: s.object({
         id: s.string().describe("The share's id (ide://team shares)"),
         snapshot: s.string().describe("The snapshot's id; default: the newest").optional(),
@@ -713,7 +741,25 @@ export function registerShareCommands(
           target ??
           (await dialogIpc.pickFolder(`A new or empty folder for a copy of ${found.name}`));
         if (!folder) return { copied: false, cancelled: true };
-        const copy = await asked(shareIpc.openCopy(base, id, from, folder));
+        // The address is one the sharer chose: shown, and asked about, before this computer
+        // reaches out to it. Only the address that was shown is ever cloned from.
+        const plan = await asked(shareIpc.copyPlan(base, id, from));
+        let cloneFrom: string | null = null;
+        if (plan.remote) {
+          const words = cloneQuestion(plan.remote, found.owner.name, found.name, found.mine);
+          const answer = await showDialog<"clone" | "copy" | null>({
+            title: words.title,
+            message: words.message,
+            actions: [
+              { label: "No, copy without cloning", value: "copy" },
+              { label: "Clone first", value: "clone", variant: "primary" },
+            ],
+            cancelValue: null,
+          });
+          if (answer === null) return { copied: false, cancelled: true };
+          if (answer === "clone") cloneFrom = plan.remote;
+        }
+        const copy = await asked(shareIpc.openCopy(base, id, from, folder, cloneFrom));
         const report = copyReport(copy, found.name);
         const open = await showDialog<boolean>({
           title: report.title,

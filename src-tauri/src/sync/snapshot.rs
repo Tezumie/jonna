@@ -21,7 +21,6 @@ use super::chunks::{self, Stored, Uploader};
 use super::crypto::Keyring;
 use super::records::{self, Put};
 use crate::error::{Error, Result};
-use crate::store::atomic_write;
 
 /// Files larger than this are left out (and listed as left out).
 const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024;
@@ -34,6 +33,13 @@ const SHARD_FILES: usize = 400;
 const WRITES_AT_ONCE: usize = 4;
 /// After this many bundles a fresh, complete one is made.
 const MAX_BUNDLE_CHAIN: usize = 24;
+/// A snapshot's list of files (its index and every part) is at most this large when read.
+const MAX_MANIFEST_BYTES: u64 = 256 * 1024 * 1024;
+/// The list is stored in at most this many parts (`shard_count`).
+const MAX_SHARDS: usize = 1024;
+/// Everything a copy of a shared snapshot brings (its files, its bundles, its staged patch)
+/// is at most this much.
+pub const MAX_COPY_BYTES: u64 = 20 * 1024 * 1024 * 1024;
 /// Folders that never travel from a folder without git (dependencies, build output, caches).
 const HEAVY_DIRS: &[&str] = &[
     ".git",
@@ -205,6 +211,112 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
         return Err(sync_error("a snapshot names an empty path"));
     }
     Ok(out)
+}
+
+/// Whether what is at a path stands for another place: a symbolic link, and on Windows a
+/// junction too (the standard library reads both as a link; a file kept in the cloud is none).
+fn is_link(meta: &std::fs::Metadata) -> bool {
+    meta.file_type().is_symlink()
+}
+
+fn through_a_link(relative: &str) -> Error {
+    sync_error(format!(
+        "a snapshot's path leaves the project through a link: {relative}"
+    ))
+}
+
+/// Whether `real` (a folder's resolved path) is `real_root` or under it, by names a snapshot
+/// may name: a path that only resolves into a repository's own folder (through another
+/// spelling of its name) is not.
+fn names_inside(real_root: &Path, real: &Path) -> bool {
+    real.strip_prefix(real_root).is_ok_and(|rest| {
+        rest.components().all(
+            |part| matches!(part, Component::Normal(name) if !unsafe_name(&name.to_string_lossy())),
+        )
+    })
+}
+
+/// Whether a path of the project passes through a link before its last part: what is there
+/// is then somewhere else, and is never read into a snapshot.
+fn passes_a_link(root: &Path, relative: &str) -> bool {
+    let mut at = root.to_path_buf();
+    let mut parts = Path::new(relative).components().peekable();
+    while let Some(part) = parts.next() {
+        at.push(part);
+        if parts.peek().is_none() {
+            break;
+        }
+        if std::fs::symlink_metadata(&at).is_ok_and(|meta| is_link(&meta)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// The folder a snapshot is restored into, as every write, read and deletion of a restore
+/// finds its place in it.
+struct Project<'a> {
+    root: &'a Path,
+    /// The folder resolved, once.
+    real: PathBuf,
+}
+
+impl<'a> Project<'a> {
+    fn new(root: &'a Path) -> Result<Self> {
+        Ok(Self {
+            root,
+            real: std::fs::canonicalize(root)?,
+        })
+    }
+
+    /// A manifest's path as a place under the folder: by `safe_join`'s rules for names, and
+    /// with no link anywhere on the way. A link that the snapshot's own commit checked out
+    /// (`x -> .git`, `y -> /home/someone`) would otherwise take a write into the repository's
+    /// settings or a deletion out of the folder. Each part that exists is looked at without
+    /// following it; what exists is then resolved and must still be inside, under names a
+    /// snapshot may name. The last part may be a link: the caller replaces or removes the link
+    /// itself, never what it points at.
+    fn place(&self, relative: &str) -> Result<PathBuf> {
+        let target = safe_join(self.root, relative)?;
+        let rest = target
+            .strip_prefix(self.root)
+            .map_err(|_| through_a_link(relative))?;
+        let mut at = self.root.to_path_buf();
+        let mut deepest: Option<PathBuf> = None;
+        let mut parts = rest.components().peekable();
+        while let Some(part) = parts.next() {
+            at.push(part);
+            if parts.peek().is_none() {
+                break;
+            }
+            match std::fs::symlink_metadata(&at) {
+                Ok(meta) if is_link(&meta) => return Err(through_a_link(relative)),
+                Ok(_) => deepest = Some(at.clone()),
+                // Not there yet: nothing below it is either.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+                Err(e) => return Err(e.into()),
+            }
+        }
+        if let Some(folder) = deepest {
+            if !names_inside(&self.real, &std::fs::canonicalize(folder)?) {
+                return Err(through_a_link(relative));
+            }
+        }
+        Ok(target)
+    }
+
+    /// `place`, and when a link is at the place itself, the link is removed (not what it
+    /// points at): what is written there is then a file of the folder.
+    fn place_for_writing(&self, relative: &str) -> Result<PathBuf> {
+        let target = self.place(relative)?;
+        if std::fs::symlink_metadata(&target).is_ok_and(|meta| is_link(&meta)) {
+            // (A link to a folder is removed as a folder on Windows.)
+            if std::fs::remove_file(&target).is_err() {
+                std::fs::remove_dir(&target)?;
+            }
+        }
+        Ok(target)
+    }
 }
 
 /// Whether an address from a snapshot may become a git remote: an ordinary https, ssh or git
@@ -415,7 +527,9 @@ impl Capture<'_> {
             Ok(m) => m,
             Err(_) => return Ok(()),
         };
-        if meta.file_type().is_symlink() {
+        // A link is named, never followed: not at the file itself, and not on the way to it
+        // (what is behind a linked folder is somewhere else, outside the project perhaps).
+        if is_link(&meta) || passes_a_link(self.root, path) {
             self.manifest
                 .skipped
                 .push((path.to_string(), "a link".into()));
@@ -451,6 +565,13 @@ impl Capture<'_> {
                 return Ok(());
             }
         };
+        // Grown since it was looked at: a snapshot never names a file it wouldn't read back.
+        if bytes.len() as u64 > MAX_FILE_BYTES {
+            self.manifest
+                .skipped
+                .push((path.to_string(), "too large".into()));
+            return Ok(());
+        }
         let s = self.uploader.add(&bytes).await?;
         self.manifest.files.push(FileEntry {
             p: path.to_string(),
@@ -648,17 +769,162 @@ fn scratch_file(data: &Path, name: &str) -> Result<PathBuf> {
     Ok(dir.join(format!("{name}-{}", super::crypto::new_id()?)))
 }
 
+/// Which commits a snapshot's bundles carry.
+#[derive(Clone, Default)]
+struct Scope {
+    /// Only what the commit checked out needs: no other branch, no tag, no stash (a share).
+    head_only: bool,
+    /// What is left out because a remote has it, as git's option for it: `--remotes` (any
+    /// remote's), `--remotes=<name>` (one remote's). None: nothing is left out, the bundles
+    /// carry the whole history.
+    not_remotes: Option<String>,
+    /// Files that must not travel inside commits either (`CreateOptions::leave_out`): with
+    /// `head_only`, commits that add or change one refuse the capture.
+    leave_out: Option<LeaveOut>,
+}
+
+/// The option that leaves out what the remote `name` has. None for a name git would read as
+/// a pattern: nothing is left out then.
+fn only_remote(name: &str) -> Option<String> {
+    (!name.is_empty() && !name.contains(['*', '?', '[', '\\'])).then(|| format!("--remotes={name}"))
+}
+
+/// What a snapshot's bundles leave out because a remote has it (`Scope::not_remotes`).
+/// `remote`: the name of the project's remote (`origin`, else the first). `named`: the
+/// snapshot says its address. Left out only when whoever restores can get it there: a remote
+/// the snapshot doesn't name (a share drops a local or `file://` one) counts as none, and
+/// the bundles then carry the whole history. A share leaves out what that one remote has,
+/// not what any other has: its reader clones from that one.
+fn remotes_left_out(
+    remote: Option<&str>,
+    named: bool,
+    head_only: bool,
+    everything: bool,
+) -> Option<String> {
+    match remote {
+        Some(name) if named && !everything => {
+            if head_only {
+                only_remote(name)
+            } else {
+                Some("--remotes".into())
+            }
+        }
+        _ => None,
+    }
+}
+
+/// What the next bundle is made of: the tips it is made for, what it names (`what`) and
+/// what it leaves out (`not`), as git's revision arguments.
+struct BundleRange {
+    tips: Vec<String>,
+    what: Vec<String>,
+    not: Vec<String>,
+}
+
+impl BundleRange {
+    /// As revision arguments: `what… [--not not…]`.
+    fn args(&self) -> Vec<String> {
+        let mut args = self.what.clone();
+        if !self.not.is_empty() {
+            args.push("--not".into());
+            args.extend(self.not.iter().cloned());
+        }
+        args
+    }
+}
+
+fn bundle_range(root: &Path, chain: &[Bundle], scope: &Scope) -> BundleRange {
+    let known = |sha: &str| git(root, &["cat-file", "-e", &format!("{sha}^{{commit}}")]).is_ok();
+    let (tips, what) = if scope.head_only {
+        // Only the commit checked out: what other branches and stashes hold stays here.
+        let head = git(root, &["rev-parse", "-q", "--verify", "HEAD"])
+            .map(|sha| sha.trim().to_string())
+            .unwrap_or_default();
+        (vec![head], vec!["HEAD".to_string()])
+    } else {
+        // Every ref but the ones an earlier restore put here (they are another computer's),
+        // and the commit checked out, which may have no ref.
+        let mut what: Vec<String> = vec![
+            "--exclude=refs/synced/*".into(),
+            "--all".into(),
+            "HEAD".into(),
+        ];
+        // Older stashes have no ref of their own: named by commit, they go into the pack too.
+        what.extend(stashes(root).into_iter().map(|(sha, _)| sha));
+        (ref_tips(root), what)
+    };
+    let mut not: Vec<String> = Vec::new();
+    if let Some(remotes) = &scope.not_remotes {
+        not.push(remotes.clone());
+    }
+    for bundle in chain {
+        for tip in &bundle.tips {
+            // Only commits can be excluded (a tag may point at something else).
+            if known(tip) && !not.contains(tip) {
+                not.push(tip.clone());
+            }
+        }
+    }
+    BundleRange { tips, what, not }
+}
+
+/// The files `leave` names among those the commits of `range` add or change: what a bundle
+/// of that range would carry of them. (A deletion carries nothing of the file.)
+fn left_out_in_commits(root: &Path, range: &BundleRange, leave: LeaveOut) -> Result<Vec<String>> {
+    let mut args: Vec<String> = [
+        "log",
+        "--format=",
+        "--name-only",
+        "-z",
+        "--no-renames",
+        // A merge is compared with each of its parents: what only the merge itself brought in
+        // is listed too.
+        "-m",
+        "--diff-filter=d",
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect();
+    args.extend(range.args());
+    // (No paths may follow: a revision is never read as one.)
+    args.push("--".into());
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = git(root, &refs)?;
+    let mut found: Vec<String> = out
+        .split(['\0', '\n'])
+        .map(rel)
+        .filter(|path| !path.is_empty() && leave(path).is_some())
+        .collect();
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
+/// The refusal of a share's capture whose unpushed commits hold key files.
+fn key_files_in_history(files: &[String]) -> Error {
+    let shown: Vec<&str> = files.iter().take(10).map(String::as_str).collect();
+    let more = match files.len() - shown.len() {
+        0 => String::new(),
+        n => format!(" and {n} more"),
+    };
+    Error::Sync(
+        "ShareKeyFilesInHistory",
+        format!(
+            "These key files are in commits that haven't been pushed, so they would be shared: {}{more}. Push or remove them, then share again.",
+            shown.join(", ")
+        ),
+    )
+}
+
 /// The bundles a snapshot needs: the ones before (while their commits are still here) and a
 /// new one for what the refs reach now that those, and the remotes, don't have.
 async fn bundles(
     capture: &mut Capture<'_>,
     data: &Path,
     before: Option<&GitState>,
-    has_remote: bool,
-    everything: bool,
+    scope: &Scope,
 ) -> Result<Vec<Bundle>> {
     let root = capture.root;
-    let tips = ref_tips(root);
     let mut chain: Vec<Bundle> = before.map(|g| g.bundles.clone()).unwrap_or_default();
     // A commit an earlier bundle relied on that is gone (history rewritten and collected), or a
     // chain grown long: start again with one complete bundle.
@@ -667,55 +933,50 @@ async fn bundles(
         .iter()
         .flat_map(|b| b.tips.iter())
         .all(|t| known(t) || git(root, &["cat-file", "-e", t]).is_ok());
-    if !intact || chain.len() >= MAX_BUNDLE_CHAIN {
+    // A share carries only what the commit checked out builds on: a bundle made while another
+    // line of commits was checked out isn't part of that.
+    let beside = scope.head_only
+        && chain
+            .iter()
+            .flat_map(|b| b.tips.iter())
+            .any(|tip| git(root, &["merge-base", "--is-ancestor", tip, "HEAD"]).is_err());
+    if !intact || beside || chain.len() >= MAX_BUNDLE_CHAIN {
         chain.clear();
     }
+    let range = bundle_range(root, &chain, scope);
+    let tips = range.tips.clone();
     if chain.last().is_some_and(|b| b.tips == tips) {
         for b in &chain {
             capture.uploader.keep(&b.file);
         }
         return Ok(chain);
     }
-    let file = scratch_file(data, "bundle")?;
-    let file_text = file.to_string_lossy().to_string();
-    // Every ref but the ones an earlier restore put here (they are another computer's), and
-    // the commit checked out, which may have no ref.
-    let mut args: Vec<String> = vec![
-        "bundle".into(),
-        "create".into(),
-        file_text,
-        "--exclude=refs/synced/*".into(),
-        "--all".into(),
-        "HEAD".into(),
-    ];
-    // Older stashes have no ref of their own: named by commit, they go into the pack too.
-    args.extend(stashes(root).into_iter().map(|(sha, _)| sha));
-    let mut not: Vec<String> = Vec::new();
-    if has_remote && !everything {
-        not.push("--remotes".into());
-    }
-    for bundle in &chain {
-        for tip in &bundle.tips {
-            // Only commits can be excluded (a tag may point at something else).
-            if known(tip) && !not.contains(tip) {
-                not.push(tip.clone());
-            }
-        }
-    }
-    if !not.is_empty() {
-        args.push("--not".into());
-        args.extend(not);
-    }
+    let revisions = range.args();
     // Asked first, in a way that doesn't depend on git's language: is there anything the
     // remotes and the earlier bundles lack?
     let mut probe: Vec<&str> = vec!["rev-list", "--max-count=1"];
-    probe.extend(args[3..].iter().map(String::as_str));
+    probe.extend(revisions.iter().map(String::as_str));
     if git(root, &probe).is_ok_and(|out| out.trim().is_empty()) {
         for b in &chain {
             capture.uploader.keep(&b.file);
         }
         return Ok(chain);
     }
+    // A share: the commits about to travel are looked through first. A key file committed
+    // and not pushed would go out inside them, whatever is left out of the files.
+    if let (true, Some(leave)) = (scope.head_only, scope.leave_out) {
+        let found = left_out_in_commits(root, &range, leave)?;
+        if !found.is_empty() {
+            return Err(key_files_in_history(&found));
+        }
+    }
+    let file = scratch_file(data, "bundle")?;
+    let mut args: Vec<String> = vec![
+        "bundle".into(),
+        "create".into(),
+        file.to_string_lossy().to_string(),
+    ];
+    args.extend(revisions);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let made = git(root, &refs);
     let result = match made {
@@ -755,6 +1016,12 @@ pub struct CreateOptions<'a> {
     /// How the remote's address is written into the snapshot (a share takes a sign-in out of
     /// it; an address it can't show is left out). None: as git has it.
     pub remote_as: Option<fn(&str) -> Option<String>>,
+    /// A share's capture: of the commits no remote has, only those the commit checked out
+    /// builds on travel (no other branch, no tag, no stash); commits among them that add or
+    /// change a file `leave_out` names refuse the capture (`ShareKeyFilesInHistory`); and a
+    /// remote whose address isn't written into the snapshot counts as no remote, so the
+    /// bundles carry the whole history the commit needs. False: the vault's own snapshots.
+    pub head_only: bool,
 }
 
 /// What is staged, as a patch against the commit, without the files `leave_out` names: a key
@@ -849,21 +1116,29 @@ async fn create_once(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         let remotes = crate::git::ops::remote_urls(root).unwrap_or_default();
-        let remote = remotes
+        let picked = remotes
             .iter()
             .find(|r| r.name == "origin")
-            .or_else(|| remotes.first())
-            .map(|r| r.url.clone());
+            .or_else(|| remotes.first());
+        // The address as the snapshot says it (a share shows only an ordinary one).
+        let remote = match (picked, options.remote_as) {
+            (Some(r), Some(shown)) => shown(&r.url),
+            (Some(r), None) => Some(r.url.clone()),
+            (None, _) => None,
+        };
+        let scope = Scope {
+            head_only: options.head_only,
+            not_remotes: remotes_left_out(
+                picked.map(|r| r.name.as_str()),
+                remote.is_some(),
+                options.head_only,
+                options.everything,
+            ),
+            leave_out: options.leave_out,
+        };
         let before_git = options.before.and_then(|m| m.git.as_ref());
         let chain = if head.is_some() {
-            bundles(
-                &mut capture,
-                data,
-                before_git,
-                remote.is_some(),
-                options.everything,
-            )
-            .await?
+            bundles(&mut capture, data, before_git, &scope).await?
         } else {
             Vec::new()
         };
@@ -895,13 +1170,15 @@ async fn create_once(
         capture.manifest.git = Some(GitState {
             head,
             branch,
-            remote: match options.remote_as {
-                Some(shown) => remote.as_deref().and_then(shown),
-                None => remote,
-            },
+            remote,
             bundles: chain,
             staged,
-            stashes: stashes(root),
+            // A share carries no stash (a stash may hold anything, key files included).
+            stashes: if options.head_only {
+                Vec::new()
+            } else {
+                stashes(root)
+            },
         });
     } else {
         for path in folder_files(root) {
@@ -1022,9 +1299,89 @@ async fn store_manifest(uploader: &mut Uploader<'_>, manifest: &Manifest) -> Res
     uploader.add(&serde_json::to_vec(&index)?).await
 }
 
+fn beyond_a_snapshot(what: &str) -> Error {
+    sync_error(format!(
+        "That snapshot can't be read: {what} than a snapshot holds."
+    ))
+}
+
+/// Whether a snapshot's list, as read, is one a capture could have written: no more files
+/// than a snapshot holds, none larger than a file in one may be, and no content with more
+/// chunks than its length allows. A list is only what whoever wrote it says (a share's is a
+/// teammate's): nothing is fetched, compared or written from one that isn't.
+fn within_limits(manifest: &Manifest) -> Result<()> {
+    if manifest.files.len() > MAX_FILES || manifest.deleted.len() > MAX_FILES {
+        return Err(beyond_a_snapshot("it names more files"));
+    }
+    // (One more than the files: the line that says how many were left out.)
+    if manifest.skipped.len() > MAX_FILES + 1 {
+        return Err(beyond_a_snapshot("it lists more left-out files"));
+    }
+    for file in &manifest.files {
+        if file.s.size > MAX_FILE_BYTES {
+            return Err(beyond_a_snapshot("it names a larger file"));
+        }
+        chunks::plausible(&file.s)?;
+    }
+    if let Some(state) = &manifest.git {
+        if state.bundles.len() > MAX_BUNDLE_CHAIN + 1 {
+            return Err(beyond_a_snapshot("it names more bundles of commits"));
+        }
+        for bundle in &state.bundles {
+            chunks::plausible(&bundle.file)?;
+        }
+        if let Some(staged) = &state.staged {
+            chunks::plausible(staged)?;
+        }
+    }
+    Ok(())
+}
+
+/// The bytes a restore of this snapshot fetches and writes: its files, its bundles of
+/// commits, its staged patch.
+pub fn carried_bytes(manifest: &Manifest) -> u64 {
+    let mut total: u64 = 0;
+    for file in &manifest.files {
+        total = total.saturating_add(file.s.size);
+    }
+    if let Some(state) = &manifest.git {
+        for bundle in &state.bundles {
+            total = total.saturating_add(bundle.file.size);
+        }
+        if let Some(staged) = &state.staged {
+            total = total.saturating_add(staged.size);
+        }
+    }
+    total
+}
+
+/// Refuses a snapshot that would bring more than `most` bytes (a copy of a shared one).
+pub fn within_bytes(manifest: &Manifest, most: u64) -> Result<()> {
+    if carried_bytes(manifest) > most {
+        return Err(sync_error(format!(
+            "That snapshot is larger than a copy may be ({} GB).",
+            most / (1024 * 1024 * 1024)
+        )));
+    }
+    Ok(())
+}
+
 pub async fn manifest(api: &Api, ring: &Keyring, summary: &Summary) -> Result<Manifest> {
-    let bytes = chunks::read(api, ring, &summary.manifest).await?;
+    let bytes = chunks::read_within(api, ring, &summary.manifest, MAX_MANIFEST_BYTES).await?;
     let mut manifest: Manifest = serde_json::from_slice(&bytes)?;
+    drop(bytes);
+    // What a stored list never has: files beside its parts are not taken from it.
+    if !manifest.shards.is_empty() {
+        manifest.files.clear();
+    }
+    // The parts together are bounded as the list itself is, before any is fetched.
+    let mut listed = summary.manifest.size;
+    for shard in &manifest.shards {
+        listed = listed.saturating_add(shard.size);
+    }
+    if manifest.shards.len() > MAX_SHARDS || listed > MAX_MANIFEST_BYTES {
+        return Err(beyond_a_snapshot("its list of files is larger"));
+    }
     // The files, from their parts, a few at once.
     let shards = manifest.shards.clone();
     let mut parts = futures_util::stream::iter(shards)
@@ -1033,8 +1390,13 @@ pub async fn manifest(api: &Api, ring: &Keyring, summary: &Summary) -> Result<Ma
     while let Some(part) = parts.next().await {
         let files: Vec<FileEntry> = serde_json::from_slice(&part?)?;
         manifest.files.extend(files);
+        // Stopped as soon as there are too many, not after every part was read.
+        if manifest.files.len() > MAX_FILES {
+            return Err(beyond_a_snapshot("it names more files"));
+        }
     }
     drop(parts);
+    within_limits(&manifest)?;
     manifest.files.sort_by(|a, b| a.p.cmp(&b.p));
     Ok(manifest)
 }
@@ -1174,8 +1536,15 @@ pub struct Compared {
 
 /// How one file of a snapshot stands against the folder: by size first, then by content, a
 /// chunk at a time.
-fn standing(ring: &Keyring, root: &Path, entry: &FileEntry, piece: &mut Vec<u8>) -> Standing {
-    let Ok(target) = safe_join(root, &entry.p) else {
+fn standing(
+    ring: &Keyring,
+    project: &Project<'_>,
+    entry: &FileEntry,
+    piece: &mut Vec<u8>,
+) -> Standing {
+    // A path a snapshot may not name, or one that passes through a link (what is behind it
+    // is somewhere else): not read.
+    let Ok(target) = project.place(&entry.p) else {
         return Standing::Unknown;
     };
     let meta = match std::fs::symlink_metadata(&target) {
@@ -1224,6 +1593,8 @@ pub fn compare(ring: &Keyring, root: &Path, manifest: &Manifest, limit: usize) -
     entries.sort_by(|a, b| a.0.cmp(b.0));
     let truncated = entries.len().saturating_sub(limit);
     let mut piece = Vec::new();
+    // (A folder that can't be resolved: nothing in it is compared.)
+    let project = Project::new(root).ok();
     let files = entries
         .into_iter()
         .enumerate()
@@ -1232,19 +1603,16 @@ pub fn compare(ring: &Keyring, root: &Path, manifest: &Manifest, limit: usize) -
                 Entry::File(f) => (f.s.size, false),
                 Entry::Deleted(_) => (0, true),
             };
-            let state = if n >= limit {
-                Standing::Unknown
-            } else {
-                match entry {
-                    Entry::File(f) => standing(ring, root, f, &mut piece),
-                    Entry::Deleted(p) => match safe_join(root, p) {
-                        Ok(target) if std::fs::symlink_metadata(&target).is_ok() => {
-                            Standing::Differs
-                        }
-                        Ok(_) => Standing::Same,
-                        Err(_) => Standing::Unknown,
-                    },
+            let state = match (&project, entry) {
+                (Some(project), Entry::File(f)) if n < limit => {
+                    standing(ring, project, f, &mut piece)
                 }
+                (Some(project), Entry::Deleted(p)) if n < limit => match project.place(p) {
+                    Ok(target) if std::fs::symlink_metadata(&target).is_ok() => Standing::Differs,
+                    Ok(_) => Standing::Same,
+                    Err(_) => Standing::Unknown,
+                },
+                _ => Standing::Unknown,
             };
             ComparedFile {
                 path: path.to_string(),
@@ -1309,30 +1677,73 @@ pub async fn read_text(
     if entry.s.size > TEXT_MAX_BYTES {
         return Ok(Some(too_large(entry.s.size)));
     }
-    Ok(Some(as_text(chunks::read(api, ring, &entry.s).await?)))
+    // The cap holds for what arrives, not for what the list says: reading stops with an
+    // error the moment the file is longer than its entry (`chunks::read_into`).
+    Ok(Some(as_text(
+        chunks::read_within(api, ring, &entry.s, TEXT_MAX_BYTES).await?,
+    )))
 }
 
-async fn write_file(api: &Api, ring: &Keyring, root: &Path, entry: &FileEntry) -> Result<()> {
-    let target = safe_join(root, &entry.p)?;
-    let bytes = chunks::read(api, ring, &entry.s).await?;
+/// Writes the content `stored` names to `target`, a chunk at a time (a large file is never
+/// in memory whole), through a file beside it that takes its place once it is complete.
+async fn stream_to(api: &Api, ring: &Keyring, stored: &Stored, target: &Path) -> Result<()> {
+    use std::io::Write;
+    let dir = target
+        .parent()
+        .ok_or_else(|| sync_error("a snapshot names an empty path"))?;
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = dir.join(format!(".{name}.tmp-{}", super::crypto::new_id()?));
+    let written: Result<()> = async {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        chunks::read_into(api, ring, stored, |piece| {
+            file.write_all(piece)?;
+            Ok(())
+        })
+        .await?;
+        file.sync_all()?;
+        // A file that is replaced keeps who may read and write it.
+        if let Ok(meta) = std::fs::symlink_metadata(target) {
+            if meta.is_file() {
+                let _ = std::fs::set_permissions(&tmp, meta.permissions());
+            }
+        }
+        drop(file);
+        std::fs::rename(&tmp, target)?;
+        Ok(())
+    }
+    .await;
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
+async fn write_file(
+    api: &Api,
+    ring: &Keyring,
+    project: &Project<'_>,
+    entry: &FileEntry,
+) -> Result<()> {
+    // Checked again here, whoever read the list: nothing is fetched for an entry a capture
+    // couldn't have written.
+    if entry.s.size > MAX_FILE_BYTES {
+        return Err(beyond_a_snapshot("it names a larger file"));
+    }
+    // No link on the way, before a folder is made or anything is written (`Project::place`).
+    let target = project.place(&entry.p)?;
     if let Some(dir) = target.parent() {
         std::fs::create_dir_all(dir)?;
-        // A folder on the way that is a link (checked out from a commit, say) could lead
-        // anywhere: the real place must still be inside the project.
-        let real = std::fs::canonicalize(dir)?;
-        let real_root = std::fs::canonicalize(root)?;
-        if !real.starts_with(&real_root) {
-            return Err(sync_error(format!(
-                "a snapshot's path leaves the project through a link: {}",
-                entry.p
-            )));
-        }
     }
-    // Never through a link at the file itself.
-    if std::fs::symlink_metadata(&target).is_ok_and(|m| m.file_type().is_symlink()) {
-        std::fs::remove_file(&target)?;
-    }
-    atomic_write(&target, &bytes)?;
+    // Looked at again now that the folders are there, and never through a link at the file
+    // itself: the link goes, the file takes its place.
+    let target = project.place_for_writing(&entry.p)?;
+    stream_to(api, ring, &entry.s, &target).await?;
     #[cfg(unix)]
     if entry.x {
         use std::os::unix::fs::PermissionsExt;
@@ -1350,7 +1761,7 @@ pub async fn restore_file(
     path: &str,
 ) -> Result<()> {
     if let Some(entry) = manifest.files.iter().find(|f| f.p == path) {
-        return write_file(api, ring, root, entry).await;
+        return write_file(api, ring, &Project::new(root)?, entry).await;
     }
     Err(sync_error("That file isn't in the snapshot."))
 }
@@ -1386,6 +1797,44 @@ pub struct RestoreOptions<'a> {
     /// work done here, so they are replaced without asking.
     pub as_restored: bool,
     pub from: &'a str,
+    /// The snapshot's remote may be asked (fetched from, and added to a repository made
+    /// here): true for the account's own snapshots, whose remote is the person's own. False
+    /// for a copy of a teammate's share: the address is one someone else chose, so nothing
+    /// here reaches out to it (the copy's caller clones first, when the person agreed).
+    pub network: bool,
+}
+
+/// Whether a commit named in a snapshot is a commit's id and nothing else (it becomes an
+/// argument of git).
+fn commit_id(text: &str) -> bool {
+    (40..=64).contains(&text.len()) && text.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Whether a branch named in a snapshot can be a branch's name (it becomes an argument of
+/// git): never something git would read as an option or a revision expression.
+fn branch_name(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 1024
+        && !text.starts_with('-')
+        && !text.contains("..")
+        && !text.contains("@{")
+        && !text
+            .chars()
+            .any(|c| c.is_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\'))
+}
+
+/// Takes a bundle's commits into the repository: its objects, then its refs under a
+/// namespace of their own (nothing of this computer's refs is moved by it).
+fn take_bundle(root: &Path, file: &Path) -> Result<()> {
+    let file = file.to_string_lossy();
+    // The objects first, whatever the bundle's refs are called: a bundle made for a share
+    // names only `HEAD`, which the fetch below (of `refs/*`) wouldn't ask for.
+    git(root, &["bundle", "unbundle", &file])?;
+    git(
+        root,
+        &["fetch", "-q", "--no-tags", &file, "+refs/*:refs/synced/*"],
+    )?;
+    Ok(())
 }
 
 /// Brings `root` to the snapshot: the commit and branch, what was staged, the changed files.
@@ -1430,6 +1879,26 @@ async fn restore_steps(
     (done, aside): (&mut Restored, &mut Option<Aside>),
 ) -> Result<()> {
     std::fs::create_dir_all(root)?;
+    // Before anything is changed: every path the snapshot names is one it may name, and what
+    // it says of git are a commit's id and a branch's name.
+    within_limits(manifest)?;
+    for path in manifest
+        .files
+        .iter()
+        .map(|f| &f.p)
+        .chain(manifest.deleted.iter())
+    {
+        safe_join(root, path)?;
+    }
+    if let Some(state) = &manifest.git {
+        if state.head.as_deref().is_some_and(|head| !commit_id(head))
+            || state.branch.as_deref().is_some_and(|b| !branch_name(b))
+        {
+            return Err(sync_error(
+                "That snapshot names a commit or a branch that isn't one.",
+            ));
+        }
+    }
     if let Some(state) = &manifest.git {
         if !is_git(root) {
             // The project isn't here yet: an empty repository that the bundles and the remote fill.
@@ -1439,7 +1908,8 @@ async fn restore_steps(
                 ));
             }
             git(root, &["init", "-q"])?;
-            if let Some(url) = state.remote.as_deref().filter(|u| safe_remote(u)) {
+            let remote = state.remote.as_deref().filter(|u| safe_remote(u));
+            if let Some(url) = remote.filter(|_| options.network) {
                 git(root, &["remote", "add", "origin", url])?;
             }
         }
@@ -1473,25 +1943,18 @@ async fn restore_steps(
         // What the bundles build on may be on the remote and not here yet (this computer's
         // copy is behind): asked for first. It needs the network and the user's git access;
         // when it fails the bundles say what is missing.
-        if !state.bundles.is_empty() || state.head.is_some() {
+        if options.network && (!state.bundles.is_empty() || state.head.is_some()) {
             let _ = git(root, &["fetch", "-q", "origin"]);
         }
         for (n, bundle) in state.bundles.iter().enumerate() {
             let file = scratch_file(data, &format!("restore-{n}"))?;
-            atomic_write(&file, &chunks::read(api, ring, &bundle.file).await?)?;
-            // Under a namespace of their own: nothing of this computer's refs is moved by it.
-            let fetched = git(
-                root,
-                &[
-                    "fetch",
-                    "-q",
-                    "--no-tags",
-                    &file.to_string_lossy(),
-                    "+refs/*:refs/synced/*",
-                ],
-            );
+            // Straight to the file, a chunk at a time: a bundle can be a whole history.
+            let taken = match stream_to(api, ring, &bundle.file, &file).await {
+                Ok(()) => take_bundle(root, &file),
+                Err(e) => Err(e),
+            };
             let _ = std::fs::remove_file(&file);
-            fetched?;
+            taken?;
         }
         // The stashes the other computer had, oldest first, so the list ends in its order.
         let here = stashes(root);
@@ -1510,14 +1973,16 @@ async fn restore_steps(
         if let Some(head) = &state.head {
             let present =
                 |root: &Path| git(root, &["cat-file", "-e", &format!("{head}^{{commit}}")]).is_ok();
-            if !present(root) && state.remote.is_some() {
+            if !present(root) && state.remote.is_some() && options.network {
                 // The commit is on the remote: this needs the network and the user's git access.
                 let _ = git(root, &["fetch", "-q", "origin"]);
             }
             if !present(root) {
-                return Err(sync_error(
-                    "The snapshot's commit isn't here and couldn't be fetched from the remote. Fetch it, then try again.",
-                ));
+                return Err(sync_error(if options.network {
+                    "The snapshot's commit isn't here and couldn't be fetched from the remote. Fetch it, then try again."
+                } else {
+                    "The snapshot builds on commits that are only on the project's remote, and the folder wasn't cloned from it."
+                }));
             }
             match &state.branch {
                 Some(branch) => {
@@ -1581,8 +2046,14 @@ async fn restore_steps(
         // Only their names are kept: the files are read a chunk at a time, and copied later.
         let mut differing: Vec<&str> = Vec::new();
         let mut piece = Vec::new();
+        let project = Project::new(root)?;
         for entry in &manifest.files {
-            let target = safe_join(root, &entry.p)?;
+            // Never read through a link, on the way or at the file itself: what is behind
+            // one isn't this folder's file (a link at the file itself is replaced below).
+            let target = project.place(&entry.p)?;
+            if !std::fs::symlink_metadata(&target).is_ok_and(|meta| meta.is_file()) {
+                continue;
+            }
             let Ok(mut file) = std::fs::File::open(&target) else {
                 continue;
             };
@@ -1631,7 +2102,7 @@ async fn restore_steps(
                 }
                 // Copied, not read: a large file is never in memory. Nothing of the folder
                 // is replaced before every copy is made.
-                std::fs::copy(safe_join(root, path)?, &target)?;
+                std::fs::copy(project.place(path)?, &target)?;
             }
             done.notes.push(format!(
                 "{} file(s) of this folder were replaced; their earlier versions are in {}.",
@@ -1641,8 +2112,11 @@ async fn restore_steps(
         }
     }
     // A few files at once; the first failure stops the rest.
+    // (Resolved now: a git checkout above may have put the folder's parts where they are.)
+    let project = Project::new(root)?;
+    let project = &project;
     let mut writes = futures_util::stream::iter(manifest.files.clone())
-        .map(|entry| async move { write_file(api, ring, root, &entry).await })
+        .map(|entry| async move { write_file(api, ring, project, &entry).await })
         .buffer_unordered(WRITES_AT_ONCE);
     while let Some(written) = writes.next().await {
         written?;
@@ -1650,7 +2124,9 @@ async fn restore_steps(
     }
     drop(writes);
     for path in &manifest.deleted {
-        let target = safe_join(root, path)?;
+        // Never through a link: a deletion would otherwise reach a file outside the folder.
+        // (A link at the place itself is removed as the link it is.)
+        let target = project.place(path)?;
         match std::fs::remove_file(&target) {
             Ok(()) => done.deleted += 1,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -2126,6 +2602,501 @@ mod tests {
         assert!(safe_join(root, ".github/workflows/ci.yml").is_ok());
         #[cfg(windows)]
         assert!(safe_join(root, "C:\\Windows\\x").is_err());
+    }
+
+    /// A link at `link` to the folder `to`: a symbolic link, or on Windows a junction (which
+    /// needs no privilege). False when none could be made.
+    fn link_dir(to: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(to, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(to)
+                .output()
+                .is_ok_and(|out| out.status.success())
+        }
+    }
+
+    #[test]
+    fn a_resolved_path_must_stay_under_names_a_snapshot_may_name() {
+        let root = Path::new("/home/me/project");
+        assert!(names_inside(root, root));
+        assert!(names_inside(root, &root.join("src").join("deep")));
+        // Resolved into the repository's own folder, under any spelling of its name.
+        assert!(!names_inside(root, &root.join(".git")));
+        assert!(!names_inside(root, &root.join(".git").join("hooks")));
+        assert!(!names_inside(root, &root.join(".GIT")));
+        assert!(!names_inside(root, &root.join("sub").join("GIT~1")));
+        assert!(!names_inside(root, &root.join("sub").join(".git")));
+        // Resolved out of the folder.
+        assert!(!names_inside(root, Path::new("/home/me")));
+        assert!(!names_inside(root, Path::new("/home/me/other")));
+        assert!(!names_inside(root, Path::new("/home/me/project2/src")));
+        assert!(!names_inside(root, Path::new("/etc")));
+    }
+
+    #[test]
+    fn a_restore_never_passes_through_a_link_in_the_folder() {
+        let dir = std::env::temp_dir().join(format!("sync-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = dir.join("project");
+        let outside = dir.join("outside");
+        for folder in [root.join(".git"), root.join("src"), outside.clone()] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        std::fs::write(root.join(".git").join("config"), "ORIGINAL").unwrap();
+        std::fs::write(root.join("src").join("a.txt"), "a").unwrap();
+        std::fs::write(outside.join("victim.txt"), "mine").unwrap();
+        // What a snapshot's own commit can check out: a link to the repository's folder, and
+        // one to somewhere else on the computer.
+        if !link_dir(&root.join(".git"), &root.join("x")) || !link_dir(&outside, &root.join("y")) {
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        let project = Project::new(&root).unwrap();
+        // Writing `x/config` would replace `.git/config`; `y/…` is outside the folder.
+        for through in [
+            "x/config",
+            "x/hooks/post-checkout",
+            "y/victim.txt",
+            "y/new/deep.txt",
+            "y/sub/../victim.txt",
+        ] {
+            assert!(project.place(through).is_err(), "{through}");
+            assert!(project.place_for_writing(through).is_err(), "{through}");
+        }
+        assert_eq!(text(&root, ".git/config"), "ORIGINAL");
+        assert_eq!(text(&outside, "victim.txt"), "mine");
+        // The folder's own places, there or not yet.
+        for inside in ["src/a.txt", "src/new/b.txt", "new.txt", "new/deep/c.txt"] {
+            assert!(project.place(inside).is_ok(), "{inside}");
+        }
+        // The link checks are of what is on the way: a capture doesn't read through one.
+        assert!(passes_a_link(&root, "y/victim.txt"));
+        assert!(passes_a_link(&root, "x/config"));
+        assert!(!passes_a_link(&root, "src/a.txt"));
+        assert!(
+            !passes_a_link(&root, "y"),
+            "the link itself is named, as a link"
+        );
+        let listed = folder_files(&root);
+        assert!(
+            !listed
+                .iter()
+                .any(|f| f.starts_with("y/") || f.starts_with("x/")),
+            "{listed:?}"
+        );
+        // Comparing reads nothing through a link either, and says nothing of what is there.
+        let ring = Keyring::generate().unwrap();
+        let manifest = Manifest {
+            v: 1,
+            files: vec![entry(&ring, "y/victim.txt", b"mine")],
+            deleted: vec!["y/victim.txt".into(), "x/config".into()],
+            ..Default::default()
+        };
+        let compared = compare(&ring, &root, &manifest, COMPARE_MAX);
+        assert!(compared.files.iter().all(|f| f.state == Standing::Unknown));
+        // A link at the place itself is replaced as the link it is: what it points at stays.
+        let at = project.place_for_writing("y").unwrap();
+        assert_eq!(at, root.join("y"));
+        assert!(std::fs::symlink_metadata(root.join("y")).is_err());
+        assert_eq!(text(&outside, "victim.txt"), "mine");
+        let at = project.place_for_writing("x").unwrap();
+        assert!(std::fs::symlink_metadata(&at).is_err());
+        assert_eq!(text(&root, ".git/config"), "ORIGINAL");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_file_is_never_read_into_a_snapshot_or_followed_by_a_restore() {
+        let dir = std::env::temp_dir().join(format!("sync-filelink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = dir.join("project");
+        let outside = dir.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "outside").unwrap();
+        std::fs::write(root.join("own.txt"), "own").unwrap();
+        std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("dir")).unwrap();
+        // A folder without git: a link is not among its files, nor what is behind one.
+        assert_eq!(folder_files(&root), ["own.txt"]);
+        // A git project: git names the link itself; the capture looks at it without
+        // following it (`Capture::file` skips it as "a link").
+        assert!(is_link(
+            &std::fs::symlink_metadata(root.join("link.txt")).unwrap()
+        ));
+        assert!(passes_a_link(&root, "dir/secret.txt"));
+        // A restore that writes or deletes `link.txt` replaces the link, not the file behind.
+        let project = Project::new(&root).unwrap();
+        let at = project.place_for_writing("link.txt").unwrap();
+        std::fs::write(&at, "restored").unwrap();
+        assert_eq!(text(&outside, "secret.txt"), "outside");
+        assert_eq!(text(&root, "link.txt"), "restored");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_list_beyond_what_a_snapshot_holds_is_refused() {
+        let ring = Keyring::generate().unwrap();
+        let fine = Manifest {
+            v: 1,
+            files: vec![entry(&ring, "a.txt", b"a"), entry(&ring, "b.txt", b"")],
+            ..Default::default()
+        };
+        assert!(within_limits(&fine).is_ok());
+        let id = ring.chunk_id(b"x").unwrap();
+        let lying = |size: u64, chunks: usize| FileEntry {
+            p: "big.bin".into(),
+            s: Stored {
+                chunks: vec![id.clone(); chunks],
+                size,
+            },
+            x: false,
+            t: 0,
+        };
+        let with = |file: FileEntry| Manifest {
+            v: 1,
+            files: vec![file],
+            ..Default::default()
+        };
+        // A file larger than a capture would have taken (a length nobody could hold).
+        assert!(within_limits(&with(lying(MAX_FILE_BYTES + 1, 26))).is_err());
+        assert!(within_limits(&with(lying(u64::MAX, 1))).is_err());
+        assert!(within_limits(&with(lying(MAX_FILE_BYTES, 25))).is_ok());
+        // One chunk named a hundred thousand times under a small length.
+        assert!(within_limits(&with(lying(10, 100_000))).is_err());
+        // More files, deletions or bundles than a snapshot holds.
+        let mut many = fine.clone();
+        many.files = vec![entry(&ring, "a.txt", b"a"); MAX_FILES + 1];
+        assert!(within_limits(&many).is_err());
+        let mut many = fine.clone();
+        many.deleted = vec!["gone.txt".to_string(); MAX_FILES + 1];
+        assert!(within_limits(&many).is_err());
+        let mut many = fine.clone();
+        many.git = Some(GitState {
+            bundles: vec![Bundle::default(); MAX_BUNDLE_CHAIN + 2],
+            ..Default::default()
+        });
+        assert!(within_limits(&many).is_err());
+        // A bundle or a staged patch that is a chunk bomb.
+        let mut bomb = fine.clone();
+        bomb.git = Some(GitState {
+            bundles: vec![Bundle {
+                file: lying(10, 5_000).s,
+                tips: Vec::new(),
+            }],
+            ..Default::default()
+        });
+        assert!(within_limits(&bomb).is_err());
+        // What a copy brings is counted before anything is fetched: files, bundles, the patch.
+        let mut heavy = with(lying(MAX_FILE_BYTES, 25));
+        heavy.files.push(lying(MAX_FILE_BYTES, 25));
+        heavy.git = Some(GitState {
+            bundles: vec![Bundle {
+                file: lying(1_000, 1).s,
+                tips: Vec::new(),
+            }],
+            staged: Some(lying(24, 1).s),
+            ..Default::default()
+        });
+        assert_eq!(carried_bytes(&heavy), 2 * MAX_FILE_BYTES + 1_024);
+        assert!(within_bytes(&heavy, 2 * MAX_FILE_BYTES + 1_024).is_ok());
+        assert!(within_bytes(&heavy, 2 * MAX_FILE_BYTES).is_err());
+        assert!(within_bytes(&fine, MAX_COPY_BYTES).is_ok());
+        // Lengths that would overflow a sum are still more than a copy may bring.
+        let mut endless = fine.clone();
+        endless.git = Some(GitState {
+            bundles: vec![
+                Bundle {
+                    file: lying(u64::MAX, 1).s,
+                    tips: Vec::new(),
+                };
+                2
+            ],
+            ..Default::default()
+        });
+        assert!(within_bytes(&endless, MAX_COPY_BYTES).is_err());
+    }
+
+    #[test]
+    fn what_a_snapshot_says_of_git_is_a_commit_and_a_branch_or_refused() {
+        assert!(commit_id(&"a1".repeat(20)));
+        assert!(commit_id(&"0f".repeat(32)));
+        for bad in [
+            "",
+            "HEAD",
+            "--upload-pack=x",
+            "abc123",
+            "refs/heads/main",
+            &"g".repeat(40)[..],
+            &"a".repeat(65)[..],
+        ] {
+            assert!(!commit_id(bad), "{bad}");
+        }
+        for ok in ["main", "feature/x-1", "release_2.0", "ünïcode"] {
+            assert!(branch_name(ok), "{ok}");
+        }
+        for bad in [
+            "", "-b", "--detach", "a..b", "a b", "x@{1}", "a~1", "a^", "a:b", "a\nb", "a*",
+        ] {
+            assert!(!branch_name(bad), "{bad}");
+        }
+    }
+
+    fn commit(dir: &Path, files: &[(&str, &str)], message: &str) -> String {
+        for (file, text) in files {
+            let path = dir.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        git(dir, &["add", "-A"]).unwrap();
+        git(dir, &["commit", "-q", "-m", message]).unwrap();
+        sha(dir, "HEAD")
+    }
+
+    fn sha(dir: &Path, rev: &str) -> String {
+        git(dir, &["rev-parse", rev]).unwrap().trim().to_string()
+    }
+
+    /// Says that `origin` (at `url`) has everything up to the commit checked out now.
+    fn pushed(dir: &Path, url: &str) {
+        let branch = git(dir, &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        git(dir, &["remote", "add", "origin", url]).unwrap();
+        git(
+            dir,
+            &[
+                "update-ref",
+                &format!("refs/remotes/origin/{}", branch.trim()),
+                "HEAD",
+            ],
+        )
+        .unwrap();
+    }
+
+    fn revisions(dir: &Path, range: &BundleRange) -> Vec<String> {
+        let mut args = vec!["rev-list".to_string()];
+        args.extend(range.args());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        git(dir, &refs)
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn has_commit(dir: &Path, commit: &str) -> bool {
+        git(dir, &["cat-file", "-e", &format!("{commit}^{{commit}}")]).is_ok()
+    }
+
+    fn share_scope(named: bool) -> Scope {
+        Scope {
+            head_only: true,
+            not_remotes: remotes_left_out(Some("origin"), named, true, false),
+            leave_out: Some(crate::sync::share::plan::key_file),
+        }
+    }
+
+    #[test]
+    fn a_shares_bundle_carries_only_what_the_commit_checked_out_needs() {
+        let dir = repo("share-head", &[("a.txt", "a")]);
+        let base = sha(&dir, "HEAD");
+        pushed(&dir, "https://example.com/owner/repo.git");
+        let main = git(&dir, &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        let main = main.trim();
+        let head = commit(&dir, &[("notes.txt", "notes")], "not pushed");
+        // Another branch with a key file committed and not pushed, and a stash with one.
+        git(&dir, &["checkout", "-q", "-b", "side"]).unwrap();
+        let side = commit(&dir, &[(".env", "TOKEN=hunter2")], "a key on a branch");
+        git(&dir, &["checkout", "-q", main]).unwrap();
+        std::fs::write(dir.join("a.txt"), "work").unwrap();
+        std::fs::write(dir.join(".env.local"), "TOKEN=stashed").unwrap();
+        git(&dir, &["stash", "push", "-u", "-q"]).unwrap();
+        let stash = sha(&dir, "refs/stash");
+
+        // The vault's own snapshot carries all of it, as before.
+        let vault = Scope {
+            head_only: false,
+            not_remotes: remotes_left_out(Some("origin"), true, false, false),
+            leave_out: None,
+        };
+        let all = revisions(&dir, &bundle_range(&dir, &[], &vault));
+        assert!(all.contains(&head) && all.contains(&side) && all.contains(&stash));
+
+        // A share: the commit checked out, down to what the remote has. Nothing else.
+        let range = bundle_range(&dir, &[], &share_scope(true));
+        assert_eq!(range.tips, std::slice::from_ref(&head));
+        assert_eq!(range.args(), ["HEAD", "--not", "--remotes=origin"]);
+        assert_eq!(revisions(&dir, &range), std::slice::from_ref(&head));
+        // None of those commits holds a key file (the ones on the branch and in the stash
+        // don't travel, so they don't count).
+        let leave = crate::sync::share::plan::key_file;
+        assert!(left_out_in_commits(&dir, &range, leave).unwrap().is_empty());
+
+        // The bundle as it is made, taken into a copy that has what the remote has.
+        let file = dir.with_extension("bundle");
+        let mut args = vec![
+            "bundle".to_string(),
+            "create".into(),
+            file.to_string_lossy().to_string(),
+        ];
+        args.extend(range.args());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        git(&dir, &refs).unwrap();
+        let copy = dir.with_extension("copy");
+        let _ = std::fs::remove_dir_all(&copy);
+        std::fs::create_dir_all(&copy).unwrap();
+        git(&copy, &["init", "-q"]).unwrap();
+        let from = dir.to_string_lossy().to_string();
+        let tracking = format!("refs/remotes/origin/{main}:refs/heads/base");
+        git(&copy, &["fetch", "-q", &from, &tracking]).unwrap();
+        assert!(has_commit(&copy, &base) && !has_commit(&copy, &head));
+        take_bundle(&copy, &file).unwrap();
+        assert!(has_commit(&copy, &head), "the commit checked out arrived");
+        assert!(!has_commit(&copy, &side), "the other branch stayed");
+        assert!(!has_commit(&copy, &stash), "the stash stayed");
+        git(&copy, &["checkout", "-q", "--detach", &head]).unwrap();
+        assert_eq!(text(&copy, "notes.txt"), "notes");
+        assert!(!copy.join(".env").exists() && !copy.join(".env.local").exists());
+
+        // The next snapshot leaves out what that bundle carried.
+        let chain = [Bundle {
+            file: Stored::default(),
+            tips: range.tips.clone(),
+        }];
+        let next = commit(&dir, &[("more.txt", "more")], "later");
+        let range = bundle_range(&dir, &chain, &share_scope(true));
+        assert_eq!(revisions(&dir, &range), [next]);
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&copy);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn key_files_in_commits_that_would_travel_refuse_a_shares_capture() {
+        let dir = repo(
+            "share-keys",
+            &[("a.txt", "a"), ("old.key", "pushed long ago")],
+        );
+        pushed(&dir, "https://example.com/owner/repo.git");
+        let leave = crate::sync::share::plan::key_file;
+        // Deleting a key file the remote already has carries nothing of it.
+        std::fs::remove_file(dir.join("old.key")).unwrap();
+        commit(&dir, &[("b.txt", "b")], "tidy");
+        let range = bundle_range(&dir, &[], &share_scope(true));
+        assert!(left_out_in_commits(&dir, &range, leave).unwrap().is_empty());
+        // Committed and not pushed: in the bundle, whatever is left out of the files. Even
+        // when a later commit removed it again.
+        commit(
+            &dir,
+            &[(".env", "TOKEN=hunter2"), ("conf/server.pem", "KEY")],
+            "oops",
+        );
+        std::fs::remove_file(dir.join(".env")).unwrap();
+        commit(&dir, &[("c.txt", "c")], "removed again");
+        let range = bundle_range(&dir, &[], &share_scope(true));
+        let found = left_out_in_commits(&dir, &range, leave).unwrap();
+        assert_eq!(found, [".env", "conf/server.pem"]);
+        match key_files_in_history(&found) {
+            Error::Sync("ShareKeyFilesInHistory", text) => {
+                assert!(
+                    text.contains(".env, conf/server.pem") && text.contains("Push or remove"),
+                    "{text}"
+                );
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        // Many of them: the first ten are named, the rest counted.
+        let many: Vec<String> = (0..13).map(|n| format!("k{n:02}.pem")).collect();
+        assert!(matches!(
+            key_files_in_history(&many),
+            Error::Sync("ShareKeyFilesInHistory", text)
+                if text.contains("k09.pem and 3 more") && !text.contains("k10.pem")
+        ));
+        // Once they are pushed (the remote has those commits) nothing of them travels.
+        let branch = git(&dir, &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        git(
+            &dir,
+            &[
+                "update-ref",
+                &format!("refs/remotes/origin/{}", branch.trim()),
+                "HEAD",
+            ],
+        )
+        .unwrap();
+        let range = bundle_range(&dir, &[], &share_scope(true));
+        assert!(revisions(&dir, &range).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_share_that_doesnt_name_its_remote_carries_the_whole_history() {
+        // Which remotes count as having commits.
+        let left_out = remotes_left_out;
+        assert_eq!(
+            left_out(Some("origin"), true, false, false).as_deref(),
+            Some("--remotes"),
+            "the vault's own: any remote's"
+        );
+        assert_eq!(
+            left_out(Some("origin"), true, true, false).as_deref(),
+            Some("--remotes=origin"),
+            "a share: the one remote its reader clones from"
+        );
+        assert_eq!(left_out(Some("origin"), false, true, false), None);
+        assert_eq!(left_out(Some("origin"), true, false, true), None);
+        assert_eq!(left_out(None, false, false, false), None);
+        assert_eq!(left_out(Some("we*ird"), true, true, false), None);
+
+        // A project whose origin is a folder on this computer: the share doesn't say where
+        // (`plan::public_remote` drops it), so a reader can't get anything from it.
+        let dir = repo("share-local", &[("a.txt", "a")]);
+        let first = sha(&dir, "HEAD");
+        let head = commit(&dir, &[("b.txt", "b")], "second");
+        pushed(&dir, "/srv/git/thing.git");
+        assert_eq!(
+            crate::sync::share::plan::public_remote("/srv/git/thing.git"),
+            None
+        );
+        // Counted as a remote (as before), nothing would travel, and a copy has no commits.
+        let as_before = Scope {
+            head_only: true,
+            not_remotes: Some("--remotes".into()),
+            leave_out: None,
+        };
+        assert!(revisions(&dir, &bundle_range(&dir, &[], &as_before)).is_empty());
+        // Counted as none: the whole history the commit needs is in the bundle.
+        let range = bundle_range(&dir, &[], &share_scope(false));
+        assert_eq!(range.args(), ["HEAD"]);
+        assert_eq!(revisions(&dir, &range), [head.clone(), first.clone()]);
+        let file = dir.with_extension("bundle");
+        git(&dir, &["bundle", "create", &file.to_string_lossy(), "HEAD"]).unwrap();
+        // A copy with nothing in it gets every commit from the bundle alone.
+        let copy = dir.with_extension("copy");
+        let _ = std::fs::remove_dir_all(&copy);
+        std::fs::create_dir_all(&copy).unwrap();
+        git(&copy, &["init", "-q"]).unwrap();
+        take_bundle(&copy, &file).unwrap();
+        assert!(has_commit(&copy, &head) && has_commit(&copy, &first));
+        git(&copy, &["checkout", "-q", "--detach", &head]).unwrap();
+        assert_eq!(text(&copy, "b.txt"), "b");
+        // Still looked through for key files: the whole history travels.
+        commit(&dir, &[("id_rsa", "KEY")], "a key");
+        let range = bundle_range(&dir, &[], &share_scope(false));
+        let leave = crate::sync::share::plan::key_file;
+        assert_eq!(
+            left_out_in_commits(&dir, &range, leave).unwrap(),
+            ["id_rsa"]
+        );
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&copy);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

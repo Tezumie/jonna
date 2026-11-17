@@ -9,11 +9,11 @@ use serde_json::json;
 
 use super::keys::{make_wrap, share_id, split_share_id, valid_project};
 use super::pins::recipients;
-use super::plan::{self, keys_plan, start_plan, KeysPlan, StartPlan, KEY_FILE};
+use super::plan::{self, keys_plan, someone_left, start_plan, KeysPlan, StartPlan, KEY_FILE};
 use super::{
     clean, failed, gone, members_of, now_ms, read, read_info, share_gone, snapshot_records, write,
     Folder, Info, Last, Maintained, Own, OwnRead, Read, ShareInfo, Shares, Synced, INFO,
-    KEEP_SNAPSHOTS, OWN, SNAP, STEP,
+    KEEP_SNAPSHOTS, LAST_VERSION, OWN, OWN_VERSION, SNAP, STEP,
 };
 use crate::error::{Error, Result};
 use crate::store::atomic_write;
@@ -81,6 +81,9 @@ impl Shares {
             .await?
             .iter()
             .any(|s| s.id == id);
+        // Who the first keys would go to, with the share itself.
+        let (to, _) = recipients(&pins, &members, &self.uid, only_verified);
+        let intended: Vec<String> = to.iter().map(|(uid, _)| uid.clone()).collect();
         let mut ring = None;
         for _ in 0..4 {
             let now = now_ms();
@@ -88,8 +91,8 @@ impl Shares {
             let kept = read
                 .own
                 .as_ref()
-                .map(|(own, ring)| (ring.current(), own.created_at));
-            match (start_plan(kept, exists, now), read.own) {
+                .map(|(own, ring)| (ring.current(), own.never_handed()));
+            match (start_plan(kept, exists), read.own) {
                 (StartPlan::KeysLost, _) => {
                     return Err(failed(
                         "ShareKeys",
@@ -97,43 +100,52 @@ impl Shares {
                     ));
                 }
                 (StartPlan::Reuse, Some((mut own, held))) => {
-                    if own.name != name || own.chats != chats {
-                        own.name = name.clone();
-                        own.chats = chats;
-                        if !self.save_own(project, &own, read.version).await? {
-                            continue;
-                        }
+                    let mut changed = own.name != name || own.chats != chats;
+                    own.name = name.clone();
+                    own.chats = chats;
+                    // A start taken up again (no share yet, keys nobody holds): who the keys
+                    // are about to be handed to is written down before any wrap is made.
+                    if !exists {
+                        changed |= note_handed(&mut own, &intended);
                     }
-                    ring = Some(held);
+                    if changed && !self.save_own(project, &own, read.version).await? {
+                        continue;
+                    }
+                    ring = Some((held, own.created_at));
                     break;
                 }
-                _ => {
+                (_, earlier) => {
                     let fresh = Keyring::generate()?;
+                    // Made later than any keyring this share had before, whatever the clock
+                    // says: a reader tells a share made again by that (`plan::check_floor`).
+                    let created_at =
+                        earlier.map_or(now, |(own, _)| now.max(own.created_at.saturating_add(1)));
                     let own = Own {
-                        v: 1,
+                        v: OWN_VERSION,
                         share: id.clone(),
                         ring: crypto::b64(&fresh.to_bytes()?),
-                        created_at: now,
+                        created_at,
                         name: name.clone(),
                         chats,
+                        // Written with the keyring, before any wrap of it is made.
+                        handed: intended.clone(),
                     };
                     // Kept before the service hears of the share: its keys are never only there.
                     if self.save_own(project, &own, read.version).await? {
-                        ring = Some(fresh);
+                        ring = Some((fresh, created_at));
                         break;
                     }
                 }
             }
         }
-        let ring =
+        let (ring, made_at) =
             ring.ok_or_else(|| failed("Sync", "The share's keys kept changing; try again."))?;
         // The first keys go with the share. (On a share that exists the service looks at none:
         // `maintain` hands them over.)
         let mut wraps = serde_json::Map::new();
         if !exists && ring.current() == 1 {
-            let (to, _) = recipients(&pins, &members, &self.uid, only_verified);
             for (uid, pinned) in to {
-                wraps.insert(uid, json!(make_wrap(&key, &pinned, &id, &ring)?));
+                wraps.insert(uid, json!(make_wrap(&key, &pinned, &id, &ring, made_at)?));
             }
         }
         let mut body = json!({ "name": name, "chats": chats, "wraps": wraps });
@@ -199,21 +211,28 @@ impl Shares {
                 .filter_map(|m| m["uid"].as_str().map(str::to_string))
                 .collect();
             let uids: Vec<String> = to.iter().map(|(uid, _)| uid.clone()).collect();
+            let name = own.name.clone();
+            let made_at = own.created_at;
             let done = |ring: Keyring, added, renewed, waiting| Maintained {
                 ring,
-                name: own.name.clone(),
+                name: name.clone(),
                 wraps_added: added,
                 renewed,
                 waiting,
             };
+            // Someone who was handed these keys is gone from the team: new keys, whether or
+            // not the service asks for them (its own tidying may not have happened).
+            let listed: BTreeSet<String> = members.iter().map(|m| m.uid.clone()).collect();
+            let left = someone_left(&own.handed, &listed);
             let plan = keys_plan(
                 u64::from(ring.current()),
                 current,
-                answer["rotationNeeded"].as_bool() == Some(true),
+                answer["rotationNeeded"].as_bool() == Some(true) || left,
                 &uids,
                 &wrapped,
             );
-            let (ring, generation, receivers) = match plan {
+            // (The last: the record already names the receivers, written with new keys.)
+            let (ring, generation, receivers, noted) = match plan {
                 KeysPlan::Nothing => return Ok(done(ring, added, renewed, waiting)),
                 KeysPlan::ReadAgain => continue,
                 KeysPlan::Mismatch => {
@@ -225,26 +244,44 @@ impl Shares {
                 KeysPlan::Add {
                     generation,
                     to: missing,
-                } => (ring, generation, missing),
-                KeysPlan::Store { generation } => (ring, generation, uids),
+                } => (ring, generation, missing, false),
+                KeysPlan::Store { generation } => (ring, generation, uids, false),
                 KeysPlan::Renew { generation } => {
                     let next = ring.rotated()?;
-                    let own = Own {
+                    let renewed = Own {
+                        // (From here on the record says who holds the keys it has.)
+                        v: OWN_VERSION,
                         ring: crypto::b64(&next.to_bytes()?),
+                        // Who the new generation is for: written with it, before any wrap.
+                        handed: uids.clone(),
                         ..own.clone()
                     };
                     // Saved first. If another of the account's computers saved one meanwhile,
                     // that one is read and stored instead: never two keyrings for one share.
-                    if !self.save_own(project, &own, read.version).await? {
+                    if !self.save_own(project, &renewed, read.version).await? {
                         continue;
                     }
-                    (next, generation, uids)
+                    (next, generation, uids, true)
                 }
             };
             let renewing = generation > current;
+            // Who is about to be handed the keys is written down before a wrap is made (a
+            // renewal wrote it with the new keys): the record then always names everyone who
+            // may hold them.
+            if !noted {
+                let mut next = own.clone();
+                if note_handed(&mut next, &receivers)
+                    && !self.save_own(project, &next, read.version).await?
+                {
+                    continue;
+                }
+            }
             let mut wraps = serde_json::Map::new();
             for (uid, pinned) in to.iter().filter(|(uid, _)| receivers.contains(uid)) {
-                wraps.insert(uid.clone(), json!(make_wrap(&key, pinned, &id, &ring)?));
+                wraps.insert(
+                    uid.clone(),
+                    json!(make_wrap(&key, pinned, &id, &ring, made_at)?),
+                );
             }
             let count = wraps.len();
             let body = json!({ "keyVersion": generation, "wraps": wraps });
@@ -355,7 +392,7 @@ impl Shares {
         let last: Option<Last> = std::fs::read(&cache)
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
-            .filter(|l: &Last| l.root == root_text && l.tag == tag);
+            .filter(|l: &Last| l.v == LAST_VERSION && l.root == root_text && l.tag == tag);
         let left_out = |manifest: &Manifest| {
             manifest
                 .skipped
@@ -377,6 +414,9 @@ impl Shares {
             now_ms: now_ms(),
             leave_out: Some(plan::key_file),
             remote_as: Some(plan::public_remote),
+            // Only what the commit checked out needs: no other branch, no stash, and no key
+            // file inside a commit that wasn't pushed (`ShareKeyFilesInHistory`).
+            head_only: true,
         };
         let created = match snapshot::create(&api, ring, &self.data, capture.root, options()).await
         {
@@ -405,6 +445,7 @@ impl Shares {
             let _ = std::fs::create_dir_all(dir);
         }
         let last = Last {
+            v: LAST_VERSION,
             root: root_text,
             fingerprint: created.summary.fingerprint.clone(),
             tag,
@@ -516,6 +557,18 @@ impl Shares {
         }
         Ok(())
     }
+}
+
+/// Adds `uids` to the members the record names as handed its keys. True when it changed.
+fn note_handed(own: &mut Own, uids: &[String]) -> bool {
+    let mut changed = false;
+    for uid in uids {
+        if !own.handed.contains(uid) {
+            own.handed.push(uid.clone());
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// The snapshots that go when only the newest `keep` stay. Ids start with the time they were

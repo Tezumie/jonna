@@ -6,14 +6,18 @@
 //! Failures carry a code the front end tells apart: `ShareNoTeam`, `ShareNotMember`,
 //! `ShareWaiting` (the keys haven't reached this account), `ShareKeyChanged` (the sharer's key
 //! isn't the pinned one), `ShareNoMemberKey`, `ShareNotSharer`, `ShareGone`, `ShareNotShared`,
-//! `ShareTooMany`, `ShareKeys`, `ShareTargetNotEmpty`, and sync's own (`SyncLapsed`,
-//! `SyncFull`, `SyncOff`, `SyncOffline`…).
+//! `ShareTooMany`, `ShareKeys`, `ShareTargetNotEmpty`, `SharePins` (the list of teammates'
+//! keys couldn't be read as far as it was written: nothing is shared or read),
+//! `ShareKeyFilesInHistory` (commits that weren't pushed hold key files: the share isn't
+//! written), `ShareRemoteChanged` (a copy's clone address isn't the one that was shown), and
+//! sync's own (`SyncLapsed`, `SyncFull`, `SyncOff`, `SyncOffline`…).
 
 use tauri::State;
 
 use crate::error::{Error, Result};
 use crate::sync::share::{
-    Folder, Me, MemberInfo, OpenedCopy, ShareInfo, SharedFiles, SharedSnapshot, Shares, Synced,
+    CopyPlan, Folder, Me, MemberInfo, OpenedCopy, ShareInfo, SharedFiles, SharedSnapshot, Shares,
+    Synced,
 };
 use crate::sync::snapshot::FileText;
 use crate::sync::vault::Vault;
@@ -194,9 +198,41 @@ pub async fn share_file_text(
         .await
 }
 
-/// A copy of a share's snapshot in the new or empty folder `target` (one the person picked):
-/// cloned from the project's remote when there is one, then the snapshot on top. The folder
-/// is opened like any other that someone else made: nothing here trusts it.
+/// What a copy of a share's snapshot would do first: `remote`, the address the folder would
+/// be cloned from (the one the sharer works from; null: none that can be shown). The person
+/// is shown it and asked before `share_open_copy` clones. Nothing is written, and nothing is
+/// asked of that address.
+#[tauri::command]
+pub async fn share_copy_plan(
+    state: State<'_, AppState>,
+    base: String,
+    id: String,
+    snapshot: String,
+) -> Result<CopyPlan> {
+    shares(&state, &base)?.copy_plan(&id, &snapshot).await
+}
+
+/// Whether the open folder `root` is a clone of the repository the share `id` is of: their
+/// git remotes are the same address once normalised. False when either has none. (A
+/// reader's own sync id of the project is never the sharer's, so the ids can't say.)
+#[tauri::command]
+pub async fn share_matches_folder(
+    state: State<'_, AppState>,
+    base: String,
+    id: String,
+    root: String,
+) -> Result<bool> {
+    let root = snapshot_root(&state, &root)?;
+    shares(&state, &base)?.matches_folder(&id, &root).await
+}
+
+/// A copy of a share's snapshot in the new or empty folder `target` (one the person picked).
+/// With `clone` the folder is cloned first from `remote`, the address `share_copy_plan` gave
+/// and the person agreed to: refused (`ShareRemoteChanged`) when the share names another one
+/// by now. The clone runs without any prompt and for a bounded time; when it fails the copy
+/// is made of what the snapshot carries, and `note` says so. Without `clone` nothing reaches
+/// out to that address. Then the snapshot goes on top. The folder is opened like any other
+/// that someone else made: nothing here trusts it.
 #[tauri::command]
 pub async fn share_open_copy(
     state: State<'_, AppState>,
@@ -204,6 +240,8 @@ pub async fn share_open_copy(
     id: String,
     snapshot: String,
     target: String,
+    clone: bool,
+    remote: Option<String>,
 ) -> Result<OpenedCopy> {
     if state.workspace.remote().is_some() {
         return Err(Error::Sync(
@@ -211,8 +249,24 @@ pub async fn share_open_copy(
             "A copy is made on this computer, not in a remote window.".into(),
         ));
     }
-    let _one = SNAPSHOT.lock().await;
+    let clone_from = match (clone, remote.as_deref()) {
+        (false, _) => None,
+        (true, Some(address)) => Some(address),
+        (true, None) => {
+            return Err(Error::Invalid(
+                "a clone needs the address that was shown".into(),
+            ))
+        }
+    };
+    // The one-snapshot-at-a-time guard is taken inside, for the restore only: never while
+    // the clone waits on a server someone else chose.
     shares(&state, &base)?
-        .open_copy(&id, &snapshot, std::path::Path::new(&target))
+        .open_copy(
+            &id,
+            &snapshot,
+            std::path::Path::new(&target),
+            clone_from,
+            &SNAPSHOT,
+        )
         .await
 }

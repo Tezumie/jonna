@@ -666,20 +666,41 @@ taking the accounts server as `base`.
   chunks again"), `changes`, `update`. A record sealed with newer keys is `unreadable`
   (for now); one that no key opens is `damaged`. `keep` is the service's mark on a record (a
   snapshot pinned from the account page; beside the record, not sealed), and `set_keep` sets
-  or clears it (`sync_snapshot_keep`).
+  or clears it (`sync_snapshot_keep`). Every call that names a record passes `named` first:
+  a collection and an id are each one part of an address (the service's own patterns), or
+  nothing is asked. `api.rs` refuses any path that isn't made of plain parts as well. The
+  front end's commands (`ipc/sync.rs`) never name, read the content of, or write the
+  backend's own collections (`sys`, `shares`), also not through the record a refused write
+  comes back with.
 - `chunks.rs` — content as chunks of at most 4 MB named by their content: `Uploader` (asks
   what is missing, sends that a few batches at a time, remembers what a record must name),
-  `fetch`, `read`.
+  `fetch`, `read`, `read_into` (piece by piece, never whole in memory), `read_within`. A
+  length is only what the writer said: no room is made from it, content with more chunks
+  than its length allows is refused before anything is fetched, and reading stops the
+  moment more arrives than was said.
 - `chats.rs` — a chat's file and images as chunks under one record; `pull` saves it into this
   computer's folder for the project, unless the chat here changed since the caller looked
   (`if_stamp`). The chats the person deleted are listed by `agent::deleted_sessions`.
-- `project.rs` — a git remote's address in one form, whatever form it was written in.
+- `project.rs` — a git remote's address in one form, whatever form it was written in; a
+  folder's identity remote (`folder_remote`), and whether an address names the repository a
+  folder is a clone of (`same_remote`: how a reader's folder is matched to a share).
 - `snapshot.rs` — a project's files as a snapshot (`create`, `estimate`, `fingerprint`,
   `manifest`, `list`, `restore`, `restore_file`, `rewrite` for a pin). Asks git; writes
   nothing inside `.git` to make one; the file list is stored in parts; a folder without git
   honours `.syncignore`, `.gitignore` and `.ignore`; a manifest's paths can't leave the
   project, enter `.git` or name what Windows reserves; a snapshot's remote is used only when
-  it is an ordinary address.
+  it is an ordinary address. Every write, read and deletion of a restore finds its place
+  through `Project::place`: no link (or Windows junction) anywhere on the way, and what
+  exists resolves inside the folder; a capture doesn't read through one either. A list is
+  read within what a capture could have written (200,000 files, 100 MB a file, 256 MB of
+  list); files and bundles are written to disk a chunk at a time. `CreateOptions::head_only`
+  is a share's capture (only what the commit checked out needs, no stash, key files in
+  those commits refuse it); `RestoreOptions::network` false is a copy of a share (nothing
+  is asked of the snapshot's remote).
+- `share/` — sharing a project with a team (`docs/sync.md`): `keys` (fingerprints, wraps),
+  `pins` (teammates' keys, anchored by a marker in `sys/member`), `plan` (key files, a
+  shown remote, what to do about a share's keys, the floor a reader keeps), `sharer`,
+  `reader`. Commands in `ipc/share.rs`.
 - `user_files.rs` — the user's own files that sync, under names that are the same on every
   computer (`scan`, which also says what it kept out and whether it saw everything;
   `read`, `write`); only those names resolve.
