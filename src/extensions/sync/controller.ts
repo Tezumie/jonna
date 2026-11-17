@@ -21,7 +21,7 @@ import { type Signal, signal } from "../../core/reactive/index";
 import { parseJsonc } from "../../core/settings/jsonc";
 import { type SyncBackend, SyncEngine, type SyncLayer } from "../../core/sync/engine";
 import { codeOf, isFull, isRateLimited, messageOf, STANDING_CODES } from "../../core/sync/errors";
-import { planPrune } from "../../core/sync/history";
+import { planPrune, staysPinned } from "../../core/sync/history";
 import {
   type ChatsPort,
   chatsLayer,
@@ -31,6 +31,7 @@ import {
   settingsLayer,
 } from "../../core/sync/layers";
 import { staysLocal } from "../../core/sync/localSettings";
+import { ONLY_VERIFIED_SETTING } from "../../core/team/shares";
 import type { WorkbenchServices } from "../../workbench/services";
 import {
   backoffMs,
@@ -49,6 +50,7 @@ import {
   storageNotice,
   withEvent,
 } from "./model";
+import { ProjectSharing } from "./sharing";
 
 /** How often a pass runs while the app is open. */
 const PASS_MS = 60_000;
@@ -105,6 +107,8 @@ export interface SnapshotRow {
   id: string;
   version: number;
   summary: SnapshotSummary;
+  /** Marked to keep from the account page: pinned there, whatever its name here. */
+  keep: boolean;
 }
 
 /** A folder as a key: one spelling per folder (Windows paths don't tell case apart). */
@@ -141,6 +145,8 @@ export class SyncController implements Disposable {
    * computer answers a moment later, and the status is asked for until it has.
    */
   readonly reviewing: Signal<string[]> = signal<string[]>([]);
+  /** Sharing synced projects with the account's team (sharing.ts); idle in a build without teams. */
+  readonly sharing: ProjectSharing;
 
   private readonly store = new DisposableStore();
   private readonly engine: SyncEngine;
@@ -177,10 +183,29 @@ export class SyncController implements Disposable {
   private readonly announced = new Set<string>();
   /** When each project's missing name was last written (project id to ms). */
   private readonly namedAt = new Map<string, number>();
+  /** The "keep" marks this window set (snapshot id to the mark), until the account says so too. */
+  private readonly keepSet = new Map<string, boolean>();
   /** Chats this window is writing (ids), given by the agent's own state. */
   private busyChats: () => ReadonlySet<string> = () => new Set();
 
   constructor(private readonly services: WorkbenchServices) {
+    this.sharing = this.store.add(
+      new ProjectSharing({
+        base: () => this.base(),
+        on: () => this.status.peek()?.state === "on",
+        lapsed: () => this.isLapsed(),
+        project: () => {
+          const open = this.project.peek();
+          if (!open?.on || !open.id) return null;
+          const { id, root } = open;
+          const known = this.overview.peek().projects.find((entry) => entry.id === id)?.name;
+          return { root, id, name: known?.trim() || folderName(root) };
+        },
+        onlyVerified: () => this.services.settings.peek<boolean>(ONLY_VERIFIED_SETTING) === true,
+        afterSnapshots: (work) => this.afterSnapshots(work),
+        note: (text, failure) => this.note(text, failure),
+      }),
+    );
     const backend: SyncBackend = {
       changes: (since) => syncIpc.changes(this.base(), since),
       put: (collection, id, expect, text, info) =>
@@ -712,6 +737,8 @@ export class SyncController implements Disposable {
       this.readSnapshots();
       if (!this.leaseLost) {
         await this.maybeSnapshot(false);
+        // A shared project's share: its keys, and its members and shares now and then.
+        await this.sharing.tend();
         await this.nameProject();
         await this.checkFolders();
       }
@@ -1015,10 +1042,18 @@ export class SyncController implements Disposable {
       return;
     }
     const rows: SnapshotRow[] = [];
+    const ids = new Set<string>();
     for (const r of this.engine.records(collection)) {
       const row = snapshotRow(r);
-      if (row) rows.push(row);
+      if (!row) continue;
+      ids.add(row.id);
+      // What this window set a moment ago holds until the account says the same.
+      const set = this.keepSet.get(row.id);
+      if (set !== undefined && set !== row.keep) row.keep = set;
+      else this.keepSet.delete(row.id);
+      rows.push(row);
     }
+    for (const id of [...this.keepSet.keys()]) if (!ids.has(id)) this.keepSet.delete(id);
     rows.sort((a, b) => b.summary.time - a.summary.time);
     this.snapshots.value = rows;
   }
@@ -1026,6 +1061,16 @@ export class SyncController implements Disposable {
   /** A snapshot when one is due; calls wait for one another (never two at once). */
   private maybeSnapshot(force: boolean): Promise<SnapshotCreated | null> {
     const next = this.snapshotQueue.then(() => this.takeSnapshot(force));
+    this.snapshotQueue = next.catch(() => null);
+    return next;
+  }
+
+  /**
+   * Runs `work` in the snapshots' own queue: once the snapshot under way is done, and before
+   * the next starts. What reads the folder as a snapshot does (a share's copy) goes through here.
+   */
+  private afterSnapshots<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.snapshotQueue.then(work);
     this.snapshotQueue = next.catch(() => null);
     return next;
   }
@@ -1084,6 +1129,8 @@ export class SyncController implements Disposable {
     this.readSnapshots();
     await this.prune();
     this.readOverview();
+    // A shared project: the same goes to its share, now that the account's snapshot is done.
+    await this.sharing.afterSnapshot();
     return created;
   }
 
@@ -1215,7 +1262,8 @@ export class SyncController implements Disposable {
       rows.map((r) => ({
         id: r.id,
         time: r.summary.time,
-        pinned: !!r.summary.pinned,
+        // Under a name here, or marked to keep from the account page.
+        pinned: staysPinned(r.summary.pinned, r.keep),
         // An earlier day keeps each computer's last snapshot, not only the day's last.
         device: r.summary.device,
       })),
@@ -1283,6 +1331,19 @@ export class SyncController implements Disposable {
     this.readSnapshots();
   }
 
+  /**
+   * Sets or clears the account page's "keep" mark on a snapshot. The mark is the service's, not
+   * part of the record: what was set here shows at once, and until the account says the same.
+   */
+  async keep(id: string, keep: boolean): Promise<void> {
+    const collection = this.collection();
+    if (!collection) throw new Error("This project doesn't sync.");
+    await syncIpc.snapshotKeep(this.base(), collection, id, keep);
+    this.keepSet.set(id, keep);
+    await this.engine.tick().catch(() => {});
+    this.readSnapshots();
+  }
+
   async deleteSnapshot(id: string): Promise<void> {
     const collection = this.collection();
     const row = this.snapshots.peek().find((r) => r.id === id);
@@ -1319,7 +1380,7 @@ function snapshotRow(record: SyncRecord): SnapshotRow | null {
   try {
     const summary = JSON.parse(record.text) as SnapshotSummary;
     if (typeof summary.time !== "number" || typeof summary.device !== "string") return null;
-    return { id: record.id, version: record.version, summary };
+    return { id: record.id, version: record.version, summary, keep: record.keep === true };
   } catch {
     return null;
   }

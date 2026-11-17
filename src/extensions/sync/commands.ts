@@ -969,7 +969,7 @@ export function registerSyncCommands(
       title: "Pin a snapshot…",
       category: CATEGORY,
       description:
-        "Pins a snapshot under a name, so history never removes it; `name` null unpins it. Without `name`, asks for one.",
+        "Pins a snapshot under a name, so history never removes it; `name` null unpins it: its name is removed, and so is the mark of a snapshot that was pinned from the account page (ide://sync snapshots: `kept`). Without `name`, asks for one. Returns `pinned` (the name, or null) and `kept` (whether the account page's mark is still on it).",
       input: s.object({
         id: s.string().describe("The snapshot's id (ide://sync)"),
         name: s.union(s.string({ maxLength: 80 }), nullSchema).optional(),
@@ -990,8 +990,10 @@ export function registerSyncCommands(
         }
         const text = pinned === null ? null : pinned.trim();
         if (text === "") throw new Error("Give the snapshot a name, or null to unpin it.");
-        await sync().pin(id, text);
-        return { id, pinned: text };
+        // Unpinning takes the account page's mark off too; a name is only touched when it changes.
+        if (text === null && row.keep) await sync().keep(id, false);
+        if (text !== null || row.summary.pinned) await sync().pin(id, text);
+        return { id, pinned: text, kept: text === null ? false : row.keep };
       },
     }),
   );

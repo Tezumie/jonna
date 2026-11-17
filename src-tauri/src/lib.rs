@@ -544,6 +544,7 @@ macro_rules! all_commands {
                 ipc::sync::sync_snapshot_restore,
                 ipc::sync::sync_snapshot_restore_file,
                 ipc::sync::sync_snapshot_pin,
+                ipc::sync::sync_snapshot_keep,
                 ipc::sync::sync_gc,
                 ipc::sync::sync_user_files,
                 ipc::sync::sync_user_file_read,

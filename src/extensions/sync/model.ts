@@ -2,6 +2,23 @@
 import type { ExtensionManifest } from "../../core/extensions/index";
 import { hasTeamPage, planPageUrl } from "../../core/ownServices";
 
+/** The commands about sharing projects with a team (shareCommands.ts): only in a build with teams. */
+export const SHARE_COMMANDS: readonly string[] = [
+  "sync.project.share",
+  "sync.project.unshare",
+  "sync.project.shareNow",
+  "team.members",
+  "team.member.verify",
+  "team.member.acceptKey",
+  "team.copyFingerprint",
+  "team.shares.list",
+  "team.share.snapshots",
+  "team.share.files",
+  "team.share.openFile",
+  "team.share.view",
+  "team.share.openCopy",
+];
+
 /**
  * The extension's manifest for this build (docs/own-services.md): a build whose service has
  * no plan page, no team page or no teams doesn't list the commands for them.
@@ -13,7 +30,7 @@ export function syncManifest(
   const gone = new Set([
     ...(has.planPage ? [] : ["sync.managePlan"]),
     ...(has.teamPage ? [] : ["sync.manageTeam"]),
-    ...(has.teams ? [] : ["sync.team.publish"]),
+    ...(has.teams ? [] : ["sync.team.publish", ...SHARE_COMMANDS]),
   ]);
   const contributes = manifest.contributes ?? {};
   return {
@@ -374,6 +391,27 @@ export function snapshotFacts(files: number, bytes: number, between = " · "): s
   return files > 0 || bytes > 0
     ? `${countOf(files, "file")}${between}${formatSize(bytes)}`
     : "no changed files";
+}
+
+/**
+ * How a snapshot's pin shows: whether it is pinned at all (under a name on a computer, or from
+ * the account page), the tag in its row, and what the tag and the pin button say on hover.
+ */
+export function pinState(
+  name: string | null | undefined,
+  kept: boolean,
+): { on: boolean; tag: string | null; why: string } {
+  const named = name?.trim() || null;
+  if (!named && !kept) return { on: false, tag: null, why: "" };
+  return {
+    on: true,
+    tag: named ?? "Pinned",
+    why: kept
+      ? named
+        ? `${named} · Pinned from your account page too`
+        : "Pinned from your account page"
+      : (named ?? ""),
+  };
 }
 
 /**

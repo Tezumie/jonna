@@ -8,6 +8,8 @@ test("sync: settings that run programs or point at paths stay on the computer", 
     "sync.projects",
     "team.added",
     "team.off",
+    // Who a shared project's keys go to is decided where the fingerprints were compared.
+    "team.shareOnlyVerified",
     "agent.hooks",
     "agent.statusLine",
     "agent.mcpServers",

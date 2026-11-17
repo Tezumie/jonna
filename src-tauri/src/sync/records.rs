@@ -33,6 +33,9 @@ pub struct Record {
     /// The record's label, readable by the service (a project's name, a snapshot's date and
     /// size): what the account page lists. Not sealed, so never trusted for anything here.
     pub info: Option<Value>,
+    /// Marked to keep from the account page (a snapshot pinned there): history never removes
+    /// it. The service's mark, beside the record: not sealed, and not part of its content.
+    pub keep: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,6 +67,24 @@ pub enum Put {
 
 fn place(collection: &str, id: &str) -> String {
     format!("{collection}/{id}")
+}
+
+/// Whether the service marks a record as one to keep. Only a plain `true` counts: a reply
+/// without the mark (an older service), or with anything else in its place, keeps nothing.
+fn kept(v: &Value) -> bool {
+    v.get("keep").and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// Sets or clears the service's "keep" mark on a record (a snapshot pinned from the account
+/// page). The record's content and version are untouched.
+pub async fn set_keep(api: &Api, collection: &str, id: &str, keep: bool) -> Result<()> {
+    api.post(
+        "keep",
+        &json!({ "collection": collection, "id": id, "keep": keep }),
+    )
+    .await?
+    .into_ok()?;
+    Ok(())
 }
 
 fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
@@ -102,6 +123,7 @@ fn parse(ring: &Keyring, v: &Value) -> Result<Record> {
         device: v.get("device").and_then(Value::as_str).map(str::to_string),
         updated_at: v.get("updatedAt").and_then(Value::as_u64),
         info: v.get("info").filter(|i| i.is_object()).cloned(),
+        keep: kept(v),
     })
 }
 
@@ -279,6 +301,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_plain_yes_marks_a_record_to_keep() {
+        assert!(kept(&json!({ "id": "a", "keep": true })));
+        for not in [
+            json!({ "id": "a" }),
+            json!({ "id": "a", "keep": false }),
+            json!({ "id": "a", "keep": null }),
+            json!({ "id": "a", "keep": "true" }),
+            json!({ "id": "a", "keep": 1 }),
+        ] {
+            assert!(!kept(&not), "{not}");
+        }
+    }
 
     #[test]
     fn a_page_of_changes_must_have_its_shape() {

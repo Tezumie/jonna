@@ -17,6 +17,7 @@ import { DisposableStore, MutableDisposable } from "../../core/lifecycle/index";
 import { hasPlanPage } from "../../core/ownServices";
 import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
+import { shareBook } from "../../core/team/shareBook";
 import { type IconName, icon } from "../../ui/Icon";
 import { type MenuItem, showContextMenu, showMenu } from "../../ui/Menu";
 import { keepTimesCurrent, timeAttrs } from "../../ui/relativeTimes";
@@ -146,6 +147,14 @@ class SyncView implements DockView, PageKit {
           session.projectId.value,
           // Small: the snapshot looked at and its counts, never its files.
           session.look.opened.value,
+          // The same for a teammate's shared project, and the snapshot of it looked at.
+          session.shares.opened.value,
+          session.shares.snapshot.opened.value,
+          // What the team shares and who is in it, and what the loop last shared from here.
+          shareBook.value,
+          controller.sharing.outcome.value,
+          controller.sharing.failure.value,
+          controller.sharing.busy.value,
           this.team.library.value,
           this.team.previews.value,
           services.workspace.root.value,
@@ -164,6 +173,20 @@ class SyncView implements DockView, PageKit {
           this.fields.set("name", own);
         }
         this.draw();
+        return undefined;
+      }),
+    );
+    // The Team page, or a project's page (its share card), is shown: the team's members and
+    // shares are read again, unless they were a moment ago. Nothing here polls: the loop reads
+    // them every few minutes by itself.
+    this.store.add(
+      effect(() => {
+        const page = session.page.value;
+        const on = controller.status.value?.state === "on";
+        // (In a team or not: the profile says, and the extension notes it for sharing.)
+        const inTeam = controller.sharing.inTeam.value;
+        if (on && inTeam && (page === "team" || page === "projects"))
+          void controller.sharing.refresh("page");
         return undefined;
       }),
     );
@@ -222,8 +245,9 @@ class SyncView implements DockView, PageKit {
 
   go(page: SyncPageId, project?: string | null): void {
     if (project !== undefined) this.session.projectId.value = project;
-    // Going anywhere leaves the snapshot that was being looked at.
+    // Going anywhere leaves the snapshot that was being looked at, and a teammate's shared project.
     this.session.look.close();
+    this.session.shares.close();
     this.session.page.value = page;
   }
 
@@ -463,7 +487,9 @@ class SyncView implements DockView, PageKit {
     const inside =
       entry.id === "projects"
         ? `${session.projectId.peek() ?? ""}/${session.look.opened.peek()?.id ?? ""}`
-        : "";
+        : entry.id === "team"
+          ? `${session.shares.opened.peek()?.id ?? ""}/${session.shares.snapshot.opened.peek()?.id ?? ""}`
+          : "";
     const shown = `${entry.id}/${inside}`;
     if (shown !== this.lastShown) {
       this.lastShown = shown;

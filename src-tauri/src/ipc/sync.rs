@@ -567,6 +567,23 @@ pub async fn sync_snapshot_pin(
     }
 }
 
+/// Sets or clears the mark the account page puts on a snapshot to keep it ("pinned from your
+/// account page"): history never removes a marked snapshot. The name a snapshot is pinned
+/// under on a computer is another thing (`sync_snapshot_pin`); a snapshot can have both.
+#[tauri::command]
+pub async fn sync_snapshot_keep(
+    state: State<'_, AppState>,
+    base: String,
+    collection: String,
+    id: String,
+    keep: bool,
+) -> Result<()> {
+    if !collection.starts_with("snap.") {
+        return Err(Error::Invalid("only a snapshot is kept this way".into()));
+    }
+    records::set_keep(&vault(&state, &base).api, &collection, &id, keep).await
+}
+
 /// Asks the service to remove stored content nothing refers to any more (after snapshots or
 /// chats were deleted); the bytes in use when it finished.
 #[tauri::command]

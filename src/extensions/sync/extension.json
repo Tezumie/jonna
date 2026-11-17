@@ -168,6 +168,71 @@
         "category": "Sync"
       },
       {
+        "id": "sync.project.share",
+        "title": "Share this project with your team",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.unshare",
+        "title": "Stop sharing this project with your team…",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.shareNow",
+        "title": "Share this project's state now",
+        "category": "Sync"
+      },
+      {
+        "id": "team.members",
+        "title": "List the team's members",
+        "category": "Team"
+      },
+      {
+        "id": "team.member.verify",
+        "title": "Mark a teammate as verified…",
+        "category": "Team"
+      },
+      {
+        "id": "team.member.acceptKey",
+        "title": "Accept a teammate's new key…",
+        "category": "Team"
+      },
+      {
+        "id": "team.copyFingerprint",
+        "title": "Copy your fingerprint",
+        "category": "Team"
+      },
+      {
+        "id": "team.shares.list",
+        "title": "List the team's shared projects",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.snapshots",
+        "title": "List a shared project's snapshots",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.files",
+        "title": "List a shared snapshot's files",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.openFile",
+        "title": "Open a shared snapshot's file",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.view",
+        "title": "View a shared project",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.openCopy",
+        "title": "Open a copy of a shared project…",
+        "category": "Team"
+      },
+      {
         "id": "sync.checkPlan",
         "title": "Check plan again",
         "category": "Sync"

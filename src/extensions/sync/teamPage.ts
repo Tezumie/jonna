@@ -3,7 +3,8 @@
 // page reads its state (ide://team) and runs its commands through the dispatcher, and imports
 // nothing from it. The state tree isn't reactive, so `TeamLibraryReader` reads it again when
 // something says it may have moved (below) and the tab draws from the reader's signals. The
-// words and the rows come from teamPage.model.ts.
+// words and the rows come from teamPage.model.ts. The page's parts about sharing projects
+// (People, Shared projects, and a shared project opened in place of the page) are shareView.ts.
 import { type Child, h, on } from "../../core/dom/index";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, type Signal, signal } from "../../core/reactive/index";
@@ -14,6 +15,7 @@ import type { WorkbenchServices } from "../../workbench/services";
 import { teamOf } from "./model";
 import { body, card, empty, item, manageTeam, type PageKit, section } from "./pages";
 import type { SyncSession } from "./session";
+import { sharePanel, sharingSections } from "./shareView";
 import {
   emptyLibraryWords,
   filterGroups,
@@ -385,9 +387,15 @@ function libraryRow(kit: PageKit, row: TeamRow, abilities: TeamAbilities): HTMLE
 /** The Team page: the team, then its library by kind. */
 export function teamPage(kit: PageKit): Child[] {
   const library = kit.team.library.peek();
+  const inTeam = teamOf(kit.session.profile.peek()) !== null;
+  // A teammate's shared project, opened: it takes the page until it is left.
+  const opened = kit.session.shares.opened.peek();
+  if (opened && inTeam) return sharePanel(kit, opened);
+  // What the team's members share, and the members: above the library, which can be long.
+  const sharing = sharingSections(kit);
   if (!library.team) {
     // The account says it is in a team and the library isn't read yet (or couldn't be).
-    if (teamOf(kit.session.profile.peek()) !== null)
+    if (inTeam)
       return [
         section(
           null,
@@ -401,6 +409,7 @@ export function teamPage(kit: PageKit): Child[] {
             }),
           ),
         ),
+        ...sharing,
       ];
     return notInTeam(kit);
   }
@@ -412,7 +421,11 @@ export function teamPage(kit: PageKit): Child[] {
     headCard(kit, library, abilities),
   );
   if (groups.length === 0)
-    return [head, section("Library", card(empty(emptyLibraryWords(abilities.publish))))];
+    return [
+      head,
+      ...sharing,
+      section("Library", card(empty(emptyLibraryWords(abilities.publish)))),
+    ];
 
   // Every row is built once; the filter only chooses which of them their cards hold, so a
   // preview left open and the box being typed in stay as they are.
@@ -441,7 +454,13 @@ export function teamPage(kit: PageKit): Child[] {
     none.hidden = shown.length > 0;
   };
   show();
-  return [head, filtered ? filterBox(kit, show) : null, ...parts.map((part) => part.el), none];
+  return [
+    head,
+    ...sharing,
+    filtered ? filterBox(kit, show) : null,
+    ...parts.map((part) => part.el),
+    none,
+  ];
 }
 
 /** The filter above a long library: by name and kind, as it is typed. */

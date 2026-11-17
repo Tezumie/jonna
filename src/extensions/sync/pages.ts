@@ -27,6 +27,7 @@ import {
   lapsedUntil,
   type OverviewProject,
   overviewTiles,
+  pinState,
   platformLabel,
   projectCounts,
   retentionText,
@@ -49,6 +50,7 @@ import {
   timeOfDay,
 } from "./model";
 import type { SyncSession } from "./session";
+import { shareCard } from "./shareCard";
 import { snapshotPanel } from "./snapshotView";
 import { type TeamLibraryReader, teamPage } from "./teamPage";
 
@@ -214,7 +216,7 @@ function logRows(kit: PageKit, log: readonly SyncEvent[]): HTMLElement[] {
  * A button for something that writes to the account: while the subscription is ended it is
  * there and disabled, and says why.
  */
-function writeButton(
+export function writeButton(
   kit: PageKit,
   label: string,
   click: () => unknown,
@@ -507,20 +509,22 @@ function notSyncedCard(kit: PageKit, root: string, known: boolean): HTMLElement 
 
 function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): HTMLElement {
   const { summary } = row;
-  const pinned = summary.pinned;
+  const name = summary.pinned;
+  // Pinned under a name on a computer, from the account page, or both: history keeps it.
+  const pinned = pinState(name, row.keep);
   const pin = h(
     "button",
     {
-      class: `icon-button sync-pin${pinned ? " is-on" : ""}`,
+      class: `icon-button sync-pin${pinned.on ? " is-on" : ""}`,
       type: "button",
-      "aria-pressed": pinned ? "true" : "false",
-      "aria-label": pinned ? `Unpin ${pinned}` : "Pin this snapshot",
-      title: pinned ? "Unpin" : "Pin: keep it whatever its age",
+      "aria-pressed": pinned.on ? "true" : "false",
+      "aria-label": pinned.on ? `Unpin ${name ?? "this snapshot"}` : "Pin this snapshot",
+      title: pinned.on ? `${pinned.why}\nUnpin` : "Pin: keep it whatever its age",
     },
-    icon(pinned ? "pin-off" : "pin"),
+    icon(pinned.on ? "pin-off" : "pin"),
   );
   const togglePin = () =>
-    kit.run("sync.snapshot.pin", pinned ? { id: row.id, name: null } : { id: row.id });
+    kit.run("sync.snapshot.pin", pinned.on ? { id: row.id, name: null } : { id: row.id });
   // Pinning and deleting write to the account; restoring and listing files only read.
   const { lapsed } = kit;
   if (lapsed) {
@@ -543,8 +547,8 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
       run: () => void kit.run("sync.snapshot.restoreFile", { id: row.id }),
     },
     {
-      label: pinned ? "Unpin" : "Pin…",
-      icon: pinned ? "pin-off" : "pin",
+      label: pinned.on ? "Unpin" : "Pin…",
+      icon: pinned.on ? "pin-off" : "pin",
       disabled: lapsed,
       run: () => void togglePin(),
     },
@@ -571,13 +575,19 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
       "span",
       { class: "sync-snapshot-main" },
       h("span", { class: "sync-snapshot-facts" }, facts),
-      pinned ? h("span", { class: "ai-tag sync-pin-name", title: pinned }, pinned) : null,
+      pinned.tag
+        ? h("span", { class: "ai-tag sync-pin-name", title: pinned.why }, pinned.tag)
+        : null,
     ),
   );
   kit.drawn.add(on(open, "click", view));
   return h(
     "div",
-    { class: "sync-item sync-snapshot", "data-snapshot": row.id },
+    {
+      class: "sync-item sync-snapshot",
+      "data-snapshot": row.id,
+      ...(row.keep && { "data-kept": "" }),
+    },
     open,
     h(
       "div",
@@ -792,7 +802,14 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
     ];
   }
 
-  return h("div", { class: "sync-detail", "data-project-detail": project.id }, head, ...rest);
+  return h(
+    "div",
+    { class: "sync-detail", "data-project-detail": project.id },
+    head,
+    // Sharing it with the account's team (shareCard.ts): for an account in one.
+    shareCard(kit, project, isOpen),
+    ...rest,
+  );
 }
 
 /** A folder, as the Projects page draws a project: quieter when it isn't on this computer. */

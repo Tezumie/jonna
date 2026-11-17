@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SnapshotStanding } from "../../core/ipc/sync";
 import {
+  asRows,
   canRestore,
   countFiles,
   filterFiles,
   matchLine,
   moreLine,
   parseSnapshotScheme,
+  plainLabel,
   type SnapshotFileRow,
   SnapshotLook,
   shownFiles,
+  skippedNote,
   snapshotScheme,
   sortFiles,
   splitPath,
@@ -173,6 +176,7 @@ test("the snapshot being looked at: loading, read, compared again, closed", () =
     counts: null,
     truncated: 0,
     refreshing: false,
+    compared: true,
   });
   look.filter = "src";
   assert.equal(look.finish(first, { files: FILES, truncated: 2 }), true);
@@ -211,4 +215,84 @@ test("the snapshot being looked at: loading, read, compared again, closed", () =
   assert.equal(look.finish(late, { files: FILES, truncated: 0 }), false);
   assert.equal(look.opened.peek(), null);
   assert.equal(look.files.length, 0);
+});
+
+test("a snapshot that isn't compared with a folder: its files are listed, nothing more is said", () => {
+  // A teammate's shared snapshot, while the open folder is another project.
+  const rows = asRows([
+    { path: "b.ts", size: 3, deleted: false, state: null },
+    { path: "a.ts", size: 2, deleted: false, state: null },
+    { path: "gone.ts", size: 0, deleted: true, state: null },
+    // One the backend did compare stays as it said.
+    { path: "c.ts", size: 4, deleted: false, state: "differs" },
+  ]);
+  assert.deepEqual(
+    rows.map((row) => row.state),
+    ["unknown", "unknown", "unknown", "differs"],
+  );
+  const counts = countFiles(rows.slice(0, 3));
+  assert.equal(summaryLine(counts, false), "3 files");
+  assert.equal(summaryLine(countFiles([]), false), "This snapshot has no changed files.");
+  // Compared, the same counts say what wasn't.
+  assert.equal(summaryLine(counts), "3 files: 3 weren't compared");
+  // Uncompared files sort by path alone.
+  assert.deepEqual(
+    sortFiles(rows.slice(0, 3)).map((row) => row.path),
+    ["a.ts", "b.ts", "gone.ts"],
+  );
+  assert.equal(plainLabel({ deleted: false }), "");
+  assert.equal(plainLabel({ deleted: true }), "Deleted in the snapshot");
+});
+
+test("what a snapshot left out is said under its files", () => {
+  assert.equal(skippedNote([]), null);
+  assert.equal(
+    skippedNote([[".env", "a key file"]]),
+    "1 file was left out of this snapshot: .env (a key file).",
+  );
+  assert.equal(
+    skippedNote([
+      [".env", "a key file"],
+      ["big.bin", "too large"],
+      ["id_rsa", ""],
+    ]),
+    "3 files were left out of this snapshot: .env (a key file), big.bin (too large), id_rsa.",
+  );
+  const many = skippedNote(
+    ["a", "b", "c", "d", "e", "f"].map((name) => [name, "a key file"] as const),
+  );
+  assert.ok(many?.endsWith("d (a key file), and 2 more."), many ?? "");
+});
+
+test("a file that isn't shown: only a snapshot of the open project can still be restored", () => {
+  assert.equal(textRefusal("a.bin", "binary", false), "a.bin isn't text, so it isn't shown.");
+  assert.equal(
+    textRefusal("a.txt", "large", false),
+    "a.txt is larger than 2 MB, so it isn't shown.",
+  );
+  assert.equal(
+    textRefusal("a.bin", "binary"),
+    "a.bin isn't text, so it isn't shown. It can still be restored.",
+  );
+});
+
+test("the snapshot being looked at: compared or not, and what it left out", () => {
+  const look = new SnapshotLook();
+  const turn = look.begin("one", false);
+  assert.equal(look.opened.peek()?.compared, false);
+  look.finish(turn, { files: FILES, truncated: 0, skipped: [[".env", "a key file"]] });
+  assert.equal(look.opened.peek()?.compared, false);
+  assert.deepEqual(look.skipped, [[".env", "a key file"]]);
+  // Read again the same way: the list stays in view.
+  look.begin("one", false);
+  assert.equal(look.opened.peek()?.refreshing, true);
+  assert.equal(look.files.length, FILES.length);
+  // The folder became this project (or stopped being it): read from the start.
+  look.begin("one", true);
+  assert.equal(look.opened.peek()?.phase, "loading");
+  assert.equal(look.opened.peek()?.compared, true);
+  assert.equal(look.files.length, 0);
+  assert.deepEqual(look.skipped, []);
+  look.close();
+  assert.deepEqual(look.skipped, []);
 });

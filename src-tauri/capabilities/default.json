@@ -83,6 +83,7 @@
     "allow-sync-snapshot-restore",
     "allow-sync-snapshot-restore-file",
     "allow-sync-snapshot-pin",
+    "allow-sync-snapshot-keep",
     "allow-sync-gc",
     "allow-sync-user-files",
     "allow-sync-user-file-read",

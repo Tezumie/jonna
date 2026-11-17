@@ -64,6 +64,7 @@
         "devices": { "$length": 0 },
         "recoveryKeySet": false,
         "project": null,
+        "share": null,
         "snapshots": { "$length": 0 },
         "overview": {
           "settings": null,
@@ -147,7 +148,17 @@
     // commands say why instead of doing anything.
     {
       "state": "ide://team",
-      "expect": { "team": null, "state": null, "items": { "$length": 0 }, "problem": null }
+      "expect": {
+        "team": null,
+        "state": null,
+        "items": { "$length": 0 },
+        "problem": null,
+        // Sharing projects: nobody and nothing, and nothing was asked of the service.
+        "members": { "$length": 0 },
+        "shares": { "$length": 0 },
+        "sharesRefresh": null,
+        "sharesProblem": null
+      }
     },
     { "run": "team.refresh", "expect": { "team": null, "items": 0, "active": 0 } },
     {
@@ -197,11 +208,73 @@
       "input": { "kind": "commands" },
       "expectError": "Sign in to your account to use sync."
     },
+
+    // Sharing a project with the team: both sides need the account, and say so before
+    // anything is asked (no dialog, no folder picker).
+    { "run": "sync.project.share", "expectError": "Sign in to your account to use sync." },
+    { "run": "sync.project.unshare", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "sync.project.unshare",
+      "input": { "id": "none.none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    { "run": "sync.project.shareNow", "expectError": "Sign in to your account to use sync." },
+    { "run": "team.members", "expectError": "Sign in to your account to use sync." },
+    { "run": "team.shares.list", "expectError": "Sign in to your account to use sync." },
+    {
+      "run": "team.share.snapshots",
+      "input": { "id": "none.none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.files",
+      "input": { "id": "none.none", "snapshot": "none", "filter": "src" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.openFile",
+      "input": { "id": "none.none", "snapshot": "none", "path": "a.txt" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.view",
+      "input": { "id": "none.none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.openCopy",
+      "input": { "id": "none.none", "snapshot": "none", "target": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.member.verify",
+      "input": { "uid": "none", "fingerprint": "1234 5678 9012 3456 7890", "verified": true },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.member.acceptKey",
+      "input": { "uid": "none", "fingerprint": "1234 5678 9012 3456 7890" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    { "run": "team.copyFingerprint", "expectError": "Sign in to your account to use sync." },
+    // Nothing of it reached the page, and the tab still shows the one setup pane.
+    {
+      "state": "ide://team",
+      "expect": { "members": { "$length": 0 }, "shares": { "$length": 0 } }
+    },
+    // Unpinning a snapshot (its name, and the account page's mark) needs the account too.
+    {
+      "run": "sync.snapshot.pin",
+      "input": { "id": "none", "name": null },
+      "expectError": "Sign in to your account to use sync."
+    },
     { "run": "sync.show", "input": { "page": "overview" }, "expect": { "page": "overview" } },
 
     // Its settings are known ones (a value that fits the schema is taken).
     { "run": "settings.set", "input": { "key": "sync.snapshotScope", "value": "everything" } },
     { "run": "settings.set", "input": { "key": "sync.chats", "value": false } },
+    // Sharing only with verified teammates: off unless turned on.
+    { "run": "settings.set", "input": { "key": "team.shareOnlyVerified", "value": true } },
 
     // Holds in a narrow window.
     { "run": "dev.setWindowSize", "input": { "width": 420, "height": 600 } },

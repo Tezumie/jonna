@@ -68,6 +68,13 @@
           "type": "string"
         },
         "title": "Turned off from the team's library"
+      },
+      "team.shareOnlyVerified": {
+        "type": "boolean",
+        "default": false,
+        "scope": "user",
+        "description": "Share your projects only with teammates whose fingerprint you compared (marked as verified in the Sync tab, under Team, People). Off: every teammate with a key can read what you share. Kept on this computer; it never syncs.",
+        "title": "Share only with verified teammates"
       }
     }
   }

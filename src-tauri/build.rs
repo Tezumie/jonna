@@ -129,6 +129,7 @@ const COMMANDS: &[&str] = &[
     "sync_snapshot_restore",
     "sync_snapshot_restore_file",
     "sync_snapshot_pin",
+    "sync_snapshot_keep",
     "sync_gc",
     "sync_user_files",
     "sync_user_file_read",

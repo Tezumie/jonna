@@ -94,7 +94,14 @@ and anything over an item that is one being the owner's; `isDefault` is still re
 word for it; a conflict is reported, never overwritten) and `team.unpublish {id}` (asks first;
 a skill's `SKILL.md` removes the whole skill); and for the owner `team.setMode {id, mode}`
 (returns `mode`, `changed`, `version`).
-**Settings:** `team.added`, `team.off`.
+**Settings:** `team.added`, `team.off`, `team.shareOnlyVerified` (share projects only with
+teammates whose fingerprint was compared; off by default). None of them syncs.
 **State:** `ide://team` (`team`: name, role, publisher; `state`; `items`: id, kind, path,
-isDefault, required, active, version, by, updatedAt; `lastRefresh`; `problem`). Never an item's text,
-never the members.
+isDefault, required, active, version, by, updatedAt; `lastRefresh`; `problem`; and, of sharing
+projects, `members`: uid, name, you, state; `shares`: id, project, name, owner, mine, state,
+latest; `sharesRefresh`; `sharesProblem`). Never an item's text, a member's address or a key.
+
+**Sharing projects** isn't this extension's: it needs sync on, so the Sync extension reads it
+(`extensions/sync/sharing.ts`) and has its commands (`team.members`, `team.shares.list`,
+`team.share.*`, `team.member.*`). What it read is kept in `core/team/shareBook.ts`, and this
+extension reports it in `ide://team`, so one state path says everything about the team.

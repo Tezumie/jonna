@@ -664,7 +664,9 @@ taking the accounts server as `base`.
   `sync-keyring`).
 - `records.rs` — sealed records with versions: `get`, `put` (done, conflict, or "check the
   chunks again"), `changes`, `update`. A record sealed with newer keys is `unreadable`
-  (for now); one that no key opens is `damaged`.
+  (for now); one that no key opens is `damaged`. `keep` is the service's mark on a record (a
+  snapshot pinned from the account page; beside the record, not sealed), and `set_keep` sets
+  or clears it (`sync_snapshot_keep`).
 - `chunks.rs` — content as chunks of at most 4 MB named by their content: `Uploader` (asks
   what is missing, sends that a few batches at a time, remembers what a record must name),
   `fetch`, `read`.

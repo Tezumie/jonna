@@ -69,6 +69,23 @@ built-ins only when `hasSync()` (`extensions/builtins.ts`).
 - `teamPage.ts` — the Team page, and `TeamLibraryReader` (the view's): `ide://team` as last
   read, and the texts of the previews that were opened. `teamPage.model.ts` (DOM-free, tested)
   has its words and rules; `teamCommands.ts` has `sync.team.publish`. See "The Team page".
+- Sharing a project with the team (docs/sync.md; only in a build with teams): see "Sharing a
+  project with the team".
+  - `sharing.ts` — `ProjectSharing`, the controller's (`controller.sharing`): reads the team's
+    members and shares into the share book (`core/team/shareBook.ts`), and writes a shared
+    project to its share after each snapshot the loop takes of it. No view code.
+  - `shareCommands.ts` — the commands of both sides, and the content source
+    `teamShare:<share id>/<snapshot id>`.
+  - `shareCard.ts` — "Share with team" on a project's page.
+  - `shareView.ts` — the Team page's People and Shared projects, and a shared project opened in
+    place of the page; `shareView.model.ts` (DOM-free, tested) has `ShareLook` and its words.
+- `snapshotView.ts` — inside a snapshot: `drawSnapshot(kit, source, opened)` draws from a
+  `SnapshotSource` (where the snapshot is from, what its buttons do). `snapshotPanel` is the
+  source for a snapshot of the open project (the Projects page); `shareView.ts` has the one for
+  a teammate's shared snapshot (read only; compared with the open folder only when the folder
+  is that same project). `snapshotView.model.ts` (DOM-free, tested): the words, the order, the
+  filter, the counts, and `SnapshotLook`; `snapshotView.commands.ts`: `sync.snapshot.view`,
+  `.files`, `.openDiff` and the content source `syncSnapshot:<collection>/<id>`.
 - `model.ts` — DOM-free and tested: the words both share (sizes, the status line, the privacy
   line), `buildOverview` (the account's records as an overview), the user's files by kind, the
   storage notices, the retention sentence, the status bar's words, the activity log, and the
@@ -180,6 +197,40 @@ its commands through the dispatcher.
   settings, servers, extensions) and says in a notification what was published and what wasn't,
   with why; returns `{published, notPublished: [{what, why}], message}` or `{cancelled: true}`.
 
+**Sharing a project with the team.** What sharing is and its keys: docs/sync.md. Here:
+
+- The share book (`core/team/shareBook.ts`: the members with where each one's key stands, the
+  team's shares, when they were read, why a read failed) is read by `ProjectSharing.refresh`:
+  once a pass at most every 5 minutes (`tend`), when the Team page or a project's page is
+  shown (unless read in the last 30 seconds), and after a share command. The first read also
+  makes and publishes this account's own member key (`share_me`), so a teammate can share with
+  it without the Sync tab ever being opened. Nothing is asked while sync is off, signed out, or
+  in no team (`ProjectSharing.inTeam`, set from the profile); the loop asks nothing while the
+  subscription is ended.
+- The sharer's loop: after each snapshot `takeSnapshot` stored for the account, inside the
+  snapshots' own queue (so after it, and never beside another), `afterSnapshot` runs
+  `share_sync` when the open project is shared. Once a pass, `tend` also runs it when no
+  snapshot did for 10 minutes (2 when the service wants the share's keys renewed): a teammate
+  who published a key since gets the share's keys. A failure is kept for the card
+  (`failure`) and said once in the activity; it never fails the pass.
+- The card (`shareCard.ts`, under a project's head): a switch, off until turned on. On: who can
+  read it and who waits for its keys and why (what the last share sync said; before one, worked
+  out from the members' states), that key files are left out, when it was last shared and how
+  many key files that left out, why the last try failed, and Share now. A project that isn't
+  the open folder shows the card only when it is shared (to stop sharing it).
+- The Team page (`shareView.ts`), above the library: Shared projects (name, whose, the newest
+  snapshot, and why it can't be opened: waiting for keys, or the sharer's key changed), then
+  People (a tag for where each key stands, the fingerprint on demand, Mark as verified…,
+  Unmark, Accept the new key…; your own fingerprint with Copy). Opening a share shows its
+  snapshots in place of the page; opening one shows its files in the snapshot panel. A file
+  opens as a diff against the open folder when the folder is that project (the same sync
+  project id), else by itself, read only (`editor.openReadOnly`).
+- `team.shareOnlyVerified` (the team extension's setting; never synced) is passed to every
+  share call that hands keys out.
+- A snapshot pinned from the account page (`SnapshotRow.keep`, the service's "keep" mark on its
+  record) is never pruned (`staysPinned`, `core/sync/history.ts`), shows as pinned ("Pinned
+  from your account page"), and Unpin clears the mark (`sync_snapshot_keep`).
+
 **Exports:** `syncExtension` (`index.ts`), `SyncController` (`controller.ts`).
 
 **Commands:** `sync.show {page?, project?}` (`page`: overview, projects, content, team, computers,
@@ -198,7 +249,7 @@ this computer; without `id`, pick one), `sync.project.deleteFromAccount {id}` (t
 snapshots and its chats' synced copies leave the account; nothing on a computer is deleted),
 `sync.snapshot.create`, `sync.snapshot.continue`, `sync.snapshot.restore {id}`,
 `sync.snapshot.restoreFile {id, path?}` (without `path`: pick one of the snapshot's files),
-`sync.snapshot.pin {id, name?}` (`name` null unpins; without it, asks), `sync.snapshot.delete
+`sync.snapshot.pin {id, name?}` (`name` null unpins, the account page's mark too; without it, asks), `sync.snapshot.delete
 {id}`, `sync.openAccountPage`, `sync.managePlan` (opens the account page's plan section in the
 browser: subscribing, renewing, cancelling, cards, invoices, storage), `sync.manageTeam` (opens
 the account page's team section in the browser: inviting, removing, leaving, seats; fails in a
@@ -208,6 +259,16 @@ lapsed, offered, none). Each fails with one sentence when nobody is signed in or
 open to the account (the two plan commands and `sync.manageTeam` need only an account). What writes to the account
 fails with one sentence while the subscription is ended. None takes or returns a recovery key or
 a verification code.
+
+Sharing with the team (only in a build with teams; all need sync on and an account in a team):
+`sync.project.share` and `sync.project.unshare {id?}` (asks first; hidden from agents),
+`sync.project.shareNow`; `team.members` (names, states, fingerprints; never a key),
+`team.member.verify {uid, fingerprint, verified}` and `team.member.acceptKey {uid,
+fingerprint}` (they show the fingerprint and ask; hidden from agents), `team.copyFingerprint`
+(hidden), `team.shares.list` (labels only), `team.share.snapshots {id}`, `team.share.files {id,
+snapshot, filter?}` (at most 2,000), `team.share.openFile {id, snapshot, path}`,
+`team.share.view {id, snapshot?}` (the Sync tab on a share), `team.share.openCopy {id,
+snapshot?, target?}` (hidden; asks for a folder, then offers to open it, untrusted).
 
 **Status bar:** `sync.status` (right): Synced / Syncing… / Offline / Sync (another window is
 syncing, or before the first pass) / Sync error (the reason is the tooltip; the only colored
@@ -227,7 +288,11 @@ everything), `sync.snapshotScope` (`remote` | `everything`), `sync.projects` (ma
 `storageLimit`, `activity` (its `state` is "lapsed" while the subscription is ended), `page` (the page the tab shows while sync is on),
 `overview` (`settings {count, updatedAt}`, `files [{path, bytes, updatedAt}]`, `accountChats`,
 `projects [{id, name, chats, snapshots, snapshotBytes (the latest snapshot's), lastChange,
-lastComputer, here, folder}]`), `recent` (`[{at, text, error}]`), `project`, `snapshots`. Never
+lastComputer, here, folder}]`), `recent` (`[{at, text, error}]`), `project`, `snapshots` (each
+with `pinned`, the name, and `kept`, pinned from the account page), `share` (the open project's
+share with the team: null, or `id`, `name`, `lastShared`, `keyFiles`, `waiting`, `problem`),
+`viewing`. What the team
+shares is in `ide://team` (`members`, `shares`). Never
 the recovery key, a verification code or any content.
 
 **UI test:** `tests/scripts/sync-m7-129.jsonc` (nobody signed in); the backend flows:

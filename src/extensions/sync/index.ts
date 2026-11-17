@@ -22,6 +22,7 @@ import {
   throughTeam,
 } from "./model";
 import { SyncSession } from "./session";
+import { registerShareCommands } from "./shareCommands";
 import { registerSnapshotViewCommands } from "./snapshotView.commands";
 import { registerTeamPageCommands } from "./teamCommands";
 import { syncViewDescriptor } from "./view";
@@ -46,7 +47,10 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
       // No loop and no tab without a screen; the commands are there and say so.
       registerSyncCommands(sub, services, { controller: null, session });
       registerSnapshotViewCommands(sub, services, { controller: null, session });
-      if (hasTeams()) registerTeamPageCommands(sub, services, { controller: null, session });
+      if (hasTeams()) {
+        registerTeamPageCommands(sub, services, { controller: null, session });
+        registerShareCommands(sub, services, { controller: null, session });
+      }
       return;
     }
     const { dock, events, state, workspace } = services;
@@ -88,7 +92,23 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(dock.views.register(syncViewDescriptor(services, controller, session)));
     registerSyncCommands(sub, services, { controller, session });
     registerSnapshotViewCommands(sub, services, { controller, session });
-    if (hasTeams()) registerTeamPageCommands(sub, services, { controller, session });
+    if (hasTeams()) {
+      registerTeamPageCommands(sub, services, { controller, session });
+      registerShareCommands(sub, services, { controller, session });
+      // Sharing projects is for an account in a team: the profile says whether it is in one.
+      // Out of one (signed out, left, removed), nothing of a team's stays in view.
+      sub.add(
+        effect(() => {
+          const inTeam = teamOf(session.profile.value) !== null;
+          controller.sharing.inTeam.value = inTeam;
+          if (!inTeam) {
+            controller.sharing.clear();
+            session.shares.close();
+          }
+          return undefined;
+        }),
+      );
+    }
 
     // This computer's own name, for the "Computer name" field.
     void syncIpc
@@ -196,7 +216,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans, in a build whose service has a plan page), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam, in a build whose service has teams, opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, team, computers, security, storage, activity; team is listed only in a build with teams' libraries, whose state is ide://team), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), the snapshot whose files the Sync tab shows against the open folder (`viewing`: null, or its `id`, `state` (loading, ready, error), `counts` once read (`total`, `differ`, `missing`, `same`, `unknown`) and `truncated`, the files left uncompared; sync.snapshot.view opens one, sync.snapshot.files returns the files), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans, in a build whose service has a plan page), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam, in a build whose service has teams, opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, team, computers, security, storage, activity; team is listed only in a build with teams' libraries, whose state is ide://team), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first; `pinned`: the name it was pinned under on a computer, or null; `kept`: it was pinned from the account page; history removes neither, and sync.snapshot.pin with `name` null unpins both), the open project's share with the account's team (`share`: null while it isn't shared, else its `id`, `name`, `lastShared` (ms, when this window last wrote to it; null: not yet), `keyFiles` (how many key files that left out), `waiting` (teammates without its keys, each `name` and `why`: noKey, keyChanged, notVerified; null: not known yet) and `problem` (why the last try failed, else null); what the team shares is in ide://team), the snapshot whose files the Sync tab shows against the open folder (`viewing`: null, or its `id`, `state` (loading, ready, error), `counts` once read (`total`, `differ`, `missing`, `same`, `unknown`) and `truncated`, the files left uncompared; sync.snapshot.view opens one, sync.snapshot.files returns the files), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
@@ -205,6 +225,12 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
           const plan = controller.base() ? planSituation(profile, status) : "none";
           const snapshots = controller.snapshots.peek();
           // Shown only while the snapshot is still one of the open project's.
+          // The open project's share with the account's team, and what the loop last did for it.
+          const shared = controller.sharing.ownShare() ?? null;
+          const lastOutcome = controller.sharing.outcome.peek();
+          const outcome = shared && lastOutcome?.project === shared.project ? lastOutcome : null;
+          const lastFailure = controller.sharing.failure.peek();
+          const failure = shared && lastFailure?.project === shared.project ? lastFailure : null;
           const looked = session.look.opened.peek();
           const viewing = looked && snapshots.some((row) => row.id === looked.id) ? looked : null;
           return {
@@ -236,6 +262,16 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
             project: project
               ? { root: project.root, id: project.id, on: project.on, known: project.known }
               : null,
+            share: shared
+              ? {
+                  id: shared.id,
+                  name: shared.name,
+                  lastShared: outcome?.at ?? null,
+                  keyFiles: outcome?.synced.keyFiles ?? null,
+                  waiting: outcome?.synced.waiting.map(({ name, why }) => ({ name, why })) ?? null,
+                  problem: failure?.message ?? null,
+                }
+              : null,
             viewing: viewing
               ? {
                   id: viewing.id,
@@ -252,6 +288,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
               files: row.summary.files,
               bytes: row.summary.bytes,
               pinned: row.summary.pinned ?? null,
+              kept: row.keep,
             })),
           };
         },

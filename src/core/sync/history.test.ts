@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type DatedSnapshot, planPrune } from "./history";
+import { type DatedSnapshot, planPrune, staysPinned } from "./history";
 
 /** A snapshot on day `day` at hour `hour` (days are numbers here: no time zones). */
 const at = (day: number, hour: number, pinned = false): DatedSnapshot => ({
@@ -61,4 +61,37 @@ test("planPrune: keep everything, and nothing to do", () => {
   assert.deepEqual(planPrune(all, 0, day), []);
   assert.deepEqual(planPrune([], 30, day), []);
   assert.deepEqual(planPrune([at(5, 1), at(5, 2), at(5, 3)], 1, day), []);
+});
+
+test("staysPinned: a name, or the account page's mark, either one", () => {
+  assert.equal(staysPinned("before the rewrite", false), true);
+  assert.equal(staysPinned(undefined, true), true);
+  assert.equal(staysPinned("both", true), true);
+  assert.equal(staysPinned(undefined, undefined), false);
+  assert.equal(staysPinned(null, false), false);
+  // An empty name is no pin.
+  assert.equal(staysPinned("", false), false);
+});
+
+test("planPrune: a snapshot kept from the account page is never removed", () => {
+  // As the controller hands them over: `pinned` is the name or the service's mark.
+  const row = (onDay: number, hour: number, keep: boolean): DatedSnapshot => ({
+    ...at(onDay, hour),
+    pinned: staysPinned(undefined, keep),
+  });
+  const all = [
+    row(1, 9, true),
+    row(1, 12, false),
+    row(2, 9, false),
+    row(3, 9, false),
+    row(4, 9, false),
+  ];
+  // Two days kept: days 1 and 2 are older, and only the unmarked ones go.
+  assert.deepEqual(planPrune(all, 2, day).sort(), ["d1h12", "d2h9"]);
+  // Unmarked again, it goes like any other.
+  const unmarked = [row(1, 9, false), ...all.slice(1)];
+  assert.deepEqual(planPrune(unmarked, 2, day).sort(), ["d1h12", "d1h9", "d2h9"]);
+  // The mark doesn't save the day's other snapshots, nor count toward the days kept.
+  const sameDay = [row(1, 8, false), row(1, 9, true), row(2, 9, false)];
+  assert.deepEqual(planPrune(sameDay, 1, day), ["d1h8"]);
 });

@@ -6,6 +6,7 @@
 import type { AccountProfile } from "../../core/ipc/accounts";
 import { type Signal, signal } from "../../core/reactive/index";
 import type { SyncPageId } from "./model";
+import { ShareLook } from "./shareView.model";
 import { SnapshotLook } from "./snapshotView.model";
 
 export type SyncStep =
@@ -27,6 +28,8 @@ export class SyncSession {
   readonly projectId: Signal<string | null> = signal<string | null>(null);
   /** The snapshot whose files the Projects page shows instead of the history (none: the history). */
   readonly look = new SnapshotLook();
+  /** The teammate's shared project the Team page shows instead of the team (none: the team). */
+  readonly shares = new ShareLook();
   /** The command running from the tab now (its buttons wait), by id. */
   readonly working: Signal<string | null> = signal<string | null>(null);
   /** The computer's name as typed in the tab. */

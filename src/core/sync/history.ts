@@ -4,7 +4,8 @@
 // `keepDays` days that have a snapshot are kept. Within the most recent such day every snapshot
 // stays; of an earlier day, the last one of each computer (one computer's only copy of a day
 // isn't removed because another computer made a snapshot later that day). A pinned snapshot is
-// never removed and doesn't count.
+// never removed and doesn't count: pinned under a name on a computer, or marked to keep from
+// the account page (`staysPinned`).
 
 export interface DatedSnapshot {
   id: string;
@@ -13,6 +14,14 @@ export interface DatedSnapshot {
   pinned: boolean;
   /** The computer that made it (its device id); absent: all count as one computer. */
   device?: string;
+}
+
+/**
+ * Whether a snapshot is kept whatever its age: it has a name it was pinned under (in its
+ * sealed record), or the service's "keep" mark, set from the account page. Either is enough.
+ */
+export function staysPinned(name: string | null | undefined, keep: boolean | undefined): boolean {
+  return !!name || keep === true;
 }
 
 /** The day a time falls on, in the computer's own time zone ("2026-11-15"). */

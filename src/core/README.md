@@ -637,6 +637,15 @@ other people's: these are the rules that keep it from being trusted like the use
 - `mcp.ts` — `literalSecretIn`, `mcpForTeam`: an mcp.json to publish holds servers and the
   inputs they use, and is refused when a server has a secret written out.
 - `publish.ts` — `publishPath`, `skillFiles`, `extensionsForTeam`.
+- `shares.ts` — sharing a project with the team, in words and decisions (docs/sync.md): a
+  member's state as a tag and what can be done about it, fingerprints (`fingerprintGroups`,
+  `sameFingerprint`), who a share reaches and who waits and why (`shareAudience`,
+  `waitingLines`), the sentence after a share sync (`syncSentence`), how a share stands for
+  this account (`shareStateLine`, `shareRefusal`, `canRead`), the dialogs' words, what a copy
+  came to (`copyReport`), a refused call as a sentence (`shareErrorWords`), the content scheme
+  `teamShare:<share id>/<snapshot id>`, and when things are read (`refreshDue`, `keysDue`).
+- `shareBook.ts` — `shareBook` (a signal: the team's members and shares as last read, when,
+  and why a read failed). Written by the Sync extension, reported by the team extension.
 - `source.ts` — `activeTeam` (a signal: the team whose library applies and the folder of the
   items that are on), `teamPath`, `teamLabel`, `teamKey`. Every reader of the user's own rules,
   skills, commands, agents, output styles, snippets, MCP servers and recommendations appends it,

@@ -54,6 +54,9 @@ const LOCAL_PREFIXES: readonly string[] = [
   "agent.sandbox",
   // The script run in each new worktree, and what is copied into it.
   "agent.worktree.",
+  // Who a shared project's keys are handed to (only verified teammates, or all): decided on
+  // each computer, where the fingerprints were compared; another computer must not loosen it.
+  "team.share",
 ];
 
 /**

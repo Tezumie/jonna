@@ -1173,6 +1173,79 @@
     padding-left: 0;
   }
 
+  /* ---------- sharing a project with the team ---------- */
+  /* A section's title with a button at its end (reading the team again). */
+  .sync-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+  .sync-section-head > .settings-section-title {
+    min-width: 0;
+    margin-bottom: 0;
+  }
+  /* The card on a project's page: the switch stays beside the title while the lines under it
+     grow, and the buttons go under the lines. */
+  .sync-item.sync-share-item {
+    align-items: flex-start;
+  }
+  .sync-share-actions {
+    padding-top: var(--space-3);
+  }
+  .sync-share-actions .ai-link {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  /* Why the last share failed: the one line here that is a failure. */
+  .sync-share-problem {
+    color: var(--status-danger-fg);
+    overflow-wrap: anywhere;
+  }
+  /* A member: the buttons wrap under the name before the text is squeezed. */
+  .sync-item.sync-member {
+    flex-wrap: wrap;
+  }
+  .sync-member .sync-item-main {
+    flex-basis: calc(var(--size-control-sm) * 8);
+  }
+  .sync-member .sync-item-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+  }
+  /* A fingerprint: digits to read out, group by group. A group never breaks in two. */
+  .sync-fingerprint {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    line-height: var(--text-md-lh);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    word-spacing: 0.3em;
+    color: var(--fg-default);
+    user-select: text;
+  }
+  .sync-fingerprints,
+  .sync-fingerprint-own {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-top: var(--space-2);
+  }
+  .sync-fingerprint-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    min-width: 0;
+  }
+  /* A shared project opened on the Team page: its snapshots under its head, by day. */
+  [data-share-look] > .sync-day {
+    margin-top: var(--space-2);
+  }
+
   /* ---------- the navigation is a rail (Settings' breakpoint) ---------- */
   @container (max-width: 640px) {
     .sync-nav-count {

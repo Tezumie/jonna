@@ -30,12 +30,14 @@ import {
   overviewTiles,
   pageByKey,
   passSentence,
+  pinState,
   planSituation,
   planUrl,
   platformLabel,
   projectCounts,
   retentionDate,
   retentionText,
+  SHARE_COMMANDS,
   SYNC_BENEFITS,
   SYNC_PAGE_IDS,
   SYNC_PAGES,
@@ -444,6 +446,44 @@ test("syncManifest: a build without a plan page, a team page or teams doesn't li
   ]);
 });
 
+test("syncManifest: sharing projects with a team is listed only in a build with teams", () => {
+  const all = ["sync.show", "sync.project.enable", ...SHARE_COMMANDS];
+  const manifest = {
+    name: "sync",
+    contributes: { commands: all.map((id) => ({ id, title: id })) },
+  } as unknown as Parameters<typeof syncManifest>[0];
+  const ids = (teams: boolean) =>
+    (
+      syncManifest(manifest, { planPage: true, teamPage: true, teams }).contributes?.commands ?? []
+    ).map((c) => c.id);
+  assert.deepEqual(ids(true), all);
+  assert.deepEqual(ids(false), ["sync.show", "sync.project.enable"]);
+  // Both sides of sharing, and nothing else of sync's.
+  for (const id of [
+    "sync.project.share",
+    "sync.project.unshare",
+    "sync.project.shareNow",
+    "team.members",
+    "team.member.verify",
+    "team.member.acceptKey",
+    "team.shares.list",
+    "team.share.snapshots",
+    "team.share.files",
+    "team.share.openFile",
+    "team.share.openCopy",
+  ])
+    assert.ok(SHARE_COMMANDS.includes(id), id);
+  assert.equal(
+    SHARE_COMMANDS.every(
+      (id) =>
+        id.startsWith("team.") ||
+        id.startsWith("sync.project.share") ||
+        id === "sync.project.unshare",
+    ),
+    true,
+  );
+});
+
 test("sync: recent activity", () => {
   let log = withEvent([], { at: 1, text: "a", error: false });
   log = withEvent(log, { at: 2, text: "b", error: true });
@@ -802,4 +842,24 @@ test("sync: a member is told the team's subscription ended, not its own", () => 
   assert.doesNotMatch(bar?.tooltip ?? "", /until you renew/);
   assert.match(statusBarWords(true, "on", lapsed, true)?.tooltip ?? "", /until you renew it/);
   assert.equal(statusBarWords(true, "on", idle, false, true)?.text, "$(cloud) Synced");
+});
+
+test("pinState: a name, the account page's mark, or both", () => {
+  assert.deepEqual(pinState(undefined, false), { on: false, tag: null, why: "" });
+  assert.deepEqual(pinState("  ", false), { on: false, tag: null, why: "" });
+  assert.deepEqual(pinState("before the rewrite", false), {
+    on: true,
+    tag: "before the rewrite",
+    why: "before the rewrite",
+  });
+  assert.deepEqual(pinState(undefined, true), {
+    on: true,
+    tag: "Pinned",
+    why: "Pinned from your account page",
+  });
+  assert.deepEqual(pinState("v1", true), {
+    on: true,
+    tag: "v1",
+    why: "v1 · Pinned from your account page too",
+  });
 });

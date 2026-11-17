@@ -86,6 +86,11 @@ export interface SyncRecord {
   updatedAt: number | null;
   /** The record's label, readable by the service (names, counts, sizes, dates). Not sealed. */
   info?: SyncInfo | null;
+  /**
+   * The service's "keep" mark (a snapshot pinned from the account page): history never removes
+   * it. Beside the record, not in its sealed content; absent from an older service.
+   */
+  keep?: boolean;
 }
 
 /** A label the service can read: a flat object of text, numbers and yes/no. Never content. */
@@ -340,6 +345,12 @@ export const syncIpc = {
   /** Pins a snapshot under a name, or unpins it (`name` null). */
   snapshotPin: (base: string, collection: string, id: string, name: string | null): Promise<void> =>
     call<void>("sync_snapshot_pin", { base, collection, id, name }),
+  /**
+   * Sets or clears the mark the account page puts on a snapshot to keep it. The name a snapshot
+   * is pinned under (`snapshotPin`) is another thing; a snapshot can have both.
+   */
+  snapshotKeep: (base: string, collection: string, id: string, keep: boolean): Promise<void> =>
+    call<void>("sync_snapshot_keep", { base, collection, id, keep }),
   /** Removes stored content nothing refers to any more; the bytes in use afterwards. */
   gc: (base: string): Promise<number | null> => call<number | null>("sync_gc", { base }),
   userFiles: (): Promise<SyncUserFiles> => call<SyncUserFiles>("sync_user_files"),
