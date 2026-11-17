@@ -165,12 +165,20 @@ async function newAccount() {
   const idp = (path, body, admin) =>
     fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/${path}?key=demo`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...(admin ? { Authorization: "Bearer owner" } : {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(admin ? { Authorization: "Bearer owner" } : {}),
+      },
       body: JSON.stringify(body),
     }).then((x) => x.json());
   await idp("accounts:update", { localId: r.localId, emailVerified: true }, true);
-  const again = await idp("accounts:signInWithPassword", { email, password: "test-password", returnSecureToken: true });
-  if (!again.idToken) throw new Error(`the account couldn't sign in again: ${JSON.stringify(again)}`);
+  const again = await idp("accounts:signInWithPassword", {
+    email,
+    password: "test-password",
+    returnSecureToken: true,
+  });
+  if (!again.idToken)
+    throw new Error(`the account couldn't sign in again: ${JSON.stringify(again)}`);
   return { email, idToken: again.idToken, uid: r.localId };
 }
 
