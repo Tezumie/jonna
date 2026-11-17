@@ -135,6 +135,30 @@ export interface SnapshotFile {
   deleted: boolean;
 }
 
+/**
+ * How a snapshot's file stands against the folder: the same content, other content, not in
+ * the folder, or not compared. For a deletion: "differs" while the file is still in the folder.
+ */
+export type SnapshotStanding = "same" | "differs" | "missing" | "unknown";
+
+export interface SnapshotComparedFile extends SnapshotFile {
+  state: SnapshotStanding;
+}
+
+export interface SnapshotCompared {
+  /** Every file and deletion of the snapshot, by path. */
+  files: SnapshotComparedFile[];
+  /** How many were left uncompared because the snapshot names more than are compared. */
+  truncated: number;
+}
+
+/** One file of a snapshot as text; `reason` says why there is none (too large, not text). */
+export interface SnapshotFileText {
+  text: string | null;
+  size: number;
+  reason: "large" | "binary" | null;
+}
+
 export interface SnapshotRestored {
   files: number;
   deleted: number;
@@ -271,6 +295,28 @@ export const syncIpc = {
     }),
   snapshotFiles: (base: string, collection: string, id: string): Promise<SnapshotFile[]> =>
     call<SnapshotFile[]>("sync_snapshot_files", { base, collection, id }),
+  /**
+   * A snapshot's files, each with how it stands against the open folder `root`. Reads the
+   * folder; writes nothing.
+   */
+  snapshotCompare: (
+    base: string,
+    collection: string,
+    id: string,
+    root: string,
+  ): Promise<SnapshotCompared> =>
+    call<SnapshotCompared>("sync_snapshot_compare", { base, collection, id, root }),
+  /**
+   * One file of a snapshot (`path` relative to the project) as text, written nowhere; null when
+   * the snapshot doesn't hold the file.
+   */
+  snapshotFileText: (
+    base: string,
+    collection: string,
+    id: string,
+    path: string,
+  ): Promise<SnapshotFileText | null> =>
+    call<SnapshotFileText | null>("sync_snapshot_file_text", { base, collection, id, path }),
   /** The open folder's own changed files (none while it is as a restore left it). */
   snapshotLocalChanges: (root: string): Promise<string[]> =>
     call<string[]>("sync_snapshot_local_changes", { root }),

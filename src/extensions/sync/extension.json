@@ -123,6 +123,21 @@
         "category": "Sync"
       },
       {
+        "id": "sync.snapshot.view",
+        "title": "View a snapshot's changes",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.files",
+        "title": "List a snapshot's files",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.snapshot.openDiff",
+        "title": "Compare a snapshot's file with the folder",
+        "category": "Sync"
+      },
+      {
         "id": "sync.snapshot.pin",
         "title": "Pin a snapshot…",
         "category": "Sync"

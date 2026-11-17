@@ -123,6 +123,8 @@ const COMMANDS: &[&str] = &[
     "sync_project_name",
     "sync_snapshot_create",
     "sync_snapshot_files",
+    "sync_snapshot_compare",
+    "sync_snapshot_file_text",
     "sync_snapshot_local_changes",
     "sync_snapshot_restore",
     "sync_snapshot_restore_file",

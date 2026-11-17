@@ -88,6 +88,22 @@
     { "run": "sync.join", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.syncNow", "expectError": "Sign in to your account to use sync." },
     { "run": "sync.snapshot.create", "expectError": "Sign in to your account to use sync." },
+    // Looking inside a snapshot needs the account too.
+    {
+      "run": "sync.snapshot.files",
+      "input": { "id": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.snapshot.openDiff",
+      "input": { "id": "none", "path": "a.txt" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.snapshot.view",
+      "input": { "id": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
     { "run": "sync.project.enable", "expectError": "Sign in to your account to use sync." },
     {
       "run": "sync.reviewDevice",
@@ -160,8 +176,8 @@
       "expectError": "This account isn't in a team (or isn't signed in): there is no library."
     },
     {
-      "run": "team.setDefault",
-      "input": { "id": "none", "isDefault": true },
+      "run": "team.setMode",
+      "input": { "id": "none", "mode": "default" },
       "expectError": "This account isn't in a team (or isn't signed in): there is no library."
     },
     {

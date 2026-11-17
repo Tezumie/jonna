@@ -186,7 +186,12 @@ class DiffView implements DockView {
         h(
           "span",
           { class: "diff-label" },
-          staged ? "Staged (HEAD ↔ index)" : "Working tree (index ↔ file)",
+          // A labelled left side from a content source (a commit, a snapshot): said as it is.
+          this.state.base && this.state.baseLabel
+            ? `${this.state.baseLabel} ↔ file`
+            : staged
+              ? "Staged (HEAD ↔ index)"
+              : "Working tree (index ↔ file)",
         ),
         this.count,
         h("span", { class: "diff-spacer" }),

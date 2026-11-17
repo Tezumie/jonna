@@ -1002,7 +1002,8 @@ export class SyncController implements Disposable {
     if (on) void this.pass(true).then(() => this.maybeSnapshot(false).catch(() => null));
   }
 
-  private collection(): string | null {
+  /** Where the open project's snapshots are kept; null while it doesn't sync. */
+  collection(): string | null {
     const project = this.project.peek();
     return project?.on && project.id ? `snap.${project.id}` : null;
   }

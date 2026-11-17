@@ -392,6 +392,49 @@ pub async fn sync_snapshot_files(
     ))
 }
 
+/// A snapshot's files, each with how it stands against the open folder `root`: the same,
+/// different, or not there. Only the snapshot's list is fetched; the folder's files are read
+/// here and nothing is written.
+#[tauri::command]
+pub async fn sync_snapshot_compare(
+    state: State<'_, AppState>,
+    base: String,
+    collection: String,
+    id: String,
+    root: String,
+) -> Result<crate::sync::snapshot::Compared> {
+    use crate::sync::snapshot;
+    let root = snapshot_root(&state, &root)?;
+    let v = vault(&state, &base);
+    let ring = v.keyring()?;
+    let summary = snapshot::summary(&v.api, &ring, &collection, &id).await?;
+    let manifest = snapshot::manifest(&v.api, &ring, &summary).await?;
+    // Reading the folder's files takes a while in a large one: off the async threads.
+    tokio::task::spawn_blocking(move || {
+        snapshot::compare(&ring, &root, &manifest, snapshot::COMPARE_MAX)
+    })
+    .await
+    .map_err(|e| Error::Sync("Sync", e.to_string()))
+}
+
+/// One file of a snapshot as text, written nowhere. Null when the snapshot doesn't hold the
+/// file; without text (and with why) when it is too large to show or isn't text.
+#[tauri::command]
+pub async fn sync_snapshot_file_text(
+    state: State<'_, AppState>,
+    base: String,
+    collection: String,
+    id: String,
+    path: String,
+) -> Result<Option<crate::sync::snapshot::FileText>> {
+    use crate::sync::snapshot;
+    let v = vault(&state, &base);
+    let ring = v.keyring()?;
+    let summary = snapshot::summary(&v.api, &ring, &collection, &id).await?;
+    let manifest = snapshot::manifest(&v.api, &ring, &summary).await?;
+    snapshot::read_text(&v.api, &ring, &manifest, &path).await
+}
+
 /// The open folder's own changed files: what a restore would have to set aside first.
 #[tauri::command]
 pub async fn sync_snapshot_local_changes(

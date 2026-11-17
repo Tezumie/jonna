@@ -48,18 +48,23 @@ export interface SyncCommandParts {
   session: SyncSession;
 }
 
-export function registerSyncCommands(
-  sub: DisposableStore,
-  services: WorkbenchServices,
-  { controller, session }: SyncCommandParts,
-): void {
-  const { dispatcher, dock, notifications, quickInput } = services;
+/** What a sync command checks before it runs; each says why it can't. */
+export interface SyncGates {
+  /** The controller; refuses without a screen. */
+  sync(): SyncController;
+  /** The accounts server, once sync is known to be open to the signed-in account. */
+  open(): Promise<string>;
+  /** Where sync stands, read again when what's known is from before the sign-in. */
+  standing(): Promise<SyncStatus>;
+  /** The accounts server, once sync is on for this computer. */
+  whenOn(): Promise<string>;
+}
+
+export function syncGates({ controller, session }: SyncCommandParts): SyncGates {
   const sync = (): SyncController => {
     if (!controller) throw new Error("Sync runs only in the IDE's window.");
     return controller;
   };
-
-  const showTab = (): string => dock.openView(SYNC_VIEW, null, "main", true);
 
   /** The accounts server, once sync is known to be open to the signed-in account. */
   const open = async (): Promise<string> => {
@@ -89,6 +94,20 @@ export function registerSyncCommands(
       throw new Error("Sync is off on this computer. Turn it on in the Sync tab first.");
     return base;
   };
+
+  return { sync, open, standing, whenOn };
+}
+
+export function registerSyncCommands(
+  sub: DisposableStore,
+  services: WorkbenchServices,
+  parts: SyncCommandParts,
+): void {
+  const { session } = parts;
+  const { dispatcher, dock, notifications, quickInput } = services;
+  const { sync, open, standing, whenOn } = syncGates(parts);
+
+  const showTab = (): string => dock.openView(SYNC_VIEW, null, "main", true);
 
   /** Refuses what writes to the account while its subscription is ended. */
   const refuseLapsed = (): void => {

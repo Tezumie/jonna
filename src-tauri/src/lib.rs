@@ -538,6 +538,8 @@ macro_rules! all_commands {
                 ipc::sync::sync_project_name,
                 ipc::sync::sync_snapshot_create,
                 ipc::sync::sync_snapshot_files,
+                ipc::sync::sync_snapshot_compare,
+                ipc::sync::sync_snapshot_file_text,
                 ipc::sync::sync_snapshot_local_changes,
                 ipc::sync::sync_snapshot_restore,
                 ipc::sync::sync_snapshot_restore_file,

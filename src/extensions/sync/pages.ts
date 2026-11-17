@@ -49,6 +49,7 @@ import {
   timeOfDay,
 } from "./model";
 import type { SyncSession } from "./session";
+import { snapshotPanel } from "./snapshotView";
 import { type TeamLibraryReader, teamPage } from "./teamPage";
 
 /** What the pages need of the view: its builders, and the two ways a button acts. */
@@ -527,14 +528,17 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
     pin.title = lapsedReason(teamIn(kit));
   }
   kit.drawn.add(on(pin, "click", () => void togglePin()));
+  // Looking inside it first: its files against this folder (snapshotView.ts).
+  const view = () => void kit.run("sync.snapshot.view", { id: row.id });
   const items: MenuItem[] = [
+    { label: "View changes", icon: "file-diff", run: view },
     {
       label: "Restore…",
       icon: "archive-restore",
       run: () => void kit.run("sync.snapshot.restore", { id: row.id }),
     },
     {
-      label: "Show files…",
+      label: "Restore a file…",
       icon: "files",
       run: () => void kit.run("sync.snapshot.restoreFile", { id: row.id }),
     },
@@ -558,16 +562,23 @@ function snapshotRow(kit: PageKit, row: SnapshotRow, deviceId: string | null): H
   const full = [new Date(summary.time).toLocaleString(), summary.branch, facts]
     .filter(Boolean)
     .join(" · ");
+  // The time and the facts are one button: it opens the snapshot.
+  const open = h(
+    "button",
+    { class: "sync-snapshot-open", type: "button", title: `${full}\nView changes` },
+    h("span", { class: "sync-snapshot-time" }, timeOfDay(summary.time)),
+    h(
+      "span",
+      { class: "sync-snapshot-main" },
+      h("span", { class: "sync-snapshot-facts" }, facts),
+      pinned ? h("span", { class: "ai-tag sync-pin-name", title: pinned }, pinned) : null,
+    ),
+  );
+  kit.drawn.add(on(open, "click", view));
   return h(
     "div",
     { class: "sync-item sync-snapshot", "data-snapshot": row.id },
-    h("span", { class: "sync-snapshot-time", title: full }, timeOfDay(summary.time)),
-    h(
-      "div",
-      { class: "sync-snapshot-main" },
-      h("span", { class: "sync-snapshot-facts", title: full }, facts),
-      pinned ? h("span", { class: "ai-tag sync-pin-name", title: pinned }, pinned) : null,
-    ),
+    open,
     h(
       "div",
       { class: "sync-item-actions" },
@@ -708,6 +719,16 @@ function projectDetail(kit: PageKit, project: OverviewProject, status: SyncStatu
   if (isOpen) {
     const rows = controller.snapshots.peek();
     const days = services.settings.peek<number | undefined>("sync.historyDays") ?? 30;
+    // A snapshot being looked at shows in place of the history, while it still exists.
+    const looked = kit.session.look.opened.peek();
+    const lookedRow = looked ? rows.find((row) => row.id === looked.id) : undefined;
+    if (looked && lookedRow)
+      return h(
+        "div",
+        { class: "sync-detail", "data-project-detail": project.id },
+        head,
+        ...snapshotPanel(kit, lookedRow, looked, status.deviceId),
+      );
     rest = [
       h(
         "div",

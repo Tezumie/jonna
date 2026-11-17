@@ -77,6 +77,8 @@
     "allow-sync-project-name",
     "allow-sync-snapshot-create",
     "allow-sync-snapshot-files",
+    "allow-sync-snapshot-compare",
+    "allow-sync-snapshot-file-text",
     "allow-sync-snapshot-local-changes",
     "allow-sync-snapshot-restore",
     "allow-sync-snapshot-restore-file",

@@ -22,6 +22,7 @@ import {
   throughTeam,
 } from "./model";
 import { SyncSession } from "./session";
+import { registerSnapshotViewCommands } from "./snapshotView.commands";
 import { registerTeamPageCommands } from "./teamCommands";
 import { syncViewDescriptor } from "./view";
 
@@ -44,6 +45,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     if (!services.hasScreen) {
       // No loop and no tab without a screen; the commands are there and say so.
       registerSyncCommands(sub, services, { controller: null, session });
+      registerSnapshotViewCommands(sub, services, { controller: null, session });
       if (hasTeams()) registerTeamPageCommands(sub, services, { controller: null, session });
       return;
     }
@@ -85,6 +87,7 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
 
     sub.add(dock.views.register(syncViewDescriptor(services, controller, session)));
     registerSyncCommands(sub, services, { controller, session });
+    registerSnapshotViewCommands(sub, services, { controller, session });
     if (hasTeams()) registerTeamPageCommands(sub, services, { controller, session });
 
     // This computer's own name, for the "Computer name" field.
@@ -193,13 +196,17 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
     sub.add(
       state.register("ide://sync", {
         description:
-          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans, in a build whose service has a plan page), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam, in a build whose service has teams, opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, team, computers, security, storage, activity; team is listed only in a build with teams' libraries, whose state is ide://team), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
+          "Sync: whether it is open to the account (`available`), whether the account could subscribe to it (`offered`: sync is on sale to it and it doesn't have it; sync.managePlan opens the plans, in a build whose service has a plan page), where it stands here (`state`: signedOut, unavailable, off, pending, on), `lapsedUntil` (null, or, when the account's subscription ended, when what is synced is deleted, in ms: until then it can be read and snapshots restored, and nothing is written), the team the account is in (`team`: null, or its `name` and the account's `role` in it; an owner pays for the team, a member has sync through it and can't renew or manage the plan; sync.manageTeam, in a build whose service has teams, opens the team's page in the browser, where teams are managed; never the members or their addresses), this account's computers, storage (`storageLimit`: for an account in a team, what is left of the team's shared storage for it), the last pass (`activity`; its state is off, idle, syncing, offline, error, other, blocked, or lapsed while the subscription is ended), the page the Sync tab shows while sync is on (`page`: overview, projects, content, team, computers, security, storage, activity; team is listed only in a build with teams' libraries, whose state is ide://team), what the account holds (`overview`: the settings count, the user's files by name, chats without a folder, and each project by name with its chats, snapshots, the latest snapshot's size, last change and computer, and whether it syncs from this computer), the open project with its snapshots (newest first), the snapshot whose files the Sync tab shows against the open folder (`viewing`: null, or its `id`, `state` (loading, ready, error), `counts` once read (`total`, `differ`, `missing`, `same`, `unknown`) and `truncated`, the files left uncompared; sync.snapshot.view opens one, sync.snapshot.files returns the files), and what sync did lately (`recent`). A waiting computer's `codeChecked` says whether its code is being compared. Never the recovery key, a verification code or any content.",
         get: () => {
           const status = controller.status.peek();
           const activity = controller.activity.peek();
           const project = controller.project.peek();
           const profile = session.profile.peek();
           const plan = controller.base() ? planSituation(profile, status) : "none";
+          const snapshots = controller.snapshots.peek();
+          // Shown only while the snapshot is still one of the open project's.
+          const looked = session.look.opened.peek();
+          const viewing = looked && snapshots.some((row) => row.id === looked.id) ? looked : null;
           return {
             available: !!controller.base() && session.available(),
             offered: plan === "offered",
@@ -229,7 +236,15 @@ export const syncExtension: BuiltinExtension<WorkbenchServices> = {
             project: project
               ? { root: project.root, id: project.id, on: project.on, known: project.known }
               : null,
-            snapshots: controller.snapshots.peek().map((row) => ({
+            viewing: viewing
+              ? {
+                  id: viewing.id,
+                  state: viewing.phase,
+                  counts: viewing.counts,
+                  truncated: viewing.truncated,
+                }
+              : null,
+            snapshots: snapshots.map((row) => ({
               id: row.id,
               time: row.summary.time,
               deviceName: row.summary.deviceName,

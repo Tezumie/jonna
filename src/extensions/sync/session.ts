@@ -6,6 +6,7 @@
 import type { AccountProfile } from "../../core/ipc/accounts";
 import { type Signal, signal } from "../../core/reactive/index";
 import type { SyncPageId } from "./model";
+import { SnapshotLook } from "./snapshotView.model";
 
 export type SyncStep =
   | { step: "none" }
@@ -24,6 +25,8 @@ export class SyncSession {
   readonly page: Signal<SyncPageId> = signal<SyncPageId>("overview");
   /** The project whose detail the Projects page shows (null: none picked). */
   readonly projectId: Signal<string | null> = signal<string | null>(null);
+  /** The snapshot whose files the Projects page shows instead of the history (none: the history). */
+  readonly look = new SnapshotLook();
   /** The command running from the tab now (its buttons wait), by id. */
   readonly working: Signal<string | null> = signal<string | null>(null);
   /** The computer's name as typed in the tab. */

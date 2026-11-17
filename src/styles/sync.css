@@ -624,6 +624,30 @@
     padding-top: var(--space-3);
     padding-bottom: var(--space-3);
   }
+  /* The time and the facts are one button that opens the snapshot. */
+  .sync-snapshot-open {
+    flex: 1 1 0;
+    min-width: 0;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: inherit;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sync-snapshot-open:hover .sync-snapshot-facts {
+    color: var(--fg-default);
+  }
+  .sync-snapshot-open:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
   .sync-snapshot-time {
     flex: none;
     width: 9ch;
@@ -663,6 +687,100 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* ---------- inside a snapshot: its files against the folder ---------- */
+  .sync-look {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+  .sync-look-nav {
+    display: flex;
+    padding: 0 var(--space-2);
+    margin-top: var(--space-3);
+  }
+  .sync-look-summary {
+    color: var(--fg-default);
+  }
+  .sync-look-filter {
+    width: 100%;
+    min-width: 0;
+  }
+  /* A file: its name and folder (the folder gives way first), how it stands, its size, and
+     Restore. One height; the columns line up. */
+  .sync-item.sync-look-file {
+    gap: var(--space-4);
+    min-height: var(--size-control-lg);
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
+  }
+  .sync-look-open {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+  button.sync-look-open {
+    cursor: pointer;
+  }
+  button.sync-look-open:hover .sync-look-name {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  button.sync-look-open:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .sync-look-name {
+    flex: 0 1 auto;
+    min-width: 6ch;
+    color: var(--fg-default);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-look-dir {
+    flex: 0 10000 auto;
+    min-width: 0;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sync-look-state {
+    flex: none;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+    white-space: nowrap;
+  }
+  /* What is the same recedes; what differs is what the list is read for. */
+  .sync-look-file[data-state="same"] .sync-look-name,
+  .sync-look-file[data-state="same"] .sync-look-state {
+    color: var(--fg-subtle);
+  }
+  .sync-look-file .sync-file-size {
+    width: 8ch;
+    text-align: right;
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+  .sync-look-restore {
+    flex: none;
+  }
+  .sync-look-restore.is-none {
+    visibility: hidden;
   }
 
   /* ---------- settings and files: a switch, and what the account holds of it ---------- */
@@ -1006,6 +1124,23 @@
     font-size: var(--text-sm);
     font-weight: 400;
   }
+  /* A required item: a lock where the switch would be. */
+  .sync-team-locked {
+    display: flex;
+    align-items: center;
+    min-height: var(--size-control-sm);
+    white-space: nowrap;
+  }
+  .sync-team-locked .icon {
+    flex: none;
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    color: var(--fg-subtle);
+  }
+  /* The filter above a long library: as wide as the cards, never wider than the page. */
+  .sync-team-filter {
+    width: 100%;
+  }
   .sync-team-preview {
     display: flex;
     flex-direction: column;
@@ -1097,6 +1232,25 @@
     }
     .sync-snapshot-time {
       width: 8ch;
+    }
+    /* A file's name takes the row; how it stands, its size and Restore go under it. */
+    .sync-item.sync-look-file {
+      gap: var(--space-1) var(--space-4);
+    }
+    .sync-look-open {
+      flex-basis: 100%;
+    }
+    .sync-look-state {
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sync-look-file .sync-file-size {
+      width: auto;
+    }
+    .sync-look-restore.is-none {
+      display: none;
     }
     .sync-card-body,
     .sync-panel {

@@ -144,6 +144,8 @@ class SyncView implements DockView, PageKit {
           session.working.value,
           session.page.value,
           session.projectId.value,
+          // Small: the snapshot looked at and its counts, never its files.
+          session.look.opened.value,
           this.team.library.value,
           this.team.previews.value,
           services.workspace.root.value,
@@ -220,6 +222,8 @@ class SyncView implements DockView, PageKit {
 
   go(page: SyncPageId, project?: string | null): void {
     if (project !== undefined) this.session.projectId.value = project;
+    // Going anywhere leaves the snapshot that was being looked at.
+    this.session.look.close();
     this.session.page.value = page;
   }
 
@@ -456,7 +460,11 @@ class SyncView implements DockView, PageKit {
       ),
       ...drawPage(this, entry.id, status).filter((node): node is Node => node instanceof Node),
     );
-    const shown = `${entry.id}/${entry.id === "projects" ? (session.projectId.peek() ?? "") : ""}`;
+    const inside =
+      entry.id === "projects"
+        ? `${session.projectId.peek() ?? ""}/${session.look.opened.peek()?.id ?? ""}`
+        : "";
+    const shown = `${entry.id}/${inside}`;
     if (shown !== this.lastShown) {
       this.lastShown = shown;
       this.scroller.scrollTop = 0;

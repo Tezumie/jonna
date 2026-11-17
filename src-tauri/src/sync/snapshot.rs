@@ -1086,6 +1086,187 @@ pub fn list(manifest: &Manifest) -> Vec<ListedFile> {
     out
 }
 
+// ---------------------------------------------------------------- looking inside one
+
+/// At most this many of a snapshot's files are compared with the folder (a folder without git
+/// can name 200,000): the rest are listed as not compared.
+pub const COMPARE_MAX: usize = 5_000;
+/// A file larger than this isn't read as text.
+pub const TEXT_MAX_BYTES: u64 = 2 * 1024 * 1024;
+
+/// How a snapshot's file stands against the folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Standing {
+    /// The folder's file has the same content (a deletion: the file is gone here too).
+    Same,
+    /// The folder's file has other content (a deletion: the file is still here).
+    Differs,
+    /// In the snapshot, not in the folder.
+    Missing,
+    /// Not compared: past `COMPARE_MAX`, not readable, or a path a snapshot may not name.
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComparedFile {
+    pub path: String,
+    pub size: u64,
+    /// The snapshot records that the file was deleted.
+    pub deleted: bool,
+    pub state: Standing,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Compared {
+    /// Every file and deletion of the snapshot, by path.
+    pub files: Vec<ComparedFile>,
+    /// How many were left uncompared because the snapshot names more than `COMPARE_MAX`.
+    pub truncated: usize,
+}
+
+/// How one file of a snapshot stands against the folder: by size first, then by content, a
+/// chunk at a time.
+fn standing(ring: &Keyring, root: &Path, entry: &FileEntry, piece: &mut Vec<u8>) -> Standing {
+    let Ok(target) = safe_join(root, &entry.p) else {
+        return Standing::Unknown;
+    };
+    let meta = match std::fs::symlink_metadata(&target) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Standing::Missing,
+        Err(_) => return Standing::Unknown,
+    };
+    // A link or a folder where the snapshot has a file: not followed, and not the same.
+    if !meta.is_file() || meta.len() != entry.s.size {
+        return Standing::Differs;
+    }
+    let Ok(mut file) = std::fs::File::open(&target) else {
+        return Standing::Unknown;
+    };
+    if piece.is_empty() {
+        *piece = vec![0u8; chunks::CHUNK_BYTES];
+    }
+    match same_content(ring, &mut file, &entry.s, piece) {
+        Ok(true) => Standing::Same,
+        Ok(false) => Standing::Differs,
+        // Locked, or gone since it was looked at.
+        Err(_) => Standing::Unknown,
+    }
+}
+
+/// Each file of a snapshot with how it stands against the folder `root`, by path: the first
+/// `limit` are compared, the rest are `Unknown` and counted in `truncated`. Nothing is
+/// fetched and nothing is written; the folder's files are read a chunk at a time. Reads the
+/// disk: call it off the async threads.
+pub fn compare(ring: &Keyring, root: &Path, manifest: &Manifest, limit: usize) -> Compared {
+    enum Entry<'a> {
+        File(&'a FileEntry),
+        Deleted(&'a str),
+    }
+    let mut entries: Vec<(&str, Entry)> = manifest
+        .files
+        .iter()
+        .map(|f| (f.p.as_str(), Entry::File(f)))
+        .chain(
+            manifest
+                .deleted
+                .iter()
+                .map(|p| (p.as_str(), Entry::Deleted(p))),
+        )
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    let truncated = entries.len().saturating_sub(limit);
+    let mut piece = Vec::new();
+    let files = entries
+        .into_iter()
+        .enumerate()
+        .map(|(n, (path, entry))| {
+            let (size, deleted) = match &entry {
+                Entry::File(f) => (f.s.size, false),
+                Entry::Deleted(_) => (0, true),
+            };
+            let state = if n >= limit {
+                Standing::Unknown
+            } else {
+                match entry {
+                    Entry::File(f) => standing(ring, root, f, &mut piece),
+                    Entry::Deleted(p) => match safe_join(root, p) {
+                        Ok(target) if std::fs::symlink_metadata(&target).is_ok() => {
+                            Standing::Differs
+                        }
+                        Ok(_) => Standing::Same,
+                        Err(_) => Standing::Unknown,
+                    },
+                }
+            };
+            ComparedFile {
+                path: path.to_string(),
+                size,
+                deleted,
+                state,
+            }
+        })
+        .collect();
+    Compared { files, truncated }
+}
+
+/// One file of a snapshot as text, or why it isn't shown as text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileText {
+    pub text: Option<String>,
+    pub size: u64,
+    /// "large" (over `TEXT_MAX_BYTES`) or "binary" (not text).
+    pub reason: Option<&'static str>,
+}
+
+fn too_large(size: u64) -> FileText {
+    FileText {
+        text: None,
+        size,
+        reason: Some("large"),
+    }
+}
+
+/// A file's bytes as text: refused when they aren't UTF-8 or hold a NUL (as git tells binary).
+fn as_text(bytes: Vec<u8>) -> FileText {
+    let size = bytes.len() as u64;
+    if size > TEXT_MAX_BYTES {
+        return too_large(size);
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) if !text.contains('\0') => FileText {
+            text: Some(text),
+            size,
+            reason: None,
+        },
+        _ => FileText {
+            text: None,
+            size,
+            reason: Some("binary"),
+        },
+    }
+}
+
+/// One file of a snapshot as text, written nowhere: None when the snapshot doesn't hold the
+/// file (it isn't listed, or is listed as deleted). A file too large to show is not fetched.
+pub async fn read_text(
+    api: &Api,
+    ring: &Keyring,
+    manifest: &Manifest,
+    path: &str,
+) -> Result<Option<FileText>> {
+    let Some(entry) = manifest.files.iter().find(|f| f.p == path) else {
+        return Ok(None);
+    };
+    if entry.s.size > TEXT_MAX_BYTES {
+        return Ok(Some(too_large(entry.s.size)));
+    }
+    Ok(Some(as_text(chunks::read(api, ring, &entry.s).await?)))
+}
+
 async fn write_file(api: &Api, ring: &Keyring, root: &Path, entry: &FileEntry) -> Result<()> {
     let target = safe_join(root, &entry.p)?;
     let bytes = chunks::read(api, ring, &entry.s).await?;
@@ -1715,6 +1896,121 @@ mod tests {
         assert!(!same(b"exactly8 and more", &stored(b"exactly8")));
         assert!(!same(b"", &stored(b"x")));
         assert!(!same(b"x", &stored(b"")));
+    }
+
+    /// A snapshot's entry for a file with this content.
+    fn entry(ring: &Keyring, path: &str, data: &[u8]) -> FileEntry {
+        FileEntry {
+            p: path.to_string(),
+            s: Stored {
+                chunks: data
+                    .chunks(chunks::CHUNK_BYTES)
+                    .map(|piece| ring.chunk_id(piece).unwrap())
+                    .collect(),
+                size: data.len() as u64,
+            },
+            x: false,
+            t: 0,
+        }
+    }
+
+    #[test]
+    fn a_snapshot_is_compared_with_the_folder() {
+        let ring = Keyring::generate().unwrap();
+        let dir = std::env::temp_dir().join(format!("sync-compare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::create_dir_all(dir.join("folder.txt")).unwrap();
+        for (file, text) in [
+            ("src/same.rs", "fn main() {}"),
+            ("src/edited.rs", "fn main() { 1 }"),
+            ("resized.txt", "longer than it was"),
+            ("empty.txt", ""),
+            ("still-here.txt", "x"),
+        ] {
+            std::fs::write(dir.join(file), text).unwrap();
+        }
+        let manifest = Manifest {
+            v: 1,
+            files: vec![
+                entry(&ring, "src/same.rs", b"fn main() {}"),
+                // The same size, other content: only the content tells.
+                entry(&ring, "src/edited.rs", b"fn main() { 2 }"),
+                entry(&ring, "resized.txt", b"short"),
+                entry(&ring, "empty.txt", b""),
+                entry(&ring, "not/here.txt", b"new"),
+                entry(&ring, "folder.txt", b"a file there"),
+                entry(&ring, "../outside.txt", b"x"),
+            ],
+            deleted: vec![
+                "still-here.txt".into(),
+                "gone.txt".into(),
+                ".git/config".into(),
+            ],
+            ..Default::default()
+        };
+        let compared = compare(&ring, &dir, &manifest, COMPARE_MAX);
+        assert_eq!(compared.truncated, 0);
+        let got: Vec<(&str, Standing, bool)> = compared
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.state, f.deleted))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("../outside.txt", Standing::Unknown, false),
+                (".git/config", Standing::Unknown, true),
+                ("empty.txt", Standing::Same, false),
+                ("folder.txt", Standing::Differs, false),
+                ("gone.txt", Standing::Same, true),
+                ("not/here.txt", Standing::Missing, false),
+                ("resized.txt", Standing::Differs, false),
+                ("src/edited.rs", Standing::Differs, false),
+                ("src/same.rs", Standing::Same, false),
+                ("still-here.txt", Standing::Differs, true),
+            ]
+        );
+        let sizes: Vec<u64> = compared.files.iter().map(|f| f.size).collect();
+        assert_eq!(sizes, [1, 0, 0, 12, 0, 3, 5, 15, 12, 0]);
+
+        // Past the limit nothing is read: listed, not compared, and counted.
+        let few = compare(&ring, &dir, &manifest, 3);
+        assert_eq!(few.truncated, 7);
+        assert_eq!(few.files.len(), 10);
+        assert_eq!(few.files[2].state, Standing::Same);
+        assert!(few.files[3..].iter().all(|f| f.state == Standing::Unknown));
+        // As the front end reads it.
+        let json = serde_json::to_value(&few.files[5]).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "path": "not/here.txt", "size": 3, "deleted": false, "state": "unknown" })
+        );
+        assert_eq!(
+            serde_json::to_value(Standing::Missing).unwrap(),
+            serde_json::json!("missing")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_is_shown_as_text_only_when_it_is_text() {
+        let text = as_text("héllo\r\nworld".as_bytes().to_vec());
+        assert_eq!(text.text.as_deref(), Some("héllo\r\nworld"));
+        assert_eq!((text.size, text.reason), (13, None));
+        assert_eq!(as_text(Vec::new()).text.as_deref(), Some(""));
+        for binary in [&[0xff, 0xfe, 0x00][..], b"text\0with a nul"] {
+            let got = as_text(binary.to_vec());
+            assert_eq!((got.text, got.reason), (None, Some("binary")));
+        }
+        let large = as_text(vec![b'a'; TEXT_MAX_BYTES as usize + 1]);
+        assert_eq!((large.text, large.reason), (None, Some("large")));
+        assert_eq!(large.size, TEXT_MAX_BYTES + 1);
+        assert!(as_text(vec![b'a'; TEXT_MAX_BYTES as usize]).text.is_some());
+        assert_eq!(
+            serde_json::to_value(too_large(9)).unwrap(),
+            serde_json::json!({ "text": null, "size": 9, "reason": "large" })
+        );
     }
 
     #[test]
