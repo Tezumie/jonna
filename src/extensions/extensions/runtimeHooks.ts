@@ -68,9 +68,9 @@ export class ExtensionHooksHost implements Disposable {
   private readonly comments: ExtensionCommentsHost;
   private readonly lm: ExtensionLmHost;
   private readonly quickInput: ExtensionQuickInputHost;
-  /** window.tabGroups' snapshots and closing (runtime.ts subscribes "tabs.didChange" here). */
+  /** window.tabGroups' snapshots and closing (runtimeSubscriptions.ts follows them). */
   readonly tabs: ExtensionTabsHost;
-  /** Its views' visibility and badges (runtime.ts tracks each view instance here). */
+  /** Its views' visibility and badges (runtimeContributedViews.ts tracks each one here). */
   readonly views: ExtensionViewStates;
 
   constructor(private readonly deps: HooksHostDeps) {
@@ -234,7 +234,7 @@ export class ExtensionHooksHost implements Disposable {
       case "workspace.willSave":
         return Promise.resolve(this.setWillSave(p.kind === "notebook" ? "notebook" : "text", p.on));
       case "ui.showQuickPick":
-        // Only the multi-select kind is ours; runtime.ts shows the others.
+        // Only the multi-select kind is ours; runtimeBasics.ts shows the others.
         if (p.canPickMany !== true) return UNHANDLED;
         return pickMany(this.deps.services, p);
       default: {

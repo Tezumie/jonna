@@ -33,7 +33,17 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
   in another extension's container placed there (`viewContainer` from the manager; VS Code's
   "added to 'Explorer'" when none has it), and a command whose id the IDE has left the IDE's
   (VS Code would let it shadow the built-in one; here agents and the UI run the IDE's), with the
-  extension's own keys for it still running its code.
+  extension's own keys for it still running its code. Four parts of it are modules of their own,
+  each a host the runtime asks first (`handle`, like the ones below):
+  - `runtimeContributedViews.ts` — `ExtensionContributedViews`: the manifest's views and file
+    viewers (placing one, its tree or page when it shows, `<view id>.show`, opening it) and the
+    `tree.*`, `view.title` and `webview.*` requests.
+  - `runtimeBasics.ts` — `ExtensionBasicsHost`: `state.get` (the `ide://` paths by permission),
+    `fs.*`, `editor.active` / `editor.insert`, `ui.notify`, single-pick `ui.showQuickPick`,
+    `ui.showInput`, `net.fetch` (redirects followed here, each address checked).
+  - `runtimeSubscriptions.ts` — `ExtensionSubscriptions`: `events.subscribe` / `unsubscribe`.
+  - `runtimeSettings.ts` — `ExtensionSettingsHost`: the declared settings and
+    `configurationDefaults`, `settings.get` / `settings.subscribe`, `storage.*`.
 - `runtimeApi.ts` — `ExtensionApiHost` (D176): status bar items, `editor.*`, `languages.*`
   (problems, hover and completion providers), `webview.openInWindow`, and the declarative menus,
   agents, MCP servers and model providers, into `services.extensionFeatures`.
@@ -86,7 +96,7 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
 - `runtimeGit.ts` — `ExtensionGitHost` (D208): `ide.git.*` ("git": repositories, blame, line log,
   diff names, rev-parse, merge-base, refs, stashes, show, the `git.didChange` event) on
   `services.gitAccess`, `ide.github.*` ("github": notifications) and
-  `ide.editor.setLineAnnotations` ("fs.read", `services.gutterMarks.annotate`). runtime.ts also
+  `ide.editor.setLineAnnotations` ("fs.read", `services.gutterMarks.annotate`). The runtime also
   serves `documents.didChange` (250 ms per file), `tree.message`, `view.title` (a view's title and
   description from code, `services.views.titles`) and tree items' `actions` /
   `strong` (treeView.ts), commands' `when`, and views' `sectionOf` / `sectionOrder`.
@@ -189,7 +199,7 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
   `runtimeApi.ts` also has decoration types (`editor.createDecorationType` /
   `setDecorationType` / `clearDecorationType` / `disposeDecorationType`; checked by
   `workbench/extensionDecorationTypes.ts`, drawn with a generated stylesheet by
-  `editor/monaco/extensionFeatures.ts`), and runtime.ts `storage.*` with `scope: "workspace"`
+  `editor/monaco/extensionFeatures.ts`), and runtimeSettings.ts `storage.*` with `scope: "workspace"`
   (workspaceState, keyed in runtimeWorkspace.ts), quick pick separators / matchOnDescription and password input.
   `runtimeDebugAdapters.ts` resolves configurations (`debug.registerConfigurationProvider`).
 - `runtimeHooks.ts` — `ExtensionHooksHost`, more of VS Code's API (worker side

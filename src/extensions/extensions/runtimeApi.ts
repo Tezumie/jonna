@@ -129,7 +129,7 @@ export class ExtensionApiHost implements Disposable {
     const c = manifest.contributes;
     const owner = this.owner;
     const titleOf = (command: string) => c.commands.find((x) => x.id === command)?.title ?? command;
-    // A tree row's menu belongs to the extension's own tree view (runtime.ts, treeMenus.ts).
+    // A tree row's menu belongs to the extension's own tree view (its views' module, treeMenus.ts).
     const shared = c.menus.flatMap((m) =>
       m.location === "view/item/context" ? [] : [{ ...m, location: m.location }],
     );
