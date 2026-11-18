@@ -10,13 +10,29 @@
 import "../styles/index.css";
 import "../styles/web.css";
 import { h } from "../core/dom/index";
+import { blockExtensionCode } from "../core/extensions/codePolicy";
 import { setTransport } from "../core/ipc/invoke";
 import { setShell } from "../core/ipc/shell";
 import { connectStream } from "../core/ipc/streamTransport";
 import { product } from "../core/product";
-import { type HostLink, parseHostLink, socketUrl } from "./address";
+import { type HostLink, linkMayConnect, parseHostLink, socketUrl } from "./address";
 import { createWebShell } from "./shell";
 import { socketDuplex } from "./socketDuplex";
+
+/**
+ * Whether this page is served from the origin of the account pages (product.json's
+ * `accountsUrl`). A signed-in session lives in that origin's storage, and whatever runs in this
+ * page can read it. So here the page trusts only a host on this computer (the person's own), and
+ * runs no extension code (an extension's worker has the page's origin). A copy served from an
+ * address of its own has neither limit.
+ */
+function sharesAccountOrigin(): boolean {
+  try {
+    return product.accountsUrl !== "" && new URL(product.accountsUrl).origin === location.origin;
+  } catch {
+    return false;
+  }
+}
 
 /** Where this tab's link is kept, so a reload reconnects. Gone when the tab closes. */
 const LINK_KEY = "web.hostLink";
@@ -44,8 +60,13 @@ function forgetLink(): void {
 
 /** Connects and starts the IDE on that host. Rejects with why when the host can't be reached. */
 async function connect(link: HostLink): Promise<void> {
-  const made = socketUrl(link.address);
+  const guarded = sharesAccountOrigin();
+  const made = socketUrl(link.address, { remote: !guarded });
   if ("error" in made) throw new Error(made.error);
+  if (guarded)
+    blockExtensionCode(
+      "Extensions don't run in this page: it shares its address with the account pages.",
+    );
   const transport = await connectStream(socketDuplex(made.url), {
     client: "web",
     token: link.token,
@@ -171,12 +192,13 @@ function start(): void {
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   const link = { ...savedLink(), ...fromLink };
   showForm(link);
-  if (link.address && link.token) void attempt({ address: link.address, token: link.token });
+  // By itself only to this computer; another host's address waits for Connect.
+  if (linkMayConnect(link)) void attempt(link);
   // A link opened in a tab that already shows this page changes only the fragment, which
   // loads nothing: take the link and start over with it.
   window.addEventListener("hashchange", () => {
     const next = parseHostLink(location.hash);
-    if (!next.address || !next.token) return;
+    if (!linkMayConnect(next)) return;
     try {
       sessionStorage.setItem(LINK_KEY, JSON.stringify(next));
     } catch {

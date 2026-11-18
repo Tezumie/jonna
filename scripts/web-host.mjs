@@ -61,6 +61,37 @@ const TYPES = {
   ".txt": "text/plain; charset=utf-8",
 };
 
+/**
+ * The content policy the page is served with (docs/web-app.md, "What the site must send"): the
+ * app window's own, with the one thing a page here needs added, a WebSocket to a host. The site
+ * that serves the build sends the same header; this copy is for trying a build locally.
+ */
+export const CONTENT_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' data: ws://127.0.0.1:* ws://localhost:* wss:",
+  "worker-src 'self'",
+  "frame-src http://127.0.0.1:* http://localhost:*",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+/**
+ * The policy for the worker scripts (`workers/`). A worker follows the policy its own script
+ * was served with, not the page's. In the app's window they are served with none; here they get
+ * what they need and no more: an extension's code is evaluated inside its worker (which has
+ * taken its own network and loaders away, src/workers/lockdown.ts), so `unsafe-eval` there,
+ * and nothing may be fetched from anywhere but the site.
+ */
+export const WORKER_POLICY =
+  "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'";
+
 /** Serves dist-web/ as a site would serve it. Loopback only. */
 function serveBuild(port) {
   const folder = join(root, "dist-web");
@@ -83,6 +114,9 @@ function serveBuild(port) {
     response.writeHead(200, {
       "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
       "Cache-Control": "no-store",
+      "Content-Security-Policy": path.startsWith("/workers/") ? WORKER_POLICY : CONTENT_POLICY,
+      "X-Content-Type-Options": "nosniff",
+      "X-Robots-Tag": "noindex, nofollow",
     });
     createReadStream(file).pipe(response);
   });
@@ -113,9 +147,15 @@ if (!sites.length) {
   process.exit(2);
 }
 
+// A page on the accounts server's own origin runs no extension code (src/web/entry.ts): the
+// host is started the same way, so nothing tries.
+const accountsOrigin = product.accountsUrl ? new URL(product.accountsUrl).origin : null;
+const guarded = sites.some((page) => new URL(page).origin === accountsOrigin);
+
 const token = randomBytes(24).toString("base64url");
 const args = ["--listen-ws", "127.0.0.1:0", "--linger", option("--linger") || "3600"];
 for (const page of sites) args.push("--allow-origin", new URL(page).origin);
+if (guarded) args.push("--disable-extensions");
 const profile = option("--user-data-dir");
 if (profile) args.push("--user-data-dir", resolve(profile));
 
@@ -138,6 +178,8 @@ host.stderr.on("data", (chunk) => {
       console.log(`The host is running. Open one of these on this computer:\n`);
       for (const page of sites) console.log(`  ${page}#${fragment}\n`);
       console.log("Anyone with a link can use this computer as you: don't share it.");
+      if (guarded)
+        console.log("Extensions are off in this session (the page is on the accounts' address).");
       console.log("Ctrl+C stops the host.");
     } else if (line) console.error(line);
     end = pending.indexOf("\n");

@@ -18,6 +18,17 @@ export function parseHostLink(hash: string): Partial<HostLink> {
   return { ...(address && { address }), ...(token && { token }) };
 }
 
+/**
+ * Whether a link may connect by itself. Only to this computer: a link is something anyone can
+ * send, and a host is trusted with the page, so a link naming another machine is never followed
+ * without the person typing that address themself.
+ */
+export function linkMayConnect(link: Partial<HostLink>): link is HostLink {
+  if (!link.address || !link.token) return false;
+  const made = socketUrl(link.address, { remote: false });
+  return "url" in made;
+}
+
 /** The fragment for a link (`parseHostLink` reads it back). */
 export function hostLinkHash(link: HostLink): string {
   return `#${new URLSearchParams({ h: link.address, t: link.token }).toString()}`;
@@ -35,8 +46,13 @@ export function isLoopbackHost(host: string): boolean {
  *
  * This computer is reached without encryption (nothing leaves it). Any other host only with it
  * (`wss://`): the code and everything after it would otherwise cross the network in the clear.
+ * With `remote: false` only this computer is an answer (see `entry.ts`: a page that shares its
+ * origin with the account pages trusts no host but the person's own).
  */
-export function socketUrl(typed: string): { url: string } | { error: string } {
+export function socketUrl(
+  typed: string,
+  options: { remote?: boolean } = {},
+): { url: string } | { error: string } {
   const text = typed.trim();
   if (!text) return { error: "Enter the host's address." };
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `ws://${text}`;
@@ -53,6 +69,11 @@ export function socketUrl(typed: string): { url: string } | { error: string } {
   if (url.username || url.password)
     return { error: "The address can't hold a name or a password." };
   const local = isLoopbackHost(url.hostname);
+  if (!local && options.remote === false)
+    return {
+      error:
+        "This page connects to this computer only (127.0.0.1). A host on another computer needs the page served from an address of its own.",
+    };
   // A bare name that isn't this computer: encrypted, since nothing said otherwise.
   if (!local && url.protocol === "ws:") {
     if (/^ws:\/\//i.test(text))

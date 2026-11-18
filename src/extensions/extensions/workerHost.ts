@@ -7,6 +7,7 @@
 // src/workers/extension.node.ts) speaking the same messages as JSON lines, or its slice of the
 // shared Node host every VS Code package runs in (D295, sharedHost.ts).
 
+import { extensionCodeBlocked } from "../../core/extensions/codePolicy";
 import type {
   CallMessage,
   FromWorker,
@@ -31,6 +32,9 @@ export interface HostTransport {
 
 /** The sandboxed Web Worker (the default). */
 export function webWorkerTransport(name: string): HostTransport {
+  // The manager starts nothing where this is set; a caller that came another way stops here.
+  const blocked = extensionCodeBlocked();
+  if (blocked) throw new Error(blocked);
   const worker = new Worker("./workers/extension.worker.js", { name: `ext:${name}` });
   return {
     post: (m) => worker.postMessage(m),

@@ -13,6 +13,7 @@ import {
   extensionDependencies,
   RestartBudget,
 } from "../../core/extensions/activation";
+import { extensionCodeBlocked } from "../../core/extensions/codePolicy";
 import {
   type ContributedViewContainer,
   describePermission,
@@ -290,7 +291,8 @@ export class ExtensionManager implements Disposable {
       }
     }
     // Started with extensions off (D204: --disable-extensions or "Restart with extensions off").
-    const allOff = await sessionIpc.extensionsOff();
+    // Or a page where extension code may not run at all (the web build on the accounts' origin).
+    const allOff = (await sessionIpc.extensionsOff()) || extensionCodeBlocked() !== null;
     const started: ExtensionRuntime[] = [];
     // What a starting extension may look up in the others (another's view containers).
     this.reading = records;
