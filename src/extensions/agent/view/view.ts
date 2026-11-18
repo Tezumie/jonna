@@ -267,18 +267,21 @@ export class AgentView implements DockView {
         const open = host.openFolder.value;
         session.version.value;
         // A multi-root workspace's chat may be stored with its first folder or its file (D251).
-        const away = !!folder && session.items.length > 0 && !host.isThisWorkspace(folder);
-        elsewhere.hidden = !away;
-        if (!away || !folder) {
+        const started = session.items.length > 0;
+        const away = !!folder && started && !host.isThisWorkspace(folder);
+        // Started with no folder open, and one is open now (D448): it can be tied to this one.
+        const loose = !folder && started && !!open;
+        elsewhere.hidden = !away && !loose;
+        if (!away && !loose) {
           shownFor = "";
           return undefined;
         }
         // Built once per folder pair, not on every streamed token (`version` changes then).
-        const key = `${folder}\n${open ?? ""}`;
+        const key = `${folder ?? ""}\n${open ?? ""}`;
         if (key === shownFor) return undefined;
         shownFor = key;
         // A folder by its name, a workspace file as "x (Workspace)".
-        const name = locationLabel(folder);
+        const name = folder ? locationLabel(folder) : "";
         // As the wrap-up box's buttons (D345): the suggested one primary, the other secondary.
         const go = h(
           "button",
@@ -290,7 +293,9 @@ export class AgentView implements DockView {
           { class: "button button-secondary button-sm", type: "button" },
           "Continue here",
         );
-        setTooltip(go, `Open ${folder} and continue the chat there`);
+        setTooltip(go, `Open ${folder ?? ""} and continue the chat there`);
+        // No folder to go back to: the only offer is to carry on here.
+        go.hidden = !folder;
         setTooltip(
           here,
           open
@@ -309,13 +314,19 @@ export class AgentView implements DockView {
         replaceChildren(
           elsewhere,
           icon("folder"),
-          h(
-            "span",
-            { class: "agent-elsewhere-text" },
-            "Started in ",
-            h("strong", null, name),
-            open ? ". Tools work on the open folder." : ".",
-          ),
+          folder
+            ? h(
+                "span",
+                { class: "agent-elsewhere-text" },
+                "Started in ",
+                h("strong", null, name),
+                open ? ". Tools work on the open folder." : ".",
+              )
+            : h(
+                "span",
+                { class: "agent-elsewhere-text" },
+                "Started with no folder open. Tools work on the open folder.",
+              ),
           // Together, at the right: in a narrow panel they wrap as a pair under the text (D166).
           h("div", { class: "agent-elsewhere-actions" }, go, here),
         );

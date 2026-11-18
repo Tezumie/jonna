@@ -4439,3 +4439,31 @@ Two accounts in one team, sync on for both.
 4. **Sync off by itself.** Reset sync on the account page. On a computer: "Sync is off on this
    computer", with "Remove the keys…"; nothing was deleted yet.
 5. **A setting that stays.** Set `agent.deleteProtection` on A: it doesn't change on B.
+
+## D448 — A chat started with no folder open
+1. File → Close folder. Start a chat, answer "Just chat" on the folder card, get a reply.
+2. Open a folder. The Chats list has a **No folder** group with that chat (no "+" on the
+   group); it isn't among this folder's chats.
+3. Open it: "Started with no folder open. Tools work on the open folder." with **Continue
+   here** only. Close it without pressing: it's still under No folder.
+4. Press **Continue here** (or right-click the row → Continue in this folder): the banner
+   goes and the chat is one of this folder's.
+5. An external agent whose package downloads for more than 15 seconds: "Still starting …"
+   shows, and is gone once the agent answers.
+
+## D449 — The plan at the end of a turn
+1. Ask the agent for a task with several steps. When it finishes and wraps up, the plan card
+   shows every step done, also when it ticked only some along the way.
+2. Ask for something it can't finish (a step that needs a tool that's off): the step it
+   names as not finished stays open, the others are done.
+
+## D450 — The model provider's own web search
+1. Agent: Set up web search → "The model provider's own search". In a chat on an Anthropic
+   model ask for something recent ("what changed in the latest Rust release?"): a line
+   "Searched the web: … · N results" appears over the reply (hover: the results), and the
+   reply names its sources.
+2. Ask a follow-up in the same chat: it answers (the earlier search went back unchanged).
+3. Then ask for a search and a file edit in one message: both happen.
+4. Switch the chat to another provider's model and ask to search: it says to switch model or
+   choose a search provider. Switch back: the chat carries on.
+5. Turn `agent.webFetch.enabled` off: no search runs.

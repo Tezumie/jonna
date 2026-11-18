@@ -1,0 +1,79 @@
+// D448: a chat started with no folder open, seen from a folder. It's listed under "No folder"
+// (it was in no list at all), opened it says so and offers Continue here, and continued it's one of
+// this folder's chats.
+{
+  "name": "agent-nofolder-m7-130",
+  "steps": [
+    {
+      "run": "settings.set",
+      "input": { "key": "agent.ollama.url", "value": "http://127.0.0.1:11999" }
+    },
+    { "run": "agent.refreshModels", "timeoutMs": 10000 },
+    { "state": "ide://workspace", "save": "ws" },
+    // ---- A chat with no folder open ----
+    { "run": "workspace.closeFolder", "expect": { "closed": true }, "timeoutMs": 20000 },
+    { "run": "agent.newSession" },
+    {
+      "run": "agent.send",
+      "input": { "message": "hello", "wait": true, "noFolder": true },
+      "expect": { "error": null },
+      "timeoutMs": 60000
+    },
+    { "state": "ide://agent/session", "save": "chat" },
+    // Saved before the folder opens (the list reads saved chats).
+    { "wait": 1500 },
+    // ---- A folder opens: the chat is under "No folder", not this folder's ----
+    { "run": "workspace.openFolder", "input": { "path": "${ws.root}" }, "timeoutMs": 30000 },
+    { "run": "workspace.setTrust", "input": { "trusted": true }, "expect": { "state": "trusted" } },
+    { "run": "view.show", "input": { "id": "agent.chats" } },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-folder[data-folder='other'] .ch-recent[data-session='${chat.id}']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-folder[data-folder='here'] .ch-recent[data-session='${chat.id}']"
+      },
+      "expect": { "$length": 0 }
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".ch-folder[data-folder='other'] .ch-section-toggle", "html": 300 },
+      "expect": { "$contains": "No folder" }
+    },
+    // ---- Opened: it says where it's from and offers to carry on here ----
+    { "run": "agent.openThread", "input": { "session": "${chat.id}" } },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-elsewhere:not([hidden])", "html": 800 },
+      "expect": { "$contains": "Started with no folder open" },
+      "timeoutMs": 10000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true },
+    {
+      "run": "dev.click",
+      "input": { "selector": ".agent-elsewhere:not([hidden]) .button-secondary" }
+    },
+    // ---- Continued: one of this folder's chats, and nothing left to offer ----
+    {
+      "run": "dev.inspectDom",
+      "input": {
+        "selector": ".ch-folder[data-folder='here'] .ch-recent[data-session='${chat.id}']"
+      },
+      "expect": { "$length": 1 },
+      "timeoutMs": 15000
+    },
+    {
+      "run": "dev.inspectDom",
+      "input": { "selector": ".agent-elsewhere:not([hidden])" },
+      "expect": { "$length": 0 },
+      "timeoutMs": 5000
+    },
+    { "run": "workbench.screenshot", "input": { "save": true }, "print": true }
+  ]
+}

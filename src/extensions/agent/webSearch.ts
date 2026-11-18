@@ -10,6 +10,8 @@ import {
   domainList,
   filterByDomains,
   formatResults,
+  HOSTED_SEARCH,
+  HOSTED_SEARCH_ELSEWHERE,
   providerInfo,
   searchPlan,
   setupMessage,
@@ -35,6 +37,9 @@ async function readiness(
   services: WorkbenchServices,
 ): Promise<{ ok: true; provider: string; url?: string } | { ok: false; message: string }> {
   const provider = services.settings.peek<string>(settingKey) ?? "off";
+  // The model provider's own search (D450) isn't ours to run: an Anthropic model has it as its
+  // own tool, and this one is only reached on a model that has none.
+  if (provider === HOSTED_SEARCH) return { ok: false, message: HOSTED_SEARCH_ELSEWHERE };
   const info = providerInfo(provider);
   if (!info) return { ok: false, message: setupMessage("off") };
   if (info.key) {
@@ -303,9 +308,9 @@ export function registerWebSearch(sub: DisposableStore, services: WorkbenchServi
       title: "Set up web search",
       category: "Agent",
       description:
-        "Chooses the agent's web search provider (agent.webSearch.provider): brave, tavily or exa (asks for the API key in a hidden box and stores it on this computer; it's never shown to the agent), searxng (a self-hosted address, `url`), or off. Without `provider`, shows a picker.",
+        "Chooses the agent's web search provider (agent.webSearch.provider): model (the model provider's own search: Anthropic models, no key of its own, billed per search with the model), brave, tavily or exa (asks for the API key in a hidden box and stores it on this computer; it's never shown to the agent), searxng (a self-hosted address, `url`), or off. Without `provider`, shows a picker.",
       input: s.object({
-        provider: s.enum(["off", "brave", "tavily", "exa", "searxng"] as const).optional(),
+        provider: s.enum(["off", "model", "brave", "tavily", "exa", "searxng"] as const).optional(),
         url: s.string().describe("searxng: the instance's address").optional(),
         forgetKey: s.boolean().describe("Remove the stored key for `provider`").optional(),
       }),
@@ -317,6 +322,12 @@ export function registerWebSearch(sub: DisposableStore, services: WorkbenchServi
           const current = settings.peek<string>(settingKey) ?? "off";
           const picked = await quickInput.pick(
             [
+              {
+                id: HOSTED_SEARCH,
+                label: "The model provider's own search",
+                description: `Anthropic models, no extra key${current === HOSTED_SEARCH ? " · in use" : ""}`,
+                detail: "Runs on the provider's side and is billed per search with the model",
+              },
               ...WEB_SEARCH_PROVIDERS.map((p) => ({
                 id: p.id,
                 label: p.label,

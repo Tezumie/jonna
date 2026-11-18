@@ -5,6 +5,7 @@ import {
   domainList,
   filterByDomains,
   formatResults,
+  hostedSearchLine,
   inDomain,
   normalizeDomain,
   SOURCES_RULE,
@@ -111,4 +112,14 @@ test("results end with the Sources rule; extended adds the pages read", () => {
   );
   assert.match(text, /read now:\n\n\[https:\/\/a\.example\] A page\nBody text/);
   assert.ok(text.endsWith(SOURCES_RULE));
+});
+
+test("D450: the line for a search the model provider ran", () => {
+  assert.equal(hostedSearchLine("rust 2024", 1), 'Searched the web: "rust 2024" · 1 result');
+  assert.equal(hostedSearchLine("", 8), "Searched the web · 8 results");
+  assert.equal(
+    hostedSearchLine("x", 0, "max_uses_exceeded"),
+    'Searched the web: "x" · failed (max uses exceeded)',
+  );
+  assert.match(setupMessage("off"), /model provider's own search/);
 });

@@ -42,6 +42,9 @@ unless noted.
 | · The team library: required items, the owner decides what is on for everyone | D445 |
 | · Sharing a project with a team | D446 |
 | · The security audit before 0.1.9: what a computer checks about the service and about its own other computers | D447 |
+| · A chat started with no folder open, seen from a folder | D448 |
+| · wrap_up ticks off the whole plan | D449 |
+| · Web search without a key of its own: the model provider's | D450 |
 
 ## Seeded from PLAN §19
 
@@ -15920,3 +15923,89 @@ needs; proofs on the calls that change keys.
 service and the app must make together); a deletion is the service's unsealed word for
 snapshots and projects (files and chats seal theirs); chats and snapshots have no generation
 floor; switches outside the guarded areas still sync.
+
+## D448 — A chat started with no folder open, seen from a folder
+
+**Asked:** start a chat with no folder open, then open a folder: should the chat stay open?
+
+**Decided: no, but it must stay in reach, and one click ties it to the folder.** A chat belongs
+to where it started (D126), as in VS Code and Cursor, and a no-folder chat's external agent
+works in a private folder (D208). What was wrong was that the chat disappeared:
+
+- **It was in no list.** With a folder open the Chats list showed this folder's chats and
+  other folders', and a chat with no folder is neither. It's listed now under **No folder**
+  (`threadList.ts` `otherChat`, its `workspace` ""), after the other folders by age like them.
+  That group has no "+": there is no folder to open for a new chat.
+- **Opening one moved it without asking.** A saved chat with no folder kept the value its
+  session was made with, the open folder, and its next save tied it there. It stays a
+  no-folder chat until someone says otherwise (`sessionStore.ts`).
+- **Opened, it says so**, with the banner another folder's chat has: "Started with no folder
+  open. Tools work on the open folder." and **Continue here** (`agent.moveChatHere`, which
+  existed for other folders' chats). The list's right-click menu has **Continue in this
+  folder**. There's no "Open …" button: there's no folder to go back to.
+
+A chat left open while its window opens a folder is the same case: it moves to "No folder"
+in the list and shows the banner.
+
+**Also:** "Still starting …: npx is downloading it" stayed under the agent's work after the
+agent had started. The line is taken out when the agent answers or fails (`acp.ts`).
+
+Test: `tests/scripts/agent-nofolder-m7-130.jsonc`.
+
+## D449 — wrap_up ticks off the whole plan
+
+**Seen:** a turn that did everything ended with its plan at 1/4: the agent said the cards
+were added and the notes recorded, and the card showed those steps as not done. A model at
+the end of its work skips the last `update_plan` calls, and the reminder (D154) rides on a
+tool result it may not read before it stops. D301 had `wrap_up` finish only the step in
+progress.
+
+**Decided:** `wrap_up` is the model saying the turn's work is done, so it ticks off every
+step, except the ones the call names in **`unfinished`** (step numbers), which are left
+waiting (`core/agent/plan.ts` `wrapUpPlan`). The tool's description says so, and its result
+says what the plan shows now. No extra request: asking the model to tick first would cost
+one each time. A turn that ends without `wrap_up` is as before (the step in progress is
+finished, D300): nothing says the rest was done.
+
+The risk taken: a model that leaves steps undone and names none shows them done. The recap
+it must write in the same call says what isn't done, so the two would disagree in plain
+sight.
+
+## D450 — Web search without a key of its own: the model provider's
+
+**Asked:** an agent said it couldn't search without "Set up web search". Is there a way
+without an API key, and what do other agents use?
+
+**What others do.** Claude Code, Codex and Cursor use the model provider's hosted search: it
+runs on the provider's side and is billed with the model. Open-source agents fetch pages
+themselves and search through a key (Brave, Tavily, Exa) or an MCP server, as the IDE did
+(D200). No search engine offers a free API without a key, and reading results pages by
+scraping is against their terms.
+
+**Decided:** `agent.webSearch.provider` gets **`model`**: the model provider's own search.
+Built for Anthropic's Messages API, the one provider the IDE speaks natively (D112):
+
+- The request names the API's tool (`web_search_20250305`, the version every model has, with
+  `max_uses` 8) in place of our `web_search`, which has the same name.
+- The reply's search call and its results must go back unchanged in later requests (the
+  results are encrypted), in the order they came. The parser keeps the text blocks too while
+  the search is on, and `convert` sends the blocks as they came instead of rebuilding the
+  message from its text. With the search off (or another provider) those blocks are left out
+  and the text alone is sent, so a chat that searched still works anywhere.
+- Each search shows in the chat as a line over the reply, the results in its tooltip.
+- `pause_turn` (the provider pausing a long turn) is asked again, five times at most.
+
+**What it costs the user to know:** searches run without asking (they happen inside the
+provider's request, where the IDE can't stop for an answer), so choosing `model` is the
+consent; `agent.webFetch.enabled` off turns it off with the rest of the agent's web access.
+The provider bills each search ($10 per 1,000 at the time of writing) beside the tokens, and
+the chat's cost meter doesn't count them. An organization can switch the tool off in the
+provider's console: the request then fails with the provider's message.
+
+**Not built:** OpenAI's hosted search needs its Responses API (the IDE uses chat completions
+for every OpenAI-compatible provider); OpenRouter's has its own request shape. On those
+models, with `model` chosen, `web_search` says to switch model or choose a provider.
+
+**Not verified:** against the live API (it needs the owner's key). The request, the stream and
+the replay are tested against the documented shapes (`ai/tests.rs`
+`anthropic_hosted_search`, `loop.test.ts`).

@@ -317,7 +317,7 @@ export function registerChatCommands(
     id: "agent.moveChatHere",
     title: "Continue chat in this folder",
     description:
-      "Ties an agent chat that was started in another folder to the open one (its tools then work here).",
+      "Ties an agent chat that was started in another folder, or with no folder open, to the open one: it's listed with this folder's chats and its tools work here.",
     input: s.object({ session: sessionInput }),
     effects: ["write"],
     agent: "hidden",

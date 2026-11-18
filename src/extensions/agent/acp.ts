@@ -895,14 +895,27 @@ export class AcpBackend {
     // npx / uvx fetch the agent's package before it starts: a new version (Claude Code's adapter
     // is large) took over two minutes once, with only "initialize timed out" to show for it (D401).
     const fetcher = packageRunner(this.config.command);
+    let slowNotice: string | undefined;
+    // The line is about the wait: once the agent answered (or failed, which has its own message)
+    // it would read as if the download were still going, under the agent's own work.
+    const endSlow = (): void => {
+      clearTimeout(slow);
+      if (!slowNotice) return;
+      const at = this.session.items.findIndex((item) => item.id === slowNotice);
+      slowNotice = undefined;
+      if (at < 0) return;
+      this.session.items.splice(at, 1);
+      this.bump();
+    };
     const slow = fetcher
       ? setTimeout(() => {
           // Only while a message waits on it (D407): a start for the model menu (prepare) in an
           // idle chat would leave the line in the saved chat.
           if (this.session.status.peek() === "idle") return;
+          slowNotice = newId("n");
           this.session.items.push({
             type: "notice",
-            id: newId("n"),
+            id: slowNotice,
             text: `Still starting ${this.config.name}: ${fetcher} is downloading it (a new version can take a few minutes the first time).`,
             tone: "info",
           });
@@ -910,9 +923,7 @@ export class AcpBackend {
         }, 15000)
       : undefined;
     try {
-      await this.client
-        .initialize(product.nameLong, fetcher ? 600000 : 120000)
-        .finally(() => clearTimeout(slow));
+      await this.client.initialize(product.nameLong, fetcher ? 600000 : 120000).finally(endSlow);
       // After a restart: pick up the agent's own session when it can (D200).
       const saved = this.session.acpResume;
       let resumed = false;

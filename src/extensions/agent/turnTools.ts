@@ -6,7 +6,7 @@
 // view/turnCards.ts; the buttons run the commands in turnCommands.ts.
 
 import type { Item } from "../../core/agent/conversation";
-import { finishPlan } from "../../core/agent/plan";
+import { wrapUpPlan } from "../../core/agent/plan";
 import {
   latestTurn,
   parseChapter,
@@ -73,7 +73,7 @@ function before(items: readonly Item[], itemId: string): readonly Item[] {
 const WRAP_UP: AgentTool = {
   spec: {
     name: "wrap_up",
-    description: `Fill the box the chat shows at the end of your turn: a recap and, when this turn leaves the user a decision or a step to take, one question with buttons that answer it (a turn with nothing pending gives the recap alone, and no box is drawn). Call it once in every turn where you kept a plan, changed files, ran commands or did multi-step work: when the work is done, before your closing message, which is ordinary text after this call. It also finishes the plan (no closing update_plan). Skip it for short answers, conversation, or a brief read-and-explain turn. recap and ask speak to the user ("you"); a reply button's label is the user's words back to you. App actions (only those available now; the result lists them if one isn't): ${WRAP_UP_ACTIONS.join(", ")}.`,
+    description: `Fill the box the chat shows at the end of your turn: a recap and, when this turn leaves the user a decision or a step to take, one question with buttons that answer it (a turn with nothing pending gives the recap alone, and no box is drawn). Call it once in every turn where you kept a plan, changed files, ran commands or did multi-step work: when the work is done, before your closing message, which is ordinary text after this call. It also ticks off the plan's steps, all but those you list in unfinished (no closing update_plan). Skip it for short answers, conversation, or a brief read-and-explain turn. recap and ask speak to the user ("you"); a reply button's label is the user's words back to you. App actions (only those available now; the result lists them if one isn't): ${WRAP_UP_ACTIONS.join(", ")}.`,
     parameters: {
       type: "object",
       properties: {
@@ -103,6 +103,12 @@ const WRAP_UP: AgentTool = {
             },
           },
         },
+        unfinished: {
+          type: "array",
+          items: { type: "number" },
+          description:
+            "The plan's step numbers (1-based) you did NOT finish this turn. This call ticks off every other step, so leave it out only when the whole plan is done.",
+        },
         blocked: {
           type: "boolean",
           description:
@@ -119,13 +125,20 @@ const WRAP_UP: AgentTool = {
     const available = await wrapUpActionsNow(host.services, host.changeset);
     const r = parseWrapUp(args, available, WRAP_UP_LABELS);
     if ("error" in r) return { result: `Error: ${r.error}`, isError: true };
-    // The plan's step in progress is done: the turn is.
-    host.setPlan(finishPlan(host.plan()));
+    // The turn's work is done, so the plan's steps are (D449), but for the ones it names.
+    const plan = wrapUpPlan(host.plan(), (args as { unfinished?: unknown } | null)?.unfinished);
+    host.setPlan(plan);
+    const left = plan.filter((s) => s.status !== "done").length;
+    const ticked = plan.length
+      ? ` The plan shows ${plan.length - left}/${plan.length} done${left ? ` (${left} left as not finished)` : ""}.`
+      : "";
     const w = r.wrapUp;
     return {
-      result: w.ask
-        ? `Shown: the recap, "${w.ask}" and ${w.actions?.map((b) => b.label).join(" / ")}. Now write your closing message.`
-        : "Recap saved (no box: nothing waits on the user). Now write your closing message.",
+      result: `${
+        w.ask
+          ? `Shown: the recap, "${w.ask}" and ${w.actions?.map((b) => b.label).join(" / ")}.`
+          : "Recap saved (no box: nothing waits on the user)."
+      }${ticked} Now write your closing message.`,
       summary: w.ask ? "asked" : "recap",
     };
   },

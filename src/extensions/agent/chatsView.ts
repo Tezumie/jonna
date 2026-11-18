@@ -351,6 +351,8 @@ export class ChatsView implements ViewInstance {
           ordered.map(({ row }) => row.id),
           false,
           folded,
+          // Chats started with no folder open, seen from a folder (D448).
+          folder ? undefined : "No folder",
         ),
       );
     }
@@ -489,6 +491,9 @@ export class ChatsView implements ViewInstance {
     );
     setTooltip(add, here ? "New chat" : `New chat in ${name} (opens the folder)`);
     add.addEventListener("click", newChat);
+    // "No folder" seen from a folder (D448): there's no folder to open for a new chat.
+    const loose = !here && !path;
+    add.hidden = loose;
     const head = h("div", { class: "ch-section-head" }, toggle, add);
     // On the row, not the name: beside the name it covered the + button.
     setTooltip(
@@ -499,9 +504,15 @@ export class ChatsView implements ViewInstance {
     );
     head.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      const items: MenuItem[] = [
-        { label: here ? "New chat" : "New chat (opens the folder)", icon: "plus", run: newChat },
-      ];
+      const items: MenuItem[] = loose
+        ? []
+        : [
+            {
+              label: here ? "New chat" : "New chat (opens the folder)",
+              icon: "plus",
+              run: newChat,
+            },
+          ];
       if (!here && path)
         items.push({
           label: "Open folder",
@@ -512,7 +523,7 @@ export class ChatsView implements ViewInstance {
         {
           label: "Collapse all",
           icon: "list-collapse",
-          separatorBefore: true,
+          separatorBefore: items.length > 0,
           run: () => this.foldAll(true),
         },
         { label: "Expand all", icon: "list-chevrons-up-down", run: () => this.foldAll(false) },
@@ -652,7 +663,9 @@ export class ChatsView implements ViewInstance {
       [
         o.title,
         who,
-        `In ${basename(o.workspace)} (${o.workspace})`,
+        o.workspace
+          ? `In ${basename(o.workspace)} (${o.workspace})`
+          : "Started with no folder open",
         o.updated ? relativeAge(o.updated) : "",
       ]
         .filter(Boolean)
@@ -660,7 +673,7 @@ export class ChatsView implements ViewInstance {
       undefined,
       { placement: "right" },
     );
-    this.wire(row, o.id, o);
+    this.wire(row, o.id, { ...o, loose: !o.workspace });
     return row;
   }
 
@@ -671,7 +684,8 @@ export class ChatsView implements ViewInstance {
   private wire(
     row: HTMLElement,
     id: string,
-    state: { pinned?: boolean; archived?: boolean },
+    /** `loose`: started with no folder open, and one is open now (D448). */
+    state: { pinned?: boolean; archived?: boolean; loose?: boolean },
   ): void {
     const open = (how: { newTab?: boolean; side?: boolean } = {}) =>
       this.run("agent.openThread", { session: id, ...how });
@@ -736,6 +750,17 @@ export class ChatsView implements ViewInstance {
         { label: "Open to the side", icon: "columns-2", run: () => open({ side: true }) },
         { label: "Open in new tab", icon: "plus", run: () => open({ newTab: true }) },
       ];
+      // Opened first: a chat is tied to a folder through its loaded session.
+      if (state.loose && this.services.workspace.root.peek())
+        items.push({
+          label: "Continue in this folder",
+          icon: "folder-open",
+          run: () =>
+            void this.services.dispatcher
+              .execute("agent.openThread", { session: id })
+              .then(() => this.services.dispatcher.execute("agent.moveChatHere", { session: id }))
+              .catch(() => {}),
+        });
       if (!state.archived)
         items.push({
           label: state.pinned ? "Unpin" : "Pin",

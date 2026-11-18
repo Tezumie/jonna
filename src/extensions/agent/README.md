@@ -158,7 +158,8 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
 - **Turn tools** (`turnTools.ts`, `turnCommands.ts`, `view/turnCards.ts`, `core/agent/turnTools.ts`
   tested, `styles/agent-turn.css`, D301–D305, after Claude Code's app): `wrap_up` (recap, one
   `ask`, 1–2 buttons: a reply sent as the user's message or an app action run by
-  `agent.runWrapUpAction`; only actions available now are accepted; finishes the plan; the box
+  `agent.runWrapUpAction`; only actions available now are accepted; ticks off the plan's steps, all but the ones in its
+  `unfinished` (D449, `wrapUpPlan`); the box
   under the latest turn, after the plan card; its first sentence is the chat's `recap` in the
   lists, `blocked` marks the chat as needing the user), `mark_chapter` (a divider, moved above the
   message when it opens the turn; the Chapters button beside the chat's tabs,
@@ -859,6 +860,13 @@ Usage stays a tab of its own.
   `websearch.<provider>`, asked in a hidden box), `@web search <words>`. Settings:
   `agent.webSearch.provider` (off, brave, tavily, exa, searxng), `agent.webSearch.searxngUrl`,
   `agent.webSearch.maxResults`; `agent.webFetch.autoApprove` covers searches too.
+- **The model provider's own search** (D450): `agent.webSearch.provider` "model"
+  (`core/agent/webSearch.ts` `HOSTED_SEARCH`). On an Anthropic model `requestOptions`
+  (`sessionUsage.ts`) sends `hostedSearch` (most searches a request) and Rust adds the API's web
+  search tool in place of ours; the loop (`core/agent/loop.ts`) puts each `webSearched` event in
+  the chat as a notice over the reply (results in its tooltip) and asks again after a
+  `pause_turn`. The reply's blocks are kept in the assistant item's `reasoning` and go back
+  unchanged. On other models our `web_search` says to switch model or choose a provider.
 - Test: `tests/scripts/agent-m7-1-mcp.jsonc`.
 
 ## Deferred tools, web search options, questions about pages (D319-D321)
@@ -1181,7 +1189,9 @@ With them on, each message carries the IDE state (`ideState`: editor, problems, 
 - **Unread** (`unread.ts`): when each conversation was last seen (workspace state `agent.seen`,
   with `since`); the chat view marks it seen while it's on screen.
 - **Views:** `chatsView.ts` (D291: the sidebar, id still `agent.chats`: every chat by day,
-  newest first, then other folders'; search; bold when unread; D377: Ctrl/Shift+click selects
+  newest first, then other folders', and with a folder open the chats started without one under
+  "No folder" (D448: `threadList.ts` `otherChat` with `workspace` ""; their row's menu and the
+  chat's banner offer `agent.moveChatHere`); search; bold when unread; D377: Ctrl/Shift+click selects
   several (Delete / Archive / Open together, `agent.deleteSessions`), rows drag onto the dock
   through `services.dragViews`; `channelsView.ts`, Slack's
   sidebar of D237, was kept unregistered and is gone since D394), the channel tab (only the Inbox now: a room's

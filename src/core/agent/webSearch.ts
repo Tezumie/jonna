@@ -5,6 +5,26 @@
 
 export type WebSearchProvider = "off" | "brave" | "tavily" | "exa" | "searxng";
 
+/**
+ * agent.webSearch.provider's other choice (D450): the model provider searches itself (Anthropic's
+ * web search tool, for chats on an Anthropic model). No key of its own: the provider runs each
+ * search and bills it with the model.
+ */
+export const HOSTED_SEARCH = "model";
+/** Most searches the provider may run in one request (its `max_uses`). */
+export const HOSTED_SEARCH_MAX_USES = 8;
+
+/** The chat's line for a search the provider ran. */
+export function hostedSearchLine(query: string, results: number, error?: string): string {
+  const what = query ? `Searched the web: "${query}"` : "Searched the web";
+  if (error) return `${what} · failed (${error.replaceAll("_", " ")})`;
+  return `${what} · ${results} result${results === 1 ? "" : "s"}`;
+}
+
+/** What our own web_search says when searching is the model provider's and this model has none. */
+export const HOSTED_SEARCH_ELSEWHERE =
+  'Web search is set to the model provider\'s own (agent.webSearch.provider "model"), which only Anthropic models have. Tell the user to switch this chat to an Anthropic model, or to choose a search provider with "Agent: Set up web search" (agent.setupWebSearch). Meanwhile, web_fetch can read a page whose address you know.';
+
 export interface WebSearchProviderInfo {
   id: Exclude<WebSearchProvider, "off">;
   label: string;
@@ -51,7 +71,7 @@ export function setupMessage(provider: string, problem?: "key" | "url"): string 
     return `Web search uses ${info.label}, but no key is stored for it. Ask the user to run "Agent: Set up web search" (agent.setupWebSearch) and enter the key; get one at ${info.signup}. Don't ask them to paste the key into the chat.`;
   if (info && problem === "url")
     return 'Web search uses SearXNG, but no address is set: ask the user to set agent.webSearch.searxngUrl (for example http://localhost:8080) or run "Agent: Set up web search".';
-  return `Web search isn't set up (agent.webSearch.provider is off). Tell the user they can turn it on with "Agent: Set up web search" (agent.setupWebSearch): ${WEB_SEARCH_PROVIDERS.map((p) => `${p.label}${p.key ? " (API key)" : " (an address, no key)"}`).join(", ")}. Meanwhile, web.fetch can read a page whose address you know.`;
+  return `Web search isn't set up (agent.webSearch.provider is off). Tell the user they can turn it on with "Agent: Set up web search" (agent.setupWebSearch): ${WEB_SEARCH_PROVIDERS.map((p) => `${p.label}${p.key ? " (API key)" : " (an address, no key)"}`).join(", ")}, or the model provider's own search (Anthropic models, no key of its own). Meanwhile, web.fetch can read a page whose address you know.`;
 }
 
 /** Claude Code's rule for answers from a search (D320), with the results the agent gets. */

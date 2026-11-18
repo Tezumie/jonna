@@ -1003,10 +1003,10 @@
       },
       "agent.webSearch.provider": {
         "type": "string",
-        "enum": ["off", "brave", "tavily", "exa", "searxng"],
+        "enum": ["off", "model", "brave", "tavily", "exa", "searxng"],
         "default": "off",
         "title": "Web search",
-        "description": "Where the agent's web_search tool and @web search look: Brave Search API, Tavily or Exa (each needs an API key, stored on this computer by \"Agent: Set up web search\"), or a SearXNG address. Off: the agent can only read pages it knows.",
+        "description": "Where the agent's web_search tool and @web search look: Brave Search API, Tavily or Exa (each needs an API key, stored on this computer by \"Agent: Set up web search\"), or a SearXNG address. \"model\": the model provider searches itself (chats on an Anthropic model; no key of its own, each search is billed with the model, and it runs without asking you). Off: the agent can only read pages it knows.",
         "scope": "user",
         "section": "Context and tools",
         "order": 23.1

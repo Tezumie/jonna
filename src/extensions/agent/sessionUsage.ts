@@ -4,6 +4,7 @@
 
 import { findCustomMode } from "../../core/agent/chatModes";
 import { budgetState, formatCost, type ModelPrice } from "../../core/agent/prices";
+import { HOSTED_SEARCH, HOSTED_SEARCH_MAX_USES } from "../../core/agent/webSearch";
 import type { ChatEvent, ChatRequest, ModelDetails } from "../../core/ipc/agent";
 import type { WorkbenchServices } from "../../workbench/services";
 import { customModes } from "./customModes";
@@ -48,9 +49,16 @@ export function requestOptions(
   session: AgentSession,
   choice: ModelChoice,
   details: ModelDetails,
-): Pick<ChatRequest, "cacheTtl" | "effort" | "maxTokens" | "keepAlive" | "modalities"> {
+): Pick<
+  ChatRequest,
+  "cacheTtl" | "effort" | "maxTokens" | "keepAlive" | "modalities" | "hostedSearch"
+> {
   const s = session.services.settings;
   if (choice.provider.kind === "anthropic") {
+    // The provider's own web search (D450), unless the agent's web access is off.
+    const hosted =
+      s.peek<string>("agent.webSearch.provider") === HOSTED_SEARCH &&
+      s.peek<boolean>("agent.webFetch.enabled") !== false;
     // A skill's own effort for the turn it started (D221), else the answering agent's (D273: a
     // group chat's Effort list), else the setting.
     const effort =
@@ -62,6 +70,7 @@ export function requestOptions(
       // Up to 64k when the model allows it (D157): a big file plus thinking ran out at 32k.
       maxTokens: Math.min(details.maxOutputTokens ?? 32_000, 64_000),
       ...(effort && effort !== "default" && { effort }),
+      ...(hosted && { hostedSearch: HOSTED_SEARCH_MAX_USES }),
     };
   }
   if (choice.provider.kind === "ollama")

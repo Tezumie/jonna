@@ -618,6 +618,9 @@ reload. It can also enter a worktree that already exists.
   it now; `/clear` starts a new chat in place of this one.
 - **A chat from another folder** opens with a "Started in …" banner: **Open** *folder* opens that
   folder, **Continue here** ties the chat to the folder you have open.
+- **A chat started with no folder open** is listed under **No folder** once a folder is open.
+  Opened, it offers **Continue here**, which makes it one of this folder's chats (also
+  **Continue in this folder** in the list's right-click menu).
 - **No folder open:** ask the agent to build something and it offers a folder card: it creates or
   opens the folder (in `agent.projectsFolder`, by default Projects in your home folder) and sends
   your message there. A folder the IDE makes this way is trusted.

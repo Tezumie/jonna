@@ -364,6 +364,11 @@ To let it find pages, run [Set up web search](command:agent.setupWebSearch) and 
 - **Brave Search API**, **Tavily** or **Exa**: each needs an API key from its site, typed into a
   hidden box and kept on this computer, never shown to the agent.
 - **SearXNG**: your own server's address (turn on the `json` format in its `settings.yml`).
+- **The model provider's own search**: no key of its own. In a chat on an Anthropic model, the
+  provider runs the searches on its side and bills each one with the model (about a cent a
+  search at the time of writing). They run without asking you first, and each shows as a line
+  in the chat ("Searched the web: …", hover for the results). Chats on other models have no
+  search with this choice.
 
 The agent then has a `web_search` tool, which asks like web pages do. It can keep results to some
 sites or leave sites out, and search harder (`mode: extended`: more results, and the top pages read)
@@ -378,7 +383,7 @@ message.
 |---|---|---|
 | `agent.webFetch.enabled` | `true` | Let the agent read web pages. |
 | `agent.webFetch.autoApprove` | `false` | Read pages and search without asking. |
-| `agent.webSearch.provider` | `off` | `off`, `brave`, `tavily`, `exa` or `searxng`. |
+| `agent.webSearch.provider` | `off` | `off`, `model` (the model provider's own), `brave`, `tavily`, `exa` or `searxng`. |
 | `agent.webSearch.searxngUrl` | `""` | Your SearXNG address. |
 | `agent.webSearch.maxResults` | `8` | Most results a search returns. |
 | `agent.imageGeneration.enabled` | `true` | The agent's generate_image tool (the provider bills each image). |

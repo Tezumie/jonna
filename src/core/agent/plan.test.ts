@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PlanStep } from "./compact";
 import type { Item } from "./conversation";
-import { applyPlanUpdate, finishPlan, planBeforeLastMessage, planFromItems } from "./plan";
+import {
+  applyPlanUpdate,
+  finishPlan,
+  planBeforeLastMessage,
+  planFromItems,
+  wrapUpPlan,
+} from "./plan";
 
 const plan = (...s: PlanStep["status"][]): PlanStep[] =>
   s.map((status, i) => ({ text: `Step ${i + 1}`, status }));
@@ -67,6 +73,15 @@ test("D300: a turn that ends normally finishes the step it was on", () => {
     finishPlan(plan("done", "in_progress", "pending")).map((s) => s.status),
     ["done", "done", "pending"],
   );
+});
+
+test("D449: wrap_up ticks off every step but the ones named as not finished", () => {
+  const all = (unfinished?: unknown) =>
+    wrapUpPlan(plan("done", "pending", "in_progress", "pending"), unfinished).map((s) => s.status);
+  assert.deepEqual(all(), ["done", "done", "done", "done"]);
+  // Named ones wait (the one in progress too); a done step stays done, a bad number is ignored.
+  assert.deepEqual(all([3, "4", 1, 9]), ["done", "done", "pending", "pending"]);
+  assert.deepEqual(wrapUpPlan([], [1]), []);
 });
 
 const tool = (id: string, args: unknown, status: "done" | "error" = "done"): Item => ({

@@ -59,6 +59,7 @@ fn request(kind: ProviderKind) -> ChatRequest {
         keep_alive: None,
         no_cache: false,
         modalities: None,
+        hosted_search: None,
     }
 }
 
@@ -481,7 +482,7 @@ fn anthropic_drops_an_assistant_message_that_is_only_thinking() {
     thinking.thinking_blocks =
         vec![json!({ "type": "thinking", "thinking": "hmm", "signature": "s" })];
     let messages = vec![msg("user", "go"), thinking, msg("user", "Continue.")];
-    let (_, out) = super::anthropic::convert(&messages);
+    let (_, out) = super::anthropic::convert(&messages, false);
     // No assistant turn ending in thinking: the two user messages are one turn.
     assert_eq!(out.len(), 1);
     assert_eq!(out[0]["role"], "user");
@@ -661,4 +662,112 @@ fn image_models_ask_for_images() {
     assert_eq!(body["modalities"], json!(["image", "text"]));
     let plain = super::openai::request_body(&request(ProviderKind::Openai));
     assert!(plain.get("modalities").is_none());
+}
+
+/// D450: the provider's own web search. The request names the tool (and not ours of that name);
+/// a reply's text, search and result come back as blocks, in order, with what the chat shows.
+#[test]
+fn anthropic_hosted_search() {
+    let mut req = request(ProviderKind::Anthropic);
+    req.tools.push(ToolSpec {
+        name: "web_search".into(),
+        description: "Ours".into(),
+        parameters: json!({"type": "object"}),
+    });
+    let plain = super::anthropic::request_body(&req);
+    assert_eq!(plain["tools"].as_array().map(Vec::len), Some(2));
+    req.hosted_search = Some(5);
+    let body = super::anthropic::request_body(&req);
+    let tools = body["tools"].as_array().cloned().unwrap_or_default();
+    assert_eq!(tools.len(), 2);
+    assert_eq!(tools[0]["name"], "read_file");
+    assert_eq!(
+        tools[1],
+        json!({"type": "web_search_20250305", "name": "web_search", "max_uses": 5})
+    );
+
+    let mut p = super::anthropic::SseParser::hosted();
+    let mut events = Vec::new();
+    for line in [
+        r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+        r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Looking."}}"#,
+        r#"data: {"type":"content_block_stop","index":0}"#,
+        r#"data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search"}}"#,
+        r#"data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"rust 2024\"}"}}"#,
+        r#"data: {"type":"content_block_stop","index":1}"#,
+        r#"data: {"type":"content_block_start","index":2,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result","title":"Rust","url":"https://rust-lang.org","encrypted_content":"abc"}]}}"#,
+        r#"data: {"type":"content_block_stop","index":2}"#,
+        r#"data: {"type":"content_block_start","index":3,"content_block":{"type":"text","text":""}}"#,
+        r#"data: {"type":"content_block_delta","index":3,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://rust-lang.org","encrypted_index":"xyz"}}}"#,
+        r#"data: {"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":"It shipped."}}"#,
+        r#"data: {"type":"content_block_stop","index":3}"#,
+        r#"data: {"type":"content_block_start","index":4,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_2","content":{"type":"web_search_tool_result_error","error_code":"max_uses_exceeded"}}}"#,
+        r#"data: {"type":"content_block_stop","index":4}"#,
+        r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#,
+        r#"data: {"type":"message_stop"}"#,
+    ] {
+        events.extend(p.line(line).unwrap());
+    }
+    let blocks: Vec<Value> = events
+        .iter()
+        .filter_map(|e| match e {
+            ChatEvent::Reasoning { block } => Some(block.clone()),
+            _ => None,
+        })
+        .collect();
+    let kinds: Vec<&str> = blocks.iter().filter_map(|b| b["type"].as_str()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "text",
+            "server_tool_use",
+            "web_search_tool_result",
+            "text",
+            "web_search_tool_result"
+        ]
+    );
+    assert_eq!(blocks[1]["input"]["query"], "rust 2024");
+    assert_eq!(blocks[2]["content"][0]["encrypted_content"], "abc");
+    assert_eq!(blocks[3]["citations"][0]["encrypted_index"], "xyz");
+    assert!(events.contains(&ChatEvent::WebSearched {
+        query: "rust 2024".into(),
+        results: vec![SearchHit {
+            title: "Rust".into(),
+            url: "https://rust-lang.org".into()
+        }],
+        error: None,
+    }));
+    assert!(events.contains(&ChatEvent::WebSearched {
+        query: String::new(),
+        results: vec![],
+        error: Some("max_uses_exceeded".into()),
+    }));
+
+    // Sent back: with the search on, the blocks as they came and the text once; with it off,
+    // the text alone (a search block without its tool would be refused).
+    let reply = Message {
+        role: "assistant".into(),
+        content: "Looking.It shipped.".into(),
+        tool_calls: vec![],
+        tool_call_id: None,
+        tool_name: None,
+        images: vec![],
+        thinking_blocks: blocks[..4].to_vec(),
+    };
+    let user = request(ProviderKind::Anthropic).messages[0].clone();
+    let messages = [user, reply];
+    let (_, with) = super::anthropic::convert(&messages, true);
+    let sent: Vec<&str> = with[1]["content"]
+        .as_array()
+        .map(|c| c.iter().filter_map(|b| b["type"].as_str()).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        sent,
+        ["text", "server_tool_use", "web_search_tool_result", "text"]
+    );
+    let (_, without) = super::anthropic::convert(&messages, false);
+    assert_eq!(
+        without[1]["content"],
+        json!([{"type": "text", "text": "Looking.It shipped."}])
+    );
 }

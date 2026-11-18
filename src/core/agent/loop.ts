@@ -14,6 +14,11 @@ import {
   toMessages,
 } from "./conversation";
 import { parseToolCalls, toolsPrompt } from "./textProtocol";
+import { hostedSearchLine } from "./webSearch";
+
+/** How often a turn the provider paused (its own searches, D450) is asked to carry on. */
+const MAX_PAUSES = 5;
+
 import { splitTitle } from "./title";
 
 export interface ToolOutcome {
@@ -162,6 +167,7 @@ export async function runTurn(state: LoopState, deps: LoopDeps): Promise<number>
   let steps = 0;
   /** Replies cut off at the output limit in a row (D157): carried on twice, then it stops. */
   let cutOff = 0;
+  let pauses = 0;
   /** The last step went on only to answer a queued message (D160). */
   let forQueue = false;
   /** A context overflow was recovered from once this turn (a second one fails it). */
@@ -298,6 +304,19 @@ export async function runTurn(state: LoopState, deps: LoopDeps): Promise<number>
             ...(e.id && { id: e.id }),
             ...(args !== undefined && { args }),
           };
+        } else if (e.kind === "webSearched") {
+          // The provider's own search (D450): a line over the reply says what it looked for. A
+          // notice: the search itself goes back to the model with the reply's blocks.
+          const at = state.items.indexOf(assistant);
+          state.items.splice(at < 0 ? state.items.length : at, 0, {
+            type: "notice",
+            id: deps.newId(),
+            text: hostedSearchLine(e.query, e.results.length, e.error),
+            tone: "info",
+            ...(e.results.length && {
+              detail: e.results.map((r) => `${r.title} — ${r.url}`).join("\n"),
+            }),
+          });
         } else if (e.kind === "toolCall")
           calls.push({ id: e.id, name: e.name, arguments: e.arguments });
         else if (e.kind === "done") stopReason = e.stopReason;
@@ -383,6 +402,12 @@ export async function runTurn(state: LoopState, deps: LoopDeps): Promise<number>
       continue;
     }
     if (calls.length) cutOff = 0;
+    // The provider paused a long turn of its own searches (D450): asked again with the reply so
+    // far as the last message, it carries on from there. A few times at most.
+    if (calls.length === 0 && stopReason === "pause_turn" && pauses < MAX_PAUSES) {
+      pauses++;
+      continue;
+    }
     // Send now right as the reply ended: its tools don't run, the next step reads the message.
     if (deps.interrupt?.requested() && deps.hasQueued?.()) continue;
     // Done, unless the user said something meanwhile: then the next step answers it.

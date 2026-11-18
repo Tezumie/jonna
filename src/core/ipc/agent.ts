@@ -85,9 +85,21 @@ export interface ChatRequest {
   noCache?: boolean;
   /** What the reply may hold: `["image", "text"]` for a model that draws (D381). */
   modalities?: string[];
+  /**
+   * The provider searches the web itself (Anthropic's web search tool, D450): at most this many
+   * searches in a request. It runs and bills them; our own web_search tool is left out.
+   */
+  hostedSearch?: number;
 }
 
 export type ChatEvent =
+  /** The provider searched the web itself (D450); `error` is its code when the search failed. */
+  | {
+      kind: "webSearched";
+      query: string;
+      results: { title: string; url: string }[];
+      error?: string;
+    }
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
   /** An image in the reply (D381): base64 `data` of type `mime`, or a link (`url`). */

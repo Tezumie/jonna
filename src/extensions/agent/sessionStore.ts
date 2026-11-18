@@ -266,7 +266,9 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
     session.room = typeof data.meta?.room === "string" ? data.meta.room : null;
     session.parent = threadParent(data.meta?.parent);
     session.forkOf = typeof data.meta?.forkOf === "string" ? data.meta.forkOf : null;
-    if (typeof data.meta?.workspace === "string") session.workspaceRoot = data.meta.workspace;
+    // A chat started with no folder open stays one (D448): loaded in a window with a folder, it
+    // took that folder's place without anyone asking.
+    session.workspaceRoot = typeof data.meta?.workspace === "string" ? data.meta.workspace : null;
     restoreChatWorktree(session.id, data.meta?.worktree);
     session.model.value = data.meta?.model ?? null;
     // Saved by an older or damaged file: only well-formed items (one bad item broke rendering of

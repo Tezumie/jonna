@@ -746,3 +746,42 @@ test("a model's images and a tool's join the chat with ids (D381)", async () => 
     /\[Image\]\(https:\/\/example\.com\/x\.png\)/,
   );
 });
+
+test("D450: the provider's own search shows as a line over the reply; a paused turn carries on", async () => {
+  const { d, seen } = deps([
+    (_r, emit) => {
+      emit({ kind: "reasoning", block: { type: "server_tool_use", id: "s1", name: "web_search" } });
+      emit({
+        kind: "webSearched",
+        query: "rust 2024",
+        results: [{ title: "Rust", url: "https://rust-lang.org" }],
+      });
+      emit({ kind: "text", text: "Looking." });
+      emit({ kind: "done", stopReason: "pause_turn", inputTokens: 1, outputTokens: 1 });
+    },
+    (_r, emit) => {
+      emit({ kind: "webSearched", query: "more", results: [], error: "max_uses_exceeded" });
+      emit({ kind: "text", text: "It shipped." });
+    },
+  ]);
+  const state: LoopState = {
+    items: [{ type: "user", id: "u", text: "what's new in rust?" }],
+    textProtocol: false,
+  };
+  await runTurn(state, d);
+  // Asked again after the pause, with the reply so far as the last message.
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1]?.messages.at(-1)?.role, "assistant");
+  assert.deepEqual(
+    state.items.map((i) => (i.type === "notice" ? i.text : i.type)),
+    [
+      "user",
+      'Searched the web: "rust 2024" · 1 result',
+      "assistant",
+      'Searched the web: "more" · failed (max uses exceeded)',
+      "assistant",
+    ],
+  );
+  const first = state.items[1];
+  assert.equal(first?.type === "notice" && first.detail, "Rust — https://rust-lang.org");
+});

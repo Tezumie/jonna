@@ -7,21 +7,26 @@
 //! - **Thinking**: adaptive thinking with summarized display; each finished thinking (or
 //!   redacted_thinking) block is emitted as `Reasoning` and sent back unchanged in the assistant
 //!   message (required while tools are in use).
+//! - **Its own web search** (D450, `hosted_search`): the API's web search tool runs on its side.
+//!   The call, its result and the text around them are emitted as `Reasoning` too and go back in
+//!   the order they came (the results' encrypted content must return unchanged).
 //! - No `temperature`: current models reject non-default sampling parameters.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Map, Value};
 
 use super::{
     error_body, http_error, url, ChatEvent, ChatRequest, LineBuffer, Message, ModelDetails,
-    ModelInfo,
+    ModelInfo, SearchHit,
 };
 use crate::error::{Error, Result};
 
 const VERSION: &str = "2023-06-01";
 /// Output budget when the caller doesn't set one (the model's own maximum may be lower).
 const DEFAULT_MAX_TOKENS: u32 = 32_000;
+/// The name the API gives its web search tool (D450).
+const HOSTED_SEARCH_NAME: &str = "web_search";
 
 fn api(base: &str, path: &str) -> String {
     let b = base.trim_end_matches('/');
@@ -144,8 +149,16 @@ fn text_block(text: &str) -> Option<Value> {
     (!text.trim().is_empty()).then(|| json!({ "type": "text", "text": text }))
 }
 
+/// A block the provider made on its side (D450): its own tool call or that call's result.
+fn server_block(kind: &str) -> bool {
+    kind == "server_tool_use" || (kind.ends_with("_tool_result") && kind != "tool_result")
+}
+
 /// The system prompt (all system messages) and the conversation as Messages API turns.
-pub fn convert(messages: &[Message]) -> (String, Vec<Value>) {
+/// With `hosted` (the provider's own web search is on, D450) an assistant
+/// message goes back as it came: its text, its searches and their results in their order, which
+/// the API wants unchanged. Without it those are left out and the text alone is sent.
+pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
     let mut system = Vec::new();
     let mut out: Vec<Value> = Vec::new();
     for m in messages {
@@ -156,8 +169,19 @@ pub fn convert(messages: &[Message]) -> (String, Vec<Value>) {
                 }
             }
             "assistant" => {
-                let mut blocks: Vec<Value> = m.thinking_blocks.clone();
-                blocks.extend(text_block(&m.content));
+                let mut blocks: Vec<Value> = m
+                    .thinking_blocks
+                    .iter()
+                    .filter(|b| {
+                        let kind = b["type"].as_str().unwrap_or("");
+                        hosted || !(kind == "text" || server_block(kind))
+                    })
+                    .cloned()
+                    .collect();
+                // The reply's text came with its blocks (in their order): not a second time.
+                if !blocks.iter().any(|b| b["type"] == "text") {
+                    blocks.extend(text_block(&m.content));
+                }
                 for c in &m.tool_calls {
                     let input = if c.arguments.is_object() {
                         c.arguments.clone()
@@ -215,7 +239,7 @@ pub fn convert(messages: &[Message]) -> (String, Vec<Value>) {
 }
 
 pub fn request_body(req: &ChatRequest) -> Value {
-    let (system, messages) = convert(&req.messages);
+    let (system, messages) = convert(&req.messages, req.hosted_search.is_some());
     let ttl = req.cache_ttl.as_deref();
     let mut body = json!({
         "model": req.model,
@@ -235,12 +259,24 @@ pub fn request_body(req: &ChatRequest) -> Value {
             json!([{ "type": "text", "text": system, "cache_control": cache_control(ttl) }])
         };
     }
-    if !req.tools.is_empty() {
-        body["tools"] = req
-            .tools
-            .iter()
-            .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }))
-            .collect();
+    let mut tools: Vec<Value> = req
+        .tools
+        .iter()
+        // The provider's search has this name too (D450): one of them.
+        .filter(|t| req.hosted_search.is_none() || t.name != HOSTED_SEARCH_NAME)
+        .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }))
+        .collect();
+    if let Some(max_uses) = req.hosted_search {
+        // The basic version: every model has it, and its results come as plain blocks (the later
+        // ones run the search from code execution, with blocks of their own).
+        tools.push(json!({
+            "type": "web_search_20250305",
+            "name": HOSTED_SEARCH_NAME,
+            "max_uses": max_uses.clamp(1, 20),
+        }));
+    }
+    if !tools.is_empty() {
+        body["tools"] = Value::Array(tools);
     }
     if req.think == Some(true) {
         body["thinking"] = json!({ "type": "adaptive", "display": "summarized" });
@@ -262,6 +298,10 @@ struct Block {
     /// redacted_thinking's opaque data.
     data: String,
     progress: super::ToolStreamProgress,
+    /// The block as it started: a server tool's result comes whole there (D450).
+    raw: Value,
+    /// A text block's citations of search results, which go back with it.
+    citations: Vec<Value>,
 }
 
 /// Accumulates SSE events into chat events.
@@ -274,9 +314,49 @@ pub struct SseParser {
     cache_write: Option<u64>,
     output_tokens: Option<u64>,
     finished: bool,
+    /// The provider's own search is on (D450): text blocks are kept too, so the message can go
+    /// back in the order it came.
+    hosted: bool,
+    /// What each of the provider's searches asked, by its call's id.
+    queries: HashMap<String, String>,
 }
 
 impl SseParser {
+    /// A parser for a request with the provider's own web search on (D450).
+    pub fn hosted() -> Self {
+        Self {
+            hosted: true,
+            ..Self::default()
+        }
+    }
+
+    /// What the chat shows of a search the provider ran: the results, or why there are none.
+    fn searched(&self, raw: &Value) -> ChatEvent {
+        let id = raw["tool_use_id"].as_str().unwrap_or("");
+        let content = &raw["content"];
+        let text = |v: &Value, k: &str| v[k].as_str().unwrap_or("").to_string();
+        ChatEvent::WebSearched {
+            query: self.queries.get(id).cloned().unwrap_or_default(),
+            results: content
+                .as_array()
+                .map(|list| {
+                    list.iter()
+                        .filter(|r| r["url"].is_string())
+                        .map(|r| SearchHit {
+                            title: text(r, "title"),
+                            url: text(r, "url"),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            // On an error the content is one object with the code, not a list.
+            error: content
+                .is_object()
+                .then(|| text(content, "error_code"))
+                .filter(|c| !c.is_empty()),
+        }
+    }
+
     fn usage(&mut self, u: &Value) {
         let n = |k: &str| u.get(k).and_then(Value::as_u64);
         if let Some(v) = n("input_tokens") {
@@ -316,6 +396,7 @@ impl SseParser {
                         id: s("id"),
                         name: s("name"),
                         data: s("data"),
+                        raw: b.clone(),
                         ..Block::default()
                     },
                 );
@@ -327,8 +408,14 @@ impl SseParser {
                 match s("type").as_str() {
                     "text_delta" => {
                         let t = s("text");
+                        block.text.push_str(&t);
                         if !t.is_empty() {
                             out.push(ChatEvent::Text { text: t });
+                        }
+                    }
+                    "citations_delta" => {
+                        if let Some(c) = d.get("citation") {
+                            block.citations.push(c.clone());
                         }
                     }
                     "thinking_delta" => {
@@ -367,6 +454,33 @@ impl SseParser {
                                 serde_json::from_str(&b.text).unwrap_or(Value::String(b.text))
                             },
                         }),
+                        // With the provider's search on, the text is kept as a block too: the
+                        // message goes back in the order it came (D450).
+                        "text" if self.hosted && !b.text.trim().is_empty() => {
+                            let mut block = json!({ "type": "text", "text": b.text });
+                            if !b.citations.is_empty() {
+                                block["citations"] = Value::Array(b.citations);
+                            }
+                            out.push(ChatEvent::Reasoning { block });
+                        }
+                        // The provider's own tool call: kept to send back, with what it asked.
+                        "server_tool_use" => {
+                            let input: Value = serde_json::from_str(&b.text)
+                                .unwrap_or_else(|_| Value::Object(Map::new()));
+                            if let Some(q) = input["query"].as_str() {
+                                self.queries.insert(b.id.clone(), q.to_string());
+                            }
+                            let mut block = b.raw;
+                            block["input"] = input;
+                            out.push(ChatEvent::Reasoning { block });
+                        }
+                        // And its result, which came whole when the block started.
+                        kind if server_block(kind) => {
+                            if kind == "web_search_tool_result" {
+                                out.push(self.searched(&b.raw));
+                            }
+                            out.push(ChatEvent::Reasoning { block: b.raw });
+                        }
                         _ => {}
                     }
                 }
@@ -445,7 +559,11 @@ pub async fn chat<F: FnMut(ChatEvent)>(
     }
     let mut stream = response.bytes_stream();
     let mut lines = LineBuffer::default();
-    let mut parser = SseParser::default();
+    let mut parser = if req.hosted_search.is_some() {
+        SseParser::hosted()
+    } else {
+        SseParser::default()
+    };
     while let Some(chunk) = super::next_chunk(&mut stream).await {
         let chunk = chunk?;
         for line in lines.push(&chunk) {

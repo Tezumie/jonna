@@ -77,6 +77,24 @@ export function finishPlan(steps: readonly PlanStep[]): PlanStep[] {
     : [...steps];
 }
 
+/**
+ * The plan after wrap_up (D449): the model says the turn's work is done, so every step is, except
+ * the ones it names as not finished (1-based numbers), which wait. A model at the end of its work
+ * often skips the last ticks, and the card then showed finished work as not done.
+ */
+export function wrapUpPlan(steps: readonly PlanStep[], unfinished: unknown): PlanStep[] {
+  const left = new Set(stepNumbers(unfinished));
+  return steps.map((s, i) =>
+    left.has(i + 1)
+      ? s.status === "done"
+        ? s
+        : { ...s, status: "pending" }
+      : s.status === "done"
+        ? s
+        : { ...s, status: "done" },
+  );
+}
+
 /** The plan the conversation's update_plan calls left (all of them, in order). */
 export function planFromItems(items: readonly Item[]): PlanStep[] {
   let steps: PlanStep[] = [];

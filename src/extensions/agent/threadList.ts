@@ -36,7 +36,10 @@ export interface OtherChat {
   archived?: boolean;
 }
 
-/** Other folders' saved chats (every saved chat with a folder, when none is open). */
+/**
+ * Other folders' saved chats (every saved chat with a folder, when none is open). With a folder
+ * open, the chats started without one too (D448), their `workspace` "".
+ */
 export const otherChats = signal<readonly OtherChat[]>([]);
 
 /**
@@ -48,10 +51,11 @@ export const hasSavedChats = signal(false);
 /** Whether a stored workspace is this window's (D251: its first folder or its workspace file). */
 type Mine = (workspace: string | null | undefined) => boolean;
 
-function otherChat(id: string, raw: unknown, mine: Mine): OtherChat | null {
+function otherChat(id: string, raw: unknown, open: boolean, mine: Mine): OtherChat | null {
   const meta = (raw ?? {}) as Record<string, unknown>;
-  const workspace = str(meta.workspace);
-  if (!workspace || mine(workspace)) return null;
+  // With no folder open the chats started without one are that window's own (savedRow).
+  const workspace = str(meta.workspace) || (open ? "" : undefined);
+  if (workspace === undefined || mine(workspace)) return null;
   // A thread opens from its channel; the list keeps to conversations.
   if (threadParent(meta.parent)) return null;
   const members = Array.isArray(meta.members)
@@ -158,7 +162,8 @@ export function registerThreadList(
       // An empty new thread isn't one yet; another folder's chat belongs there.
       if (!s.items.length) continue;
       const where = s.workspaceRoot;
-      if (open ? where && !isThisWorkspace(services, where) : where) continue;
+      // (One started with no folder open, with a folder open now, is listed under "No folder".)
+      if (open ? !isThisWorkspace(services, where) : where) continue;
       byId.set(s.id, liveRow(s));
     }
     // Unread (D238): replies since you last saw it.
@@ -192,7 +197,7 @@ export function registerThreadList(
     const open = !!services.workspace.root.peek();
     const mine: Mine = (w) => isThisWorkspace(services, w);
     saved = list.flatMap((r) => savedRow(r.id, r.meta, open, mine) ?? []);
-    const others = list.flatMap((r) => otherChat(r.id, r.meta, mine) ?? []);
+    const others = list.flatMap((r) => otherChat(r.id, r.meta, open, mine) ?? []);
     if (JSON.stringify(others) !== JSON.stringify(otherChats.peek())) otherChats.value = others;
     merge();
   };

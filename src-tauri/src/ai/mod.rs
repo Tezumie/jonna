@@ -184,6 +184,17 @@ pub struct ChatRequest {
     /// What the reply may hold (`["image", "text"]` for a model that draws, D381).
     #[serde(default)]
     pub modalities: Option<Vec<String>>,
+    /// The provider searches the web itself (Anthropic's web search tool, D450): at most this
+    /// many searches in a request. The provider runs and bills them.
+    #[serde(default)]
+    pub hosted_search: Option<u32>,
+}
+
+/// One result of a search the provider ran (D450).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SearchHit {
+    pub title: String,
+    pub url: String,
 }
 
 /// What an images API is asked for (D381).
@@ -238,6 +249,14 @@ pub enum ChatEvent {
         /// partial JSON, at most every `STREAMED_EVERY`.
         #[serde(skip_serializing_if = "Option::is_none")]
         arguments: Option<String>,
+    },
+    /// The provider searched the web itself (D450): what for and what it found, for the chat to
+    /// show. `error` is the provider's code when the search failed.
+    WebSearched {
+        query: String,
+        results: Vec<SearchHit>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Done {
