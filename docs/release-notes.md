@@ -3,6 +3,19 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.11
+
+A fix for chats on the newest Claude models, which also makes long chats cheaper.
+
+- **"The block is bound to a different conversation" no longer stops a chat.** The newest
+  Claude models check that the conversation sent back to them is the one they wrote in. The
+  IDE now sends replies back exactly as they came and keeps earlier messages unchanged, and
+  where the conversation does change (an update, a summary, a tool that joins) the model
+  carries on without its earlier reasoning instead of failing. A chat that showed this error
+  works again: press Retry.
+- **Long chats read more from the provider's cache**, for the same reason: fewer things change
+  what was already sent (screenshots now leave in groups, a summary starts clean).
+
 ## 0.1.10
 
 Web search without a key, and three fixes in the agent's chats.
