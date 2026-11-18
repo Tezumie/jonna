@@ -15,7 +15,7 @@ import { setTransport } from "../core/ipc/invoke";
 import { setShell } from "../core/ipc/shell";
 import { connectStream } from "../core/ipc/streamTransport";
 import { product } from "../core/product";
-import { type HostLink, linkMayConnect, parseHostLink, socketUrl } from "./address";
+import { type HostLink, isLoopbackHost, linkMayConnect, parseHostLink, socketUrl } from "./address";
 import { createWebShell } from "./shell";
 import { socketDuplex } from "./socketDuplex";
 
@@ -58,6 +58,28 @@ function forgetLink(): void {
   }
 }
 
+/**
+ * Whether the browser itself keeps this page from this computer. Browsers ask before a site may
+ * reach programs on the computer it is shown on (Chromium's "apps on this device" permission);
+ * a page gets no reason for a failed connection, only this permission's state. True: refused.
+ * False: allowed, not asked yet, or a browser without the permission.
+ */
+async function blockedFromThisComputer(): Promise<boolean> {
+  if (isLoopbackHost(location.hostname)) return false;
+  for (const name of ["loopback-network", "local-network-access"]) {
+    try {
+      const status = await navigator.permissions.query({ name: name as PermissionName });
+      return status.state === "denied";
+    } catch {
+      // Not a permission this browser knows by that name.
+    }
+  }
+  return false;
+}
+
+/** The browser refused the connection, not the host: the code was never sent and is still good. */
+class BrowserBlocked extends Error {}
+
 /** Connects and starts the IDE on that host. Rejects with why when the host can't be reached. */
 async function connect(link: HostLink): Promise<void> {
   const guarded = sharesAccountOrigin();
@@ -70,6 +92,12 @@ async function connect(link: HostLink): Promise<void> {
   const transport = await connectStream(socketDuplex(made.url), {
     client: "web",
     token: link.token,
+  }).catch(async (err: unknown) => {
+    if (isLoopbackHost(new URL(made.url).hostname) && (await blockedFromThisComputer()))
+      throw new BrowserBlocked(
+        "The browser doesn't let this site reach programs on this computer. Allow it in the site's settings (the icon beside the address: apps on this device, or local network access), then connect again.",
+      );
+    throw err;
   });
   try {
     sessionStorage.setItem(LINK_KEY, JSON.stringify(link));
@@ -179,7 +207,12 @@ async function attempt(link: HostLink): Promise<void> {
   } catch (err) {
     // The code isn't kept after a failed try: a wrong one would be sent again on every reload.
     forgetLink();
-    showForm({ address: link.address }, err instanceof Error ? err.message : String(err));
+    showForm(
+      // Unless the browser stopped it before the host saw anything: it stays in the form (not
+      // in storage), so allowing the site and pressing Connect is enough.
+      err instanceof BrowserBlocked ? link : { address: link.address },
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
