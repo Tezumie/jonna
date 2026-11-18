@@ -46,6 +46,18 @@ export interface FolderStatus {
   error: string | null;
 }
 
+/** One folder as a path picker shows it (`fsIpc.pickerBrowse`). */
+export interface BrowsedFolder {
+  path: string;
+  /** The folder above; null at a root. */
+  parent: string | null;
+  /** The drives (Windows), or `/`. */
+  roots: string[];
+  entries: { name: string; dir: boolean }[];
+  /** The folder holds more than was sent. */
+  truncated: boolean;
+}
+
 export const fsIpc = {
   /** Lets a file from outside the open folder be opened (the user chose it, D190). */
   allowFile: (path: string): Promise<string> => call<string>("workspace_allow_file", { path }),
@@ -100,6 +112,12 @@ export const fsIpc = {
       }),
     ),
   stat: (path: string): Promise<FileStat> => call<FileStat>("fs_stat", { path }),
+  /**
+   * A folder for a path picker drawn by the front end (the web build, where the OS's dialog
+   * would show the wrong computer): not held to the open folder. Left out: the home folder.
+   */
+  pickerBrowse: (path?: string): Promise<BrowsedFolder> =>
+    call<BrowsedFolder>("picker_browse", { path: path ?? null }),
   /**
    * Starts the OS drag of these workspace files out of the window (D200), while the mouse button
    * is down: other apps (a file manager, a mail, a chat) take them.

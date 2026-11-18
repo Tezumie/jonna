@@ -111,9 +111,9 @@ pub fn parse_args(
                 let origin = text.to_string_lossy().trim_end_matches('/').to_string();
                 // An origin is a scheme and a host, nothing after: a path would never match.
                 let ok = ["https://", "http://"].iter().any(|scheme| {
-                    origin
-                        .strip_prefix(scheme)
-                        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+                    origin.strip_prefix(scheme).is_some_and(|rest| {
+                        !rest.is_empty() && !rest.contains(['/', '@', '?', '#'])
+                    })
                 });
                 if !ok {
                     return Err(format!(

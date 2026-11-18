@@ -205,6 +205,7 @@ const COMMANDS: &[&str] = &[
     "encoding_guess",
     "fs_stat",
     "fs_list_dir",
+    "picker_browse",
     "fs_create_file",
     "fs_create_dir",
     "fs_rename",

@@ -25,7 +25,7 @@ The upgrade (`GET`, `Upgrade: websocket`, version 13) is refused with 403 unless
   (repeatable; none given: no page may connect). A request with no `Origin` is not a
   browser's page, and the token decides alone, as on TCP.
 
-The request head must arrive within 5 seconds and be at most 16 KiB. After the upgrade
+The whole request head must arrive within 5 seconds of connecting and be at most 16 KiB. After the upgrade
 everything is as on TCP: `$/hello` with the token first, one client at a time, `--linger`.
 The listening line on stderr is `host: listening on ws://<address>`.
 

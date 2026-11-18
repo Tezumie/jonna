@@ -349,6 +349,21 @@ pub async fn fs_stat(state: State<'_, AppState>, path: String) -> Result<Stat> {
     fs::stat(&crate::ipc::settings::resolve_path(&state, &path)?)
 }
 
+/// A folder for a path picker (D456): its entries by name and kind, the folder above, the
+/// drives. `path` left out: the user's home folder. Not held to the open folder, as the OS's
+/// own dialog isn't: choosing a folder is how one comes to be open. Names only, no contents.
+#[tauri::command]
+pub async fn picker_browse(path: Option<String>) -> Result<fs::Browsed> {
+    let dir = match path.filter(|p| !p.trim().is_empty()) {
+        Some(path) => std::path::PathBuf::from(path),
+        None => crate::remote::home_dir()
+            .ok_or_else(|| Error::Invalid("this computer names no home folder".into()))?,
+    };
+    tauri::async_runtime::spawn_blocking(move || fs::browse(&dir))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+}
+
 #[tauri::command]
 pub async fn fs_list_dir(state: State<'_, AppState>, path: String) -> Result<Vec<DirEntry>> {
     if let Some(p) = remote_path(&state, &path)? {

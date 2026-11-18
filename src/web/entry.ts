@@ -27,17 +27,41 @@ import { socketDuplex } from "./socketDuplex";
  * address of its own has neither limit.
  */
 function sharesAccountOrigin(): boolean {
+  if (isLoopbackHost(location.hostname)) return false;
   try {
-    return product.accountsUrl !== "" && new URL(product.accountsUrl).origin === location.origin;
+    if (product.accountsUrl === "") return false;
+    // The same name, or one under the other: a subdomain is another origin but the same site
+    // (its cookies), so it counts as shared too. Only another domain is an address of its own.
+    const accounts = new URL(product.accountsUrl).hostname.toLowerCase();
+    const here = location.hostname.toLowerCase();
+    return here === accounts || here.endsWith(`.${accounts}`) || accounts.endsWith(`.${here}`);
   } catch {
-    return false;
+    // An address that can't be read is no reason to trust more.
+    return true;
   }
 }
 
-/** Where this tab's link is kept, so a reload reconnects. Gone when the tab closes. */
+/**
+ * Where this tab's link is kept, so a reload reconnects. Gone when the tab closes. Not on an
+ * address shared with the account pages: every page of that address could read it, and the
+ * host would take the code from any of them. There a reload asks for the link again.
+ */
 const LINK_KEY = "web.hostLink";
 
+/** Whether a connection is up: a link that arrives then is not followed (see `start`). */
+let connected = false;
+
+function keepLink(link: HostLink): void {
+  if (sharesAccountOrigin()) return;
+  try {
+    sessionStorage.setItem(LINK_KEY, JSON.stringify(link));
+  } catch {
+    // Storage is off: a reload asks again.
+  }
+}
+
 function savedLink(): Partial<HostLink> {
+  if (sharesAccountOrigin()) return {};
   try {
     const saved = JSON.parse(sessionStorage.getItem(LINK_KEY) ?? "null") as unknown;
     if (saved && typeof saved === "object") {
@@ -99,11 +123,8 @@ async function connect(link: HostLink): Promise<void> {
       );
     throw err;
   });
-  try {
-    sessionStorage.setItem(LINK_KEY, JSON.stringify(link));
-  } catch {
-    // Storage is off: a reload asks again.
-  }
+  keepLink(link);
+  connected = true;
   setTransport(transport);
   setShell(createWebShell());
   transport.onClose(() => showLost());
@@ -156,9 +177,11 @@ function showForm(start: Partial<HostLink>, error?: string): void {
   address.value = start.address ?? "";
   const code = h("input", {
     class: "input",
-    type: "password",
+    // Not a password field: a password manager would offer to keep the code as the site's
+    // password, or fill the site's password in here.
+    type: "text",
     name: "code",
-    autocomplete: "off",
+    autocomplete: "one-time-code",
     spellcheck: "false",
   });
   code.value = start.token ?? "";
@@ -221,7 +244,7 @@ function start(): void {
   // The tab is the browser's: the title bar shows no window buttons (styles/web.css).
   document.documentElement.classList.add("is-web");
   const fromLink = parseHostLink(location.hash);
-  // Out of the address bar and the history at once: the fragment holds the code.
+  // Out of the address bar at once: the fragment holds the code.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   const link = { ...savedLink(), ...fromLink };
   showForm(link);
@@ -229,16 +252,14 @@ function start(): void {
   if (linkMayConnect(link)) void attempt(link);
   // A link opened in a tab that already shows this page changes only the fragment, which
   // loads nothing: take the link and start over with it.
+  // Never under a running session: whoever can change this tab's address could otherwise end
+  // it, with its unsaved text, and point the tab at a host of their choosing.
   window.addEventListener("hashchange", () => {
     const next = parseHostLink(location.hash);
-    if (!linkMayConnect(next)) return;
-    try {
-      sessionStorage.setItem(LINK_KEY, JSON.stringify(next));
-    } catch {
-      // Storage is off: the reload asks.
-    }
-    history.replaceState(null, "", location.pathname + location.search);
-    location.reload();
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    if (connected || !linkMayConnect(next)) return;
+    showForm(next);
+    void attempt(next);
   });
 }
 

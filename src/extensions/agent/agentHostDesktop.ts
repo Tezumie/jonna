@@ -3,6 +3,7 @@
 // scripts. Set once when the extension starts; view code, so nothing a chat's logic reaches
 // imports it.
 
+import { extensionCodeBlocked } from "../../core/extensions/codePolicy";
 import { windowIpc } from "../../core/ipc/system";
 import { toDisposable } from "../../core/lifecycle/index";
 import { confirmAction, showDialog } from "../../ui/Dialog";
@@ -84,6 +85,10 @@ function windowPrompts(services: WorkbenchServices): HostPrompts {
 
 /** The bundled worker scripts, as web workers. */
 const webWorkers: WorkerFactory = (script, name): ScriptWorker => {
+  // A page that runs no extension code (the web build on the accounts' address, D456) runs no
+  // script a model wrote either: a worker has the page's origin.
+  const blocked = extensionCodeBlocked();
+  if (blocked) throw new Error(blocked);
   const worker = new Worker(`./workers/${script}.worker.js`, { name });
   return {
     postMessage: (message) => worker.postMessage(message),

@@ -625,6 +625,7 @@ macro_rules! all_commands {
                 ipc::fs::encoding_guess,
                 ipc::fs::fs_stat,
                 ipc::fs::fs_list_dir,
+                ipc::fs::picker_browse,
                 ipc::fs::fs_create_file,
                 ipc::fs::fs_create_dir,
                 ipc::fs::fs_rename,

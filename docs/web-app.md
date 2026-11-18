@@ -68,9 +68,13 @@ in its environment, never on its command line.
 
 ## What the page does with a link
 
-- The fragment (`#h=<address>&t=<code>`) is read and removed from the address bar and the
-  history at once. It is kept for the tab (`sessionStorage`) so a reload reconnects, and
-  forgotten after a failed try.
+- The fragment (`#h=<address>&t=<code>`) is read and taken out of the address bar at once.
+  The browser's own history may still have recorded the address it was opened with; the code
+  is good only while that host runs, and only from this computer.
+- It is kept for the tab (`sessionStorage`) so a reload reconnects, and forgotten after a
+  failed try. **Not on an address shared with the account pages** (below): there it is held in
+  memory only, and a reload asks for the link again.
+- A link that arrives while a connection is up is not followed.
 - **A link connects by itself only to this computer.** A link is something anyone can send,
   and a host is trusted with the page. A link naming another machine only fills the form.
 - This computer is reached with `ws://` (nothing leaves it); any other host only with
@@ -80,26 +84,38 @@ in its environment, never on its command line.
 
 The deployed page is at a path of the accounts server's own address. That origin's storage
 holds a signed-in session of the account pages, and anything that runs in the page can read
-it. So where the page's origin is the accounts server's (`sharesAccountOrigin` in
-`entry.ts`):
+it. It cuts the other way too: any page of that address can reach what this page stores, and
+the host's origin check lets every one of them in. So where the page's address is the
+accounts server's, or a name under or above it (`sharesAccountOrigin` in `entry.ts`; a
+subdomain is another origin but the same site, with the same cookies):
 
 - it connects **only to this computer**: no other host, typed or linked;
-- it runs **no extension code** (`core/extensions/codePolicy.ts`): an extension's worker has
-  the page's origin. `web-host.mjs` starts the host with `--disable-extensions` to match.
+- it runs **no extension code and no script a model wrote** (`core/extensions/codePolicy.ts`):
+  an extension's worker and the agent's workflow worker have the page's origin. `web-host.mjs`
+  starts the host with `--disable-extensions` to match;
+- it **keeps the code in memory only**.
 
-A copy served from an address of its own (a subdomain, another domain) has neither limit.
-**That is where the page belongs before it is offered to anyone:** hosts on other machines,
-and extensions, both need it.
+A copy served from **another domain** has none of these limits. **That is where the page
+belongs before it is offered to anyone:** hosts on other machines, and extensions, both need
+it. Until then a bug in any page of the account site is a way to this computer while a host
+runs, and the other way round.
+
+The page still writes the first-paint cache of its theme into the address's `localStorage`
+(`settings-first-paint`), as the window does into its own.
 
 ## What the site must send
 
 For a fork that serves the build (`docs/own-services.md`, `webAppPath`). Two policies,
-because a worker follows the policy its own script was served with, not the page's:
+because a worker follows the policy its own script was served with, not the page's. Both are
+in `src/web/policy.json`:
 
-- the page and its files: `scripts/web-host.mjs` `CONTENT_POLICY` (the app window's own
-  policy, plus `connect-src` for a WebSocket to a host, `base-uri 'self'` for the page's
-  `<base>`);
-- `workers/**`: `WORKER_POLICY` (an extension's code is evaluated inside its worker).
+- `page`: the app window's own policy, plus `connect-src` for a WebSocket to a host and
+  `base-uri 'self'` for the page's `<base>`. The build writes it into the page as a meta
+  tag, so it holds where a site forgets the header; the header adds `headerOnly`
+  (`frame-ancestors`). On an address shared with account pages, send it **without `wss:`**:
+  the page connects to this computer only there, and the policy should say the same.
+- `worker`, for `workers/**`: an extension's code is evaluated inside its worker, and
+  nothing may be fetched from it.
 
 And `X-Robots-Tag: noindex, nofollow` and `Referrer-Policy: no-referrer` while it is not
 meant to be found.
@@ -113,9 +129,9 @@ comes back to the same folder, tabs and terminal.
 
 Not there, or not tried:
 
-- **Pickers** ask for a typed path (the files are the host's; the browser's own picker sees
-  the wrong computer). A browsable picker needs a command that lists folders outside the
-  open one.
+- **Pickers** are the page's own (`src/web/shell.ts`, the `picker_browse` command): the
+  host's folders to walk through, its drives, and a field for a typed or pasted path. Plain:
+  no search, no new folder, one path at a time.
 - **The browser pane, screenshots, native menus, auxiliary windows, the updater, drag and
   drop from the OS, dictation**: desktop-only commands. Their buttons are still drawn and
   answer "unknown command".

@@ -159,6 +159,7 @@
     "allow-encoding-guess",
     "allow-fs-stat",
     "allow-fs-list-dir",
+    "allow-picker-browse",
     "allow-fs-create-file",
     "allow-fs-create-dir",
     "allow-fs-rename",

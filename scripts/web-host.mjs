@@ -64,33 +64,20 @@ const TYPES = {
 /**
  * The content policy the page is served with (docs/web-app.md, "What the site must send"): the
  * app window's own, with the one thing a page here needs added, a WebSocket to a host. The site
- * that serves the build sends the same header; this copy is for trying a build locally.
+ * that serves the build sends the same header; this copy is for trying a build locally. The
+ * text is src/web/policy.json's, which the build also writes into the page itself.
  */
-export const CONTENT_POLICY = [
-  "default-src 'self'",
-  "script-src 'self' 'wasm-unsafe-eval'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:",
-  "font-src 'self' data:",
-  "connect-src 'self' data: ws://127.0.0.1:* ws://localhost:* wss:",
-  "worker-src 'self'",
-  "frame-src http://127.0.0.1:* http://localhost:*",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'none'",
-  "frame-ancestors 'none'",
-].join("; ");
+const policy = JSON.parse(readFileSync(join(root, "src/web/policy.json"), "utf8"));
+export const CONTENT_POLICY = [...policy.page, ...policy.headerOnly].join("; ");
 
 /**
  * The policy for the worker scripts (`workers/`). A worker follows the policy its own script
  * was served with, not the page's. In the app's window they are served with none; here they get
  * what they need and no more: an extension's code is evaluated inside its worker (which has
  * taken its own network and loaders away, src/workers/lockdown.ts), so `unsafe-eval` there,
- * and nothing may be fetched from anywhere but the site.
+ * and nothing may be fetched from anywhere.
  */
-export const WORKER_POLICY =
-  "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'";
+export const WORKER_POLICY = policy.worker;
 
 /** Serves dist-web/ as a site would serve it. Loopback only. */
 function serveBuild(port) {
@@ -100,7 +87,13 @@ function serveBuild(port) {
     process.exit(2);
   }
   const server = createServer((request, response) => {
-    const path = decodeURIComponent(new URL(request.url ?? "/", "http://x").pathname);
+    let path;
+    try {
+      path = decodeURIComponent(new URL(request.url ?? "/", "http://x").pathname);
+    } catch {
+      response.writeHead(400).end();
+      return;
+    }
     let file = normalize(join(folder, path));
     if (file !== folder && !file.startsWith(folder + sep)) {
       response.writeHead(403).end();

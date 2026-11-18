@@ -280,7 +280,14 @@ const htmlPlugin = {
     build.onEnd(async (result) => {
       if (result.errors.length > 0) return;
       let html = web
-        ? (await readFile(join(root, "src/web/index.html"), "utf8")).replace("__BASE__", webBase)
+        ? (await readFile(join(root, "src/web/index.html"), "utf8"))
+            .replace("__BASE__", webBase)
+            // The page carries its own policy, so it holds even where a site forgets the
+            // header (docs/web-app.md). The header can say more (frame-ancestors) or less.
+            .replace(
+              "__POLICY__",
+              JSON.parse(await readFile(join(root, "src/web/policy.json"), "utf8")).page.join("; "),
+            )
         : await readFile(join(root, "src/index.html"), "utf8");
       if (serve) {
         html = html.replace(

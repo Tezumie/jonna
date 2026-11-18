@@ -1,0 +1,18 @@
+{
+  "page": [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' data: ws://127.0.0.1:* ws://localhost:* wss:",
+    "worker-src 'self'",
+    "frame-src http://127.0.0.1:* http://localhost:*",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'"
+  ],
+  "headerOnly": ["frame-ancestors 'none'"],
+  "worker": "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'none'"
+}

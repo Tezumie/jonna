@@ -16397,9 +16397,19 @@ design, what works and what each kind of host still needs.
   page (plus a WebSocket to a host), and one for `workers/` that lets an extension's worker
   evaluate its code. The site's repository holds both in its header rules.
 - **`webAppPath` in product.json** (a fork's own page, or none; `docs/own-services.md`).
+- **A picker of the page's own** (`picker_browse`: a folder's entries by name, the folder
+  above, the drives; not held to the open folder, as the OS's dialog isn't). The browser's
+  picker would show the wrong computer.
+- **A review by a reader that hadn't written it** found no way past the three checks, and
+  twelve things to tighten. Done: the code is held in memory only on a shared address (any
+  page there could read the tab's storage, and the host's origin check lets them all in);
+  the handshake's five seconds are for the whole head (a byte now and then held the host's
+  one place); the page carries its policy itself; the workers may fetch nothing; a workflow's
+  script doesn't run where extension code doesn't; a link is not followed under a running
+  session; the code's field is not a password field; a subdomain counts as the same address.
+  The policies are one file (`src/web/policy.json`).
 - **Left, in the order they matter:** the host program in the installers and a command in the
-  app that starts it; an address of its own for the page; a picker that browses the host's
-  folders (pickers ask for a typed path); forwarded ports (previews work only on the same
+  app that starts it; a domain of its own for the page; forwarded ports (previews work only on the same
   computer); device keys in place of the code, and a relay, for hosts elsewhere; more than
   one tab; the agent on the host, so work goes on with the tab closed. Desktop-only commands
   still show their buttons.

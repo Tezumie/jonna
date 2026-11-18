@@ -19,7 +19,7 @@
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 
@@ -173,11 +173,21 @@ pub fn refusal(head: &Head, allowed: &[String]) -> Option<&'static str> {
 pub fn accept(stream: TcpStream, allowed: &[String]) -> io::Result<Carrier> {
     let _ = stream.set_nodelay(true);
     let mut input = stream.try_clone()?;
-    input.set_read_timeout(Some(HEAD_WITHIN))?;
+    // For the whole head, not for each read: a client that sends a byte now and then would
+    // otherwise hold the host's one place for hours.
+    let deadline = Instant::now() + HEAD_WITHIN;
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     // One byte at a time: nothing behind the head may be taken (the first message follows it).
     while !head.ends_with(b"\r\n\r\n") {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "request head too slow",
+            ));
+        }
+        input.set_read_timeout(Some(left))?;
         if head.len() >= MAX_HEAD {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

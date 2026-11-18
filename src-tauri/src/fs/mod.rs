@@ -755,6 +755,85 @@ pub fn list_dir(dir: &Path) -> Result<Vec<DirEntry>> {
     Ok(entries)
 }
 
+/// One folder as a path picker shows it (D456): a front end that has no OS dialog for the
+/// machine the files are on (a page in a browser, with the files on the host) draws its own.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Browsed {
+    /// The folder listed.
+    pub path: String,
+    /// The folder above it; none at a root.
+    pub parent: Option<String>,
+    /// Where else a listing can start: the drives on Windows, `/` elsewhere.
+    pub roots: Vec<String>,
+    pub entries: Vec<BrowseEntry>,
+    /// The folder holds more than was sent.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BrowseEntry {
+    pub name: String,
+    pub dir: bool,
+}
+
+/// The most entries of one folder a picker is sent.
+const BROWSE_LIMIT: usize = 2000;
+
+/// The drives that exist (Windows), or the one root.
+fn browse_roots() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        // Asked of the system, not probed: touching a drive with nothing in it can wait long.
+        let drives = unsafe { windows::Win32::Storage::FileSystem::GetLogicalDrives() };
+        (0u8..26)
+            .filter(|bit| drives & (1 << bit) != 0)
+            .map(|bit| format!("{}:\\", char::from(b'A' + bit)))
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        vec!["/".to_string()]
+    }
+}
+
+/// A folder's entries by name and kind, folders first. Unlike `list_dir` this isn't about a
+/// project: nothing is hidden and no ignore file is read. `dir` must be a whole path.
+pub fn browse(dir: &Path) -> Result<Browsed> {
+    if !dir.is_absolute() {
+        return Err(Error::Invalid(format!(
+            "not a whole path: {}",
+            dir.display()
+        )));
+    }
+    if !dir.is_dir() {
+        return Err(Error::Invalid(format!("not a folder: {}", dir.display())));
+    }
+    let mut entries = Vec::new();
+    for item in fs::read_dir(dir)? {
+        let Ok(item) = item else { continue };
+        entries.push(BrowseEntry {
+            name: item.file_name().to_string_lossy().into_owned(),
+            // Follows links: a link to a folder can be opened as one.
+            dir: item.path().is_dir(),
+        });
+    }
+    entries.sort_by(|a, b| match (a.dir, b.dir) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        _ => natural_cmp(&a.name, &b.name),
+    });
+    let truncated = entries.len() > BROWSE_LIMIT;
+    entries.truncate(BROWSE_LIMIT);
+    Ok(Browsed {
+        path: dir.to_string_lossy().into_owned(),
+        parent: dir.parent().map(|p| p.to_string_lossy().into_owned()),
+        roots: browse_roots(),
+        entries,
+        truncated,
+    })
+}
+
 pub fn stat(path: &Path) -> Result<Stat> {
     let meta = fs::metadata(path)?;
     let mtime_ms = meta

@@ -437,3 +437,33 @@ fn deleting_a_junction_removes_the_link_alone() -> Result<()> {
     fs::remove_dir_all(&root)?;
     Ok(())
 }
+
+/// D456: a folder as a path picker shows it. Folders first, nothing hidden, the folder above.
+#[test]
+fn browse_lists_a_folder_for_a_picker() -> Result<()> {
+    let dir = std::env::temp_dir().join(format!("ide-fs-browse-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("zeta"))?;
+    fs::create_dir_all(dir.join(".git"))?;
+    fs::write(dir.join("alpha.txt"), "x")?;
+    let got = browse(&dir)?;
+    let names: Vec<(&str, bool)> = got
+        .entries
+        .iter()
+        .map(|e| (e.name.as_str(), e.dir))
+        .collect();
+    assert_eq!(
+        names,
+        [(".git", true), ("zeta", true), ("alpha.txt", false)]
+    );
+    assert_eq!(
+        got.parent,
+        dir.parent().map(|p| p.to_string_lossy().into_owned())
+    );
+    assert!(!got.roots.is_empty());
+    assert!(!got.truncated);
+    assert!(browse(&dir.join("alpha.txt")).is_err());
+    assert!(browse(Path::new("relative")).is_err());
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
