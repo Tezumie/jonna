@@ -12,7 +12,8 @@
 //!   the order they came (the results' encrypted content must return unchanged).
 //! - No `temperature`: current models reject non-default sampling parameters.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Map, Value};
 
@@ -158,8 +159,13 @@ fn server_block(kind: &str) -> bool {
 /// An assistant message goes back as it came (D451): its thinking and text blocks in their order
 /// (`thinking_blocks` holds both, when the reply was read by this parser), then its tool calls.
 /// With `hosted` (the provider's own web search is on, D450) its searches and their results too;
-/// without it those are left out.
-pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
+/// without it those are left out. With `declared` (the deferred tools the request declares,
+/// D452) a tool search's result is the references that load them, not their text.
+pub fn convert(
+    messages: &[Message],
+    hosted: bool,
+    declared: Option<&HashSet<&str>>,
+) -> (String, Vec<Value>) {
     let mut system = Vec::new();
     let mut out: Vec<Value> = Vec::new();
     for m in messages {
@@ -215,8 +221,22 @@ pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
                 } else {
                     m.content.clone()
                 };
-                let mut content = vec![json!({ "type": "text", "text": text })];
-                content.extend(m.images.iter().map(|i| image_block(i)));
+                let refs: Vec<Value> = declared
+                    .map(|names| {
+                        m.tool_refs
+                            .iter()
+                            .filter(|n| names.contains(n.as_str()))
+                            .map(|n| json!({ "type": "tool_reference", "tool_name": n }))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let content = if refs.is_empty() {
+                    let mut content = vec![json!({ "type": "text", "text": text })];
+                    content.extend(m.images.iter().map(|i| image_block(i)));
+                    content
+                } else {
+                    refs
+                };
                 push(
                     &mut out,
                     "user",
@@ -244,8 +264,41 @@ pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
     (system.join("\n\n"), out)
 }
 
-pub fn request_body(req: &ChatRequest) -> Value {
-    let (system, messages) = convert(&req.messages, req.hosted_search.is_some());
+/// Our own tool that loads deferred tools (the front end's `tool_search`).
+const TOOL_SEARCH_NAME: &str = "tool_search";
+/// The beta for clearing old tool results on the provider's side.
+const TRIM_BETA: &str = "context-management-2025-06-27";
+/// Tool results the provider keeps whole when it clears (as many as the front end keeps).
+const TRIM_KEEP: u64 = 10;
+
+/// The deferred tools a conversation has loaded: the ones a tool search gave, and the ones it
+/// called by name.
+fn loaded_tools(messages: &[Message]) -> HashSet<&str> {
+    let mut names = HashSet::new();
+    for m in messages {
+        names.extend(m.tool_refs.iter().map(String::as_str));
+        names.extend(m.tool_calls.iter().map(|c| c.name.as_str()));
+    }
+    names
+}
+
+fn tool_json(t: &super::ToolSpec) -> Value {
+    json!({ "name": t.name, "description": t.description, "input_schema": t.parameters })
+}
+
+/// The request. Without `extras` it is as the plain Messages API takes it: deferred tools are
+/// sent once loaded.
+/// With `extras` (D452): every deferred tool is declared from the first request, marked
+/// `defer_loading`, so loading one changes nothing already sent (a tool search's result refers
+/// to it); and the provider is asked to clear old tool results itself (`trim_at`).
+pub fn request_body(req: &ChatRequest, extras: bool) -> Value {
+    let declared: Option<HashSet<&str>> = (extras && !req.deferred_tools.is_empty())
+        .then(|| req.deferred_tools.iter().map(|t| t.name.as_str()).collect());
+    let (system, messages) = convert(
+        &req.messages,
+        req.hosted_search.is_some(),
+        declared.as_ref(),
+    );
     let ttl = req.cache_ttl.as_deref();
     let mut body = json!({
         "model": req.model,
@@ -270,8 +323,23 @@ pub fn request_body(req: &ChatRequest) -> Value {
         .iter()
         // The provider's search has this name too (D450): one of them.
         .filter(|t| req.hosted_search.is_none() || t.name != HOSTED_SEARCH_NAME)
-        .map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.parameters }))
+        .map(tool_json)
         .collect();
+    if declared.is_some() {
+        tools.extend(req.deferred_tools.iter().map(|t| {
+            let mut tool = tool_json(t);
+            tool["defer_loading"] = json!(true);
+            tool
+        }));
+    } else {
+        let loaded = loaded_tools(&req.messages);
+        tools.extend(
+            req.deferred_tools
+                .iter()
+                .filter(|t| loaded.contains(t.name.as_str()))
+                .map(tool_json),
+        );
+    }
     if let Some(max_uses) = req.hosted_search {
         // The basic version: every model has it, and its results come as plain blocks (the later
         // ones run the search from code execution, with blocks of their own).
@@ -290,7 +358,33 @@ pub fn request_body(req: &ChatRequest) -> Value {
     if let Some(effort) = req.effort.as_deref().filter(|e| !e.is_empty()) {
         body["output_config"] = json!({ "effort": effort });
     }
+    if let Some(at) = req.trim_at.filter(|_| extras) {
+        let mut edit = json!({
+            "type": "clear_tool_uses_20250919",
+            "trigger": { "type": "input_tokens", "value": at },
+            "keep": { "type": "tool_uses", "value": TRIM_KEEP },
+            // Each clearing rewrites the cached prompt: only when it frees something worth it.
+            "clear_at_least": { "type": "input_tokens", "value": (at / 20).max(2000) },
+        });
+        // What a tool search loaded stays loaded.
+        if req.tools.iter().any(|t| t.name == TOOL_SEARCH_NAME) {
+            edit["exclude_tools"] = json!([TOOL_SEARCH_NAME]);
+        }
+        body["context_management"] = json!({ "edits": [edit] });
+    }
     body
+}
+
+/// Whether the request has something the extras change (D452).
+fn wants_extras(req: &ChatRequest) -> bool {
+    !req.deferred_tools.is_empty() || req.trim_at.is_some()
+}
+
+/// Models whose endpoint refused the extras and took the plain request: not asked again while
+/// the app runs, so a chat's tool list doesn't change shape from one request to the next.
+fn plain_only() -> &'static Mutex<HashSet<String>> {
+    static PLAIN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    PLAIN.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 /// What a request does about thinking blocks its history may have outdated (D451).
@@ -317,9 +411,12 @@ fn official(base: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The request's body for `replay`.
-pub fn body_for(req: &ChatRequest, replay: Replay) -> Value {
-    let mut body = request_body(req);
+/// How the API says a request is over the model's context (no other shape of it would fit).
+const TOO_LONG: &str = "prompt is too long";
+
+/// The request's body for `replay`, with or without the extras (`request_body`).
+pub fn body_for(req: &ChatRequest, replay: Replay, extras: bool) -> Value {
+    let mut body = request_body(req, extras);
     match replay {
         Replay::AsIs => {}
         // Only beside the thinking setting the request already sends: adding one would turn
@@ -616,38 +713,66 @@ pub async fn chat<F: FnMut(ChatEvent)>(
     // changed (older tool results shortened, turns dropped, a tool added), the API refuses the
     // request. Asked to drop what no longer fits where it can be asked; and wherever it still
     // refuses, the request goes once more with no thinking blocks at all.
-    let mut replay = if official(&req.provider.base_url) {
+    let official = official(&req.provider.base_url);
+    let mut replay = if official {
         Replay::DropStale
     } else {
         Replay::AsIs
     };
+    // Deferred tools declared once and old tool results cleared by the API (D452): on its own
+    // API, and given up for the plain request if it refuses them.
+    let mut extras = official
+        && wants_extras(req)
+        && !plain_only()
+            .lock()
+            .map(|p| p.contains(&req.model))
+            .unwrap_or(true);
+    let asked_extras = extras;
     let response = loop {
-        let body = body_for(req, replay);
+        let body = body_for(req, replay, extras);
         let mut builder = with_key(
             client.post(api(&req.provider.base_url, "messages")),
             key.clone(),
         );
+        let mut betas: Vec<&str> = Vec::new();
         if body["thinking"].get("block_binding").is_some() {
-            builder = builder.header("anthropic-beta", BINDING_BETA);
+            betas.push(BINDING_BETA);
+        }
+        if body.get("context_management").is_some() {
+            betas.push(TRIM_BETA);
+        }
+        // One header: some endpoints read only the first.
+        if !betas.is_empty() {
+            builder = builder.header("anthropic-beta", betas.join(","));
         }
         let response = builder.json(&body).send().await.map_err(http_error)?;
         super::note_limits(seen, &response);
         if response.status().is_success() {
+            if asked_extras && !extras {
+                if let Ok(mut plain) = plain_only().lock() {
+                    plain.insert(req.model.clone());
+                }
+            }
             break response;
         }
         let refused = response.status() == reqwest::StatusCode::BAD_REQUEST;
         let err = error_body(response).await;
-        // A refusal while asking to drop may be the asking itself (an endpoint without it).
-        let again = refused
-            && match replay {
-                Replay::Strip => false,
-                Replay::DropStale => true,
-                Replay::AsIs => err.to_string().contains(STALE_THINKING),
-            };
-        if !again {
+        let text = err.to_string();
+        if !refused || text.contains(TOO_LONG) {
             return Err(err);
         }
-        replay = Replay::Strip;
+        let stale = text.contains(STALE_THINKING);
+        if stale && replay != Replay::Strip {
+            replay = Replay::Strip;
+        } else if extras && !stale {
+            // The refusal may be of the extras themselves (a model or an account without them).
+            extras = false;
+        } else if replay == Replay::DropStale {
+            // Or of the asking to drop (an endpoint without it).
+            replay = Replay::Strip;
+        } else {
+            return Err(err);
+        }
     };
     let mut stream = response.bytes_stream();
     let mut lines = LineBuffer::default();

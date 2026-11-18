@@ -43,7 +43,7 @@ import { chatWorkspaceOf } from "./chatWorkspace";
 import { chatWorktreeNote } from "./chatWorktrees";
 import { ideState, systemPrompt } from "./context";
 import { customModes } from "./customModes";
-import { deferredNote, loadedTools, notLoaded } from "./deferredTools";
+import { declaredTools, deferredNote, loadedTools, notLoaded } from "./deferredTools";
 import {
   contextKind,
   continueGroup,
@@ -831,6 +831,8 @@ From the user's hooks: ${words}`,
           }
         : out;
     };
+    /** Whether the provider takes deferred tool definitions and clears old results (D452). */
+    const declares = () => choice.provider.kind === "anthropic";
     const deps: LoopDeps = {
       stableMessages: true,
       // A subagent's own conversation has one author.
@@ -883,7 +885,8 @@ From the user's hooks: ${words}`,
         return count > 0 || session.items.length !== before;
       },
       // The deferred tools' names (D319), after the kept system prompt.
-      system: () => deferredNote(session.splitTools()),
+      system: () => deferredNote(session.splitTools(), declares()),
+      serverTrims: declares,
       tools: () => {
         turnTools = withLoadedTools(
           turnTools,
@@ -941,7 +944,14 @@ From the user's hooks: ${words}`,
                 provider: choice.provider,
                 model: choice.model,
                 messages,
-                tools: request.tools,
+                // Anthropic: the tools that load on demand are declared once, apart (D452), and
+                // it clears old tool results itself past the budget.
+                ...(declares()
+                  ? {
+                      ...declaredTools(session.splitTools(), request.tools ?? []),
+                      trimAt: Math.round(budgetChars / 4),
+                    }
+                  : { tools: request.tools }),
                 contextLength,
                 // Read per request: a skill loaded mid-turn may have set its effort (D229).
                 ...requestOptions(session, choice, details),

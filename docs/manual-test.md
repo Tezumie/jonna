@@ -4477,3 +4477,13 @@ Two accounts in one team, sync on for both.
 3. A chat from before the update that failed with that error: Retry, and it answers.
 4. `/compact` in a long chat, then a message: answered.
 5. A browser task with six or more screenshots: it carries on after each.
+
+## D452 — Tools that load on demand, on an Anthropic model
+1. With an MCP server of many tools connected (or `agent.deferTools` "always"), on an
+   Anthropic model: ask for something that needs one of its tools. The agent loads it ("Loaded
+   tools …") and calls it; the next message is answered, and the context meter's tooltip still
+   shows the cache being read.
+2. Ask it to list this folder's chats (an on-demand tool of the IDE's own): it runs.
+3. The same chat on another provider's model: the tool loads and runs as before.
+4. With `agent.autoCompact` off, a long chat of many large file reads on an Anthropic model
+   goes on past the context meter's limit without "prompt is too long".

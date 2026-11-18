@@ -24,6 +24,7 @@ import {
   toolSearchResult,
   toolSearchSpec,
 } from "../../core/agent/toolSearch";
+import type { ToolSpec } from "../../core/ipc/agent";
 import type { WorkbenchServices } from "../../workbench/services";
 import type { AgentTool } from "./tools";
 
@@ -68,6 +69,8 @@ export interface ToolSplit {
   tools: AgentTool[];
   /** Deferred and not loaded yet: named in the note only. */
   deferred: AgentTool[];
+  /** Every tool that loads on demand, loaded or not (D452); empty when nothing is deferred. */
+  candidates: AgentTool[];
 }
 
 function toolSearchTool(catalog: readonly AgentTool[]): AgentTool {
@@ -114,13 +117,13 @@ export function splitDeferred(
     services.settings.peek<unknown>("agent.deferTools"),
     services.settings.peek<unknown>("agent.mcp.toolSchemas"),
   );
-  if (mode === "never") return { tools, deferred: [] };
+  if (mode === "never") return { tools, deferred: [], candidates: [] };
   const mcp = tools.filter((t) => t.mcp);
   const deferMcp = shouldDefer(mode, mcp.length, JSON.stringify(mcp.map((t) => t.spec)).length);
   const candidates = tools.filter(
     (t) => (t.mcp && deferMcp) || (!t.mcp && ON_DEMAND_TOOLS.has(t.spec.name)),
   );
-  if (!candidates.length) return { tools, deferred: [] };
+  if (!candidates.length) return { tools, deferred: [], candidates: [] };
   const loaded = loadedTools(items);
   const search = toolSearchTool(candidates);
   const sent: AgentTool[] = [];
@@ -131,12 +134,36 @@ export function splitDeferred(
     if (candidates.includes(t) && !loaded.has(t.spec.name)) deferred.push(t);
     else sent.push(t);
   }
-  return { tools: sent, deferred };
+  return { tools: sent, deferred, candidates };
 }
 
-/** The note that names the deferred tools (empty: none). */
-export function deferredNote(split: ToolSplit): string {
-  return deferredToolsNote(split.deferred.map((t) => t.spec));
+/**
+ * The note that names the deferred tools (empty: none). With `declared` (D452: the provider is
+ * given every deferred tool's definition up front) it names them all and never changes.
+ */
+export function deferredNote(split: ToolSplit, declared = false): string {
+  return declared
+    ? deferredToolsNote(
+        split.candidates.map((t) => t.spec),
+        true,
+      )
+    : deferredToolsNote(split.deferred.map((t) => t.spec));
+}
+
+/**
+ * A request for a provider that takes deferred definitions (D452): `tools` without the ones that
+ * load on demand, and those apart, all of them. Loading one then changes nothing already sent.
+ */
+export function declaredTools(
+  split: ToolSplit,
+  tools: readonly ToolSpec[],
+): { tools: ToolSpec[]; deferredTools?: ToolSpec[] } {
+  if (!split.candidates.length) return { tools: [...tools] };
+  const names = new Set(split.candidates.map((t) => t.spec.name));
+  return {
+    tools: tools.filter((t) => !names.has(t.name)),
+    deferredTools: split.candidates.map((t) => t.spec),
+  };
 }
 
 /** For ide://agent/session: the deferred tools and the ones the chat loaded (nothing: none). */

@@ -285,3 +285,32 @@ test("D451: a relabelled reply keeps its text out of its blocks; screenshots lea
     [1, 2, 2, 2],
   );
 });
+
+test("D452: a tool search's result names what it loaded; whole results while the provider trims", () => {
+  const big = "x".repeat(4000);
+  const items: Item[] = [
+    user("u1", "go"),
+    toolItem(
+      "t0",
+      "c0",
+      "tool_search",
+      { query: "select:mcp__a__one" },
+      '<functions>\n<function>{"name":"mcp__a__one","description":"d","parameters":{}}</function>\n</functions>',
+    ),
+    ...Array.from({ length: 30 }, (_, i) =>
+      toolItem(`t${i + 1}`, `c${i + 1}`, "read_file", {}, big),
+    ),
+  ];
+  const options = { textProtocol: false, stable: true } as const;
+  const tools = (budgetChars: number, serverTrims: boolean) =>
+    toMessages(items, { ...options, budgetChars, serverTrims }).filter((m) => m.role === "tool");
+  const whole = tools(1_000_000, false);
+  assert.deepEqual(whole[0]?.toolRefs, ["mcp__a__one"]);
+  assert.equal(whole[1]?.toolRefs, undefined);
+  const raw = whole.reduce((n, m) => n + m.content.length, 0);
+  // Over the budget: shortened here, or sent whole when the provider clears them itself…
+  assert.ok(tools(raw - 10_000, false).some((m) => m.content.length < big.length));
+  assert.ok(tools(raw - 10_000, true).every((m, i) => i === 0 || m.content === big));
+  // …but not far past it.
+  assert.ok(tools(Math.floor(raw / 2), true).some((m) => m.content.length < big.length));
+});

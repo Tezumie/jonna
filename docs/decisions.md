@@ -46,6 +46,7 @@ unless noted.
 | · wrap_up ticks off the whole plan | D449 |
 | · Web search without a key of its own: the model provider's | D450 |
 | · Thinking blocks are bound to their conversation: an append-only history, and a way out when it isn't | D451 |
+| · Tools that load on demand are declared once, and old tool results are cleared by the provider (Anthropic) | D452 |
 
 ## Seeded from PLAN §19
 
@@ -16055,3 +16056,45 @@ that can't be avoided:
 
 **Left:** tools declared once per chat (the API's deferred loading and its tool-change
 messages); the API's own trimming of old tool results in place of ours when over the budget.
+
+## D452 — Tools that load on demand are declared once; old tool results are cleared by the provider
+
+The two things D451 left. Both are for Anthropic's own API, and both are given up for the plain
+request when the API refuses them.
+
+**Declared once.** A tool that loads on demand (D319, D390) joined the request's tool list when
+it was loaded, and left the note after the system prompt: two changes to what was already sent,
+so the prompt cache started over and the model's kept reasoning was dropped (D451). To a
+provider of kind `anthropic` the request now carries every such tool apart
+(`ChatRequest.deferredTools`, loaded or not) and the note names them all, always. To the
+provider's own API they are declared from the first request with `defer_loading: true`, and
+`tool_search`'s result goes as the references that load them (`tool_reference`, the API's
+form for a search tool of one's own; `ChatMessage.toolRefs`, read from the result by
+`loadedToolNames`). Loading a tool then changes nothing already sent. An on-demand tool of the
+IDE's own that is called by name without a search still just runs. To another endpoint that
+speaks the Messages API, Rust sends the loaded ones as ordinary tools, as before.
+
+**Cleared by the provider.** Over the budget with compaction off or failed, old tool results
+were shortened here, which rewrites the past. The request now asks the API to clear them itself
+(`context_management`, `clear_tool_uses_20250919`, beta `context-management-2025-06-27`)
+once the prompt passes the conversation's budget, keeping the ten newest and never a tool
+search's. What the API clears on its side doesn't outdate reasoning. So the history is sent
+whole up to 1.3 times the budget (`SERVER_TRIM_ROOM`); beyond that, and for the rest of a turn
+after the provider refused a request as too big, it is shortened here as before. Compaction
+still comes first when it is on, so this is the last resort it always was.
+
+**When the API refuses** (a model or an account without either): a 400 that isn't about
+reasoning and isn't "prompt is too long" is asked again as the plain request, and that model
+gets the plain request for as long as the app runs, so a chat's tool list doesn't change shape
+between requests. The order of what is given up: reasoning that no longer fits, then these
+extras, then the asking to drop.
+
+**Decided, not built:** freezing a chat's tool descriptions and system prompt across an update
+or a restart, and tool changes by message when a mode or an MCP server changes them
+(`inline-tools-2026-09-15`). Each is one drop of reasoning when it happens, which the API's
+own documentation calls cheap when it isn't every turn; replaying old tool descriptions against
+new code would be worse than the drop.
+
+**Tested:** the request shapes (`ai/tests.rs` `anthropic_declares_deferred_tools`), what a
+tool search's result names and when results are sent whole (`conversation.test.ts`), the note
+(`toolSearch.test.ts`). **Not verified** against the live API (it needs the owner's key).

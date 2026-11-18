@@ -147,3 +147,9 @@ test("the note and the error say how to load", () => {
   assert.equal(shortDescription("One. Two."), "One.");
   assert.equal(shortDescription("x".repeat(100), 10).length, 10);
 });
+
+test("D452: the note for a provider that is given every definition names them all, the same way", () => {
+  const note = deferredToolsNote(TOOLS, true);
+  for (const t of TOOLS) assert.ok(note.includes(`- ${t.name}:`));
+  assert.ok(note.includes("stays loaded"));
+});

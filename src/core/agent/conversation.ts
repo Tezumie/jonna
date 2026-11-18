@@ -8,6 +8,7 @@ import { type ChatImage, imageNote } from "./chatImages";
 import { MAIN_MEMBER } from "./groupChat";
 import { toolCallText } from "./textProtocol";
 import { TITLE_REQUEST } from "./title";
+import { loadedToolNames, TOOL_SEARCH } from "./toolSearch";
 
 /**
  * The reply without an echo of the `<ide_state>` block the IDE puts on each user message (small
@@ -270,6 +271,12 @@ export function imagesKept(count: number, stable: boolean): number {
   return count - gone;
 }
 
+/**
+ * How far past the budget a history is still sent whole when the provider clears old tool
+ * results itself (D452). Beyond it the request could be refused before anything is cleared.
+ */
+export const SERVER_TRIM_ROOM = 1.3;
+
 /** Tools that are safe to call again to see shortened output (no side effects). */
 const REREADABLE = new Set([
   "read_file",
@@ -333,6 +340,11 @@ export function toMessages(
      * results are shortened only when the budget needs it (compaction usually comes first).
      */
     stable?: boolean;
+    /**
+     * The provider clears old tool results itself past the budget (D452): they're sent whole up
+     * to `SERVER_TRIM_ROOM` times the budget, and shortened here only beyond that.
+     */
+    serverTrims?: boolean;
     /** In a group chat: label other members' replies (see `SpeakerLabels`). Absent: no labels. */
     speakerLabels?: SpeakerLabels;
   },
@@ -461,7 +473,16 @@ ${imageNote(it.media)}`
             content: `<tool_result name="${it.name}">\n${content}\n</tool_result>`,
           });
         } else {
-          results.push({ role: "tool", content, toolCallId: it.callId, toolName: it.name });
+          // What a tool search loaded, for a provider that takes references (D452). Read from
+          // the whole result: a shortened one still loads what it loaded.
+          const refs = it.name === TOOL_SEARCH ? [...loadedToolNames([it])] : [];
+          results.push({
+            role: "tool",
+            content,
+            toolCallId: it.callId,
+            toolName: it.name,
+            ...(refs.length && { toolRefs: refs }),
+          });
         }
       }
     });
@@ -487,6 +508,10 @@ ${imageNote(it.media)}`
   };
   const size = (ms: ChatMessage[]) =>
     ms.reduce((n, m) => n + m.content.length + JSON.stringify(m.toolCalls ?? "").length, 0);
+  if (options.stable && options.serverTrims) {
+    const whole = build(0, 0, 0);
+    if (size(whole) <= options.budgetChars * SERVER_TRIM_ROOM) return whole;
+  }
   const window = maskBoundary(tools);
   const attempts: [number, number][] = options.stable
     ? [

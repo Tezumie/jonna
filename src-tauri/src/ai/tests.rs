@@ -21,6 +21,7 @@ fn request(kind: ProviderKind) -> ChatRequest {
                 tool_name: None,
                 images: vec![],
                 thinking_blocks: vec![],
+                tool_refs: vec![],
             },
             Message {
                 role: "assistant".into(),
@@ -34,6 +35,7 @@ fn request(kind: ProviderKind) -> ChatRequest {
                 tool_name: None,
                 images: vec![],
                 thinking_blocks: vec![],
+                tool_refs: vec![],
             },
             Message {
                 role: "tool".into(),
@@ -43,6 +45,7 @@ fn request(kind: ProviderKind) -> ChatRequest {
                 tool_name: Some("read_file".into()),
                 images: vec![],
                 thinking_blocks: vec![],
+                tool_refs: vec![],
             },
         ],
         tools: vec![ToolSpec {
@@ -60,6 +63,8 @@ fn request(kind: ProviderKind) -> ChatRequest {
         no_cache: false,
         modalities: None,
         hosted_search: None,
+        deferred_tools: vec![],
+        trim_at: None,
     }
 }
 
@@ -266,6 +271,7 @@ fn anthropic_request_has_cache_breakpoints_and_alternating_turns() {
             tool_name: None,
             images: vec![],
             thinking_blocks: vec![],
+            tool_refs: vec![],
         },
     );
     req.messages[2].thinking_blocks =
@@ -279,10 +285,11 @@ fn anthropic_request_has_cache_breakpoints_and_alternating_turns() {
         tool_name: None,
         images: vec!["iVBORw0".into()],
         thinking_blocks: vec![],
+        tool_refs: vec![],
     });
     req.temperature = Some(0.2);
     req.cache_ttl = Some("1h".into());
-    let body = super::anthropic::request_body(&req);
+    let body = super::anthropic::request_body(&req, false);
     assert_eq!(body["system"][0]["text"], "You are a coding agent.");
     assert_eq!(body["system"][0]["cache_control"]["ttl"], "1h");
     assert_eq!(body["cache_control"]["type"], "ephemeral");
@@ -477,12 +484,13 @@ fn anthropic_drops_an_assistant_message_that_is_only_thinking() {
         tool_name: None,
         images: vec![],
         thinking_blocks: vec![],
+        tool_refs: vec![],
     };
     let mut thinking = msg("assistant", "");
     thinking.thinking_blocks =
         vec![json!({ "type": "thinking", "thinking": "hmm", "signature": "s" })];
     let messages = vec![msg("user", "go"), thinking, msg("user", "Continue.")];
-    let (_, out) = super::anthropic::convert(&messages, false);
+    let (_, out) = super::anthropic::convert(&messages, false, None);
     // No assistant turn ending in thinking: the two user messages are one turn.
     assert_eq!(out.len(), 1);
     assert_eq!(out[0]["role"], "user");
@@ -672,7 +680,7 @@ fn anthropic_stale_thinking() {
     let mut req = request(ProviderKind::Anthropic);
     req.messages[1].thinking_blocks =
         vec![json!({"type": "thinking", "thinking": "plan", "signature": "sig"})];
-    let asked = body_for(&req, Replay::DropStale);
+    let asked = body_for(&req, Replay::DropStale, false);
     assert_eq!(
         asked["thinking"]["block_binding"]["prefix_mismatch_behavior"],
         "drop_block"
@@ -680,15 +688,17 @@ fn anthropic_stale_thinking() {
     assert_eq!(asked["messages"][1]["content"][0]["type"], "thinking");
     // Thinking not asked for: nothing is added that would turn it on.
     req.think = None;
-    assert!(body_for(&req, Replay::DropStale).get("thinking").is_none());
-    let stripped = body_for(&req, Replay::Strip);
+    assert!(body_for(&req, Replay::DropStale, false)
+        .get("thinking")
+        .is_none());
+    let stripped = body_for(&req, Replay::Strip, false);
     let kinds: Vec<&str> = stripped["messages"][1]["content"]
         .as_array()
         .map(|c| c.iter().filter_map(|b| b["type"].as_str()).collect())
         .unwrap_or_default();
     assert_eq!(kinds, ["tool_use"]);
     assert_eq!(
-        body_for(&req, Replay::AsIs)["messages"][1]["content"][0]["type"],
+        body_for(&req, Replay::AsIs, false)["messages"][1]["content"][0]["type"],
         "thinking"
     );
 }
@@ -703,10 +713,10 @@ fn anthropic_hosted_search() {
         description: "Ours".into(),
         parameters: json!({"type": "object"}),
     });
-    let plain = super::anthropic::request_body(&req);
+    let plain = super::anthropic::request_body(&req, false);
     assert_eq!(plain["tools"].as_array().map(Vec::len), Some(2));
     req.hosted_search = Some(5);
-    let body = super::anthropic::request_body(&req);
+    let body = super::anthropic::request_body(&req, false);
     let tools = body["tools"].as_array().cloned().unwrap_or_default();
     assert_eq!(tools.len(), 2);
     assert_eq!(tools[0]["name"], "read_file");
@@ -782,10 +792,11 @@ fn anthropic_hosted_search() {
         tool_name: None,
         images: vec![],
         thinking_blocks: blocks[..4].to_vec(),
+        tool_refs: vec![],
     };
     let user = request(ProviderKind::Anthropic).messages[0].clone();
     let messages = [user, reply];
-    let (_, with) = super::anthropic::convert(&messages, true);
+    let (_, with) = super::anthropic::convert(&messages, true, None);
     let sent: Vec<&str> = with[1]["content"]
         .as_array()
         .map(|c| c.iter().filter_map(|b| b["type"].as_str()).collect())
@@ -794,7 +805,7 @@ fn anthropic_hosted_search() {
         sent,
         ["text", "server_tool_use", "web_search_tool_result", "text"]
     );
-    let (_, without) = super::anthropic::convert(&messages, false);
+    let (_, without) = super::anthropic::convert(&messages, false, None);
     // (The reply's own text blocks stay, in their order, without the citations.)
     assert_eq!(
         without[1]["content"],
@@ -806,9 +817,69 @@ fn anthropic_hosted_search() {
         json!({"type": "text", "text": "So far."}),
         json!({"type": "thinking", "thinking": "more", "signature": "s"}),
     ];
-    let (_, sent) = super::anthropic::convert(&[messages[0].clone(), cut], false);
+    let (_, sent) = super::anthropic::convert(&[messages[0].clone(), cut], false, None);
     assert_eq!(
         sent[1]["content"],
         json!([{"type": "text", "text": "So far."}])
     );
+}
+
+/// D452: deferred tools are declared once, marked, and a tool search's result refers to the ones
+/// it loaded; the provider is asked to clear old tool results. The plain request sends the
+/// loaded ones as ordinary tools and the result's text.
+#[test]
+fn anthropic_declares_deferred_tools() {
+    use super::anthropic::request_body as body_of;
+    let spec = |name: &str| ToolSpec {
+        name: name.into(),
+        description: "d".into(),
+        parameters: json!({ "type": "object" }),
+    };
+    let mut req = request(ProviderKind::Anthropic);
+    req.deferred_tools = vec![spec("mcp__a__one"), spec("mcp__a__two")];
+    req.messages[2].tool_refs = vec!["mcp__a__one".into(), "gone".into()];
+    req.trim_at = Some(100_000);
+    let result = |body: &Value| -> Value {
+        body["messages"]
+            .as_array()
+            .and_then(|ms| {
+                ms.iter()
+                    .flat_map(|m| m["content"].as_array().cloned().unwrap_or_default())
+                    .find(|b| b["type"] == "tool_result")
+            })
+            .map(|b| b["content"].clone())
+            .unwrap_or_default()
+    };
+    let names = |body: &Value, deferred: bool| -> Vec<String> {
+        body["tools"]
+            .as_array()
+            .map(|ts| {
+                ts.iter()
+                    .filter(|t| t["defer_loading"].as_bool().unwrap_or(false) == deferred)
+                    .filter_map(|t| t["name"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let body = body_of(&req, true);
+    assert_eq!(names(&body, true), ["mcp__a__one", "mcp__a__two"]);
+    // A name that is no longer declared isn't referred to (the API refuses an unknown one).
+    assert_eq!(
+        result(&body),
+        json!([{ "type": "tool_reference", "tool_name": "mcp__a__one" }])
+    );
+    let edit = &body["context_management"]["edits"][0];
+    assert_eq!(edit["type"], "clear_tool_uses_20250919");
+    assert_eq!(
+        edit["trigger"],
+        json!({ "type": "input_tokens", "value": 100_000 })
+    );
+    assert_eq!(edit["clear_at_least"]["value"], 5000);
+    let plain = body_of(&req, false);
+    assert!(names(&plain, true).is_empty());
+    let sent = names(&plain, false);
+    assert!(sent.contains(&"mcp__a__one".to_string()));
+    assert!(!sent.contains(&"mcp__a__two".to_string()));
+    assert_eq!(result(&plain)[0]["type"], "text");
+    assert!(plain.get("context_management").is_none());
 }

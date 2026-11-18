@@ -63,6 +63,8 @@ export interface LoopDeps {
   beforeStep?(): Promise<void>;
   /** Keep sent messages unchanged while they fit (providers with prompt caching, D112). */
   stableMessages?: boolean;
+  /** The provider clears old tool results itself (D452): see `toMessages`' `serverTrims`. */
+  serverTrims?(): boolean;
   /**
    * A group chat's members (D232): earlier replies by another member go to the model labelled
    * with who wrote them. Asked per request (the speaker changes between turns).
@@ -216,6 +218,8 @@ export async function runTurn(state: LoopState, deps: LoopDeps): Promise<number>
         budgetChars: deps.budgetChars,
         vision: deps.vision ?? false,
         stable: deps.stableMessages ?? false,
+        // Not after the provider refused a request as too big: shortened here from then on.
+        ...(!overflowRecovered && deps.serverTrims?.() && { serverTrims: true }),
         ...(labels && { speakerLabels: labels }),
       }),
     ];

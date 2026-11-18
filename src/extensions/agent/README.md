@@ -13,6 +13,11 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   four at a time (`imagesKept`). Rust asks the API to drop reasoning that no longer fits and
   retries without any (`ai/anthropic.rs` `Replay`). Test: `conversation.test.ts` (each
   request's messages start with the previous one's).
+- **Declared once, cleared by the provider** (D452, Anthropic): the tools that load on demand go
+  apart in the request (`deferredTools`, `declaredTools()`), all of them, and the note names
+  them all (`deferredNote(split, true)`), so loading one changes nothing sent; a tool search's
+  result carries what it loaded (`toolRefs`). `trimAt` asks the API to clear old tool results
+  past the budget, and `toMessages`' `serverTrims` then sends them whole.
 - **Prompt caching** (D112): the system prompt is built once per session; the IDE state rides on
   each user message; tools are fixed per turn; earlier messages are sent unchanged while they fit;
   summaries reuse the cached prefix. Settings: `agent.cacheTtl`, `agent.effort`,

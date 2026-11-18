@@ -57,6 +57,8 @@ export interface ChatMessage {
   images?: string[];
   /** Provider reasoning blocks sent back unchanged (Anthropic thinking with signatures). */
   thinkingBlocks?: unknown[];
+  /** A tool search's result: the deferred tools it loaded (D452). */
+  toolRefs?: string[];
 }
 
 export interface ToolSpec {
@@ -90,6 +92,17 @@ export interface ChatRequest {
    * searches in a request. It runs and bills them; our own web_search tool is left out.
    */
   hostedSearch?: number;
+  /**
+   * Every tool the chat can load on demand, loaded or not (D452), for a provider that takes
+   * deferred definitions: the list it gets never changes when one is loaded. `tools` then holds
+   * none of them.
+   */
+  deferredTools?: ToolSpec[];
+  /**
+   * The provider clears old tool results itself once the prompt passes this many tokens
+   * (Anthropic's context editing, D452).
+   */
+  trimAt?: number;
 }
 
 export type ChatEvent =

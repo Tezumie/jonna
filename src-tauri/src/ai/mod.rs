@@ -144,6 +144,9 @@ pub struct Message {
     /// Provider reasoning blocks to send back unchanged (Anthropic thinking with signatures).
     #[serde(default)]
     pub thinking_blocks: Vec<Value>,
+    /// For role "tool": the deferred tools this result loaded (a tool search's, D452).
+    #[serde(default)]
+    pub tool_refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,6 +191,15 @@ pub struct ChatRequest {
     /// many searches in a request. The provider runs and bills them.
     #[serde(default)]
     pub hosted_search: Option<u32>,
+    /// Tools the chat can load on demand (D452), every one of them whether loaded or not: a
+    /// provider that takes deferred definitions gets them all, marked, so the list never changes
+    /// when one is loaded. `tools` holds none of them.
+    #[serde(default)]
+    pub deferred_tools: Vec<ToolSpec>,
+    /// Ask the provider to clear old tool results itself once the prompt passes this many
+    /// tokens (Anthropic's context editing, D452), in place of shortening them here.
+    #[serde(default)]
+    pub trim_at: Option<u64>,
 }
 
 /// One result of a search the provider ran (D450).

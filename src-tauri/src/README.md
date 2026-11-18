@@ -181,7 +181,10 @@ Search, Tavily or Exa with the key from the secrets file (`websearch.<provider>`
 address; results trimmed to title, URL and snippet (tested parsers). A request's `hosted_search`
 (D450) adds Anthropic's own web search tool instead (a reply's thinking and text blocks always go
 back in the order they came, D451, and a request refused because its thinking no longer fits its
-history is asked again with those blocks dropped, `Replay`): `anthropic.rs` keeps the reply's text, search
+history is asked again with those blocks dropped, `Replay`; D452: to its own API,
+`deferred_tools` are declared with `defer_loading` and a tool search's result is the
+references that load them, `trim_at` asks it to clear old tool results, and a refusal of either
+falls back to the plain request, `request_body`): `anthropic.rs` keeps the reply's text, search
 and result blocks as `reasoning` events so they go back in order, and reports each search as
 `webSearched`. `ipc/agent.rs` also lists and reads files
 the user picked (`attach_pick`) or dropped from the OS for agent attachments (D131).

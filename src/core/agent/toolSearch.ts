@@ -45,14 +45,19 @@ export function shortDescription(description: string, max = 80): string {
 
 /**
  * The note with the request (the system message's tail): the deferred tools by name, and how to
- * load them. Empty when nothing is deferred.
+ * load them. Empty when nothing is deferred. With `all` (D452) the list is every deferred tool,
+ * the loaded ones too, so the note stays the same for the whole chat.
  */
 export function deferredToolsNote(
   tools: readonly Pick<ToolSpec, "name" | "description">[],
+  all = false,
 ): string {
   if (!tools.length) return "";
   const lines = tools.map((t) => `- ${t.name}: ${shortDescription(t.description)}`);
-  return `Deferred tools (only their names are known; load a tool's definition with ${TOOL_SEARCH} before calling it):
+  const how = all
+    ? `load a tool's definition with ${TOOL_SEARCH} before calling it; one loaded earlier in this chat stays loaded`
+    : `only their names are known; load a tool's definition with ${TOOL_SEARCH} before calling it`;
+  return `Deferred tools (${how}):
 ${lines.join("\n")}`;
 }
 
