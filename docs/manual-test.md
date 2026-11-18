@@ -4541,3 +4541,18 @@ Three accounts in a team as for D453; the service with these changes.
 1. Add a second computer and approve it; make new keys; remove a computer; publish the key
    for sharing (open Team): each works against the updated service and against the one
    before.
+## D456 — The editor in a browser, on this computer
+1. Build the host (`cargo build --no-default-features --features host --bin ide-host` in
+   `src-tauri/`), then `node scripts/web-host.mjs`. It prints a link to the site's page.
+2. Open the link in Chrome or Edge on the same computer. The browser asks whether the site
+   may reach apps on this device: allow. The editor opens with your own recent folders,
+   settings and chats. The address bar no longer shows the code.
+3. Open a folder (type its path), edit and save a file, open a terminal, send the agent a
+   message: each works as in the app.
+4. Reload the tab: it comes back to the same folder. Open the link's page in a second tab:
+   refused (one client at a time).
+5. Stop the host (Ctrl+C): the page says the connection was lost, with Reconnect.
+6. Change the code in the link by one character: "wrong token", and the form asks again.
+7. A link whose address is another machine (`#h=example.com&t=x`): nothing connects by
+   itself; on the site's own page Connect answers that it reaches this computer only.
+8. `node scripts/web-e2e.mjs src-tauri/target/debug/ide-host.exe`: all passed.

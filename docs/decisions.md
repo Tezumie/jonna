@@ -52,6 +52,7 @@ unless noted.
 | · Hand-off: told once when a teammate shares, asking a teammate to share | D455 |
 | · The audit of team sharing: a shared chat built from a whitelist, the audience in a record old apps can't lose, and twelve smaller findings | D457 |
 | · A proof of possession that says what it is for; the generation floor for chats and snapshots stays open | D458 |
+| · The front end as a website that connects to a host: a proof of concept | D456 |
 
 ## Seeded from PLAN §19
 
@@ -16365,3 +16366,49 @@ legitimate one arriving.
 
 **Still open, not looked into further here:** a deletion of a snapshot or a project is the
 service's unsealed word; switches outside the guarded areas still sync.
+## D456 — The front end as a website that connects to a host: a proof of concept
+
+The owner asked for the editor in a browser, first against their own computer, leaving open
+where a host is (a machine they run, one we run, someone else's). `docs/web-app.md` is the
+design, what works and what each kind of host still needs.
+
+- **A third carrier for the host, not a second backend.** D428's windowless host already
+  answers the app's commands over a byte stream, and D429's call layer already takes a
+  transport. So the web build is the window's bundle with another entry (`src/web`,
+  `node build.mjs --web`), and the host gained `--listen-ws`: the same wire inside WebSocket
+  binary messages (`host/ws.rs`). `main.ts` boots unchanged; its one new line takes the
+  backend's OS from the host's handshake (`backendOs`), since the tab may be on another.
+- **No WebSocket dependency.** The host needs the server half of RFC 6455 for binary messages
+  only: about 200 lines with the handshake's SHA-1 written out, against a crate and its tree
+  (rule 3). The reader and the writer are two handles of one socket; on Windows a read
+  timeout belongs to the handle it was set through, which cost a dropped connection to find.
+- **Who may connect:** the page's origin (`--allow-origin`), a `Host` that is this computer,
+  then the code in `$/hello`. The code travels in the link's fragment, which the site never
+  sees, and leaves the address bar at once.
+- **A link connects by itself only to this computer.** A host is trusted with the page; a link
+  can come from anyone.
+- **On the accounts server's own address the page trusts less.** That origin's storage holds
+  the account pages' signed-in session, and code in the page can read it. There the page
+  connects only to this computer and runs no extension code (`core/extensions/codePolicy.ts`,
+  the manager's `allOff`, the worker's own guard). The owner asked for a path of the site,
+  hidden; before it is offered to anyone it belongs on an address of its own, which lifts
+  both limits.
+- **Two content policies**, since a worker follows its own script's: the window's for the
+  page (plus a WebSocket to a host), and one for `workers/` that lets an extension's worker
+  evaluate its code. The site's repository holds both in its header rules.
+- **`webAppPath` in product.json** (a fork's own page, or none; `docs/own-services.md`).
+- **Left, in the order they matter:** the host program in the installers and a command in the
+  app that starts it; an address of its own for the page; a picker that browses the host's
+  folders (pickers ask for a typed path); forwarded ports (previews work only on the same
+  computer); device keys in place of the code, and a relay, for hosts elsewhere; more than
+  one tab; the agent on the host, so work goes on with the tab closed. Desktop-only commands
+  still show their buttons.
+
+**Tried:** in a browser against a host on the same computer: a folder, the explorer and its
+watcher, the editor and saving, the Markdown preview, a PowerShell terminal, a chat with a
+local model, a reload that returns to the same state; the production build under both
+policies with no violation. `scripts/web-e2e.mjs` (the real host: a foreign origin refused,
+a wrong code refused, a 300 KiB file written and read back). Unit tests for the handshake,
+the frames and the address rules. **Not tried:** the deployed page against a host, because
+the browser used for testing refuses every site the permission to reach programs on the
+computer; a person's browser asks once. macOS and Linux.

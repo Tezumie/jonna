@@ -9,6 +9,26 @@ side is `src/core/ipc/streamTransport.ts`; the Rust side is `src-tauri/src/host/
 A reliable ordered byte stream: the host process's stdin/stdout (the command-line agent), or a
 TCP connection on loopback (`--listen`). The host writes nothing else to stdout; logs go to stderr.
 
+### In a WebSocket (`--listen-ws`)
+
+For a client that is a page in a browser (`src/web`, `docs/web-app.md`): the same stream
+inside WebSocket **binary** messages. Message boundaries mean nothing: the bytes of the
+messages, joined in order, are the stream, so a frame may span messages and a message may hold
+several frames. The host sends at most 1 MiB a message. A text message ends the connection.
+Ping is answered; no extensions, no subprotocol.
+
+The upgrade (`GET`, `Upgrade: websocket`, version 13) is refused with 403 unless
+
+- the `Host` header is a loopback address or `localhost` (a name pointed at this computer is
+  not), and
+- the `Origin` header, when there is one, is on the list given with `--allow-origin <origin>`
+  (repeatable; none given: no page may connect). A request with no `Origin` is not a
+  browser's page, and the token decides alone, as on TCP.
+
+The request head must arrive within 5 seconds and be at most 16 KiB. After the upgrade
+everything is as on TCP: `$/hello` with the token first, one client at a time, `--linger`.
+The listening line on stderr is `host: listening on ws://<address>`.
+
 ## Frame
 
 Every message, both directions:
