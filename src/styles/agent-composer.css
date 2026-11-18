@@ -1,0 +1,470 @@
+/* Under the conversation (DESIGN.md §13.4, §13.6, §13.7): the "where should this project live"
+   card, the changeset bar, the jump pill, the composer (message box, pills, send, stop and the
+   microphone), voice input and the empty chat. Apart from agent.css as what the user writes
+   with, beside what's been said. */
+@layer extensions {
+  /* Changeset bar, jump pill, composer (§13.4, §13.6, §13.7) */
+  /* "Where should this project live?" (D121) */
+  .agent-folder-card {
+    container-type: inline-size;
+  }
+  /* Fields with their labels above, then the folder that will be created as a hint. */
+  .agent-folder-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .agent-folder-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+  .agent-folder-key {
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-folder-name {
+    min-width: 0;
+  }
+  /* The location looks like the name field (read-only), with its folder button inside. */
+  .agent-folder-place {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    height: var(--size-control-md);
+    box-sizing: border-box;
+    padding: 0 var(--space-1) 0 var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    cursor: pointer;
+  }
+  .agent-folder-place:hover {
+    border-color: var(--border-strong);
+  }
+  .agent-folder-place:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle);
+  }
+  .agent-folder-where {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* The end of a long path is the part that differs. */
+    direction: rtl;
+    text-align: left;
+    color: var(--fg-default);
+  }
+  .agent-folder-change {
+    flex: none;
+  }
+  .agent-folder-result {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .agent-folder-result:empty {
+    display: none;
+  }
+  /* Narrow panels: the main button takes a row of its own. */
+  @container (max-width: 340px) {
+    .agent-folder-actions .agent-permission-spacer {
+      display: none;
+    }
+    .agent-folder-actions .button-accent {
+      flex: 1 0 100%;
+      justify-content: center;
+    }
+  }
+  .agent-changes {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    max-width: var(--agent-column);
+    margin: 0 auto;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-bottom: 0;
+    /* The same rounding as the message box it sits on (one shape, D160). */
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    background: var(--bg-surface-raised);
+    font-size: var(--text-md);
+  }
+  .agent-changes-text {
+    white-space: nowrap;
+  }
+  .agent-jump {
+    position: absolute;
+    left: 50%;
+    bottom: 120px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-full);
+    background: var(--bg-overlay);
+    box-shadow: var(--shadow-1);
+    font-size: var(--text-sm);
+    z-index: 2;
+  }
+  /* The agent still working (D273): three dots pulse in turn after the label. */
+  .agent-jump-dots {
+    display: none;
+    gap: 3px;
+    align-items: center;
+  }
+  .agent-jump.is-working .agent-jump-dots {
+    display: inline-flex;
+  }
+  .agent-jump-dots > span {
+    width: 4px;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: currentColor;
+    opacity: 0.3;
+    animation: agent-jump-dot 1.2s var(--ease-standard) infinite;
+  }
+  .agent-jump-dots > span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .agent-jump-dots > span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  @keyframes agent-jump-dot {
+    30% {
+      opacity: 1;
+    }
+    60%,
+    100% {
+      opacity: 0.3;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-jump-dots > span {
+      animation: none;
+      opacity: 0.7;
+    }
+  }
+  /* The composer (D131): cards, the box (text + send), the controls row under it. */
+  .agent-composer {
+    container-type: inline-size;
+    flex: none;
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    max-width: var(--agent-column);
+    margin: 0 auto 10px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .agent-box {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    padding: 6px 6px 6px 14px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    transition: border-color var(--motion-fast) var(--ease-standard);
+    cursor: text;
+  }
+  .agent-box:focus-within {
+    border-color: var(--border-input-focus);
+  }
+  .agent-composer.is-drop-over .agent-box {
+    border: 1px dashed var(--accent-secondary);
+    background: color-mix(in srgb, var(--accent-secondary) 6%, var(--bg-surface-raised));
+  }
+  .agent-changes:not([hidden]) + .agent-composer:has(.agent-attachments[hidden]) .agent-box {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .agent-input {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
+    resize: none;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg-default);
+    font: inherit;
+    font-size: var(--text-lg);
+    line-height: 22px;
+    min-height: 22px;
+    max-height: 272px;
+    padding: 3px 0;
+    overflow-y: hidden;
+  }
+  .agent-input::placeholder {
+    color: var(--fg-subtle);
+  }
+  .agent-composer-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 0 var(--space-1);
+  }
+  .agent-plus {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: var(--size-control-sm);
+    height: var(--size-control-sm);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+  }
+  .agent-plus:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  /* Words only (D227): the model and access read bright, the effort dimmer beside the model; the
+     access button stands a little apart. */
+  .agent-composer-footer .agent-model-pill,
+  .agent-composer-footer .agent-access {
+    color: var(--fg-default);
+  }
+  .agent-composer-footer .agent-reasoning {
+    padding-left: var(--space-1);
+    color: var(--fg-subtle);
+  }
+  .agent-reasoning.is-on > span {
+    color: var(--fg-muted);
+  }
+  .agent-composer-footer .agent-access {
+    margin-left: var(--space-2);
+  }
+  .agent-model-pill {
+    gap: var(--space-2);
+  }
+  /* A choice the agent is still taking: the spinner keeps its size beside a shortened name. */
+  .agent-pill > .agent-spinner {
+    flex: none;
+  }
+  .agent-reasoning:has(> .agent-spinner) {
+    gap: var(--space-2);
+  }
+  @container (max-width: 440px) {
+    .agent-model-pill {
+      max-width: 60%;
+    }
+  }
+  /* A narrow chat (a small window, D254): the mode and access keep their words whole; the
+     model's name and the effort give way. */
+  @container (max-width: 380px) {
+    .agent-composer-footer .agent-chat-mode,
+    .agent-composer-footer .agent-access {
+      flex: none;
+      max-width: none;
+    }
+  }
+  /* The model pill's provider or agent logo (D227): the badge, small and without its chip. */
+  .agent-model-pill .ai-mark {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    border-radius: var(--radius-xs);
+    font-size: calc(var(--text-xs) * 0.7);
+    border: none;
+  }
+  .agent-model-pill .ai-mark img,
+  .agent-model-pill .ai-logo-mask {
+    width: 100%;
+    height: 100%;
+  }
+  .agent-model-pill .ai-mark.is-mono {
+    background: none;
+  }
+  .agent-model-pill .ai-mark.is-mono .ai-logo-mask {
+    background: var(--fg-muted);
+  }
+  /* Hidden for now (D288): the agent pill beside it already shows who answers. The styles above
+     stay for when it comes back. */
+  .agent-model-pill .ai-mark {
+    display: none;
+  }
+  .agent-model-pill {
+    max-width: 45%;
+  }
+  .agent-composer-footer .agent-pill {
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* The agent pill: a little air between its face and its name (D291, the owner's ask). */
+  .agent-composer-footer .agent-chat-mode {
+    gap: var(--space-2);
+  }
+  .agent-composer-footer .agent-pill > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-send {
+    flex: none;
+  }
+  .agent-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: var(--size-control-sm);
+    max-width: 50%;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-pill .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    flex: none;
+  }
+  .agent-pill:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .agent-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+  /* Send (↵), Stop (■) and the microphone (D385): quiet icon buttons side by side, the icon in
+     the text's color and a soft square behind it on hover. */
+  .agent-send,
+  .agent-mic {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-md);
+    color: var(--fg-default);
+    transition: background-color var(--motion-fast) var(--ease-standard);
+  }
+  .agent-send:hover,
+  .agent-mic:hover {
+    background: var(--bg-hover);
+  }
+  /* Nothing to send yet (dictation off, so Send stays): dimmed. */
+  .agent-composer:has(.agent-input:placeholder-shown):has(.agent-attachments[hidden])
+  .agent-send:not(.is-busy) {
+    color: var(--fg-subtle);
+  }
+  /* Stop: a small filled square. */
+  .agent-send.is-busy .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+    fill: currentColor;
+  }
+  .agent-send[hidden],
+  .agent-mic[hidden] {
+    display: none;
+  }
+  .agent-send:disabled,
+  .agent-mic:disabled {
+    cursor: default;
+  }
+
+  /* Voice input (D180): while recording, a live waveform takes the text's place. The textarea
+     stays focused (Enter finishes, Esc cancels) but out of sight. */
+  .agent-box.is-voice {
+    position: relative;
+    align-items: center;
+  }
+  .agent-box.is-voice .agent-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .agent-voice {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 30px;
+    margin-left: -8px;
+  }
+  .agent-voice[hidden] {
+    display: none;
+  }
+  .agent-voice-cancel {
+    flex: none;
+  }
+  .agent-voice-slot {
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    display: flex;
+  }
+  .agent-voice-wave {
+    width: 100%;
+    height: 100%;
+    color: var(--fg-muted);
+  }
+  .agent-box.is-voice:has(.agent-voice-status:not(:empty)) .agent-voice-wave {
+    opacity: 0.4;
+  }
+  .agent-voice-status {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-voice-status:empty {
+    display: none;
+  }
+  .agent-voice-time {
+    flex: none;
+    min-width: 3ch;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-subtle);
+  }
+  .agent-empty {
+    margin-top: 10vh;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    color: var(--fg-muted);
+  }
+  .agent-empty-title {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .agent-empty-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .agent-empty-tips {
+    margin: var(--space-4) 0 0;
+    padding-left: 18px;
+    font-size: var(--text-md);
+    color: var(--fg-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}

@@ -1,0 +1,349 @@
+/* The agent's steps in the conversation (DESIGN.md §13.3 to §13.5): tool rows, diff cards, a
+   side question's card and permission cards. Apart from agent.css as the things a turn does,
+   beside what it says. */
+@layer extensions {
+  /* Tool rows (§13.3) */
+  .agent-tool-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: -14px 0;
+  }
+  /* A row followed by its diff card or output keeps its space below (no overlap with the next). */
+  .agent-tool-wrap:has(.agent-diff-card, .agent-well) {
+    margin-bottom: 0;
+  }
+  .agent-tool {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    height: 28px;
+    padding: 0 var(--space-3);
+    margin: 0 calc(var(--space-3) * -1);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-md);
+    text-align: left;
+    color: var(--fg-default);
+    min-width: 0;
+  }
+  .agent-tool:hover {
+    background: var(--bg-hover);
+  }
+  .agent-tool > .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .agent-tool-verb {
+    flex: none;
+    font-weight: 500;
+  }
+  .agent-tool-target {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--fg-muted);
+  }
+  /* Shrinks with an ellipsis (a failed step's error can be long): never a horizontal scroll. */
+  .agent-tool-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg-subtle);
+    white-space: nowrap;
+  }
+  /* An external agent's shell ("PowerShell") and its own review of the step (D208). */
+  .agent-tool-tag {
+    /* Shrinks before the command does (a narrow panel keeps `npm run check` readable). */
+    flex: 0 4 auto;
+    min-width: var(--space-6);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+    background: var(--bg-chip);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .agent-tool-tag.is-denied {
+    color: var(--status-danger-fg);
+  }
+  .agent-tool-status {
+    margin-left: auto;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+  .agent-tool-status .is-done {
+    color: var(--fg-subtle);
+  }
+  .agent-tool-status .is-error {
+    color: var(--status-danger-fg);
+  }
+  .agent-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-full);
+    border: 1.5px solid var(--border-strong);
+    border-top-color: var(--fg-default);
+    animation: agent-spin 0.8s linear infinite;
+  }
+  @keyframes agent-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .agent-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+  }
+  .agent-well {
+    margin: 0;
+    padding: var(--space-4) var(--space-5);
+    max-height: 260px;
+    overflow: auto;
+    background: var(--bg-surface-raised);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-muted);
+  }
+
+  /* Diff cards (§13.4) */
+  .agent-diff-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    font-size: var(--text-md);
+  }
+  .agent-diff-card.is-done {
+    opacity: 0.7;
+  }
+  .agent-diff-path {
+    flex: 1 1 100px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+  }
+  .agent-diff-stat {
+    flex: none;
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .is-added {
+    color: var(--diff-added-fg);
+  }
+  .is-removed {
+    color: var(--diff-removed-fg);
+  }
+  .button-ghost {
+    color: var(--fg-muted);
+  }
+  .button-ghost:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+
+  /* /btw's side question (D389): a quiet card; its answer isn't part of the conversation. */
+  .agent-aside {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+  }
+  .agent-aside-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .agent-aside-head > .icon {
+    flex: none;
+  }
+  .agent-aside-label {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .agent-aside-question {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-default);
+  }
+  .agent-aside-close {
+    flex: none;
+    margin-left: auto;
+  }
+  .agent-aside-pending {
+    color: var(--fg-subtle);
+  }
+  .agent-notice {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    font-size: var(--text-md);
+    color: var(--fg-muted);
+    overflow-wrap: anywhere;
+  }
+  .agent-notice.is-error {
+    color: var(--status-danger-fg);
+  }
+  .agent-notice {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .agent-notice-text {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+  .agent-notice-actions {
+    display: flex;
+    gap: var(--space-1);
+    margin-left: auto;
+  }
+
+  /* Permission cards (§13.5). Like the folder card and the wrap-up box (D402): the chat's own
+     background, a quiet border, rounder corners; only a dangerous request is colored. */
+  .agent-permission {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    animation: agent-permission-in 140ms var(--ease-standard);
+  }
+  .agent-permission:focus-within {
+    border-color: var(--border-strong);
+  }
+  .agent-permission.is-danger {
+    border-color: var(--status-danger-border);
+  }
+  @keyframes agent-permission-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  .agent-permission-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .agent-permission-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-md);
+    color: var(--fg-muted);
+    background: var(--bg-chip);
+  }
+  .agent-permission.is-danger .agent-permission-icon {
+    color: var(--status-danger-fg);
+    background: var(--status-danger-bg);
+  }
+  .agent-permission-icon > svg {
+    width: 14px;
+    height: 14px;
+  }
+  .agent-permission-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 3px;
+  }
+  .agent-permission-title {
+    font-weight: 600;
+    color: var(--fg-default);
+  }
+  .agent-permission-title code,
+  .agent-permission-always code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 1px 5px;
+    background: var(--bg-chip);
+    border-radius: var(--radius-xs);
+  }
+  .agent-permission-detail {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agent-permission-code {
+    margin: 0;
+    max-height: 160px;
+    overflow: auto;
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+    background: var(--bg-chip);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .agent-permission-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .agent-permission-always,
+  .agent-permission-spacer {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agent-permission-always {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .agent-permission-always > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-permission-key {
+    margin-left: var(--space-2);
+    padding: 0 3px;
+    background: none;
+    border: 1px solid currentColor;
+    border-radius: var(--radius-xs);
+    line-height: 1.3;
+    font-family: var(--font-ui);
+    font-size: var(--text-xs);
+    opacity: 0.7;
+  }
+}

@@ -18,6 +18,13 @@
 @import "./git-pages.css";
 @import "./git-tools.css";
 @import "./agent.css";
+@import "./agent-tool-rows.css";
+@import "./agent-composer.css";
+@import "./agent-markdown.css";
+@import "./agent-attachments.css";
+@import "./agent-work.css";
+@import "./agent-viewer.css";
+@import "./agent-asides.css";
 @import "./agent-model-picker.css";
 @import "./agent-changes.css";
 @import "./ai-setup.css";

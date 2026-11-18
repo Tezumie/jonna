@@ -1,0 +1,382 @@
+/* What a turn did, folded (D104, D151, D300): the work group's one line and its steps, the
+   agent's plan card, a turn that only thought, and a message queued while the agent works.
+   Apart from agent.css as the turn's summary, beside the messages themselves. */
+@layer extensions {
+  /* ---- A turn's work group (D104): one quiet line, the steps inside ---- */
+  .agent-work {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  /* ---- The agent's plan (D300): a card under the latest message, as Claude Code's app ---- */
+  .agent-plan {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    background: var(--bg-surface);
+    font-size: var(--text-md);
+  }
+  .agent-plan-before {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--fg-subtle);
+  }
+  .agent-plan-steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .agent-plan-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    min-height: 24px;
+    color: var(--fg-default);
+  }
+  .agent-plan-text {
+    min-width: 0;
+    padding-top: 2px;
+    overflow-wrap: anywhere;
+  }
+  .agent-plan-steps li.is-done {
+    color: var(--fg-muted);
+  }
+  /* The step's mark: a dashed ring waits, a turning arc works, a filled circle is done. */
+  .agent-plan-mark {
+    flex: none;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-top: 5px;
+    border-radius: var(--radius-full);
+  }
+  .agent-plan-wait {
+    border: 1.5px dashed var(--fg-subtle);
+  }
+  .agent-plan-spin {
+    border: 1.5px solid var(--border-subtle);
+    border-top-color: var(--fg-default);
+    animation: agent-spin 0.9s linear infinite;
+  }
+  .agent-plan-steps li.is-done .agent-plan-mark {
+    background: var(--fg-subtle);
+    color: var(--bg-surface);
+  }
+  .agent-plan-mark .icon {
+    width: 10px;
+    height: 10px;
+    stroke-width: 3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agent-plan-spin {
+      animation: none;
+      border-color: var(--fg-default);
+      border-right-color: var(--border-subtle);
+    }
+  }
+  .agent-summary-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-md);
+  }
+  .agent-summary-row:hover {
+    color: var(--fg-default);
+  }
+  .agent-summary-row .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-summary-body {
+    margin-top: var(--space-2);
+  }
+
+  /* Snug under the message it answers (the message's action row already leaves room). */
+  .agent-user-wrap + .agent-work {
+    margin-top: -10px;
+  }
+  .agent-work-header {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    padding: 2px 0;
+    font-size: var(--text-md);
+    color: var(--fg-muted);
+    text-align: left;
+    transition: color var(--motion-fast) var(--ease-standard);
+  }
+  .agent-work-header:hover {
+    color: var(--fg-default);
+  }
+  .agent-work-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-work.is-working .agent-work-label {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .agent-work-duration {
+    flex: none;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-work-chevron {
+    flex: none;
+    display: inline-flex;
+    color: var(--fg-subtle);
+  }
+  .agent-work-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  /* The status line changes calmly: the old phrase fades out, the new one in (work.ts). */
+  .agent-work-label {
+    transition:
+      opacity 160ms var(--ease-standard),
+      transform 160ms var(--ease-standard);
+  }
+  .agent-work-label.is-fading {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  /* The steps (D151): a card of rows divided by hairlines, on the chat's own surface. */
+  .agent-work-body {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .agent-work-body[hidden] {
+    display: none;
+  }
+  .agent-step {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .agent-step + .agent-step {
+    border-top: 1px solid var(--border-subtle);
+  }
+  .agent-step-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 36px;
+    padding: var(--space-2) var(--space-5);
+    color: var(--fg-muted);
+    font-size: var(--text-md);
+    text-align: left;
+    min-width: 0;
+  }
+  .agent-step-row[aria-expanded]:hover {
+    background: var(--bg-hover);
+  }
+  .agent-step-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-step-verb {
+    color: var(--fg-muted);
+  }
+  .agent-step-target {
+    color: var(--fg-default);
+  }
+  .agent-step-target:hover {
+    text-decoration: underline;
+  }
+  .agent-step-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-step-meta::before {
+    content: "· ";
+  }
+  .agent-step-failed {
+    flex: none;
+    display: inline-flex;
+    color: var(--status-danger-fg);
+  }
+  .agent-step-failed .icon,
+  .agent-step-chevron .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+  .agent-step-chevron {
+    flex: none;
+    display: inline-flex;
+    margin-left: auto;
+    color: var(--fg-subtle);
+  }
+  .agent-step-row:hover .agent-step-chevron {
+    color: var(--fg-default);
+  }
+  .agent-step-row > .agent-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+  }
+  /* Running: the row's words shimmer like the status line. */
+  .agent-step-text.is-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--fg-subtle) 0%,
+      var(--fg-default) 50%,
+      var(--fg-subtle) 100%
+    );
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: agent-shimmer 1.6s linear infinite;
+  }
+  .agent-step-text.is-shimmer > span {
+    color: transparent;
+  }
+  .agent-step-detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0 var(--space-5) var(--space-4);
+  }
+  .agent-step-detail .agent-well {
+    max-height: 220px;
+    border: 1px solid var(--border-subtle);
+  }
+  .agent-step-thinking {
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 320px;
+    overflow: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: auto;
+  }
+  /* A turn that only thought: its thinking straight in the card. */
+  .agent-step.is-plain {
+    padding: var(--space-4) var(--space-5);
+  }
+  .agent-step-note-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
+  }
+  .agent-step.is-note:not(:has(.agent-step-note-row)) {
+    padding: var(--space-3) var(--space-5);
+  }
+  .agent-step-note {
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-muted);
+  }
+  .agent-step-note > :last-child {
+    margin-bottom: 0;
+  }
+  .agent-step-more {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    color: var(--fg-subtle);
+  }
+  .agent-step-more:hover {
+    background: var(--bg-hover);
+    color: var(--fg-default);
+  }
+  .agent-step-more .agent-step-chevron {
+    margin: 0;
+    color: inherit;
+  }
+  .agent-step > .agent-shot {
+    margin: 0 var(--space-5) var(--space-3);
+  }
+  .agent-narration {
+    color: var(--fg-muted);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-step-text.is-shimmer {
+    animation: none;
+    color: var(--fg-muted);
+    background: none;
+  }
+  .agent-work-label {
+    transition: none;
+  }
+  .agent-permission {
+    animation: none;
+  }
+  .agent-work.is-working .agent-work-label {
+    animation: none;
+  }
+  .agent-work.is-working .agent-work-label {
+    color: var(--fg-muted);
+    background: none;
+  }
+}
+@layer extensions {
+  /* A message sent while the agent works (D151): your bubble, quieter, until the next step. */
+  .agent-user-wrap.is-queued > .agent-user {
+    opacity: 0.6;
+  }
+  .agent-queued-note {
+    align-self: flex-end;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    color: var(--fg-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-queued-back,
+  .agent-queued-now {
+    padding: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+  .agent-queued-back:hover,
+  .agent-queued-now:hover:not(:disabled) {
+    color: var(--fg-default);
+  }
+}

@@ -1,0 +1,127 @@
+/* Small pieces beside the conversation's main parts: a reply shown as plain text, the notice
+   for an agent that isn't installed, the review bar in the editor's margin and a background
+   command's live output. Last of agent.css's parts, in the order they were written. */
+@layer extensions {
+  /* A reply shown as plain text when its Markdown couldn't render (D163). */
+  .agent-plain {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* An external agent that isn't installed yet (D190): above the message box. */
+  .agent-missing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface-raised);
+    font-size: var(--text-sm);
+  }
+  .agent-missing-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1;
+    min-width: 0;
+    color: var(--fg-muted);
+  }
+  .agent-missing-text strong {
+    color: var(--fg-default);
+  }
+}
+
+/* Agent edits under review in the editor (D199): a bar in the margin's right lane. */
+@layer extensions {
+  .monaco-editor .agent-review-glyph::before {
+    content: "";
+    display: block;
+    width: 3px;
+    height: 100%;
+    margin-left: auto;
+    background: var(--accent);
+  }
+  .monaco-editor .agent-review-glyph.is-deleted::before {
+    height: 3px;
+    width: 10px;
+    background: var(--status-danger-fg);
+  }
+}
+
+@layer extensions {
+  /* A background command's live output (D286): its command and status, then what it printed. */
+  .agent-procout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--bg-surface);
+  }
+  .agent-procout-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+  }
+  .agent-procout-head .agent-dot {
+    background: var(--fg-subtle);
+  }
+  .agent-procout-head .agent-dot.is-running {
+    background: var(--status-success-fg);
+  }
+  .agent-procout-head .agent-dot.is-failed {
+    background: var(--status-danger-fg);
+  }
+  .agent-procout-head > :not(.agent-procout-cmd) {
+    flex: none;
+  }
+  .agent-procout-cmd {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    color: var(--fg-default);
+  }
+  .agent-procout-status,
+  .agent-procout-gone {
+    color: var(--fg-muted);
+  }
+  .agent-procout-spacer {
+    flex: 1;
+  }
+  .agent-procout-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-3) var(--space-5);
+  }
+  .agent-procout-text {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--fg-default);
+  }
+  /* "View output" under a step that left a command running (D286). */
+  .agent-step-output {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-2) var(--space-5);
+    font-size: var(--text-sm);
+  }
+  .agent-step-output .icon {
+    width: var(--size-icon-sm);
+    height: var(--size-icon-sm);
+  }
+}

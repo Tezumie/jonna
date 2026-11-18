@@ -1,0 +1,191 @@
+/* Markdown prose (DESIGN.md §14): paragraphs, lists, links, code blocks and their buttons,
+   tables. Apart from agent.css because it styles `.md` wherever Markdown is rendered, not only
+   the agent's answers (diagrams and math are markdown-visuals.css). */
+@layer extensions {
+  /* Markdown (§14) */
+  .md p {
+    margin: 0 0 12px;
+  }
+  /* A long link or path wraps instead of widening the chat (only where it has to: tables keep
+     their columns). */
+  .md p,
+  .md li,
+  .md blockquote,
+  .md h2,
+  .md h3,
+  .md h4 {
+    overflow-wrap: anywhere;
+  }
+  .md > :last-child,
+  .md li > :last-child {
+    margin-bottom: 0;
+  }
+  .md h2 {
+    font-size: var(--text-2xl, 20px);
+    font-weight: 600;
+    margin: 20px 0 10px;
+  }
+  .md h3 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl-lh);
+    font-weight: 600;
+    margin: 16px 0 8px;
+  }
+  .md h4,
+  .md h5,
+  .md h6 {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin: 12px 0 6px;
+  }
+  .md h5,
+  .md h6 {
+    color: var(--fg-muted);
+  }
+  .md ul,
+  .md ol {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .md li::marker {
+    color: var(--fg-subtle);
+  }
+  /* Bold in answers reads as emphasis, not as a heading (D143): a step lighter than 700. */
+  .md strong,
+  .md b {
+    font-weight: 600;
+  }
+  .md.agent-prose strong,
+  .md.agent-prose b {
+    font-weight: 550;
+  }
+  .md-link {
+    color: var(--accent-text, var(--accent));
+    text-decoration: none;
+  }
+  .md-link:hover {
+    text-decoration: underline;
+  }
+  /* Code is never darker than the chat around it (D151): a raised surface, a hairline. */
+  .md-code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    padding: 1px 5px;
+    background: var(--bg-chip);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xs);
+  }
+  .md-pre {
+    margin: 0 0 12px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .md-pre-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 28px;
+    padding: 0 var(--space-2) 0 var(--space-5);
+    font-size: var(--text-xs);
+    color: var(--fg-subtle);
+  }
+  .md-copy {
+    width: 22px;
+    height: 22px;
+  }
+  .md-pre-lang {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* "Apply" on a code block that names its file (D122). */
+  .md-pre-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 22px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    cursor: pointer;
+  }
+  .md-pre-action:hover {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .md-pre-action .icon {
+    width: 14px;
+    height: 14px;
+  }
+  /* agent.codeBlockWordWrap (D179): long lines wrap instead of scrolling. */
+  .agent-view.is-wrap-code .md-pre pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  /* agent.textSize (D179): the conversation, scaled as a whole (the composer stays). */
+  .agent-view[data-text-size="small"] .agent-log {
+    zoom: 0.9;
+  }
+  .agent-view[data-text-size="large"] .agent-log {
+    zoom: 1.12;
+  }
+  /* Long code scrolls inside its block instead of stretching the chat (D143). */
+  .md-pre pre {
+    margin: 0;
+    padding: 0 12px 12px;
+    overflow: auto;
+    max-height: 420px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  .md blockquote {
+    margin: 0 0 12px;
+    padding-left: 12px;
+    border-left: 2px solid var(--border-strong);
+    color: var(--fg-muted);
+  }
+  .md hr {
+    border: 0;
+    border-top: 1px solid var(--border-subtle);
+    margin: 20px 0;
+  }
+  /* A table is a rounded, lightly bordered card; a wide one scrolls inside it (D283). */
+  .md-table-wrap {
+    width: fit-content;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 0 0 12px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .md table {
+    border-collapse: collapse;
+    font-size: var(--text-md);
+  }
+  .md-table-wrap > table {
+    min-width: 100%;
+  }
+  .md th {
+    font-weight: 600;
+    text-align: left;
+    background: var(--bg-surface-raised);
+  }
+  .md th,
+  .md td {
+    padding: 8px 12px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .md-table-wrap tbody tr:last-child > td {
+    border-bottom: 0;
+  }
+}
