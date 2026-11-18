@@ -4467,3 +4467,13 @@ Two accounts in one team, sync on for both.
 4. Switch the chat to another provider's model and ask to search: it says to switch model or
    choose a search provider. Switch back: the chat carries on.
 5. Turn `agent.webFetch.enabled` off: no search runs.
+
+## D451 — A long chat on the newest Anthropic models
+1. On Claude Fable 5.2 (thinking on), give the agent a task with a dozen or more tool calls,
+   then send a second and a third message: each is answered, none fails with "The block is
+   bound to a different conversation". The context meter's tooltip shows the cache being read
+   on each step (it doesn't start over).
+2. Mid-chat, connect an MCP server (or switch the mode), then send a message: answered.
+3. A chat from before the update that failed with that error: Retry, and it answers.
+4. `/compact` in a long chat, then a message: answered.
+5. A browser task with six or more screenshots: it carries on after each.

@@ -664,6 +664,35 @@ fn image_models_ask_for_images() {
     assert!(plain.get("modalities").is_none());
 }
 
+/// D451: thinking blocks a changed history has outdated. Asked to be dropped beside the thinking
+/// setting only; stripped, a reply keeps its text and tool calls.
+#[test]
+fn anthropic_stale_thinking() {
+    use super::anthropic::{body_for, Replay};
+    let mut req = request(ProviderKind::Anthropic);
+    req.messages[1].thinking_blocks =
+        vec![json!({"type": "thinking", "thinking": "plan", "signature": "sig"})];
+    let asked = body_for(&req, Replay::DropStale);
+    assert_eq!(
+        asked["thinking"]["block_binding"]["prefix_mismatch_behavior"],
+        "drop_block"
+    );
+    assert_eq!(asked["messages"][1]["content"][0]["type"], "thinking");
+    // Thinking not asked for: nothing is added that would turn it on.
+    req.think = None;
+    assert!(body_for(&req, Replay::DropStale).get("thinking").is_none());
+    let stripped = body_for(&req, Replay::Strip);
+    let kinds: Vec<&str> = stripped["messages"][1]["content"]
+        .as_array()
+        .map(|c| c.iter().filter_map(|b| b["type"].as_str()).collect())
+        .unwrap_or_default();
+    assert_eq!(kinds, ["tool_use"]);
+    assert_eq!(
+        body_for(&req, Replay::AsIs)["messages"][1]["content"][0]["type"],
+        "thinking"
+    );
+}
+
 /// D450: the provider's own web search. The request names the tool (and not ours of that name);
 /// a reply's text, search and result come back as blocks, in order, with what the chat shows.
 #[test]
@@ -686,7 +715,7 @@ fn anthropic_hosted_search() {
         json!({"type": "web_search_20250305", "name": "web_search", "max_uses": 5})
     );
 
-    let mut p = super::anthropic::SseParser::hosted();
+    let mut p = super::anthropic::SseParser::ordered();
     let mut events = Vec::new();
     for line in [
         r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
@@ -766,8 +795,20 @@ fn anthropic_hosted_search() {
         ["text", "server_tool_use", "web_search_tool_result", "text"]
     );
     let (_, without) = super::anthropic::convert(&messages, false);
+    // (The reply's own text blocks stay, in their order, without the citations.)
     assert_eq!(
         without[1]["content"],
-        json!([{"type": "text", "text": "Looking.It shipped."}])
+        json!([{"type": "text", "text": "Looking."}, {"type": "text", "text": "It shipped."}])
+    );
+    // A reply that ends in thinking is sent without it.
+    let mut cut = messages[1].clone();
+    cut.thinking_blocks = vec![
+        json!({"type": "text", "text": "So far."}),
+        json!({"type": "thinking", "thinking": "more", "signature": "s"}),
+    ];
+    let (_, sent) = super::anthropic::convert(&[messages[0].clone(), cut], false);
+    assert_eq!(
+        sent[1]["content"],
+        json!([{"type": "text", "text": "So far."}])
     );
 }

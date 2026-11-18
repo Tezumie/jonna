@@ -6,6 +6,13 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
 - **Models** (`providers.ts`, D69): "Add a provider…" offers presets (OpenRouter, OpenAI, Anthropic,
   Groq, LM Studio, llama.cpp) and asks for the API key; big catalogs open a searchable picker.
   Anthropic uses its native Messages API (`kind: "anthropic"`, D112).
+- **Append-only history** (D451): what was sent stays as it was, for the prompt cache and
+  because the newest Anthropic models bind a reply's reasoning to the conversation before it. A
+  reply's blocks (thinking and text, in order) are kept in the assistant item's `reasoning` and
+  go back as they came; a summary clears the reasoning of the turns it keeps; screenshots leave
+  four at a time (`imagesKept`). Rust asks the API to drop reasoning that no longer fits and
+  retries without any (`ai/anthropic.rs` `Replay`). Test: `conversation.test.ts` (each
+  request's messages start with the previous one's).
 - **Prompt caching** (D112): the system prompt is built once per session; the IDE state rides on
   each user message; tools are fixed per turn; earlier messages are sent unchanged while they fit;
   summaries reuse the cached prefix. Settings: `agent.cacheTtl`, `agent.effort`,

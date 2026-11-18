@@ -45,6 +45,7 @@ unless noted.
 | · A chat started with no folder open, seen from a folder | D448 |
 | · wrap_up ticks off the whole plan | D449 |
 | · Web search without a key of its own: the model provider's | D450 |
+| · Thinking blocks are bound to their conversation: an append-only history, and a way out when it isn't | D451 |
 
 ## Seeded from PLAN §19
 
@@ -16009,3 +16010,48 @@ models, with `model` chosen, `web_search` says to switch model or choose a provi
 **Not verified:** against the live API (it needs the owner's key). The request, the stream and
 the replay are tested against the documented shapes (`ai/tests.rs`
 `anthropic_hosted_search`, `loop.test.ts`).
+
+## D451 — Thinking blocks are bound to their conversation: an append-only history, and a way out when it isn't
+
+**Seen:** a second message in a chat on Claude Fable 5.2 failed with `Invalid signature in
+thinking block. The block is bound to a different conversation`, and Retry failed the same
+way.
+
+**Why.** On the newest Anthropic models a thinking block's signature records what came before
+it: the system prompt, the set of tools and every earlier message. Sent back after any of
+those changed, the block is refused. Older models never checked. The same rule is what a
+prompt cache needs (every provider's is a prefix match), so what breaks one costs money with
+the other. Claude Code, the Agent SDK and Codex keep the history append-only and compact by
+starting over from a summary.
+
+The IDE's history was already built to stay the same while it fits (D112), so the list of
+what changed it was short:
+
+| What changed the past | Now |
+|---|---|
+| An update or a restart: the tools' descriptions and the system prompt are new (the chat in the report had just been continued on 0.1.10) | Can't be avoided: the way out below |
+| A reply was sent back as thinking, then text, then tool calls, whatever order it came in, with its text cleaned (the title line taken out) | Sent back as it came: the parser keeps the text blocks with the thinking, in order (`SseParser::ordered`, `convert`) |
+| A summary kept the newest turns, whose reasoning was written with the whole conversation before it | The kept turns' reasoning is cleared when the summary is made (`sessionSummaries.ts`) |
+| Only the two newest screenshots were sent: each new one took an older one out of an earlier message | They leave four at a time (`imagesKept`), so the past changes once in four |
+| Over the budget with compaction off or failed: old tool results shortened, early turns dropped | As before (it's the last resort): the way out below |
+| A deferred tool is loaded, a mode or an MCP server changes the tools | As before: the way out below. Declaring every tool once with the API's own deferred loading is the cure, not built |
+
+Where the text sent isn't what the model wrote (a group chat's speaker labels, a note about
+the images it drew), its text blocks stay behind and the labelled text is sent, as before.
+
+**The way out** (`ai/anthropic.rs` `Replay`), for chats from before this and for every change
+that can't be avoided:
+- To Anthropic's own API, a request that sends the thinking setting also asks for blocks that
+  no longer fit to be dropped (`thinking.block_binding.prefix_mismatch_behavior:
+  "drop_block"`, beta `thinking-binding-controls-2026-08-01`): the model answers without that
+  reasoning, and nothing fails.
+- Wherever a request is still refused (another endpoint, a request without the thinking
+  setting, an endpoint that doesn't know the beta), it goes once more with no thinking blocks
+  in the history: text and tool calls stay.
+
+**Tested:** each request's messages start with the previous request's over a thirty-step turn
+(`conversation.test.ts`); the request shapes and a reply that ends in thinking
+(`ai/tests.rs`). **Not verified** against the live API (it needs the owner's key).
+
+**Left:** tools declared once per chat (the API's deferred loading and its tool-change
+messages); the API's own trimming of old tool results in place of ours when over the budget.

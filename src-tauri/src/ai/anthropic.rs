@@ -155,9 +155,10 @@ fn server_block(kind: &str) -> bool {
 }
 
 /// The system prompt (all system messages) and the conversation as Messages API turns.
-/// With `hosted` (the provider's own web search is on, D450) an assistant
-/// message goes back as it came: its text, its searches and their results in their order, which
-/// the API wants unchanged. Without it those are left out and the text alone is sent.
+/// An assistant message goes back as it came (D451): its thinking and text blocks in their order
+/// (`thinking_blocks` holds both, when the reply was read by this parser), then its tool calls.
+/// With `hosted` (the provider's own web search is on, D450) its searches and their results too;
+/// without it those are left out.
 pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
     let mut system = Vec::new();
     let mut out: Vec<Value> = Vec::new();
@@ -172,11 +173,17 @@ pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
                 let mut blocks: Vec<Value> = m
                     .thinking_blocks
                     .iter()
-                    .filter(|b| {
-                        let kind = b["type"].as_str().unwrap_or("");
-                        hosted || !(kind == "text" || server_block(kind))
+                    .filter(|b| hosted || !server_block(b["type"].as_str().unwrap_or("")))
+                    .map(|b| {
+                        let mut b = b.clone();
+                        // A citation points into a search result that isn't sent.
+                        if !hosted {
+                            if let Some(o) = b.as_object_mut() {
+                                o.remove("citations");
+                            }
+                        }
+                        b
                     })
-                    .cloned()
                     .collect();
                 // The reply's text came with its blocks (in their order): not a second time.
                 if !blocks.iter().any(|b| b["type"] == "text") {
@@ -192,14 +199,13 @@ pub fn convert(messages: &[Message], hosted: bool) -> (String, Vec<Value>) {
                         json!({ "type": "tool_use", "id": c.id, "name": c.name, "input": input }),
                     );
                 }
-                // A reply that was only thinking (cut off at the output limit) can't be sent
-                // back: "the final block in an assistant message cannot be `thinking`" (400).
-                // Without text or a tool call it carries nothing for the model anyway.
-                if blocks
-                    .iter()
-                    .all(|b| matches!(b["type"].as_str(), Some("thinking" | "redacted_thinking")))
-                {
-                    blocks.clear();
+                // A reply that ends in thinking (cut off at the output limit, or all of it was)
+                // can't be sent back: "the final block in an assistant message cannot be
+                // `thinking`" (400). Thinking with nothing after it carries nothing anyway.
+                while blocks.last().is_some_and(|b| {
+                    matches!(b["type"].as_str(), Some("thinking" | "redacted_thinking"))
+                }) {
+                    blocks.pop();
                 }
                 push(&mut out, "assistant", blocks);
             }
@@ -287,6 +293,64 @@ pub fn request_body(req: &ChatRequest) -> Value {
     body
 }
 
+/// What a request does about thinking blocks its history may have outdated (D451).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Replay {
+    /// Sent as they are.
+    AsIs,
+    /// Sent, with the API asked to drop the ones that no longer fit instead of refusing.
+    DropStale,
+    /// None sent: the reply's text and tool calls only.
+    Strip,
+}
+
+/// The beta that lets a request say what happens to thinking blocks that no longer fit.
+const BINDING_BETA: &str = "thinking-binding-controls-2026-08-01";
+/// How the API's refusal of such a block reads.
+const STALE_THINKING: &str = "bound to a different conversation";
+
+/// Whether `base` is the provider's own API (where the binding controls are known to exist).
+fn official(base: &str) -> bool {
+    reqwest::Url::parse(base)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h == "api.anthropic.com"))
+        .unwrap_or(false)
+}
+
+/// The request's body for `replay`.
+pub fn body_for(req: &ChatRequest, replay: Replay) -> Value {
+    let mut body = request_body(req);
+    match replay {
+        Replay::AsIs => {}
+        // Only beside the thinking setting the request already sends: adding one would turn
+        // thinking on for a model that was asked without it.
+        Replay::DropStale => {
+            if body["thinking"].is_object() {
+                body["thinking"]["block_binding"] =
+                    json!({ "prefix_mismatch_behavior": "drop_block" });
+            }
+        }
+        Replay::Strip => {
+            if let Some(messages) = body["messages"].as_array_mut() {
+                for m in messages.iter_mut() {
+                    if let Some(content) = m["content"].as_array_mut() {
+                        content.retain(|b| {
+                            !matches!(b["type"].as_str(), Some("thinking" | "redacted_thinking"))
+                        });
+                    }
+                }
+                messages.retain(|m| {
+                    m["content"]
+                        .as_array()
+                        .map(|c| !c.is_empty())
+                        .unwrap_or(true)
+                });
+            }
+        }
+    }
+    body
+}
+
 #[derive(Default)]
 struct Block {
     kind: String,
@@ -314,18 +378,18 @@ pub struct SseParser {
     cache_write: Option<u64>,
     output_tokens: Option<u64>,
     finished: bool,
-    /// The provider's own search is on (D450): text blocks are kept too, so the message can go
-    /// back in the order it came.
-    hosted: bool,
+    /// Text blocks are kept too (D451), so the message can go back in the order it came: its
+    /// thinking is bound to what came before it, in the reply as well.
+    ordered: bool,
     /// What each of the provider's searches asked, by its call's id.
     queries: HashMap<String, String>,
 }
 
 impl SseParser {
-    /// A parser for a request with the provider's own web search on (D450).
-    pub fn hosted() -> Self {
+    /// A parser that keeps the reply's text blocks with its other blocks, in their order (D451).
+    pub fn ordered() -> Self {
         Self {
-            hosted: true,
+            ordered: true,
             ..Self::default()
         }
     }
@@ -454,9 +518,9 @@ impl SseParser {
                                 serde_json::from_str(&b.text).unwrap_or(Value::String(b.text))
                             },
                         }),
-                        // With the provider's search on, the text is kept as a block too: the
-                        // message goes back in the order it came (D450).
-                        "text" if self.hosted && !b.text.trim().is_empty() => {
+                        // The text is kept as a block too: the message goes back in the order
+                        // it came (D451).
+                        "text" if self.ordered && !b.text.trim().is_empty() => {
                             let mut block = json!({ "type": "text", "text": b.text });
                             if !b.citations.is_empty() {
                                 block["citations"] = Value::Array(b.citations);
@@ -548,22 +612,46 @@ pub async fn chat<F: FnMut(ChatEvent)>(
     mut emit: F,
     seen: &mut super::SeenLimits,
 ) -> Result<()> {
-    let response = with_key(client.post(api(&req.provider.base_url, "messages")), key)
-        .json(&request_body(req))
-        .send()
-        .await
-        .map_err(http_error)?;
-    super::note_limits(seen, &response);
-    if !response.status().is_success() {
-        return Err(error_body(response).await);
-    }
+    // Thinking blocks are bound to the conversation that made them (D451): after the history
+    // changed (older tool results shortened, turns dropped, a tool added), the API refuses the
+    // request. Asked to drop what no longer fits where it can be asked; and wherever it still
+    // refuses, the request goes once more with no thinking blocks at all.
+    let mut replay = if official(&req.provider.base_url) {
+        Replay::DropStale
+    } else {
+        Replay::AsIs
+    };
+    let response = loop {
+        let body = body_for(req, replay);
+        let mut builder = with_key(
+            client.post(api(&req.provider.base_url, "messages")),
+            key.clone(),
+        );
+        if body["thinking"].get("block_binding").is_some() {
+            builder = builder.header("anthropic-beta", BINDING_BETA);
+        }
+        let response = builder.json(&body).send().await.map_err(http_error)?;
+        super::note_limits(seen, &response);
+        if response.status().is_success() {
+            break response;
+        }
+        let refused = response.status() == reqwest::StatusCode::BAD_REQUEST;
+        let err = error_body(response).await;
+        // A refusal while asking to drop may be the asking itself (an endpoint without it).
+        let again = refused
+            && match replay {
+                Replay::Strip => false,
+                Replay::DropStale => true,
+                Replay::AsIs => err.to_string().contains(STALE_THINKING),
+            };
+        if !again {
+            return Err(err);
+        }
+        replay = Replay::Strip;
+    };
     let mut stream = response.bytes_stream();
     let mut lines = LineBuffer::default();
-    let mut parser = if req.hosted_search.is_some() {
-        SseParser::hosted()
-    } else {
-        SseParser::default()
-    };
+    let mut parser = SseParser::ordered();
     while let Some(chunk) = super::next_chunk(&mut stream).await {
         let chunk = chunk?;
         for line in lines.push(&chunk) {

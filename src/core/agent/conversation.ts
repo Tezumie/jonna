@@ -256,6 +256,19 @@ export function maskBoundary(tools: number, keep = KEEP_RECENT_TOOLS, chunk = MA
 }
 /** Only the newest screenshots go to the model (each costs about a thousand tokens or more). */
 const MAX_IMAGES = 2;
+/**
+ * With `stable` (D451) the oldest screenshots leave in steps of this many, not one for each new
+ * one: every one that leaves changes an earlier message, which restarts the provider's prompt
+ * cache and outdates the model's kept reasoning.
+ */
+const IMAGE_CHUNK = 4;
+
+/** How many of `count` screenshots are sent: the newest MAX_IMAGES, or with `stable` a few more. */
+export function imagesKept(count: number, stable: boolean): number {
+  if (!stable) return Math.min(count, MAX_IMAGES);
+  const gone = Math.max(0, Math.floor((count - MAX_IMAGES) / IMAGE_CHUNK) * IMAGE_CHUNK);
+  return count - gone;
+}
 
 /** Tools that are safe to call again to see shortened output (no side effects). */
 const REREADABLE = new Set([
@@ -325,15 +338,12 @@ export function toMessages(
   },
 ): ChatMessage[] {
   const items = fromLastSummary(all);
-  // The newest tool items with images, newest first, up to MAX_IMAGES.
-  const withImages = new Set(
-    options.vision
-      ? items
-          .filter((it) => it.type === "tool" && it.images?.length)
-          .slice(-MAX_IMAGES)
-          .map((it) => it.id)
-      : [],
-  );
+  // The newest tool items with images (`imagesKept` of them).
+  const imageItems = options.vision
+    ? items.filter((it) => it.type === "tool" && it.images?.length)
+    : [];
+  const kept = imagesKept(imageItems.length, options.stable ?? false);
+  const withImages = new Set(imageItems.slice(imageItems.length - kept).map((it) => it.id));
   // Turn boundaries: each user item starts a turn. Old tool results are shortened (the newest
   // stay whole, then those of earlier turns go too); if still too big, whole early turns go (the
   // first user message stays).
@@ -409,12 +419,19 @@ export function toMessages(
 ${imageNote(it.media)}`.trim()
           : text;
         callsInText = options.textProtocol && it.raw !== undefined;
+        // The reply's own blocks go back as they came, its text among them (D451). Where the
+        // text sent isn't the text it wrote (a speaker's label, a note about its images), the
+        // text blocks stay behind and `content` is what's sent.
+        const rewritten = !!options.speakerLabels || !!it.media?.length;
+        const blocks = rewritten
+          ? it.reasoning?.filter((b) => (b as { type?: unknown } | null)?.type !== "text")
+          : it.reasoning;
         assistant = {
           role: "assistant",
           content: options.speakerLabels
             ? withSpeakerLabel(content, it.speaker, options.speakerLabels)
             : content,
-          ...(!options.textProtocol && it.reasoning?.length && { thinkingBlocks: it.reasoning }),
+          ...(!options.textProtocol && blocks?.length && { thinkingBlocks: blocks }),
         };
       } else if (it.type === "tool") {
         if (it.status === "pending" || it.status === "running") return;

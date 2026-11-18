@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   type Item,
+  imagesKept,
   type SpeakerLabels,
   stripSpeakerTag,
   toMessages,
@@ -201,4 +202,86 @@ test("an external agent's steps reach an IDE model as text, not as its tool call
   );
   const reply = messages.find((m) => m.role === "assistant");
   assert.match(reply?.content ?? "", /Running tests\.\n\[npm test: done\]/);
+});
+
+test("D451: what was sent stays as it was while the chat grows (append-only)", () => {
+  // A long turn: replies with reasoning and text blocks, thirty tool calls with long results,
+  // then a second message. Each request's messages must start with the previous request's.
+  const items: Item[] = [{ type: "user", id: "u1", text: "do the work", state: "editor: a.ts" }];
+  const sent: string[][] = [];
+  const send = () =>
+    sent.push(
+      toMessages(items, { textProtocol: false, budgetChars: 4_000_000, stable: true }).map((m) =>
+        JSON.stringify(m),
+      ),
+    );
+  for (let i = 0; i < 30; i++) {
+    items.push({
+      type: "assistant",
+      id: `a${i}`,
+      text: `Step ${i}.`,
+      thinking: "",
+      streaming: false,
+      reasoning: [
+        { type: "thinking", thinking: `plan ${i}`, signature: `s${i}` },
+        { type: "text", text: `Step ${i}.` },
+      ],
+    });
+    items.push({
+      type: "tool",
+      id: `t${i}`,
+      callId: `c${i}`,
+      name: "read_file",
+      args: { path: `f${i}.ts` },
+      status: "done",
+      result: "x".repeat(5000),
+    });
+    send();
+  }
+  items.push({ type: "user", id: "u2", text: "and now this" });
+  send();
+  for (let i = 1; i < sent.length; i++) {
+    const before = sent[i - 1] ?? [];
+    assert.deepEqual(sent[i]?.slice(0, before.length), before, `request ${i} changed its past`);
+  }
+  // The reply's blocks go back in their order, its text among them.
+  const first = JSON.parse(sent[0]?.[1] ?? "{}") as { thinkingBlocks?: { type: string }[] };
+  assert.deepEqual(
+    first.thinkingBlocks?.map((b) => b.type),
+    ["thinking", "text"],
+  );
+});
+
+test("D451: a relabelled reply keeps its text out of its blocks; screenshots leave in steps", () => {
+  const reply: Item = {
+    type: "assistant",
+    id: "a",
+    text: "Hello.",
+    thinking: "",
+    streaming: false,
+    speaker: "scout",
+    reasoning: [
+      { type: "thinking", thinking: "hm", signature: "s" },
+      { type: "text", text: "Hello." },
+    ],
+  };
+  const [, message] = toMessages([{ type: "user", id: "u", text: "hi" }, reply], {
+    textProtocol: false,
+    budgetChars: 100_000,
+    speakerLabels: { current: null, label: (n) => n.toUpperCase() },
+  });
+  assert.equal(message?.content, "[SCOUT] Hello.");
+  assert.deepEqual(
+    (message?.thinkingBlocks as { type: string }[] | undefined)?.map((b) => b.type),
+    ["thinking"],
+  );
+  // Two newest without `stable`; with it, between two and five, changing once in four.
+  assert.deepEqual(
+    [1, 2, 3, 5, 6, 9, 10].map((n) => imagesKept(n, true)),
+    [1, 2, 3, 5, 2, 5, 2],
+  );
+  assert.deepEqual(
+    [1, 2, 3, 9].map((n) => imagesKept(n, false)),
+    [1, 2, 2, 2],
+  );
 });

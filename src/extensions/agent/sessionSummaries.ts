@@ -289,6 +289,11 @@ export async function compactWith(
     count,
     auto,
   });
+  // What stays after the summary was written with the whole conversation before it (D451): a
+  // provider that binds a reply's reasoning to its history refuses it now, so it isn't sent
+  // again. The replies' text and tool calls stay.
+  for (const it of session.items.slice(cut + 1))
+    if (it.type === "assistant" && it.reasoning) delete it.reasoning;
   // The next message starts it again for SessionStart hooks, as "compact" (D371).
   session.hookStart = "compact";
   session.bump();
