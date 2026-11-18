@@ -3,6 +3,23 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.10
+
+Web search without a key, and three fixes in the agent's chats.
+
+- **Web search without a key of its own.** "Agent: Set up web search" has a new choice, **the
+  model provider's own search**: in a chat on an Anthropic model, the provider runs the
+  searches and bills each one with the model. Each search shows as a line over the reply
+  (hover it for the results). Searches run without asking first, so it's off until you choose
+  it.
+- **Chats started with no folder open** are listed under **No folder** once you open a folder
+  (they were in no list), and offer **Continue here** to become one of that folder's chats.
+- **The plan card shows finished work as finished.** An agent that did everything but didn't
+  tick its last steps left them open; wrapping up now ticks them off, except the ones it says
+  it didn't finish.
+- "Still starting…: npx is downloading it" no longer stays under an external agent's work
+  once it has started.
+
 ## 0.1.9
 
 Sharing with your team, a look inside snapshots, and a security review.
