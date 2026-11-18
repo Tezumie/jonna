@@ -7,14 +7,22 @@
 // Moving between the list, a share and a snapshot is the tab's own, like its pages. The words
 // are core/team/shares.ts and shareView.model.ts.
 import { type Child, h, on } from "../../core/dom/index";
-import type { SharedSnapshot, ShareInfo, ShareMember } from "../../core/ipc/share";
+import type {
+  ShareAsk,
+  SharedChat,
+  SharedSnapshot,
+  ShareInfo,
+  ShareMember,
+} from "../../core/ipc/share";
 import { shareBook } from "../../core/team/shareBook";
 import {
+  askSentence,
   canRead,
   fingerprintGroups,
   memberActions,
   memberLine,
   memberTag,
+  sharedChatTitle,
   shareStateLine,
   sortMembers,
   sortShares,
@@ -119,6 +127,15 @@ function memberRow(kit: PageKit, member: ShareMember): HTMLElement {
       }),
     );
   });
+  // A note to them, nothing more: their app says that this account asked.
+  if (!member.you)
+    actions.push(
+      kit.button(
+        "Ask to share…",
+        () => kit.run("team.member.askToShare", { uid: member.uid }),
+        "ghost",
+      ),
+    );
   return item({
     title: name,
     tags: [member.you ? "You" : memberTag(member.state)],
@@ -199,6 +216,58 @@ function shareRow(kit: PageKit, share: ShareInfo, owner: boolean): HTMLElement {
   });
 }
 
+/** Who asked this account to share a project: said above the lists until answered. */
+function asksCard(kit: PageKit, asks: readonly ShareAsk[]): HTMLElement | null {
+  if (asks.length === 0) return null;
+  return h(
+    "section",
+    { class: "sync-section", "data-team-asks": String(asks.length) },
+    card(
+      item({
+        title: askSentence(asks),
+        details: [
+          "To share one, open the project's page under Projects and turn on Share with team. They aren't told what you have.",
+        ],
+        actions: [
+          kit.button("Projects", () => kit.go("projects"), "secondary"),
+          kit.button("Dismiss", () => kit.run("team.asks.dismiss"), "ghost"),
+        ],
+        attrs: { class: "sync-item sync-team-item sync-member" },
+      }),
+    ),
+  );
+}
+
+/** A shared chat's row: its title and when, Read, and continuing a copy of one's own. */
+function chatRow(kit: PageKit, share: ShareInfo, chat: SharedChat): HTMLElement {
+  const read = () => kit.run("team.share.readChat", { id: share.id, chat: chat.id });
+  return item({
+    title: sharedChatTitle(chat),
+    details: [
+      [
+        chat.updated > 0 ? kit.when(chat.updated) : "A chat",
+        chat.images > 0 ? ` · ${chat.images} ${chat.images === 1 ? "image" : "images"}` : "",
+      ],
+    ],
+    actions: [
+      kit.button("Read", read, "secondary"),
+      kit.menuButton(
+        `More for ${sharedChatTitle(chat)}`,
+        [
+          { label: "Read", icon: "eye", run: () => void read() },
+          {
+            label: "Continue as my own chat",
+            icon: "git-fork",
+            run: () => void kit.run("team.share.continueChat", { id: share.id, chat: chat.id }),
+          },
+        ],
+        "Shared chat",
+      ),
+    ],
+    attrs: { class: "sync-item sync-member", "data-shared-chat": chat.id },
+  });
+}
+
 /** "People" and "Shared projects", for an account in a team. */
 export function sharingSections(kit: PageKit): Child[] {
   const team = teamOf(kit.session.profile.peek());
@@ -249,7 +318,7 @@ export function sharingSections(kit: PageKit): Child[] {
       ? card(empty(unread ? waiting : "Your team's members couldn't be listed."))
       : card(...members.map((member) => memberRow(kit, member))),
   );
-  return [sharesPart, peoplePart];
+  return [asksCard(kit, book.asks), sharesPart, peoplePart];
 }
 
 function snapshotRow(kit: PageKit, share: ShareInfo, snapshot: SharedSnapshot): HTMLElement {
@@ -431,6 +500,25 @@ export function sharePanel(kit: PageKit, opened: OpenedShare): Child[] {
         card(...group.rows.map((entry) => snapshotRow(kit, share, entry))),
       ),
     );
+  // Its chats, when the sharer shares them: read only here, or copied to continue.
+  const chats: Child[] =
+    opened.phase === "ready" && share.chats
+      ? [
+          h(
+            "section",
+            { class: "sync-section", "data-shared-chats": String(look.chats.length) },
+            h("h2", { class: "settings-section-title" }, "Chats"),
+            h(
+              "p",
+              { class: "sync-section-note" },
+              "This project's chats with the agent, as shared. Reading one changes nothing; continuing one makes a copy that is yours.",
+            ),
+            look.chats.length === 0
+              ? card(empty("No chat was shared yet."))
+              : card(...look.chats.map((chat) => chatRow(kit, share, chat))),
+          ),
+        ]
+      : [];
   return [
     h(
       "div",
@@ -438,6 +526,7 @@ export function sharePanel(kit: PageKit, opened: OpenedShare): Child[] {
       toTeam,
       head,
       ...content,
+      ...chats,
     ),
   ];
 }

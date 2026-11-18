@@ -708,7 +708,11 @@ taking the accounts server as `base`.
 - `share/` — sharing a project with a team (`docs/sync.md`): `keys` (fingerprints, wraps),
   `pins` (teammates' keys, anchored by a marker in `sys/member`), `plan` (key files, a
   shown remote, what to do about a share's keys, the floor a reader keeps), `sharer`,
-  `reader`. Commands in `ipc/share.rs`.
+  `reader` (also what is news for this computer, `news_of`, and asks), `chats` (D454: a
+  shared project's chats, written by the sharer as `chats/<chat>` records through
+  `sync/chats.rs` `for_teammates` and `push_text`, listed, read and copied by a reader).
+  Whom a share is for (D453) is `Own.readers`, applied by `plan::allowed` wherever keys
+  are handed out. Commands in `ipc/share.rs`.
 - `incoming.rs` — which of those files are here as a sync download wrote them and weren't
   accepted on this computer (`<data>/sync-incoming.json`, never synced, kept when sync goes
   off): `downloading` (before the write), `list` (drops what was edited here since), `accept`,

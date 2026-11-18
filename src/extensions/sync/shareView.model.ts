@@ -3,7 +3,7 @@
 // a snapshot's row read, and how one of its files is titled when it opens by itself. DOM-free;
 // shareView.ts draws it and shareCommands.ts fills it. The words about keys and people are
 // core/team/shares.ts.
-import type { SharedSnapshot, ShareLatest } from "../../core/ipc/share";
+import type { SharedChat, SharedSnapshot, ShareLatest } from "../../core/ipc/share";
 import { type Signal, signal } from "../../core/reactive/index";
 import { serviceTime, snapshotFacts } from "./model";
 import { SnapshotLook, snapshotLabel, splitPath } from "./snapshotView.model";
@@ -18,6 +18,8 @@ export interface OpenedShare {
   snapshots: number;
   /** Being read again while the list read before stays in view. */
   refreshing: boolean;
+  /** How many chats it shares (0 until read, and when it shares none). */
+  chats: number;
 }
 
 /**
@@ -28,6 +30,8 @@ export class ShareLook {
   readonly opened: Signal<OpenedShare | null> = signal<OpenedShare | null>(null);
   /** The opened share's snapshots, newest first (empty until read). */
   rows: readonly SharedSnapshot[] = [];
+  /** Its shared chats, newest first (empty until read, and when it shares none). */
+  chats: readonly SharedChat[] = [];
   /** The snapshot of it being looked at. */
   readonly snapshot = new SnapshotLook();
   private turn = 0;
@@ -42,23 +46,37 @@ export class ShareLook {
       this.opened.value = { ...now, refreshing: true };
     } else {
       this.rows = [];
+      this.chats = [];
       this.snapshot.close();
-      this.opened.value = { id, phase: "loading", error: null, snapshots: 0, refreshing: false };
+      this.opened.value = {
+        id,
+        phase: "loading",
+        error: null,
+        snapshots: 0,
+        refreshing: false,
+        chats: 0,
+      };
     }
     return ++this.turn;
   }
 
   /** The snapshots arrived. False when another share was opened (or this one closed) meanwhile. */
-  finish(turn: number, snapshots: readonly SharedSnapshot[]): boolean {
+  finish(
+    turn: number,
+    snapshots: readonly SharedSnapshot[],
+    chats: readonly SharedChat[] = [],
+  ): boolean {
     const now = this.opened.peek();
     if (turn !== this.turn || !now) return false;
     this.rows = newestFirst(snapshots);
+    this.chats = [...chats].sort((a, b) => b.updated - a.updated || (a.id < b.id ? -1 : 1));
     this.opened.value = {
       id: now.id,
       phase: "ready",
       error: null,
       snapshots: this.rows.length,
       refreshing: false,
+      chats: this.chats.length,
     };
     // A snapshot that is gone from the share (it keeps its latest ten) isn't looked at any more.
     const looked = this.snapshot.opened.peek();
@@ -79,6 +97,7 @@ export class ShareLook {
   close(): void {
     this.turn++;
     this.rows = [];
+    this.chats = [];
     this.snapshot.close();
     if (this.opened.peek() !== null) this.opened.value = null;
   }

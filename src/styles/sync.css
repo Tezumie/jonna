@@ -1198,6 +1198,39 @@
     color: var(--fg-muted);
     font-size: var(--text-sm);
   }
+  /* Who a share is for: the choice, then the people (they wrap to as many columns as fit). */
+  .sync-share-who,
+  .sync-share-chats {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-top: var(--space-3);
+  }
+  .sync-share-who-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    min-width: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .sync-share-audience {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .sync-share-readers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-6);
+    min-width: 0;
+  }
+  .sync-share-reader {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+    font-weight: 400;
+  }
   /* Why the last share failed: the one line here that is a failure. */
   .sync-share-problem {
     color: var(--status-danger-fg);

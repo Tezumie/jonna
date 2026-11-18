@@ -138,6 +138,37 @@ pub fn someone_left(handed: &[String], members: &BTreeSet<String>) -> bool {
     handed.iter().any(|uid| !members.contains(uid))
 }
 
+/// The members a share is for: all of `members`, or with `readers` (the people the sharer
+/// chose) those of them, and the sharer. A chosen reader who isn't in the team isn't one.
+pub fn allowed<'a, T>(
+    members: &'a [T],
+    uid_of: impl Fn(&T) -> &str,
+    readers: Option<&[String]>,
+    me: &str,
+) -> Vec<&'a T> {
+    members
+        .iter()
+        .filter(|m| {
+            let uid = uid_of(m);
+            uid == me || readers.is_none_or(|chosen| chosen.iter().any(|r| r == uid))
+        })
+        .collect()
+}
+
+/// The people a sharer chose, as they are kept: ids that are ones, each once, without the
+/// sharer, at most `max`. None stays None (the whole team).
+pub fn chosen(readers: Option<Vec<String>>, me: &str, max: usize) -> Option<Vec<String>> {
+    readers.map(|list| {
+        let mut out: Vec<String> = Vec::new();
+        for uid in list {
+            if uid != me && super::keys::valid_uid(&uid) && !out.contains(&uid) && out.len() < max {
+                out.push(uid);
+            }
+        }
+        out
+    })
+}
+
 /// `held`: the generation of the keyring in the sealed record. `current`: the generation the
 /// service has as current. `renewal_needed`: the service asks for new keys, or someone who
 /// was handed these is gone (`someone_left`). `to`: the members who may have the keys
@@ -449,6 +480,35 @@ mod tests {
         ] {
             assert_eq!(shown(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_share_for_chosen_people_is_for_them_and_the_sharer_only() {
+        let team = uids(&["me", "ana", "ben", "cy"]);
+        let of = |readers: Option<&[String]>| -> Vec<String> {
+            allowed(&team, |u| u.as_str(), readers, "me")
+                .into_iter()
+                .cloned()
+                .collect()
+        };
+        assert_eq!(of(None), team, "no list: the whole team");
+        // Someone chosen who isn't in the team isn't a reader; the sharer always is.
+        assert_eq!(of(Some(&uids(&["ben", "gone"]))), uids(&["me", "ben"]));
+        assert_eq!(of(Some(&[])), uids(&["me"]), "an empty list: nobody else");
+        // As kept: no sharer, no repeats, nothing that isn't an id.
+        assert_eq!(
+            chosen(Some(uids(&["ben", "me", "ben", "a.b", ""])), "me", 10),
+            Some(uids(&["ben"]))
+        );
+        assert_eq!(chosen(None, "me", 10), None);
+        assert_eq!(
+            chosen(Some(uids(&["a", "b", "c"])), "me", 2),
+            Some(uids(&["a", "b"]))
+        );
+        // Taken off the list after being handed the keys: new keys, as when someone leaves.
+        let listed: BTreeSet<String> = of(Some(&uids(&["cy"]))).into_iter().collect();
+        assert!(someone_left(&uids(&["ben", "cy"]), &listed));
+        assert!(!someone_left(&uids(&["cy"]), &listed));
     }
 
     fn uids(names: &[&str]) -> Vec<String> {

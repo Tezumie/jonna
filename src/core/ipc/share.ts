@@ -82,6 +82,19 @@ export interface ShareInfo {
   usageBytes: number;
   updatedAt: number | null;
   latest: ShareLatest | null;
+  /** Shared with chosen people, not the whole team (D453). */
+  chosen: boolean;
+  /** For this account's own share: the chosen teammates' ids; null: the whole team. */
+  readers: string[] | null;
+}
+
+/**
+ * Whom a share is for, as a call says it: `readers` (the chosen teammates' ids), or
+ * `wholeTeam` true; neither: as it is (the whole team for a new share).
+ */
+export interface ShareAudienceInput {
+  wholeTeam?: boolean;
+  readers?: string[];
 }
 
 export interface ShareWaiting {
@@ -142,7 +155,90 @@ export interface ShareCopyPlan {
   remote: string | null;
 }
 
+/** A chat in a share, as its record says it (D454). A teammate's title. */
+export interface SharedChat {
+  id: string;
+  title: string;
+  /** When it last changed, in ms (as its writer said). */
+  updated: number;
+  bytes: number;
+  images: number;
+  /** Its images' sizes together, as the record says them. */
+  imageBytes: number;
+}
+
+/** What a pass over a share's chats came to. */
+export interface ShareChatsSynced {
+  written: number;
+  unchanged: number;
+  /** Taken out of the share (deleted here, or the switch is off). */
+  removed: number;
+  /** Not shared this time (too large, or written elsewhere meanwhile). */
+  skipped: number;
+  /** Tool results left out because they were of key files. */
+  keyFiles: number;
+}
+
+/** A teammate who asked this account to share a project (D455). */
+export interface ShareAsk {
+  uid: string;
+  name: string;
+  at: number;
+}
+
+/** Something new among the teammates' shares, for this computer (D455). */
+export interface ShareNews {
+  id: string;
+  kind: "project" | "chats";
+}
+
 export const shareIpc = {
+  /**
+   * Makes the chats of this account's share of `project` the chats `chats` (the project's
+   * on this computer, newest first): new and changed ones are written, the rest of what the
+   * share held is taken out. With the share's chats switch off, every shared chat goes.
+   * `root`: the project's open folder (the backend shares a chat only when its own file says
+   * that folder is its); null: nothing is written, what is shared only goes.
+   */
+  chatsSync: (
+    base: string,
+    project: string,
+    root: string | null,
+    chats: string[],
+  ): Promise<ShareChatsSynced> =>
+    call<ShareChatsSynced>("share_chats_sync", { base, project, root, chats }),
+  /** The chats a share holds, newest first. Titles are a teammate's text. */
+  chats: (base: string, id: string): Promise<SharedChat[]> =>
+    call<SharedChat[]>("share_chats", { base, id }),
+  /** One chat of a share as its file's text, written nowhere (null: not there). A teammate's. */
+  chatText: (base: string, id: string, chat: string): Promise<string | null> =>
+    call<string | null>("share_chat_text", { base, id, chat }),
+  /**
+   * Copies a chat of a share into this account's own chats as the new chat `saveAs`, in the
+   * folder `workspace` (null: none). `owner`: the sharer's name, for the copy's title.
+   */
+  chatCopy: (
+    base: string,
+    id: string,
+    chat: string,
+    saveAs: string,
+    workspace: string | null,
+    owner: string,
+  ): Promise<{ id: string; title: string }> =>
+    call("share_chat_copy", { base, id, chat, saveAs, workspace, owner }),
+  /** Asks a teammate to share a project with this account ("ShareNeedsService": not offered). */
+  ask: (base: string, uid: string): Promise<void> => call<void>("share_ask", { base, uid }),
+  /** The teammates who asked this account to share a project, newest first. */
+  asks: (base: string): Promise<ShareAsk[]> => call<ShareAsk[]>("share_asks", { base }),
+  /** Forgets a teammate's ask of this account. */
+  askClear: (base: string, uid: string): Promise<void> =>
+    call<void>("share_ask_clear", { base, uid }),
+  /**
+   * What is new among the teammates' shares shown now, for this computer; each is said once,
+   * and the first look says nothing.
+   */
+  news: (base: string, shown: { id: string; chats: boolean }[]): Promise<ShareNews[]> =>
+    call<ShareNews[]>("share_news", { base, shown }),
   /** This account's fingerprint; makes and publishes its member key when that wasn't done. */
   me: (base: string): Promise<ShareMe> => call<ShareMe>("share_me", { base }),
   /**
@@ -176,11 +272,21 @@ export const shareIpc = {
       name: string;
       chats: boolean;
       onlyVerified: boolean;
-    },
+    } & ShareAudienceInput,
   ): Promise<ShareSynced> => call<ShareSynced>("share_start", { base, ...share }),
-  /** Changes a share's name and whether its chats are shared. */
-  update: (base: string, project: string, name: string, chats: boolean): Promise<ShareInfo> =>
-    call<ShareInfo>("share_update", { base, project, name, chats }),
+  /**
+   * Changes a share's name, whether its chats are shared, and (with `audience`) whom it is
+   * shared with: someone taken off is refused at once and the keys are renewed. Chosen people
+   * need a service that keeps to it: "ShareNeedsService" otherwise, and nothing changes.
+   */
+  update: (
+    base: string,
+    project: string,
+    name: string,
+    chats: boolean,
+    audience: ShareAudienceInput & { onlyVerified?: boolean } = {},
+  ): Promise<ShareInfo> =>
+    call<ShareInfo>("share_update", { base, project, name, chats, ...audience }),
   /** Stops a share (the sharer, or the team's owner): it is deleted with all it holds. */
   stop: (base: string, id: string): Promise<void> => call<void>("share_stop", { base, id }),
   /**

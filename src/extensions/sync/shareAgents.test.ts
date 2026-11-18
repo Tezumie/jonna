@@ -15,6 +15,14 @@ test("sharing: what sends, opens or settles keys is the person's, not an agent's
     "team.copyFingerprint",
     "team.share.openFile",
     "team.share.openCopy",
+    // Who sees a project and its chats; a teammate's chat in a tab or among one's own chats;
+    // a note sent to a teammate.
+    "sync.project.shareWith",
+    "sync.project.shareChats",
+    "team.share.readChat",
+    "team.share.continueChat",
+    "team.member.askToShare",
+    "team.asks.dismiss",
   ])
     assert.equal(shareCommandAgent(id), "hidden", id);
   // Lists and labels, read only, stay within an agent's reach.
@@ -24,6 +32,7 @@ test("sharing: what sends, opens or settles keys is the person's, not an agent's
     "team.share.snapshots",
     "team.share.files",
     "team.share.view",
+    "team.share.chats",
   ])
     assert.equal(shareCommandAgent(id), "discoverable", id);
   // Every command an agent may run is one of sharing's, and a new one is hidden until listed.

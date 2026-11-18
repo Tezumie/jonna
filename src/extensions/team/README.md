@@ -95,7 +95,8 @@ word for it; a conflict is reported, never overwritten) and `team.unpublish {id}
 a skill's `SKILL.md` removes the whole skill); and for the owner `team.setMode {id, mode}`
 (returns `mode`, `changed`, `version`).
 **Settings:** `team.added`, `team.off`, `team.shareOnlyVerified` (share projects only with
-teammates whose fingerprint was compared; off by default). None of them syncs.
+teammates whose fingerprint was compared; off by default), `team.shareNotices` (say once when a
+teammate shares something or asks for a share; on by default). None of them syncs.
 **State:** `ide://team` (`team`: name, role, publisher; `state`; `items`: id, kind, path,
 isDefault, required, active, version, by, updatedAt; `lastRefresh`; `problem`; and, of sharing
 projects, `members`: uid, name, you, state; `shares`: id, project, name, owner, mine, state,

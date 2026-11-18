@@ -4487,3 +4487,36 @@ Two accounts in one team, sync on for both.
 3. The same chat on another provider's model: the tool loads and runs as before.
 4. With `agent.autoCompact` off, a long chat of many large file reads on an Anthropic model
    goes on past the context meter's limit without "prompt is too long".
+
+## D453 — Sharing with chosen people
+Three accounts in one team (A shares, B and C read), each with sync on.
+1. A: Sync, Projects, the project: "Share with" shows "The whole team". Choose "Chosen
+   people": everyone is ticked. Untick C, then turn "Share with team" on. B sees the project
+   under Team, Shared projects; C doesn't.
+2. A ticks C: within a pass C sees it and can open it.
+3. A unticks B: B's Team page loses the project at its next read, and opening a snapshot B
+   had in view says the project isn't shared any more. A's card says who can read it.
+4. A chooses "The whole team": both read again.
+5. With `team.shareOnlyVerified` on, someone ticked but not verified shows why under their
+   name, and gets no keys.
+6. A small window (700 px wide): the people wrap under the choice; nothing is cut off.
+
+## D454 — A shared project's chats
+1. A, on the shared project's card: tick "Share its chats too". A question says what
+   teammates will see; confirm. The activity says how many chats were shared.
+2. B: Team, Shared projects, the project: "Chats" lists them, newest first. Read opens a
+   read-only document. A chat in which the agent read `.env` shows "[Left out of the shared
+   chat: a key file.]" where the content was.
+3. B: the ⋯ menu, "Continue as my own chat": a chat "… (from A)" opens among B's own, ends
+   with "Copied from A's shared chat…", and B can go on in it. Nothing changes for A.
+4. A unticks the switch: B's "Chats" part goes at the next read.
+5. A chat of another folder, and one started with no folder, never show for B.
+
+## D455 — Hand-off
+1. B (app open) while A shares a new project: one notification "A shared a project: …" with
+   View; none on the next read. On a computer of B's that never saw the team's shares, the
+   first read announces nothing.
+2. A turns on the project's chats: B is told once.
+3. `team.shareNotices` off: nothing is announced; Team still lists everything.
+4. C: Team, People, "Ask to share…" on A. A's app says "C asked you to share a project" once
+   and shows it above Shared projects, with Projects and Dismiss. Dismiss: gone.

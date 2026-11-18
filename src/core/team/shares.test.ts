@@ -11,7 +11,11 @@ import type {
 } from "../ipc/share";
 import {
   acceptKeyWords,
+  askSentence,
+  audienceSentence,
   canRead,
+  chatsSentence,
+  chatsToShare,
   cloneQuestion,
   copyReport,
   fingerprintGroups,
@@ -23,9 +27,11 @@ import {
   memberLine,
   memberTag,
   nameList,
+  newsSentence,
   noTeamCode,
   ownShareOf,
   parseTeamShareScheme,
+  readerChoices,
   readersLine,
   refreshDue,
   SHARE_KEYS_MS,
@@ -34,7 +40,10 @@ import {
   SHARE_REFRESH_MS,
   SHARE_RENEW_MS,
   sameFingerprint,
+  sameReaders,
   shareAudience,
+  sharedChatDocument,
+  sharedChatTitle,
   shareErrorWords,
   shareLabel,
   shareRefusal,
@@ -44,6 +53,7 @@ import {
   splitShareId,
   syncSentence,
   teamShareScheme,
+  toggledReaders,
   unshareQuestion,
   verifyWords,
   waitingLines,
@@ -73,6 +83,8 @@ const share = (id: string, name: string, owner: string, state: ShareState): Shar
   usageBytes: 0,
   updatedAt: null,
   latest: null,
+  chosen: false,
+  readers: null,
 });
 
 const waiting = (name: string, why: ShareWaiting["why"]): ShareWaiting => ({
@@ -395,6 +407,9 @@ test("sharing: shares are listed by name, then by whose they are", () => {
     mine: false,
     state: "ready",
     latest: null,
+    // Whether its chats travel and whether it is for chosen people; never who they are.
+    chats: false,
+    chosen: false,
   });
 });
 
@@ -493,4 +508,150 @@ test("sharing: nothing is read or seen to more often than every few minutes", ()
   assert.equal(keysDue(true, now - SHARE_RENEW_MS + 1, now), false);
   assert.equal(keysDue(true, now - SHARE_RENEW_MS, now), true);
   assert.ok(SHARE_RENEW_MS >= 60_000 && SHARE_RENEW_MS < SHARE_KEYS_MS);
+});
+
+const person = (uid: string, name: string, state: ShareMemberState, you = false): ShareMember => ({
+  uid,
+  name,
+  you,
+  state,
+  fingerprint: null,
+  pendingFingerprint: null,
+  pinnedAt: null,
+});
+
+test("D453: a share for chosen people reaches them and nobody else", () => {
+  const team = [
+    person("me", "Me", "verified", true),
+    person("ana", "Ana", "verified"),
+    person("ben", "Ben", "new"),
+    person("cy", "Cy", "nokey"),
+  ];
+  // The whole team: as before.
+  assert.deepEqual(shareAudience(team, false).readers, ["Ana", "Ben"]);
+  // Chosen: only they are readers, and only they are waited for.
+  const chosen = shareAudience(team, false, null, ["ben", "cy"]);
+  assert.deepEqual(chosen.readers, ["Ben"]);
+  assert.deepEqual(
+    chosen.waiting.map((w) => w.uid),
+    ["cy"],
+  );
+  // What the last sync said of someone who isn't chosen any more is not shown.
+  const known: ShareWaiting[] = [{ uid: "ana", name: "Ana", why: "notVerified" }];
+  assert.deepEqual(shareAudience(team, true, known, ["ben"]).waiting, []);
+
+  const rows = readerChoices(team, ["ben", "cy", "gone"], true);
+  assert.deepEqual(
+    rows.map((r) => [r.uid, r.picked]),
+    [
+      ["ana", false],
+      ["ben", true],
+      ["cy", true],
+    ],
+  );
+  assert.equal(rows.find((r) => r.uid === "ana")?.note, "", "not picked: nothing to explain");
+  assert.notEqual(rows.find((r) => r.uid === "ben")?.note, "", "picked, not verified: said");
+  assert.ok(readerChoices(team, null, false).every((r) => r.picked));
+
+  // Choosing people starts with everyone; unticking takes one off; someone gone isn't kept.
+  assert.deepEqual(toggledReaders(team, null, "", false), ["ana", "ben", "cy"]);
+  assert.deepEqual(toggledReaders(team, null, "ben", false), ["ana", "cy"]);
+  assert.deepEqual(toggledReaders(team, ["ben", "gone"], "ana", true), ["ana", "ben"]);
+  assert.deepEqual(toggledReaders(team, ["ben"], "stranger", true), ["ben"]);
+  assert.deepEqual(toggledReaders(team, ["ben"], "me", true), ["ben"], "never oneself");
+
+  assert.equal(sameReaders(null, null), true);
+  assert.equal(sameReaders(null, []), false);
+  assert.equal(sameReaders(["a", "b"], ["b", "a"]), true);
+  assert.equal(audienceSentence(team, null), "Shared with your whole team.");
+  assert.equal(audienceSentence(team, ["ben", "ana"]), "Shared with Ana and Ben only.");
+  assert.equal(audienceSentence(team, []), "Shared with nobody else yet.");
+  assert.match(shareErrorWords("ShareNeedsService", "x"), /whole team/);
+});
+
+test("D454: which chats are shared, and what a pass says", () => {
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const chats = [
+    { id: "old", workspace: "C:/p", updated: 1 },
+    { id: "new", workspace: "c:/P", updated: 9 },
+    { id: "other", workspace: "C:/q", updated: 5 },
+    { id: "loose", workspace: null, updated: 7 },
+    { id: "busy", workspace: "C:/p", updated: 8 },
+  ];
+  // The project's own, newest first: never another folder's, never one with no folder.
+  assert.deepEqual(
+    chatsToShare(chats, "C:/p", same, (id) => id === "busy"),
+    ["new", "old"],
+  );
+  assert.deepEqual(chatsToShare(chats, "C:/none", same), []);
+  const many = Array.from({ length: 130 }, (_, i) => ({
+    id: `c${i}`,
+    workspace: "r",
+    updated: i,
+  }));
+  const kept = chatsToShare(many, "r", same);
+  assert.equal(kept.length, 100);
+  assert.equal(kept[0], "c129");
+
+  const none = { written: 0, unchanged: 4, removed: 0, skipped: 0, keyFiles: 0 };
+  assert.equal(chatsSentence(none), "");
+  assert.equal(
+    chatsSentence({ written: 2, unchanged: 0, removed: 1, skipped: 1, keyFiles: 3 }),
+    "2 chats shared. 1 chat taken out of what is shared. What the agent read from key files was left out (3). 1 chat will follow.",
+  );
+  assert.equal(sharedChatTitle({ title: "  " }), "Untitled chat");
+  assert.equal(
+    sharedChatDocument({ title: "Fix the build" }, "Sam"),
+    "Fix the build (Sam, shared).md",
+  );
+});
+
+test("D455: what is said when a teammate shares, or asks", () => {
+  const shared = (id: string, name: string, owner: string, mine = false) => ({
+    id,
+    name,
+    mine,
+    owner: { uid: id.split(".")[0] ?? "", name: owner },
+  });
+  const shares = [
+    shared("sam.p1", "Webshop", "Sam"),
+    shared("me.p2", "Mine", "Me", true),
+    shared("ana.p3", "Docs", ""),
+  ];
+  assert.equal(newsSentence([], shares), null);
+  assert.deepEqual(newsSentence([{ id: "sam.p1", kind: "project" }], shares), {
+    message: "Sam shared a project: Webshop.",
+    share: "sam.p1",
+  });
+  assert.equal(
+    newsSentence([{ id: "ana.p3", kind: "chats" }], shares)?.message,
+    "A teammate shared the chats of Docs.",
+  );
+  // One's own, and one that isn't listed, are never news.
+  assert.equal(
+    newsSentence(
+      [
+        { id: "me.p2", kind: "project" },
+        { id: "x.y", kind: "project" },
+      ],
+      shares,
+    ),
+    null,
+  );
+  assert.deepEqual(
+    newsSentence(
+      [
+        { id: "sam.p1", kind: "project" },
+        { id: "ana.p3", kind: "project" },
+      ],
+      shares,
+    ),
+    { message: "Your team shared 2 new things.", share: null },
+  );
+  assert.equal(askSentence([]), "");
+  assert.equal(askSentence([{ name: "Sam" }]), "Sam asked you to share a project.");
+  assert.equal(
+    askSentence([{ name: "Sam" }, { name: " " }]),
+    "Sam and A teammate asked you to share a project.",
+  );
 });

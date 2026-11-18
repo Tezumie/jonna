@@ -279,6 +279,7 @@ pub async fn sync_chat_pull(
         &save_as,
         workspace.as_deref(),
         if_stamp.as_deref(),
+        crate::sync::chats::Limits::OWN,
     )
     .await
 }

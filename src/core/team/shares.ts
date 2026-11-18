@@ -7,11 +7,15 @@
 // share sync came to, and what a refused call means. The calls are core/ipc/share.ts; what is
 // read lives in shareBook.ts; the Sync tab draws it and the commands use it.
 import type {
+  ShareAsk,
+  ShareChatsSynced,
   ShareCopy,
+  SharedChat,
   ShareInfo,
   ShareLatest,
   ShareMember,
   ShareMemberState,
+  ShareNews,
   ShareState,
   ShareSynced,
   ShareWaiting,
@@ -249,10 +253,15 @@ export function shareAudience(
   members: readonly ShareMember[],
   onlyVerified: boolean,
   known: readonly ShareWaiting[] | null = null,
+  chosen: readonly string[] | null = null,
 ): ShareAudience {
-  const others = sortMembers(members.filter((member) => !member.you));
+  // Shared with chosen people (D453): nobody else is a reader, or waited for.
+  const picked = chosen ? new Set(chosen) : null;
+  const others = sortMembers(
+    members.filter((member) => !member.you && (!picked || picked.has(member.uid))),
+  );
   const waiting: ShareWaiting[] = known
-    ? [...known]
+    ? known.filter((entry) => !picked || picked.has(entry.uid))
     : others.flatMap((member): ShareWaiting[] => {
         const why: ShareWaiting["why"] | null =
           member.state === "nokey"
@@ -275,6 +284,181 @@ export function shareAudience(
 export function readersLine(readers: readonly string[]): string {
   if (readers.length === 0) return "Nobody else in your team can read it yet.";
   return `${plural(readers.length, "teammate")} can read it: ${nameList(readers)}.`;
+}
+
+/** Whether teammates' new shares are announced on this computer (D455). */
+export const SHARE_NOTICES_SETTING = "team.shareNotices";
+
+/** The most chats a share holds: the project's newest. */
+export const MAX_SHARED_CHATS = 100;
+
+/**
+ * The chats of the project in `root` that are shared, newest first: the ones whose folder is
+ * that folder, without those being written right now (`busy`; they go the next time).
+ * `sameFolder` compares two paths as this computer spells them.
+ */
+export function chatsToShare(
+  chats: readonly { id: string; workspace: string | null; updated: number }[],
+  root: string,
+  sameFolder: (a: string, b: string) => boolean,
+  busy: (id: string) => boolean = () => false,
+): string[] {
+  return chats
+    .filter((chat) => chat.workspace !== null && sameFolder(chat.workspace, root) && !busy(chat.id))
+    .sort((a, b) => b.updated - a.updated || (a.id < b.id ? -1 : 1))
+    .slice(0, MAX_SHARED_CHATS)
+    .map((chat) => chat.id);
+}
+
+/** "3 chats were shared." and what else a pass over a share's chats did ("" when nothing). */
+export function chatsSentence(result: ShareChatsSynced): string {
+  return [
+    result.written > 0 ? `${plural(result.written, "chat")} shared.` : "",
+    result.removed > 0 ? `${plural(result.removed, "chat")} taken out of what is shared.` : "",
+    result.keyFiles > 0
+      ? `What the agent read from key files was left out (${result.keyFiles}).`
+      : "",
+    result.skipped > 0 ? `${plural(result.skipped, "chat")} will follow.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** The question before a project's chats are shared too. */
+export function shareChatsQuestion(
+  name: string,
+  audience: string,
+): { title: string; message: string } {
+  return {
+    title: `Share ${name}'s chats too?`,
+    message: `${audience}\n\nThey will be able to read this project's chats with the agent, images included, and continue a copy as their own. A chat holds whatever was said in it and whatever the agent read or ran: look through them for anything private first. What the agent read from key files (.env, keys and tokens) is left out; other secrets are not recognised.\n\nChats in other folders, and chats with no folder, are never shared. Turning this off removes the shared chats.`,
+  };
+}
+
+/** A shared chat as its row says it. */
+export function sharedChatTitle(chat: Pick<SharedChat, "title">): string {
+  return chat.title.trim() || "Untitled chat";
+}
+
+/** The file name a shared chat opens under, read only. */
+export function sharedChatDocument(chat: Pick<SharedChat, "title">, owner: string): string {
+  const who = owner.trim() || "a teammate";
+  return `${sharedChatTitle(chat).slice(0, 40)} (${who}, shared).md`;
+}
+
+/** What a notice says of something new among the teammates' shares; null: nothing to say. */
+export function newsSentence(
+  news: readonly ShareNews[],
+  shares: readonly Pick<ShareInfo, "id" | "name" | "owner" | "mine">[],
+): { message: string; share: string | null } | null {
+  const told = news.flatMap((entry) => {
+    const share = shares.find((s) => s.id === entry.id && !s.mine);
+    if (!share) return [];
+    const who = share.owner.name.trim() || "A teammate";
+    return [
+      {
+        id: share.id,
+        text:
+          entry.kind === "chats"
+            ? `${who} shared the chats of ${share.name}.`
+            : `${who} shared a project: ${share.name}.`,
+      },
+    ];
+  });
+  const first = told[0];
+  if (!first) return null;
+  if (told.length === 1) return { message: first.text, share: first.id };
+  return { message: `Your team shared ${told.length} new things.`, share: null };
+}
+
+/** "Sam asked you to share a project." */
+export function askSentence(asks: readonly Pick<ShareAsk, "name">[]): string {
+  const names = asks.map((ask) => ask.name.trim() || "A teammate");
+  if (names.length === 0) return "";
+  if (names.length === 1) return `${names[0]} asked you to share a project.`;
+  return `${nameList(names)} asked you to share a project.`;
+}
+
+/** The second switch on a shared project (D454). */
+export const SHARE_CHATS_LABEL = "Share its chats too";
+export const SHARE_CHATS_NOTE =
+  "The same people can then read this project's chats with the agent, images included, and continue a copy as their own. A chat holds whatever was said and whatever the agent read.";
+
+/** The two ways a project is shared (D453). */
+export const AUDIENCE_TEAM = "The whole team";
+export const AUDIENCE_CHOSEN = "Chosen people";
+/** Said under the choice when people are chosen. */
+export const AUDIENCE_NOTE =
+  "Only the people ticked can see this project. Taking someone off stops them reading what is shared from then on; what they already opened they keep.";
+
+/** A teammate as the card's list of people to choose shows them. */
+export interface ReaderChoice {
+  uid: string;
+  name: string;
+  picked: boolean;
+  /** Why they can't read it yet although picked ("" when they can, or aren't picked). */
+  note: string;
+}
+
+/**
+ * The teammates a share can be for, each with whether they are chosen (`chosen` null: the
+ * whole team, so everyone is). Someone chosen who left the team isn't listed.
+ */
+export function readerChoices(
+  members: readonly ShareMember[],
+  chosen: readonly string[] | null,
+  onlyVerified: boolean,
+): ReaderChoice[] {
+  const picked = chosen ? new Set(chosen) : null;
+  return sortMembers(members.filter((member) => !member.you)).map((member) => {
+    const on = !picked || picked.has(member.uid);
+    const why: ShareWaiting["why"] | null =
+      member.state === "nokey"
+        ? "noKey"
+        : member.state === "changed"
+          ? "keyChanged"
+          : member.state === "new" && onlyVerified
+            ? "notVerified"
+            : null;
+    return {
+      uid: member.uid,
+      name: member.name,
+      picked: on,
+      note: on && why ? waitingWhy(why) : "",
+    };
+  });
+}
+
+/** The chosen people after one of them is ticked or unticked (ids of current teammates only). */
+export function toggledReaders(
+  members: readonly ShareMember[],
+  chosen: readonly string[] | null,
+  uid: string,
+  on: boolean,
+): string[] {
+  const team = members.filter((member) => !member.you).map((member) => member.uid);
+  const now = new Set(chosen ? chosen.filter((id) => team.includes(id)) : team);
+  if (on && team.includes(uid)) now.add(uid);
+  else now.delete(uid);
+  return team.filter((id) => now.has(id));
+}
+
+/** Whether two choices of people are the same (null: the whole team). */
+export function sameReaders(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+}
+
+/** "Shared with Ana and Sam only." / "Shared with your whole team." */
+export function audienceSentence(
+  members: readonly ShareMember[],
+  chosen: readonly string[] | null,
+): string {
+  if (chosen === null) return "Shared with your whole team.";
+  const names = sortMembers(members.filter((m) => !m.you && chosen.includes(m.uid))).map(
+    (m) => m.name,
+  );
+  return names.length ? `Shared with ${nameList(names)} only.` : "Shared with nobody else yet.";
 }
 
 /** "3 key files were left out." ("" when none was). */
@@ -373,6 +557,10 @@ export interface ShareLabel {
   mine: boolean;
   state: ShareState;
   latest: ShareLatest | null;
+  /** Its chats are shared too (D454). */
+  chats: boolean;
+  /** Shared with chosen people, not the whole team (D453). */
+  chosen: boolean;
 }
 
 export function shareLabel(share: ShareInfo): ShareLabel {
@@ -384,6 +572,8 @@ export function shareLabel(share: ShareInfo): ShareLabel {
     mine: share.mine,
     state: share.state,
     latest: share.latest,
+    chats: share.chats === true,
+    chosen: share.chosen === true,
   };
 }
 
@@ -432,6 +622,8 @@ const REFUSALS: Readonly<Record<string, string>> = {
   ShareNotSharer: "Only the person who shares a project, or the team's owner, can do that.",
   ShareGone: "That project isn't shared any more.",
   ShareNotShared: "This project isn't shared with your team.",
+  ShareNeedsService:
+    "Sharing with chosen people isn't available from your account's sync service yet, so nothing was changed. You can share with the whole team.",
   ShareTooMany:
     "You share as many projects as an account can (20). Stop sharing one of them first.",
   ShareKeys:

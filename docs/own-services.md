@@ -309,6 +309,10 @@ error codes), `vault.rs` (the state, devices, pairing and keys), `records.rs` an
 A server of your own that offers teams also answers, as [sync.md](sync.md) lists them:
 
 - `PUT /api/team/key`, and `memberKey` on each member in `GET /api/team`;
+- `GET /api/team/shares` answering `features` (`readers` when it keeps a share to the
+  people its sharer chose; without it the app offers the whole team only) and `asks`;
+  `POST` and `DELETE /api/team/shares/{uid}/ask` (optional: without them "Ask to share"
+  says it isn't available);
 - `/api/team/shares` and everything under it: a share is stored and answered like a vault
   (the same record and chunk calls), with one writer and the team's members as readers.
 

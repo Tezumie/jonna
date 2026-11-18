@@ -7,7 +7,14 @@ export const SHARE_COMMANDS: readonly string[] = [
   "sync.project.share",
   "sync.project.unshare",
   "sync.project.shareNow",
+  "sync.project.shareWith",
+  "sync.project.shareChats",
   "team.members",
+  "team.member.askToShare",
+  "team.asks.dismiss",
+  "team.share.chats",
+  "team.share.readChat",
+  "team.share.continueChat",
   "team.member.verify",
   "team.member.acceptKey",
   "team.startOver",
@@ -35,6 +42,7 @@ export const SHARE_COMMANDS_AGENTS_MAY_RUN: readonly string[] = [
   "team.share.snapshots",
   "team.share.files",
   "team.share.view",
+  "team.share.chats",
 ];
 
 /** How a sharing command is registered for agents. */

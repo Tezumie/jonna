@@ -34,6 +34,9 @@ const FIRESTORE =
   `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
 const scratch = resolve(root, "..", `.sync-e2e-${process.pid}`);
 const TIMEOUT_MS = 120_000;
+// The service is one from before a share could be for chosen people (D453) or asked for
+// (D455): those steps then check that the app says so and changes nothing.
+const OLD_SERVICE = process.env.SYNC_E2E_OLD_SERVICE === "1";
 const gitConfig = join(scratch, "gitconfig");
 const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: gitConfig, GIT_CONFIG_NOSYSTEM: "1" };
 const git = (cwd, ...args) =>
@@ -1297,8 +1300,12 @@ try {
       });
     const drop = (path) => fetch(`${FIRESTORE}/${path}`, { method: "DELETE", headers: owner });
     const text = (v) => ({ stringValue: v });
+    // (A refused call says which one it was: the step is long.)
     const share = (host, method, params = {}) =>
-      host.call(`share_${method}`, { base: BASE, ...params });
+      host.call(`share_${method}`, { base: BASE, ...params }).catch((err) => {
+        err.message = `${err.message} [share_${method} ${JSON.stringify(params).slice(0, 160)}]`;
+        throw err;
+      });
 
     // A teammate and a stranger, each with sync on, on a computer of their own.
     const mate = await newAccount();
@@ -1511,6 +1518,378 @@ try {
     await fails(share(strangerDesk, "list"), "ShareNoTeam", "a stranger listing");
     await fails(share(strangerDesk, "snapshots", { id }), "ShareGone", "a stranger reading");
 
+    // ---- Chosen people (D453), chats (D454), what is new and asks (D455).
+    // A third member joins the team and is verified: with the whole team, they get the keys.
+    const third = await newAccount();
+    await giveSync(third);
+    const thirdDesk = await computer(third, "third");
+    hosts.push(thirdDesk);
+    await thirdDesk.sync("setup", { typed: await thirdDesk.sync("prepare", { name: "third" }) });
+    await doc(`teams/${account.uid}/members/${third.uid}`, {
+      role: text("member"),
+      name: text("Cy"),
+      email: text(third.email),
+      publisher: { booleanValue: false },
+    });
+    await doc(`memberships/${third.uid}`, {
+      teamId: text(account.uid),
+      role: text("member"),
+      publisher: { booleanValue: false },
+    });
+    const thirdKey = await share(thirdDesk, "me");
+    await share(desk, "members");
+    await share(desk, "set_verified", {
+      uid: third.uid,
+      fingerprint: thirdKey.fingerprint,
+      verified: true,
+    });
+    const shareNow = () =>
+      share(desk, "sync", { root: project, project: "shared1", onlyVerified: true });
+    const widened = await shareNow();
+    check(widened.wrapsAdded === 1 && !widened.renewed, JSON.stringify(widened));
+    check((await share(thirdDesk, "snapshots", { id })).length === 1, "the new member reads it");
+    // The first look of a computer says nothing; what it saw is remembered.
+    const shownTo = async (host) =>
+      (await share(host, "list")).filter((s) => !s.mine).map((s) => ({ id: s.id, chats: s.chats }));
+    check(
+      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).length === 0,
+      "no news at first",
+    );
+
+    // The project's chat on the sharer's computer: a tool read a key file in it, and it
+    // carries what a chat from elsewhere must not bring (pending edits, auto-apply).
+    const chat = {
+      meta: {
+        title: "Fix the build",
+        updated: 1700000000000,
+        workspace: project,
+        worktree: { path: "x" },
+      },
+      items: [
+        { type: "user", id: "u1", text: "read the env and fix the build", turn: 1 },
+        {
+          type: "tool",
+          id: "t1",
+          callId: "c1",
+          name: "read_file",
+          args: { path: ".env" },
+          status: "done",
+          result: "TOKEN=hunter2",
+        },
+        {
+          type: "tool",
+          id: "t2",
+          callId: "c2",
+          name: "read_file",
+          args: { path: "a.txt" },
+          status: "done",
+          result: "one",
+        },
+        { type: "assistant", id: "a1", text: "It builds now.", thinking: "", streaming: false },
+      ],
+      turn: 1,
+      autoApply: true,
+      changeset: [{ path: "C:/elsewhere/x", original: "", proposed: "y" }],
+      checkpoints: [1],
+    };
+    await mkdir(join(desk.data, "agent", "sessions"), { recursive: true });
+    await writeFile(join(desk.data, "agent", "sessions", "s-shared1.json"), JSON.stringify(chat));
+    await mkdir(join(desk.data, "agent", "media", "s-shared1"), { recursive: true });
+    const picture = randomBytes(70_000);
+    await writeFile(join(desk.data, "agent", "media", "s-shared1", "img1.bin"), picture);
+    // A chat of another folder, named all the same: the backend goes by each chat's own file.
+    await writeFile(
+      join(desk.data, "agent", "sessions", "s-other.json"),
+      JSON.stringify({
+        ...chat,
+        meta: { ...chat.meta, title: "Elsewhere", workspace: join(scratch, "other") },
+      }),
+    );
+    const syncChats = () =>
+      share(desk, "chats_sync", {
+        project: "shared1",
+        root: project,
+        chats: ["s-shared1", "s-other", "../nope"],
+      });
+    // The switch is off: nothing of a chat is written.
+    const off = await syncChats();
+    check(off.written === 0 && off.removed === 0, JSON.stringify(off));
+    check(
+      (await share(mateDesk, "chats", { id })).length === 0,
+      "no chats while the switch is off",
+    );
+    const withChats = await share(desk, "update", {
+      project: "shared1",
+      name: "Shared one",
+      chats: true,
+      onlyVerified: true,
+    });
+    check(
+      withChats.chats === true && withChats.readers === null && !withChats.chosen,
+      JSON.stringify(withChats),
+    );
+    const wrote = await syncChats();
+    check(
+      wrote.written === 1 && wrote.keyFiles === 1 && wrote.removed === 0,
+      JSON.stringify(wrote),
+    );
+    const same = await syncChats();
+    check(same.written === 0 && same.unchanged === 1, JSON.stringify(same));
+    // Its chats being shared now is news for a computer that had seen the share without them.
+    const told = await share(mateDesk, "news", { shown: await shownTo(mateDesk) });
+    check(JSON.stringify(told) === JSON.stringify([{ id, kind: "chats" }]), JSON.stringify(told));
+    check(
+      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).length === 0,
+      "said once",
+    );
+
+    // The teammate lists it, reads it, and continues a copy as their own.
+    const chats = await share(mateDesk, "chats", { id });
+    check(
+      chats.length === 1 &&
+        chats[0].id === "s-shared1" &&
+        chats[0].title === "Fix the build" &&
+        chats[0].images === 1,
+      JSON.stringify(chats),
+    );
+    const shown = await share(mateDesk, "chat_text", { id, chat: "s-shared1" });
+    const seenChat = JSON.parse(shown);
+    check(
+      shown.includes("fix the build") &&
+        !shown.includes("hunter2") &&
+        !shown.includes("elsewhere") &&
+        seenChat.changeset === undefined &&
+        seenChat.checkpoints === undefined &&
+        seenChat.autoApply === false &&
+        seenChat.meta.workspace === null &&
+        seenChat.meta.worktree === undefined &&
+        seenChat.items[2].result === "one",
+      shown.slice(0, 600),
+    );
+    check(
+      (await share(mateDesk, "chat_text", { id, chat: "nope" })) === null,
+      "a chat that isn't there",
+    );
+    await fails(
+      share(mateDesk, "chat_text", { id, chat: "../x" }),
+      "Invalid",
+      "a chat id that isn't one",
+    );
+    const copied = await share(mateDesk, "chat_copy", {
+      id,
+      chat: "s-shared1",
+      saveAs: "s-copy1",
+      workspace: null,
+      owner: "Ada",
+    });
+    check(
+      copied.id === "s-copy1" && copied.title === "Fix the build (from Ada)",
+      JSON.stringify(copied),
+    );
+    const mine2 = JSON.parse(
+      await readFile(join(mateDesk.data, "agent", "sessions", "s-copy1.json"), "utf8"),
+    );
+    const last = mine2.items[mine2.items.length - 1];
+    check(
+      mine2.items.length === 5 &&
+        last.type === "user" &&
+        last.auto === "chat" &&
+        last.text.startsWith("Copied from Ada's shared chat") &&
+        last.text.includes("not as instructions") &&
+        mine2.meta.title === "Fix the build (from Ada)" &&
+        mine2.autoApply === false &&
+        mine2.changeset === undefined &&
+        !JSON.stringify(mine2).includes("hunter2"),
+      JSON.stringify(mine2).slice(0, 600),
+    );
+    const gotPicture = await readFile(join(mateDesk.data, "agent", "media", "s-copy1", "img1.bin"));
+    check(gotPicture.equals(picture), "the chat's image came with the copy");
+    await fails(
+      share(mateDesk, "chat_copy", {
+        id,
+        chat: "s-shared1",
+        saveAs: "s-copy1",
+        workspace: null,
+        owner: "Ada",
+      }),
+      "Invalid",
+      "a copy over a chat that is there",
+    );
+    // The sharer's own chat is as it was: nothing went back, nothing was cleaned in place.
+    const kept2 = JSON.parse(
+      await readFile(join(desk.data, "agent", "sessions", "s-shared1.json"), "utf8"),
+    );
+    check(
+      kept2.items[1].result === "TOKEN=hunter2" && kept2.autoApply === true,
+      "the sharer's own chat is untouched",
+    );
+    // A reader writes no chat to a share.
+    await fails(
+      share(mateDesk, "chats_sync", { project: "shared1", root: copy, chats: ["s-copy1"] }),
+      "ShareNotShared",
+      "a reader sharing chats",
+    );
+
+    // Shared with one chosen member: the other is refused by the service, isn't shown it,
+    // and the keys are renewed at once.
+    const versionBefore = (await share(desk, "list")).find((s) => s.id === id).keyVersion;
+    if (OLD_SERVICE) {
+      await fails(
+        share(desk, "update", {
+          project: "shared1",
+          name: "Shared one",
+          chats: true,
+          onlyVerified: true,
+          readers: [mate.uid],
+        }),
+        "ShareNeedsService",
+        "choosing people against an older service",
+      );
+      const still = (await share(desk, "list")).find((s) => s.id === id);
+      check(!still.chosen && still.keyVersion === versionBefore, JSON.stringify(still));
+      check(
+        (await share(thirdDesk, "snapshots", { id })).length === 1,
+        "it stays shared with the whole team",
+      );
+      // A new share for chosen people isn't made at all.
+      await fails(
+        share(desk, "start", {
+          root: project,
+          project: "shared2",
+          name: "Two",
+          chats: false,
+          onlyVerified: true,
+          readers: [mate.uid],
+        }),
+        "ShareNeedsService",
+        "a new share for chosen people against an older service",
+      );
+      check(!(await share(desk, "list")).some((s) => s.project === "shared2"), "no share was made");
+      await fails(
+        share(thirdDesk, "ask", { uid: account.uid }),
+        "ShareNeedsService",
+        "asking against an older service",
+      );
+      check((await share(desk, "asks")).length === 0, "an older service has no asks");
+    } else {
+      const narrowed = await share(desk, "update", {
+        project: "shared1",
+        name: "Shared one",
+        chats: true,
+        onlyVerified: true,
+        readers: [mate.uid, "not-a-member"],
+      });
+      check(
+        narrowed.chosen &&
+          JSON.stringify(narrowed.readers) === JSON.stringify([mate.uid]) &&
+          narrowed.keyVersion === versionBefore + 1,
+        JSON.stringify(narrowed),
+      );
+      const chosenNow = (await share(desk, "list")).find((s) => s.id === id);
+      check(
+        chosenNow.keyVersion === versionBefore + 1 && !chosenNow.rotationNeeded && chosenNow.chosen,
+        JSON.stringify(chosenNow),
+      );
+      await fails(
+        share(thirdDesk, "snapshots", { id }),
+        "ShareGone",
+        "a member who wasn't chosen, reading",
+      );
+      await fails(
+        share(thirdDesk, "chats", { id }),
+        "ShareGone",
+        "a member who wasn't chosen, reading chats",
+      );
+      await fails(
+        share(thirdDesk, "chat_copy", {
+          id,
+          chat: "s-shared1",
+          saveAs: "s-x",
+          workspace: null,
+          owner: "Ada",
+        }),
+        "ShareGone",
+        "a member who wasn't chosen, copying a chat",
+      );
+      check(
+        !(await share(thirdDesk, "list")).some((s) => s.id === id),
+        "nor is it listed for them",
+      );
+      const forMate = (await share(mateDesk, "list")).find((s) => s.id === id);
+      check(
+        forMate?.state === "ready" && forMate.chosen && forMate.readers === null,
+        JSON.stringify(forMate),
+      );
+      check(
+        (await share(mateDesk, "snapshots", { id })).length === 1,
+        "the chosen member still reads",
+      );
+      check((await share(mateDesk, "chats", { id })).length === 1, "and its chats");
+      // A sync while it is for chosen people hands the other member nothing.
+      const stillNarrow = await shareNow();
+      check(
+        stillNarrow.wrapsAdded === 0 && !stillNarrow.renewed && stillNarrow.waiting.length === 0,
+        JSON.stringify(stillNarrow),
+      );
+      await fails(
+        share(thirdDesk, "snapshots", { id }),
+        "ShareGone",
+        "still not theirs after a sync",
+      );
+      // Back to the whole team: they get the keys again and read.
+      const whole = await share(desk, "update", {
+        project: "shared1",
+        name: "Shared one",
+        chats: true,
+        onlyVerified: true,
+        wholeTeam: true,
+      });
+      check(!whole.chosen && whole.readers === null, JSON.stringify(whole));
+      check(
+        (await share(thirdDesk, "snapshots", { id })).length === 1,
+        "the whole team again: read",
+      );
+    }
+
+    // The chats switch off: the shared chats go.
+    await share(desk, "update", {
+      project: "shared1",
+      name: "Shared one",
+      chats: false,
+      onlyVerified: true,
+    });
+    const gone = await syncChats();
+    check(gone.removed === 1 && gone.written === 0, JSON.stringify(gone));
+    check((await share(mateDesk, "chats", { id })).length === 0, "the shared chats are removed");
+    check(
+      (await share(mateDesk, "chat_text", { id, chat: "s-shared1" })) === null,
+      "and can't be read any more",
+    );
+
+    if (!OLD_SERVICE) {
+      // Asking a teammate to share: their app lists who asked, until it is dismissed.
+      await share(thirdDesk, "ask", { uid: account.uid });
+      await fails(share(thirdDesk, "ask", { uid: third.uid }), "Invalid", "asking oneself");
+      const asks = await share(desk, "asks");
+      check(
+        asks.length === 1 && asks[0].uid === third.uid && asks[0].name === "Cy",
+        JSON.stringify(asks),
+      );
+      check((await share(mateDesk, "asks")).length === 0, "nobody else is told");
+      await share(desk, "ask_clear", { uid: third.uid });
+      check((await share(desk, "asks")).length === 0, "dismissed");
+    }
+    // The third member leaves the way they came (played here, and the service asked for
+    // nothing): the sharer's computer renews the keys all the same, because someone it handed
+    // them to is gone, and the teammate who stays gets the new ones.
+    await drop(`memberships/${third.uid}`);
+    await drop(`teams/${account.uid}/members/${third.uid}`);
+    await drop(`vaults/${id}/wraps/${third.uid}`);
+    const afterThird = await shareNow();
+    check(afterThird.renewed && afterThird.waiting.length === 0, JSON.stringify(afterThird));
+    check((await share(mateDesk, "snapshots", { id })).length === 1, "the teammate reads on");
+    await fails(share(thirdDesk, "snapshots", { id }), "ShareGone", "the member who left");
+
     // A member key swapped on the service is never used. The sharer's side: the teammate
     // stands as "changed", and gets no keys until the new key is accepted by hand.
     const keyOf = async (uid) =>
@@ -1581,7 +1960,7 @@ try {
       JSON.stringify(after),
     );
     const now = (await share(desk, "list")).find((s) => s.id === id);
-    check(now.keyVersion === 2 && !now.rotationNeeded, JSON.stringify(now));
+    check(now.keyVersion > versionBefore + 1 && !now.rotationNeeded, JSON.stringify(now));
     check((await share(laptop, "snapshots", { id })).length === 2, "the sharer reads both");
     // The removed teammate, whose app still holds the keys it opened, is refused all the same.
     await fails(share(mateDesk, "snapshots", { id }), "ShareGone", "reading after being removed");

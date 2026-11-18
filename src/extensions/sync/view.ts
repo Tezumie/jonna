@@ -157,6 +157,7 @@ class SyncView implements DockView, PageKit {
           controller.sharing.outcome.value,
           controller.sharing.failure.value,
           controller.sharing.busy.value,
+          controller.sharing.intended.value,
           this.team.library.value,
           this.team.previews.value,
           services.workspace.root.value,

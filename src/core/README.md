@@ -648,6 +648,9 @@ other people's: these are the rules that keep it from being trusted like the use
   this account (`shareStateLine`, `shareRefusal`, `canRead`), the dialogs' words, what a copy
   came to (`copyReport`), a refused call as a sentence (`shareErrorWords`), the content scheme
   `teamShare:<share id>/<snapshot id>`, and when things are read (`refreshDue`, `keysDue`).
+  Chosen people (D453: `readerChoices`, `toggledReaders`, `audienceSentence`), a shared
+  project's chats (D454: `chatsToShare`, `chatsSentence`, `shareChatsQuestion`) and
+  hand-off (D455: `newsSentence`, `askSentence`).
 - `shareBook.ts` — `shareBook` (a signal: the team's members and shares as last read, when,
   and why a read failed). Written by the Sync extension, reported by the team extension.
 - `source.ts` — `activeTeam` (a signal: the team whose library applies and the folder of the

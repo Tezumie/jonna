@@ -139,6 +139,14 @@ changes, as snapshots, for teammates to look at or pick up.
 - **Share:** Sync → Projects → the project → **Share with team**. From then on each snapshot
   also goes to a copy your team can read. Nobody but you writes to it, and your own synced
   copy is untouched. The card says who can read it and who is still waited for.
+- **Choose who sees it.** "Share with" on the card: **The whole team**, or **Chosen
+  people**, with a tick for each teammate. Someone you untick can't see the project from
+  then on, and your computer makes new keys at once; what they had already opened, they
+  have. Nobody you didn't tick is shown that the project exists.
+- **Share its chats too** (a second switch, off until you turn it on): the same people can
+  read the project's chats with the agent, images included. Only the chats of this folder
+  travel, the newest hundred. What the agent read from key files is left out; anything else
+  said or read in a chat is not, so look through them first. Turning it off removes them.
 - **Key files are left out:** `.env` files, keys, certificates, tokens and sign-in files of
   common tools, by name. It is a list of names, not a guarantee: don't share a project whose
   secrets are in other files. If a key file is in a commit you haven't pushed, sharing stops
@@ -146,6 +154,10 @@ changes, as snapshots, for teammates to look at or pick up.
 - **Read:** Sync → Team → **Shared projects**. Open a project, a snapshot, a file. If the
   folder you have open is a clone of the same repository, you also see how each file differs
   from yours.
+- **Chats** (when the sharer shares them) are listed under the project's snapshots. **Read**
+  opens one as a read-only document. **Continue as my own chat** makes a copy among your own
+  chats, named with whose it was; it ends with a line saying where their part ends, and
+  nothing you do in it goes back.
 - **Open a copy…** puts a snapshot into a new folder. You are shown the address it would
   clone from and asked first. The folder opens like any folder someone else made: not trusted,
   with git off, until you say so.
@@ -156,6 +168,10 @@ changes, as snapshots, for teammates to look at or pick up.
   time they met. `team.shareOnlyVerified` shares only with teammates you verified.
 - **When someone leaves** the team they lose access at once, and your computer makes new keys
   with its next snapshot. What they had already read, they have.
+- **Told once.** When a teammate shares a project with you, or its chats, the editor says so
+  once on each computer (`team.shareNotices` turns that off).
+- **Ask to share…** on a teammate under People sends them a note that you asked. It names no
+  project and carries no text; they see it on their Team page and can dismiss it.
 
 ## From your other computers
 

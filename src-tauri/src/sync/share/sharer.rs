@@ -9,12 +9,50 @@ use serde_json::json;
 
 use super::keys::{make_wrap, share_id, split_share_id, valid_project};
 use super::pins::recipients;
-use super::plan::{self, keys_plan, someone_left, start_plan, KeysPlan, StartPlan, KEY_FILE};
+use super::plan::{
+    self, allowed, chosen, keys_plan, someone_left, start_plan, KeysPlan, StartPlan, KEY_FILE,
+};
 use super::{
     clean, failed, gone, members_of, now_ms, read, read_info, share_gone, snapshot_records, write,
     Folder, Info, Last, Maintained, Own, OwnRead, Read, ShareInfo, Shares, Synced, INFO,
-    KEEP_SNAPSHOTS, LAST_VERSION, OWN, OWN_VERSION, SNAP, STEP,
+    KEEP_SNAPSHOTS, LAST_VERSION, MAX_MEMBERS, OWN, OWN_VERSION, SNAP, STEP,
 };
+use crate::sync::share::pins::Member;
+
+/// Whom a start or a change shares with: as it is (a share that exists) or the whole team (a
+/// new one), the whole team, or chosen people.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Readers {
+    Keep,
+    Team,
+    Chosen(Vec<String>),
+}
+
+impl Readers {
+    /// From the front end: nothing said, `null`-like "team", or a list.
+    pub fn from_input(whole_team: Option<bool>, readers: Option<Vec<String>>) -> Self {
+        match (readers, whole_team) {
+            (Some(list), _) => Readers::Chosen(list),
+            (None, Some(true)) => Readers::Team,
+            (None, _) => Readers::Keep,
+        }
+    }
+}
+
+fn needs_service() -> Error {
+    failed(
+        "ShareNeedsService",
+        "Sharing with chosen people isn't available from this account's sync service yet. Nothing was changed.",
+    )
+}
+
+/// The members a share is for (`plan::allowed`), as owned values.
+fn for_whom(members: &[Member], readers: Option<&[String]>, me: &str) -> Vec<Member> {
+    allowed(members, |m| m.uid.as_str(), readers, me)
+        .into_iter()
+        .cloned()
+        .collect()
+}
 use crate::error::{Error, Result};
 use crate::store::atomic_write;
 use crate::sync::api::{unreadable, Api};
@@ -61,6 +99,7 @@ impl Shares {
         name: &str,
         chats: bool,
         only_verified: bool,
+        readers: Readers,
     ) -> Result<Maintained> {
         let name = clean(name, 120);
         if !valid_project(project) || name.is_empty() {
@@ -76,13 +115,28 @@ impl Shares {
             ));
         }
         let pins = self.observe(&members).await?;
-        let exists = self
-            .listed(&pins, &members)
+        let (shares, keeps_readers) = self.listing(&pins, &members).await?;
+        let exists = shares.iter().any(|s| s.id == id);
+        // Chosen people need a service that refuses everyone else: one that doesn't would
+        // list the share to the whole team. Said, and nothing is made.
+        if matches!(readers, Readers::Chosen(_)) && !keeps_readers {
+            return Err(needs_service());
+        }
+        // Whom it is for from here on: what is asked for now, else what the account's own
+        // record says (a share that exists), else the whole team.
+        let kept_readers = self
+            .own(project)
             .await?
-            .iter()
-            .any(|s| s.id == id);
+            .own
+            .and_then(|(own, _)| own.readers);
+        let wanted: Option<Vec<String>> = match readers.clone() {
+            Readers::Chosen(list) => chosen(Some(list), &self.uid, MAX_MEMBERS),
+            Readers::Team => None,
+            Readers::Keep => kept_readers,
+        };
+        let those = for_whom(&members, wanted.as_deref(), &self.uid);
         // Who the first keys would go to, with the share itself.
-        let (to, _) = recipients(&pins, &members, &self.uid, only_verified);
+        let (to, _) = recipients(&pins, &those, &self.uid, only_verified);
         let intended: Vec<String> = to.iter().map(|(uid, _)| uid.clone()).collect();
         let mut ring = None;
         for _ in 0..4 {
@@ -100,9 +154,13 @@ impl Shares {
                     ));
                 }
                 (StartPlan::Reuse, Some((mut own, held))) => {
-                    let mut changed = own.name != name || own.chats != chats;
+                    let mut changed =
+                        own.name != name || own.chats != chats || own.readers != wanted;
                     own.name = name.clone();
                     own.chats = chats;
+                    // Written here before the service hears of it: keys are handed out by
+                    // this record, so they never go wider than what it says.
+                    own.readers = wanted.clone();
                     // A start taken up again (no share yet, keys nobody holds): who the keys
                     // are about to be handed to is written down before any wrap is made.
                     if !exists {
@@ -129,6 +187,7 @@ impl Shares {
                         chats,
                         // Written with the keyring, before any wrap of it is made.
                         handed: intended.clone(),
+                        readers: wanted.clone(),
                     };
                     // Kept before the service hears of the share: its keys are never only there.
                     if self.save_own(project, &own, read.version).await? {
@@ -149,6 +208,11 @@ impl Shares {
             }
         }
         let mut body = json!({ "name": name, "chats": chats, "wraps": wraps });
+        // Named only for a service that keeps to it (another takes no such word, and with
+        // `Keep` on a share that exists nothing is said, so nothing changes).
+        if keeps_readers && (readers != Readers::Keep || !exists) {
+            body["readers"] = json!(wanted);
+        }
         let mut reply = self.team.put(&format!("shares/{project}"), &body).await?;
         if reply.status == 409 && reply.error() == "no_member_key" {
             // A member's key went away in between: the share starts, and they wait.
@@ -202,6 +266,17 @@ impl Shares {
                 continue;
             }
             let pins = self.observe(&members).await?;
+            // Whom the share is for by this account's own record: the service's list of
+            // members is narrowed by it, never the other way round. A record that names
+            // nobody (written by an app from before people could be chosen, on another of
+            // the account's computers) is bounded by the service's own list all the same.
+            let listed_readers: Option<Vec<String>> = answer["readers"].as_array().map(|list| {
+                list.iter()
+                    .filter_map(|uid| uid.as_str().map(str::to_string))
+                    .collect()
+            });
+            let readers = own.readers.as_deref().or(listed_readers.as_deref());
+            let members = for_whom(&members, readers, &self.uid);
             let (to, waiting) = recipients(&pins, &members, &self.uid, only_verified);
             let wrapped: BTreeSet<String> = answer["members"]
                 .as_array()
@@ -220,8 +295,9 @@ impl Shares {
                 renewed,
                 waiting,
             };
-            // Someone who was handed these keys is gone from the team: new keys, whether or
-            // not the service asks for them (its own tidying may not have happened).
+            // Someone who was handed these keys is gone from the team, or is no longer one
+            // of the people chosen: new keys, whether or not the service asks for them (its
+            // own tidying may not have happened).
             let listed: BTreeSet<String> = members.iter().map(|m| m.uid.clone()).collect();
             let left = someone_left(&own.handed, &listed);
             let plan = keys_plan(
@@ -339,11 +415,13 @@ impl Shares {
         name: &str,
         chats: bool,
         only_verified: bool,
+        readers: Readers,
         capture: Option<Folder<'_>>,
     ) -> Result<Synced> {
         let kept = {
             let _step = STEP.lock().await;
-            self.start(project, name, chats, only_verified).await?
+            self.start(project, name, chats, only_verified, readers)
+                .await?
         };
         self.capture(project, kept, capture).await
     }
@@ -479,8 +557,17 @@ impl Shares {
         Ok(removed)
     }
 
-    /// Changes a share's name and whether its chats are shared.
-    pub async fn update(&self, project: &str, name: &str, chats: bool) -> Result<ShareInfo> {
+    /// Changes a share's name, whether its chats are shared, and whom it is shared with.
+    /// Someone taken off gets no further keys: the keys are renewed right away
+    /// (`only_verified` as for a sync).
+    pub async fn update(
+        &self,
+        project: &str,
+        name: &str,
+        chats: bool,
+        readers: Readers,
+        only_verified: bool,
+    ) -> Result<ShareInfo> {
         let _step = STEP.lock().await;
         let name = clean(name, 120);
         if !valid_project(project) || name.is_empty() {
@@ -490,23 +577,65 @@ impl Shares {
         let members = self.team_members().await?;
         let pins = self.observe(&members).await?;
         // Asked first: writing to a share that isn't there would make one, without keys.
-        if !self
-            .listed(&pins, &members)
-            .await?
-            .iter()
-            .any(|s| s.id == id)
-        {
+        let (shares, keeps_readers) = self.listing(&pins, &members).await?;
+        if !shares.iter().any(|s| s.id == id) {
             return Err(share_gone());
         }
-        let body = json!({ "name": name, "chats": chats });
+        if matches!(readers, Readers::Chosen(_)) && !keeps_readers {
+            return Err(needs_service());
+        }
+        // The account's own record first: this computer hands keys out by it, so a change
+        // that narrows holds here even if the service never hears of it.
+        let mut wanted: Option<Option<Vec<String>>> = None;
+        if readers != Readers::Keep {
+            let next = match readers.clone() {
+                Readers::Chosen(list) => chosen(Some(list), &self.uid, MAX_MEMBERS),
+                _ => None,
+            };
+            let mut saved = false;
+            for _ in 0..4 {
+                let read = self.own(project).await?;
+                let Some((mut own, _)) = read.own else {
+                    return Err(failed(
+                        "ShareNotShared",
+                        "This project isn't shared from this account.",
+                    ));
+                };
+                if own.readers == next {
+                    saved = true;
+                    break;
+                }
+                own.readers = next.clone();
+                if self.save_own(project, &own, read.version).await? {
+                    saved = true;
+                    break;
+                }
+            }
+            if !saved {
+                return Err(failed("Sync", "The share kept changing; try again."));
+            }
+            wanted = Some(next);
+        }
+        let mut body = json!({ "name": name, "chats": chats });
+        if let (Some(next), true) = (&wanted, keeps_readers) {
+            body["readers"] = json!(next);
+        }
         let reply = self
             .team
             .put(&format!("shares/{project}"), &body)
             .await?
             .into_ok()?;
-        let info = self
+        let mut info = self
             .share_info(&reply, &pins, &members)
             .ok_or_else(unreadable)?;
+        if wanted.is_some() {
+            // New keys now when someone was taken off; those added get theirs.
+            let kept = self.maintain(project, only_verified).await?;
+            info.rotation_needed = false;
+            if kept.renewed {
+                info.key_version += 1;
+            }
+        }
         for _ in 0..3 {
             let read = self.own(project).await?;
             let Some((mut own, ring)) = read.own else {

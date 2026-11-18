@@ -75,6 +75,13 @@
         "scope": "user",
         "description": "Share your projects only with teammates whose fingerprint you compared (marked as verified in the Sync tab, under Team, People). Off: every teammate with a key can read what you share. Kept on this computer; it never syncs.",
         "title": "Share only with verified teammates"
+      },
+      "team.shareNotices": {
+        "type": "boolean",
+        "default": true,
+        "scope": "user",
+        "description": "Say so once, quietly, when a teammate shares a project (or its chats) with you, or asks you to share one. Off: nothing is announced; what your team shares is still listed in the Sync tab, under Team.",
+        "title": "Tell me when a teammate shares something"
       }
     }
   }

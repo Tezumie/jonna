@@ -213,6 +213,22 @@ its commands through the dispatcher.
   snapshot did for 10 minutes (2 when the service wants the share's keys renewed): a teammate
   who published a key since gets the share's keys. A failure is kept for the card
   (`failure`) and said once in the activity; it never fails the pass.
+- Chosen people (D453): the card's "Share with" choice and a tick for each teammate
+  (`readerChoices`, `toggledReaders`); each change runs `sync.project.shareWith`, which
+  changes a share that exists (`ProjectSharing.change`: the keys are renewed when someone
+  was taken off) or keeps the choice for when sharing is turned on
+  (`ProjectSharing.intended`). A service that doesn't keep readers: `ShareNeedsService`,
+  nothing changes.
+- Chats (D454): "Share its chats too" runs `sync.project.shareChats`; after each share sync
+  `ProjectSharing.chats` makes the share's chats the project's (`chatsToShare`: the chats of
+  that folder, newest hundred, not ones being written), and takes them out when the switch
+  is off. A teammate's side: `ShareLook.chats`, the "Chats" part of an opened share,
+  `team.share.chats`, `team.share.readChat` (a read-only document made by
+  `conversationMarkdown`), `team.share.continueChat` (a copy among one's own chats).
+- Hand-off (D455): after each read of the book, `ProjectSharing.tell` asks `share_news`
+  what this computer hasn't seen and announces it once (`SharingHost.announce`; the
+  `team.shareNotices` setting), and the same for a new ask. `team.member.askToShare`,
+  `team.asks.dismiss`; the Team page shows who asked above its lists.
 - The card (`shareCard.ts`, under a project's head): a switch, off until turned on. On: who can
   read it and who waits for its keys and why (what the last share sync said; before one, worked
   out from the members' states), that key files are left out, when it was last shared and how
@@ -273,6 +289,11 @@ fingerprint}` (they show the fingerprint and ask; hidden from agents), `team.cop
 snapshot, filter?}` (at most 2,000), `team.share.openFile {id, snapshot, path}`,
 `team.share.view {id, snapshot?}` (the Sync tab on a share), `team.share.openCopy {id,
 snapshot?, target?}` (hidden; asks for a folder, then offers to open it, untrusted).
+D453: `sync.project.shareWith {team?, readers?}` (who it is for; hidden), and
+`sync.project.share {readers?}`. D454: `sync.project.shareChats {on}` (asks first; hidden),
+`team.share.chats {id}` (titles, marked as a teammate's text), `team.share.readChat {id, chat}`
+and `team.share.continueChat {id, chat}` (hidden). D455: `team.member.askToShare {uid}` and
+`team.asks.dismiss {uid?}` (hidden).
 
 **Status bar:** `sync.status` (right): Synced / Syncing… / Offline / Sync (another window is
 syncing, or before the first pass) / Sync error (the reason is the tooltip; the only colored

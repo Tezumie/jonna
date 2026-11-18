@@ -29,11 +29,16 @@
 //! are cleaned before they are shown, paths go through the snapshot code's own rules, and a
 //! remote's address is used only when it is an ordinary one.
 
+mod chats;
 pub mod keys;
 pub mod pins;
 pub mod plan;
 mod reader;
 mod sharer;
+
+pub use chats::{ChatsSynced, CopiedChat, SharedChat};
+pub use reader::{Ask, News, Shown};
+pub use sharer::Readers;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -209,6 +214,10 @@ pub struct ShareInfo {
     pub usage_bytes: u64,
     pub updated_at: Option<u64>,
     pub latest: Option<Latest>,
+    /// Shared with chosen people, not the whole team (D453).
+    pub chosen: bool,
+    /// For this account's own share: the people chosen (None: the whole team).
+    pub readers: Option<Vec<String>>,
 }
 
 /// What a start or a sync of a share came to.
@@ -299,6 +308,10 @@ struct Own {
     /// renewed, whatever the service says.
     #[serde(default)]
     handed: Vec<String>,
+    /// The people the sharer chose (D453); None: the whole team. What this computer goes by
+    /// when it hands out keys, whatever the service lists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    readers: Option<Vec<String>>,
 }
 
 /// The version of `Own` that says who was handed the keys: an older record doesn't, so its
@@ -1055,11 +1068,33 @@ impl Shares {
             usage_bytes: v["usageBytes"].as_u64().unwrap_or(0),
             updated_at: v["updatedAt"].as_u64(),
             latest,
+            chosen: v["chosen"].as_bool() == Some(true) || v["readers"].is_array(),
+            readers: v["readers"].as_array().filter(|_| mine).map(|list| {
+                list.iter()
+                    .filter_map(Value::as_str)
+                    .filter(|u| valid_uid(u))
+                    .take(MAX_MEMBERS)
+                    .map(str::to_string)
+                    .collect()
+            }),
         })
     }
 
     async fn listed(&self, pins: &Pins, members: &[Member]) -> Result<Vec<ShareInfo>> {
+        Ok(self.listing(pins, members).await?.0)
+    }
+
+    /// The team's shares, and whether the service keeps a share to chosen people (one from
+    /// before D453 lists every share to the whole team, and says nothing of what it can do).
+    async fn listing(&self, pins: &Pins, members: &[Member]) -> Result<(Vec<ShareInfo>, bool)> {
         let reply = self.team.get("shares").await?;
+        let readers = reply["features"]
+            .as_array()
+            .is_some_and(|f| f.iter().any(|x| x.as_str() == Some("readers")));
+        Ok((self.shares_of(&reply, pins, members)?, readers))
+    }
+
+    fn shares_of(&self, reply: &Value, pins: &Pins, members: &[Member]) -> Result<Vec<ShareInfo>> {
         let shares: Vec<ShareInfo> = reply["shares"]
             .as_array()
             .ok_or_else(super::api::unreadable)?
@@ -1096,6 +1131,15 @@ async fn read_info(api: &Api, ring: &Keyring) -> Result<Read> {
 /// A share's snapshot records that are there, by id, and how many of them these keys don't
 /// open. Ids that couldn't stand in an address are left out.
 async fn snapshot_records(api: &Api, ring: &Keyring) -> Result<(BTreeMap<String, Record>, usize)> {
+    records_of(api, ring, SNAP).await
+}
+
+/// The same for any of a share's collections (`chats`).
+async fn records_of(
+    api: &Api,
+    ring: &Keyring,
+    collection: &str,
+) -> Result<(BTreeMap<String, Record>, usize)> {
     let mut found: BTreeMap<String, Record> = BTreeMap::new();
     let mut since = 0;
     // (A share holds a few records; the bound only stops an answer that never ends.)
@@ -1104,7 +1148,7 @@ async fn snapshot_records(api: &Api, ring: &Keyring) -> Result<(BTreeMap<String,
         let mut last = since;
         for record in page.records {
             last = last.max(record.seq);
-            if record.collection != SNAP || !valid_record_id(&record.id) {
+            if record.collection != collection || !valid_record_id(&record.id) {
                 continue;
             }
             if record.deleted {
@@ -1229,6 +1273,7 @@ mod tests {
             name: "p".into(),
             chats: false,
             handed: handed.iter().map(|u| u.to_string()).collect(),
+            readers: None,
         };
         assert!(own(OWN_VERSION, &[]).never_handed());
         assert!(!own(OWN_VERSION, &["a"]).never_handed());

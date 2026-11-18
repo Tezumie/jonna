@@ -121,8 +121,26 @@ test("the share being looked at: loading, read, read again, a snapshot inside it
     error: null,
     snapshots: 0,
     refreshing: false,
+    chats: 0,
   });
-  assert.equal(look.finish(first, [snapshot("a", 10), snapshot("b", 20)]), true);
+  const chat = (id: string, updated: number) => ({
+    id,
+    title: id,
+    updated,
+    bytes: 1,
+    images: 0,
+    imageBytes: 0,
+  });
+  assert.equal(
+    look.finish(first, [snapshot("a", 10), snapshot("b", 20)], [chat("x", 1), chat("y", 5)]),
+    true,
+  );
+  // Its shared chats, newest first.
+  assert.equal(look.opened.peek()?.chats, 2);
+  assert.deepEqual(
+    look.chats.map((row) => row.id),
+    ["y", "x"],
+  );
   assert.equal(look.opened.peek()?.phase, "ready");
   assert.equal(look.opened.peek()?.snapshots, 2);
   assert.deepEqual(

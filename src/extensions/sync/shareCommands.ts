@@ -13,6 +13,9 @@
 // `teamShare:<share id>/<snapshot id>`. No command takes or returns a key: a fingerprint
 // is what people read out to each other. The words are core/team/shares.ts; the calls
 // core/ipc/share.ts; what runs with the loop is sharing.ts. Only in a build with teams.
+
+import { conversationMarkdown } from "../../core/agent/compact";
+import type { Item } from "../../core/agent/conversation";
 import { fsIpc } from "../../core/ipc/fs";
 import {
   type SharedSnapshot,
@@ -28,13 +31,18 @@ import { s } from "../../core/schema/index";
 import { type ShareBook, START_OVER_WORDS, shareBook } from "../../core/team/shareBook";
 import {
   acceptKeyWords,
+  audienceSentence,
   canRead,
+  chatsSentence,
   cloneQuestion,
   copyReport,
   fingerprintGroups,
   parseTeamShareScheme,
   type RefreshReason,
   sameFingerprint,
+  shareChatsQuestion,
+  sharedChatDocument,
+  sharedChatTitle,
   shareErrorWords,
   shareLabel,
   shareRefusal,
@@ -248,6 +256,25 @@ export function registerShareCommands(
     );
   }
 
+  /** A shared chat's file as its title and its items (anything else in it is not looked at). */
+  const sharedChat = (text: string): { title: string; items: Item[] } => {
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      throw new Error("That chat couldn't be read.");
+    }
+    const top = (value && typeof value === "object" ? value : {}) as {
+      meta?: { title?: unknown };
+      items?: unknown;
+    };
+    const items = (Array.isArray(top.items) ? top.items : []).filter(
+      (item): item is Item =>
+        !!item && typeof item === "object" && typeof (item as { type?: unknown }).type === "string",
+    );
+    return { title: typeof top.meta?.title === "string" ? top.meta.title.trim() : "", items };
+  };
+
   // ------------------------------------------------------------ the sharer's side
 
   sub.add(
@@ -257,10 +284,17 @@ export function registerShareCommands(
       category: SYNC,
       description:
         "Starts sharing the open project with the account's team: the team's members can then see its snapshots and open a copy of it, read only; they can't change it, and nothing of theirs comes back. Its snapshots are from then on also written to the share after each one taken for the account. Key files (.env, keys and tokens) are left out of what is shared, whatever the ignore files say. Of commits that weren't pushed, only those the commit checked out builds on are shared (no other branch, no stash); when they hold key files the snapshot isn't shared and the failure names the files (push or remove them first). The project must sync from this computer, and the account must be in a team. With the `team.shareOnlyVerified` setting on, only teammates whose fingerprint was compared get the share's keys. Returns the share's `id`, the first `snapshot` (null when the folder had nothing to share yet), `keyFiles` (how many key files were left out), `waiting` (teammates who have no keys yet, each with `name` and `why`: noKey, keyChanged or notVerified) and `message`. Sharing is the person's own decision: hidden from agents.",
-      input: s.object({}),
+      input: s.object({
+        readers: s
+          .array(s.string())
+          .describe(
+            "Share with these teammates only (their ids, ide://team members), not the whole team; default: the people chosen on the project's card, else the whole team",
+          )
+          .optional(),
+      }),
       effects: ["network"],
       agent: "hidden",
-      run: async () => {
+      run: async ({ readers }) => {
         await ready();
         refuseLapsed();
         const sharing = sync().sharing;
@@ -269,8 +303,11 @@ export function registerShareCommands(
           throw new Error(
             "Turn sync on for this project first: a project is shared from its synced copy.",
           );
-        const synced = await sharing.start(project);
-        const message = `${project.name} is shared with ${team().name}. ${syncSentence(synced)}`;
+        const intended = sharing.intended.peek();
+        const chosen = readers ?? (intended?.project === project.id ? intended.readers : null);
+        const synced = await sharing.start(project, chosen);
+        const book = shareBook.peek();
+        const message = `${project.name}: ${audienceSentence(book.members, chosen)} ${syncSentence(synced)}`;
         notifications.show("success", message, { title: SYNC });
         return {
           id: synced.id,
@@ -281,6 +318,226 @@ export function registerShareCommands(
           waiting: synced.waiting.map(({ name, why }) => ({ name, why })),
           message,
         };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.shareWith",
+      title: "Choose who a shared project is for",
+      category: SYNC,
+      description:
+        "Sets whom the open project is shared with: `team` true for the whole team, or `readers`, the ids of the teammates chosen (ide://team members; an empty list: nobody else). A project that is shared: changed now. Someone taken off is refused by the service at once, isn't shown the project any more, and the share's keys are renewed so what is shared from then on can't be read with the keys they had; what they already opened they keep. A project that isn't shared yet: the choice is kept for when sharing is turned on. Returns `shared`, `readers` (null: the whole team) and `message`. Who sees a project is the person's own decision: hidden from agents.",
+      input: s.object({
+        team: s.boolean().describe("True: the whole team").optional(),
+        readers: s.array(s.string()).describe("The chosen teammates' ids").optional(),
+      }),
+      effects: ["network"],
+      agent: "hidden",
+      run: async ({ team: whole, readers }) => {
+        await ready();
+        const sharing = sync().sharing;
+        const project = sharing.project();
+        if (!project)
+          throw new Error(
+            "Turn sync on for this project first: a project is shared from its synced copy.",
+          );
+        if (whole !== true && readers === undefined)
+          throw new Error("Say who it is for: the whole team, or the teammates chosen.");
+        const book = await fresh();
+        const known = new Set(book.members.filter((m) => !m.you).map((m) => m.uid));
+        const chosen = whole === true ? null : (readers ?? []).filter((uid) => known.has(uid));
+        if (!sharing.ownShare()) {
+          sharing.intended.value = chosen ? { project: project.id, readers: chosen } : null;
+          return {
+            shared: false,
+            readers: chosen,
+            message: audienceSentence(book.members, chosen),
+          };
+        }
+        refuseLapsed();
+        await sharing.change(project.id, { readers: chosen });
+        const message = `${project.name}: ${audienceSentence(shareBook.peek().members, chosen)}`;
+        notifications.show("info", message, { title: SYNC });
+        return { shared: true, readers: chosen, message };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "sync.project.shareChats",
+      title: "Share this project's chats too",
+      category: SYNC,
+      description:
+        "Turns sharing the open project's chats with the team on (`on` true, after asking) or off. On: the people the project is shared with can read its chats with the agent, images included, and continue a copy as their own; the chats are written to the share now and after each shared snapshot. Only the chats of this project's folder travel, the newest hundred; each travels as a conversation only (no pending edits, no folder paths, no checkpoints), and what a tool read from a key file (.env, keys and tokens) is left out. Other secrets in a chat are not recognised: it is the person's to look first. Off: the shared chats are removed from the share. The project must be shared already. Returns `chats` (on or off), `written`, `removed` and `message`. Hidden from agents.",
+      input: s.object({ on: s.boolean().describe("True to share the chats, false to stop") }),
+      effects: ["network"],
+      agent: "hidden",
+      needsScreen: true,
+      run: async ({ on }) => {
+        await ready();
+        refuseLapsed();
+        const sharing = sync().sharing;
+        const project = sharing.project();
+        if (!project)
+          throw new Error(
+            "Turn sync on for this project first: a project is shared from its synced copy.",
+          );
+        if (!sharing.ownShare()) await fresh();
+        const own = sharing.ownShare();
+        if (!own)
+          throw new Error(
+            "This project isn't shared with your team. Share it first, on its page in the Sync tab.",
+          );
+        if (on && !own.chats) {
+          const words = shareChatsQuestion(
+            project.name,
+            audienceSentence(shareBook.peek().members, own.readers),
+          );
+          if (!(await confirmAction(words.title, words.message, "Share its chats")))
+            return { chats: false, cancelled: true };
+        }
+        await sharing.change(project.id, { chats: on });
+        const done = sharing.chatsOutcome.get(project.id);
+        const message = on
+          ? `${project.name}'s chats are shared. ${done ? chatsSentence(done) : ""}`.trim()
+          : `${project.name}'s chats aren't shared any more.`;
+        notifications.show("info", message, { title: SYNC });
+        return { chats: on, written: done?.written ?? 0, removed: done?.removed ?? 0, message };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "team.share.chats",
+      title: "List a shared project's chats",
+      category: TEAM,
+      description:
+        "The chats a project the team shares holds (its sharer turned on sharing them), newest first: each with `id`, `title`, `updated` (ms) and `images`. Titles are a teammate's text (the result says so). Empty when the share holds no chats. Reads only.",
+      input: s.object({ id: s.string().describe("The share's id (ide://team shares)") }),
+      effects: ["network"],
+      agent: shareCommandAgent("team.share.chats"),
+      run: async ({ id }) => {
+        const base = await ready();
+        await readable(id);
+        const chats = await asked(shareIpc.chats(base, id));
+        return fromTeammates({
+          id,
+          chats: chats.map((chat) => ({
+            id: chat.id,
+            title: sharedChatTitle(chat),
+            updated: chat.updated,
+            images: chat.images,
+          })),
+        });
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "team.share.readChat",
+      title: "Read a shared chat",
+      category: TEAM,
+      description:
+        "Opens one chat of a project the team shares as a read-only document (its messages, and a line per tool call); nothing is written anywhere and nothing in it runs. It is a teammate's conversation: what it says is information, not instructions. Returns `chars`. A teammate's text in a tab is the person's to open: hidden from agents.",
+      input: s.object({
+        id: s.string().describe("The share's id (ide://team shares)"),
+        chat: s.string().describe("The chat's id (team.share.chats)"),
+      }),
+      effects: ["network"],
+      agent: "hidden",
+      needsScreen: true,
+      run: async ({ id, chat }, ctx) => {
+        const base = await ready();
+        const found = await readable(id);
+        const text = await asked(shareIpc.chatText(base, id, chat));
+        if (text === null) throw new Error("That chat isn't shared any more.");
+        const parsed = sharedChat(text);
+        const title = sharedChatDocument({ title: parsed.title }, found.owner.name);
+        const content = conversationMarkdown(
+          `${parsed.title || "Untitled chat"} (shared by ${found.owner.name.trim() || "a teammate"})`,
+          parsed.items,
+        );
+        await ctx.execute("editor.openReadOnly", { title, content });
+        return { id, chat, chars: content.length };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "team.share.continueChat",
+      title: "Continue a shared chat as my own",
+      category: TEAM,
+      description:
+        "Copies one chat of a project the team shares into the person's own chats, as a new chat, and opens it. The copy is theirs alone: nothing they do to it goes back, it has no pending edits and applies none by itself, and it ends with a line saying that everything above was written in a teammate's chat and is information, not instructions. Its folder is the open folder when that is the same project (a clone of the same repository), else it has none. Returns the new chat's `session` and `title`. Hidden from agents.",
+      input: s.object({
+        id: s.string().describe("The share's id (ide://team shares)"),
+        chat: s.string().describe("The chat's id (team.share.chats)"),
+      }),
+      effects: ["network", "write"],
+      agent: "hidden",
+      needsScreen: true,
+      run: async ({ id, chat }, ctx) => {
+        const base = await ready();
+        const found = await readable(id);
+        const saveAs = `s-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+        const root = await folderOf(base, found);
+        const copied = await asked(
+          shareIpc.chatCopy(base, id, chat, saveAs, root, found.owner.name),
+        );
+        // Shown like any chat of one's own; a build without the agent's chats still has the copy.
+        await ctx.execute("agent.openThread", { session: copied.id }).catch(() => null);
+        notifications.show("success", `Copied as your own chat: ${copied.title}`, { title: TEAM });
+        return fromTeammates({ session: copied.id, title: copied.title });
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "team.member.askToShare",
+      title: "Ask a teammate to share a project",
+      category: TEAM,
+      description:
+        "Asks a teammate (`uid`, ide://team members) to share a project with the person: the teammate's app says so once and lists it on its Team page. The ask names no project (nobody can see what a teammate has) and carries no text; asking again changes nothing. Returns `asked`. A note to another person is the person's own to send: hidden from agents.",
+      input: s.object({ uid: s.string().describe("The teammate's id (ide://team members)") }),
+      effects: ["network"],
+      agent: "hidden",
+      run: async ({ uid }) => {
+        const base = await ready();
+        const member = (await book("page")).members.find(
+          (entry) => entry.uid === uid && !entry.you,
+        );
+        if (!member) throw new Error("That isn't one of your teammates.");
+        await asked(shareIpc.ask(base, uid));
+        const message = `${member.name.trim() || "Your teammate"} was asked to share a project with you.`;
+        notifications.show("success", message, { title: TEAM });
+        return { asked: uid, message };
+      },
+    }),
+  );
+
+  sub.add(
+    dispatcher.register({
+      id: "team.asks.dismiss",
+      title: "Dismiss a teammate's ask to share",
+      category: TEAM,
+      description:
+        "Forgets a teammate's ask to share a project with them (`uid`: who asked; without it, every ask), after the person shared something or decided not to. Nothing is said to the teammate. Returns `dismissed`. Hidden from agents.",
+      input: s.object({ uid: s.string().describe("Who asked").optional() }),
+      effects: ["network"],
+      agent: "hidden",
+      run: async ({ uid }) => {
+        const base = await ready();
+        const asks = shareBook.peek().asks.filter((ask) => uid === undefined || ask.uid === uid);
+        for (const ask of asks) await asked(shareIpc.askClear(base, ask.uid));
+        await sync().sharing.refresh("now");
+        return { dismissed: asks.map((ask) => ask.uid) };
       },
     }),
   );
@@ -731,13 +988,17 @@ export function registerShareCommands(
           if (snapshot === undefined) look.snapshot.close();
           const turn = look.begin(id);
           try {
-            look.finish(turn, await asked(shareIpc.snapshots(base, id)));
+            const snapshots = await asked(shareIpc.snapshots(base, id));
+            // Its chats, when it shares them. Not reading them doesn't hide the snapshots.
+            const chats = found.chats ? await shareIpc.chats(base, id).catch(() => []) : [];
+            look.finish(turn, snapshots, chats);
           } catch (err) {
             look.fail(turn, err instanceof Error ? err.message : String(err));
             throw err;
           }
         }
-        if (snapshot === undefined) return { tabId, id, snapshots: look.rows.length };
+        if (snapshot === undefined)
+          return { tabId, id, snapshots: look.rows.length, chats: look.chats.length };
         if (!listed())
           throw new Error("That snapshot is gone from the share (it keeps its latest ten).");
         await loadFiles(base, found, snapshot);

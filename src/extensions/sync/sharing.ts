@@ -7,15 +7,23 @@
 // The controller owns it and calls it at two points of the loop (after a snapshot, and once a
 // pass); everything it needs of the controller comes through `SharingHost`, so nothing here
 // reaches into the loop. Only in a build with teams (`hasTeams`): otherwise it does nothing.
-import { type ShareInfo, type ShareSynced, shareIpc } from "../../core/ipc/share";
+import {
+  type ShareChatsSynced,
+  type ShareInfo,
+  type ShareSynced,
+  shareIpc,
+} from "../../core/ipc/share";
 import type { Disposable } from "../../core/lifecycle/index";
 import { hasTeams } from "../../core/ownServices";
 import { type Signal, signal } from "../../core/reactive/index";
 import { codeOf, messageOf } from "../../core/sync/errors";
 import { EMPTY_SHARE_BOOK, settledByStartingOver, shareBook } from "../../core/team/shareBook";
 import {
+  askSentence,
+  chatsSentence,
   keyFilesLine,
   keysDue,
+  newsSentence,
   noTeamCode,
   ownShareOf,
   type RefreshReason,
@@ -40,6 +48,12 @@ export interface SharingHost {
   afterSnapshots<T>(work: () => Promise<T>): Promise<T>;
   /** A line in the sync activity. */
   note(text: string, failure?: boolean): void;
+  /** The chats of the project in `root` to share, newest first (D454). */
+  projectChats(root: string): Promise<string[]>;
+  /** Whether teammates' new shares are announced here (the `team.shareNotices` setting). */
+  notices(): boolean;
+  /** Says something new of the team once, quietly, with a way to the Team page (D455). */
+  announce(message: string, share: string | null): void;
 }
 
 /** What the last share sync of a project came to, in this window. */
@@ -69,6 +83,14 @@ export class ProjectSharing implements Disposable {
   } | null>(null);
   /** The project being shared right now (its sync id); null: none. */
   readonly busy: Signal<string | null> = signal<string | null>(null);
+  /**
+   * Whom a project that isn't shared yet would be shared with, as chosen on its card (D453):
+   * the project's sync id and the chosen teammates' ids. Null: the whole team.
+   */
+  readonly intended: Signal<{ project: string; readers: string[] } | null> = signal<{
+    project: string;
+    readers: string[];
+  } | null>(null);
 
   private readonly enabled = hasTeams();
   private disposed = false;
@@ -82,6 +104,12 @@ export class ProjectSharing implements Disposable {
   private readonly syncedAt = new Map<string, number>();
   /** The failure last said in the activity (said once, until a sync goes through). */
   private saidFailure = "";
+  /** The teammates whose ask was said in this window. */
+  private readonly toldAsks = new Set<string>();
+  /** What the last pass over each project's shared chats came to (project id). */
+  readonly chatsOutcome = new Map<string, ShareChatsSynced>();
+  /** The projects whose chats switch is off and whose shared chats were seen to be gone. */
+  private readonly chatsCleared = new Set<string>();
 
   constructor(private readonly host: SharingHost) {}
 
@@ -102,10 +130,14 @@ export class ProjectSharing implements Disposable {
     this.readAt = 0;
     this.published = false;
     this.syncedAt.clear();
+    this.chatsOutcome.clear();
+    this.chatsCleared.clear();
+    this.toldAsks.clear();
     this.saidFailure = "";
     shareBook.value = EMPTY_SHARE_BOOK;
     this.outcome.value = null;
     this.failure.value = null;
+    this.intended.value = null;
   }
 
   /**
@@ -159,8 +191,12 @@ export class ProjectSharing implements Disposable {
         );
       const members = await shareIpc.members(base);
       const shares = await shareIpc.list(base);
+      // Who asked this account to share something; a service without asks has none.
+      const asks = await shareIpc.asks(base).catch(() => []);
       if (this.disposed || !this.available()) return;
-      shareBook.value = { members, shares, readAt: Date.now(), problem: null };
+      const before = shareBook.peek();
+      shareBook.value = { members, shares, asks, readAt: Date.now(), problem: null };
+      void this.tell(base, shares, asks, before.readAt === null ? [] : before.asks);
     } catch (err) {
       if (this.disposed) return;
       const code = codeOf(err);
@@ -176,6 +212,38 @@ export class ProjectSharing implements Disposable {
         problem: shareErrorWords(code, messageOf(err)),
         startOver: settledByStartingOver(code),
       };
+    }
+  }
+
+  /**
+   * What is new for this computer among what teammates share, and who newly asked for a
+   * share: said once each (the shares are remembered on this computer, the asks while the
+   * window is open), unless notices are off. Never throws.
+   */
+  private async tell(
+    base: string,
+    shares: readonly ShareInfo[],
+    asks: readonly { uid: string; name: string }[],
+    askedBefore: readonly { uid: string }[],
+  ): Promise<void> {
+    try {
+      // Remembered whether or not it is said: turning notices on later doesn't replay the past.
+      const news = await shareIpc.news(
+        base,
+        shares
+          .filter((share) => !share.mine)
+          .map((share) => ({ id: share.id, chats: share.chats })),
+      );
+      if (this.disposed || !this.host.notices()) return;
+      const told = newsSentence(news, shares);
+      if (told) this.host.announce(told.message, told.share);
+      const fresh = asks.filter(
+        (ask) => !this.toldAsks.has(ask.uid) && !askedBefore.some((old) => old.uid === ask.uid),
+      );
+      for (const ask of asks) this.toldAsks.add(ask.uid);
+      if (fresh.length > 0) this.host.announce(askSentence(fresh), null);
+    } catch {
+      // Nothing to say then.
     }
   }
 
@@ -241,6 +309,8 @@ export class ProjectSharing implements Disposable {
         project.id,
         this.host.onlyVerified(),
       );
+      // Its chats too, when that switch is on. A failure there doesn't undo the snapshot.
+      await this.chats(project).catch(() => null);
       this.took(project.id, synced);
       return synced;
     } catch (err) {
@@ -286,19 +356,26 @@ export class ProjectSharing implements Disposable {
    * Starts sharing the open project (or, shared already, sets its name), hands its keys to the
    * teammates who may have them, and takes its first snapshot. After the snapshot under way.
    */
-  start(project: { root: string; id: string; name: string }): Promise<ShareSynced> {
+  start(
+    project: { root: string; id: string; name: string },
+    readers: string[] | null = null,
+  ): Promise<ShareSynced> {
     return this.host.afterSnapshots(async () => {
       this.busy.value = project.id;
       this.syncedAt.set(project.id, Date.now());
       try {
+        const now = ownShareOf(shareBook.peek().shares, project.id);
         const synced = await shareIpc.start(this.host.base(), {
           root: project.root,
           project: project.id,
           name: project.name,
-          // The share's second switch (its chats too) isn't built yet.
-          chats: false,
+          // Its chats are a switch of their own, off until the person turns it on (D454).
+          chats: now?.chats === true,
           onlyVerified: this.host.onlyVerified(),
+          // A new share: the people chosen, or the whole team. One that exists stays as it is.
+          ...(now ? {} : readers ? { readers } : { wholeTeam: true }),
         });
+        if (this.intended.peek()?.project === project.id) this.intended.value = null;
         this.took(project.id, synced);
         // (`took` asked for the list again: the switch shows on once it is read.)
         await (this.readAgain ?? this.reading);
@@ -309,6 +386,78 @@ export class ProjectSharing implements Disposable {
         if (this.busy.peek() === project.id) this.busy.value = null;
       }
     });
+  }
+
+  /**
+   * Changes whom this account's share of `project` is for (`readers` null: the whole team),
+   * or whether its chats are shared too. Someone taken off is refused at once, and the keys
+   * are renewed. The share as it is afterwards.
+   */
+  async change(
+    project: string,
+    to: { readers?: string[] | null; chats?: boolean },
+  ): Promise<ShareInfo> {
+    const now = ownShareOf(shareBook.peek().shares, project);
+    if (!now) throw shareError({ code: "ShareNotShared", message: "" });
+    this.busy.value = project;
+    try {
+      const info = await shareIpc.update(
+        this.host.base(),
+        project,
+        now.name,
+        to.chats ?? now.chats,
+        {
+          onlyVerified: this.host.onlyVerified(),
+          ...(to.readers === undefined
+            ? {}
+            : to.readers === null
+              ? { wholeTeam: true }
+              : { readers: to.readers }),
+        },
+      );
+      this.failure.value = null;
+      this.syncedAt.delete(project);
+      this.chatsOutcome.delete(project);
+      this.chatsCleared.delete(project);
+      this.readAt = 0;
+      await this.refresh("now");
+      // The chats follow the switch at once: written when it went on, taken out when off.
+      if (to.chats !== undefined) {
+        const open = this.host.project();
+        if (open?.id === project) await this.chats(open);
+        else if (!to.chats) await shareIpc.chatsSync(this.host.base(), project, null, []);
+      }
+      return info;
+    } catch (err) {
+      throw this.failed(project, err);
+    } finally {
+      if (this.busy.peek() === project) this.busy.value = null;
+    }
+  }
+
+  /**
+   * Makes the share's chats the project's chats (D454): written when the share's chats switch
+   * is on, taken out when it is off. Null when the project isn't shared, or its switch is off
+   * and that was seen to already in this window. Throws what the service refused.
+   */
+  async chats(project: { root: string; id: string }): Promise<ShareChatsSynced | null> {
+    const share = ownShareOf(shareBook.peek().shares, project.id);
+    if (!share) return null;
+    // Off: what the share may still hold of chats (the switch was turned off on another
+    // computer) is taken out once a window, not asked about every pass.
+    if (!share.chats && this.chatsCleared.has(project.id)) return null;
+    try {
+      const ids = share.chats ? await this.host.projectChats(project.root) : [];
+      const done = await shareIpc.chatsSync(this.host.base(), project.id, project.root, ids);
+      this.chatsOutcome.set(project.id, done);
+      if (share.chats) this.chatsCleared.delete(project.id);
+      else this.chatsCleared.add(project.id);
+      const said = chatsSentence(done);
+      if (said) this.host.note(said);
+      return done;
+    } catch (err) {
+      throw shareError(err);
+    }
   }
 
   /** Shares the open project's state now (after the snapshot under way). */

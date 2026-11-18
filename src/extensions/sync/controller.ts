@@ -39,7 +39,7 @@ import {
   settingsLayer,
 } from "../../core/sync/layers";
 import { entrySyncs, type SyncSettingsFilter, settingSyncs } from "../../core/sync/localSettings";
-import { ONLY_VERIFIED_SETTING } from "../../core/team/shares";
+import { chatsToShare, ONLY_VERIFIED_SETTING, SHARE_NOTICES_SETTING } from "../../core/team/shares";
 import type { WorkbenchServices } from "../../workbench/services";
 import { wentOffWords } from "./kept";
 import {
@@ -218,6 +218,25 @@ export class SyncController implements Disposable {
         onlyVerified: () => this.services.settings.peek<boolean>(ONLY_VERIFIED_SETTING) === true,
         afterSnapshots: (work) => this.afterSnapshots(work),
         note: (text, failure) => this.note(text, failure),
+        projectChats: async (root) => {
+          const chats = await agentStoreIpc.list();
+          const busy = this.busyChats();
+          return chatsToShare(
+            chats.map((chat) => {
+              const meta = (chat.meta ?? {}) as { workspace?: unknown; updated?: unknown };
+              return {
+                id: chat.id,
+                workspace: typeof meta.workspace === "string" ? meta.workspace : null,
+                updated: typeof meta.updated === "number" ? meta.updated : 0,
+              };
+            }),
+            root,
+            (a, b) => pathKey(a) === pathKey(b),
+            (id) => busy.has(id),
+          );
+        },
+        notices: () => this.services.settings.peek<boolean>(SHARE_NOTICES_SETTING) !== false,
+        announce: (message, share) => this.announceTeam(message, share),
       }),
     );
     const backend: SyncBackend = {
@@ -484,6 +503,29 @@ export class SyncController implements Disposable {
   // ------------------------------------------------------------ the overview and the log
 
   /** Adds a sentence to the recent activity. */
+  /**
+   * Something new of the team (a teammate shared a project, or asked for one): a quiet
+   * notification with a way to the Team page, and a line in the activity.
+   */
+  private announceTeam(message: string, share: string | null): void {
+    this.note(message);
+    this.services.notifications.show("info", message, {
+      title: "Team",
+      actions: [
+        {
+          label: share ? "View" : "Open Team",
+          run: () =>
+            void this.services.dispatcher
+              .execute(
+                share ? "team.share.view" : "sync.show",
+                share ? { id: share } : { page: "team" },
+              )
+              .catch(() => {}),
+        },
+      ],
+    });
+  }
+
   note(text: string, error = false): void {
     this.log.value = withEvent(this.log.peek(), { at: Date.now(), text, error });
   }

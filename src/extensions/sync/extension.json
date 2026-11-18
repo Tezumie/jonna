@@ -198,6 +198,41 @@
         "category": "Sync"
       },
       {
+        "id": "sync.project.shareWith",
+        "title": "Choose who a shared project is for",
+        "category": "Sync"
+      },
+      {
+        "id": "sync.project.shareChats",
+        "title": "Share this project's chats too",
+        "category": "Sync"
+      },
+      {
+        "id": "team.member.askToShare",
+        "title": "Ask a teammate to share a project",
+        "category": "Team"
+      },
+      {
+        "id": "team.asks.dismiss",
+        "title": "Dismiss a teammate's ask to share",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.chats",
+        "title": "List a shared project's chats",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.readChat",
+        "title": "Read a shared chat",
+        "category": "Team"
+      },
+      {
+        "id": "team.share.continueChat",
+        "title": "Continue a shared chat as my own",
+        "category": "Team"
+      },
+      {
         "id": "team.members",
         "title": "List the team's members",
         "category": "Team"

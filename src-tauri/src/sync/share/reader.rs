@@ -18,7 +18,153 @@ use crate::sync::snapshot::{self, FileText, Manifest, Summary};
 /// without end): the copy is then made of what the snapshot carries.
 const CLONE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
+/// A teammate who asked this account to share a project (D455).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ask {
+    pub uid: String,
+    pub name: String,
+    /// When, in ms.
+    pub at: u64,
+}
+
+/// A teammate's share as the list shows it now: what `news` goes by.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Shown {
+    pub id: String,
+    #[serde(default)]
+    pub chats: bool,
+}
+
+/// Something new among the teammates' shares, for this computer.
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct News {
+    pub id: String,
+    /// "project": a share this computer hasn't seen; "chats": its chats are shared now.
+    pub kind: &'static str,
+}
+
+/// What this computer has seen of the teammates' shares (id to whether its chats were shared).
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct SeenShares {
+    base: String,
+    uid: String,
+    seen: std::collections::BTreeMap<String, bool>,
+}
+
+/// What is new in `shown` against `seen` (None: nothing was ever kept here, so nothing is
+/// news), and what is kept from now on: only what is shown (a share that went is forgotten,
+/// and is news again if it comes back).
+fn news_of(
+    seen: Option<&std::collections::BTreeMap<String, bool>>,
+    shown: &[Shown],
+    max: usize,
+) -> (Vec<News>, std::collections::BTreeMap<String, bool>) {
+    let mut news = Vec::new();
+    let mut next = std::collections::BTreeMap::new();
+    for share in shown.iter().take(max) {
+        if split_share_id(&share.id).is_none() {
+            continue;
+        }
+        if let Some(seen) = seen {
+            match seen.get(&share.id) {
+                None => news.push(News {
+                    id: share.id.clone(),
+                    kind: "project",
+                }),
+                Some(false) if share.chats => news.push(News {
+                    id: share.id.clone(),
+                    kind: "chats",
+                }),
+                _ => {}
+            }
+        }
+        next.insert(share.id.clone(), share.chats);
+    }
+    (news, next)
+}
+
 impl Shares {
+    /// What is new among the teammates' shares shown now, for this computer; remembered, so
+    /// each is said once (`news_of`).
+    pub fn news(&self, shown: Vec<Shown>) -> Result<Vec<News>> {
+        let file = self.vault.sync_file("share-seen.json");
+        let kept = std::fs::read(&file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<SeenShares>(&bytes).ok())
+            .filter(|kept| kept.base == self.base && kept.uid == self.uid);
+        let (news, seen) = news_of(kept.as_ref().map(|k| &k.seen), &shown, super::MAX_SHARES);
+        if kept.as_ref().map(|k| &k.seen) != Some(&seen) {
+            if let Some(dir) = file.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            let kept = SeenShares {
+                base: self.base.clone(),
+                uid: self.uid.clone(),
+                seen,
+            };
+            crate::store::atomic_write(&file, &serde_json::to_vec(&kept)?)?;
+        }
+        Ok(news)
+    }
+
+    /// Asks a teammate to share a project with this account: a note their app shows. It
+    /// names no project (this account can't see what a teammate has) and carries no text.
+    pub async fn ask(&self, uid: &str) -> Result<()> {
+        if !super::keys::valid_uid(uid) || uid == self.uid {
+            return Err(Error::Invalid("ask a teammate".into()));
+        }
+        let reply = self
+            .team
+            .post(&format!("shares/{uid}/ask"), &serde_json::json!({}))
+            .await?;
+        // A service from before asks answers as for a share that isn't there.
+        if reply.status == 404 {
+            return Err(failed(
+                "ShareNeedsService",
+                "Asking a teammate isn't available from this account's sync service yet.",
+            ));
+        }
+        reply.into_ok()?;
+        Ok(())
+    }
+
+    /// Who asked this account to share a project, newest first; names are cleaned, ids
+    /// checked, and only current members of the team are listed.
+    pub async fn asks(&self) -> Result<Vec<Ask>> {
+        let members = self.team_members().await?;
+        let reply = self.team.get("shares").await?;
+        Ok(reply["asks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .take(200)
+            .filter_map(|ask| {
+                let uid = ask["from"].as_str()?;
+                // Whose name it is comes from the team's own list, not from the note.
+                let member = members.iter().find(|m| m.uid == uid && uid != self.uid)?;
+                Some(Ask {
+                    uid: uid.to_string(),
+                    name: member.name.clone(),
+                    at: ask["at"].as_u64().unwrap_or(0),
+                })
+            })
+            .collect())
+    }
+
+    /// Forgets a teammate's ask of this account.
+    pub async fn clear_ask(&self, uid: &str) -> Result<()> {
+        if !super::keys::valid_uid(uid) {
+            return Err(Error::Invalid("that isn't a teammate".into()));
+        }
+        match self.team.delete(&format!("shares/{uid}/ask")).await {
+            Ok(_) | Err(Error::Sync("ShareGone", _)) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Opens a share: its client, and its keyring. For the sharer the keyring is the one in
     /// its own vault. For anyone else it is the wrap the service holds for this account,
     /// opened only as coming from the sharer's key as this account pinned it, and only when
@@ -464,6 +610,48 @@ mod tests {
         let version = crate::git::run_unattended(&base, &["--version"], minute).unwrap();
         assert!(version.contains("git version"), "{version}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_share_is_news_once_and_its_chats_once_more() {
+        let shown = |list: &[(&str, bool)]| -> Vec<Shown> {
+            list.iter()
+                .map(|(id, chats)| Shown {
+                    id: (*id).to_string(),
+                    chats: *chats,
+                })
+                .collect()
+        };
+        let kinds = |news: &[News]| -> Vec<(String, &'static str)> {
+            news.iter().map(|n| (n.id.clone(), n.kind)).collect()
+        };
+        // The first look says nothing, and remembers what it saw.
+        let (news, seen) = news_of(None, &shown(&[("ana.p1", false), ("../x", true)]), 10);
+        assert!(news.is_empty());
+        assert_eq!(seen.len(), 1, "what isn't a share's id isn't kept");
+        // A new share is news; the one seen isn't.
+        let (news, seen) = news_of(
+            Some(&seen),
+            &shown(&[("ana.p1", false), ("ben.p2", true)]),
+            10,
+        );
+        assert_eq!(kinds(&news), [("ben.p2".to_string(), "project")]);
+        // Its chats shared later: news once.
+        let (news, seen) = news_of(
+            Some(&seen),
+            &shown(&[("ana.p1", true), ("ben.p2", true)]),
+            10,
+        );
+        assert_eq!(kinds(&news), [("ana.p1".to_string(), "chats")]);
+        let (news, seen) = news_of(Some(&seen), &shown(&[("ana.p1", true)]), 10);
+        assert!(news.is_empty());
+        // One that went and came back is news again.
+        let (news, _) = news_of(
+            Some(&seen),
+            &shown(&[("ana.p1", true), ("ben.p2", false)]),
+            10,
+        );
+        assert_eq!(kinds(&news), [("ben.p2".to_string(), "project")]);
     }
 
     #[test]

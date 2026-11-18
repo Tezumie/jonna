@@ -16,8 +16,8 @@ use tauri::State;
 
 use crate::error::{Error, Result};
 use crate::sync::share::{
-    CopyPlan, Folder, Me, MemberInfo, OpenedCopy, ShareInfo, SharedFiles, SharedSnapshot, Shares,
-    Synced,
+    Ask, ChatsSynced, CopiedChat, CopyPlan, Folder, Me, MemberInfo, News, OpenedCopy, Readers,
+    ShareInfo, SharedChat, SharedFiles, SharedSnapshot, Shares, Shown, Synced,
 };
 use crate::sync::snapshot::FileText;
 use crate::sync::vault::Vault;
@@ -91,7 +91,11 @@ pub async fn share_list(state: State<'_, AppState>, base: String) -> Result<Vec<
 
 /// Starts sharing `project` under `name` (when it is shared already: sets the name and the
 /// chats switch), hands its keys to the members who may have them (`only_verified`: only to
-/// verified ones), and, with the open folder `root`, takes its first snapshot.
+/// verified ones), and, with the open folder `root`, takes its first snapshot. Whom it is
+/// shared with (D453): `readers`, the chosen members' ids; else `whole_team` true for
+/// everyone; neither: as it is (the whole team for a new share). Chosen people need a service
+/// that keeps to it (`ShareNeedsService` otherwise; nothing is made).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn share_start(
     state: State<'_, AppState>,
@@ -101,6 +105,8 @@ pub async fn share_start(
     name: String,
     chats: bool,
     only_verified: bool,
+    whole_team: Option<bool>,
+    readers: Option<Vec<String>>,
 ) -> Result<Synced> {
     let _one = SNAPSHOT.lock().await;
     let root = match root {
@@ -114,11 +120,21 @@ pub async fn share_start(
         device: &device,
         device_name: &device_name,
     });
-    s.start_and_sync(&project, &name, chats, only_verified, folder)
-        .await
+    s.start_and_sync(
+        &project,
+        &name,
+        chats,
+        only_verified,
+        Readers::from_input(whole_team, readers),
+        folder,
+    )
+    .await
 }
 
-/// Changes a share's name and whether its chats are shared.
+/// Changes a share's name, whether its chats are shared, and (as for `share_start`) whom it
+/// is shared with. Someone taken off is refused by the service at once and the keys are
+/// renewed here.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn share_update(
     state: State<'_, AppState>,
@@ -126,8 +142,19 @@ pub async fn share_update(
     project: String,
     name: String,
     chats: bool,
+    only_verified: Option<bool>,
+    whole_team: Option<bool>,
+    readers: Option<Vec<String>>,
 ) -> Result<ShareInfo> {
-    shares(&state, &base)?.update(&project, &name, chats).await
+    shares(&state, &base)?
+        .update(
+            &project,
+            &name,
+            chats,
+            Readers::from_input(whole_team, readers),
+            only_verified.unwrap_or(false),
+        )
+        .await
 }
 
 /// Stops a share (the sharer, or the team's owner): the service deletes it and all it holds.
@@ -276,4 +303,103 @@ pub async fn share_open_copy(
             &SNAPSHOT,
         )
         .await
+}
+
+/// Makes the chats of this account's share of `project` the chats `chats` (the project's
+/// chats on this computer, newest first; D454): new and changed ones are written, sealed
+/// under the share's keys, and whatever else the share held of chats is taken out. With the
+/// share's chats switch off, or an empty list, every shared chat goes. What travels is the
+/// conversation only: nothing that grants something, no folder, and not what a tool read
+/// from a key file. `root`: the open folder the project syncs from; a chat is shared only
+/// when its own file says that folder is its. Without `root` nothing is written (what is
+/// shared only goes).
+#[tauri::command]
+pub async fn share_chats_sync(
+    state: State<'_, AppState>,
+    base: String,
+    project: String,
+    root: Option<String>,
+    chats: Vec<String>,
+) -> Result<ChatsSynced> {
+    let root = match root {
+        Some(root) => Some(snapshot_root(&state, &root)?),
+        None => None,
+    };
+    shares(&state, &base)?
+        .sync_chats(&project, root.as_deref(), chats)
+        .await
+}
+
+/// The chats a share holds, newest first (empty: it shares none). Titles are a teammate's text.
+#[tauri::command]
+pub async fn share_chats(
+    state: State<'_, AppState>,
+    base: String,
+    id: String,
+) -> Result<Vec<SharedChat>> {
+    shares(&state, &base)?.chats(&id).await
+}
+
+/// One chat of a share as its file's text, written nowhere (null: the share doesn't hold
+/// it). A teammate's conversation: for reading, never to act on.
+#[tauri::command]
+pub async fn share_chat_text(
+    state: State<'_, AppState>,
+    base: String,
+    id: String,
+    chat: String,
+) -> Result<Option<String>> {
+    shares(&state, &base)?.chat_text(&id, &chat).await
+}
+
+/// Copies a chat of a share into this account's own chats as the new chat `save_as`, in the
+/// folder `workspace` (none: a chat with no folder). `owner`: the sharer's name as the list
+/// showed it, for the copy's title. The copy grants nothing, has nothing waiting, and ends
+/// with a line saying that what is above is a teammate's. Nothing goes back to the share.
+#[tauri::command]
+pub async fn share_chat_copy(
+    state: State<'_, AppState>,
+    base: String,
+    id: String,
+    chat: String,
+    save_as: String,
+    workspace: Option<String>,
+    owner: String,
+) -> Result<CopiedChat> {
+    shares(&state, &base)?
+        .copy_chat(&id, &chat, &save_as, workspace.as_deref(), &owner)
+        .await
+}
+
+/// Asks the teammate `uid` to share a project with this account (D455): a note their app
+/// shows. It names no project and carries no text.
+#[tauri::command]
+pub async fn share_ask(state: State<'_, AppState>, base: String, uid: String) -> Result<()> {
+    shares(&state, &base)?.ask(&uid).await
+}
+
+/// The teammates who asked this account to share a project, newest first. Empty from a
+/// service that doesn't keep asks.
+#[tauri::command]
+pub async fn share_asks(state: State<'_, AppState>, base: String) -> Result<Vec<Ask>> {
+    shares(&state, &base)?.asks().await
+}
+
+/// Forgets the ask the teammate `uid` made of this account (answered, or dismissed).
+#[tauri::command]
+pub async fn share_ask_clear(state: State<'_, AppState>, base: String, uid: String) -> Result<()> {
+    shares(&state, &base)?.clear_ask(&uid).await
+}
+
+/// What is new among the teammates' shares the list shows now (`shown`: each one's id and
+/// whether its chats are shared), for this computer: a share it hasn't seen, or one whose
+/// chats weren't shared when it last looked. Remembered here, so each is said once. The
+/// first look of an account on a computer says nothing (what was there before isn't news).
+#[tauri::command]
+pub async fn share_news(
+    state: State<'_, AppState>,
+    base: String,
+    shown: Vec<Shown>,
+) -> Result<Vec<News>> {
+    shares(&state, &base)?.news(shown)
 }

@@ -250,7 +250,8 @@ Not yet: symbolic links, submodules, the "also include" list for ignored files.
 
 A member of a team can share a project that syncs: its snapshots (and, by a second switch,
 its chats) are then also written to a **share**, a small place of its own that the team's
-members can read. One writer (the sharer), many readers. Nothing is ever written into a
+members can read, or, when the sharer chose people, only those members (D453). One writer
+(the sharer), many readers. Nothing is ever written into a
 reader's folder unasked. What is in a member's own vault is untouched and stays theirs.
 
 ### Why a copy under its own key
@@ -272,8 +273,9 @@ Every construction is the one the vault uses (`sync/crypto.rs`); none is new.
 | Share wrap | The share's keyring, with the share's id, the generation and when the keyring was made, boxed (the authenticated box a device wrap uses) from the sharer's member key to one member's member key. A reader opens it only as coming from the pinned key of the member the service names as the sharer, and only when the id inside is the share asked for. A reader remembers, for each share, the keyring and the highest generation it has seen: older keys of the same keyring are refused, and another keyring is taken only when it was made later (a share stopped and made again). |
 | New keys | When someone leaves the team or is removed, or the sharer asks: the sharer's computer adds a generation and stores wraps for those who remain. It does so when the service says so, and also when someone it handed the keys to (it keeps that list, sealed) is no longer in the team, whatever the service says. Older content stays readable to those who had it; what is written afterwards is not readable with the old wraps. |
 
-**What the service can and can't do.** It decides who may read (members of the team, with an
-approved device) and refuses a removed member at once. It never has a key. A service that
+**What the service can and can't do.** It decides who may read (members of the team, or the
+ones the sharer chose, with an approved device) and refuses a removed member, or one taken
+off the list, at once. It never has a key. A service that
 swapped a member's public key the very first time two people's computers met could read what
 is then shared with "that member"; comparing fingerprints rules it out, and after the first
 contact the pins do. The app says "Not verified" until then, and has a setting to share only
@@ -294,16 +296,20 @@ a session tied to an approved device of the caller's own vault (as for `/api/syn
 |---|---|---|
 | `PUT key` `{ publicKey, challenge: { id, proof } }` | a device | Publishes the caller's public member key (proof as for a device: `POST /api/sync/challenge`). Answers `{ publicKey }`. Publishing another key replaces it and marks every share of the caller's and every wrap made for the caller as needing new keys. |
 | `GET` (the team's view, as before) | a member | Each member now also carries `memberKey` (the public key, or null). |
-| `GET shares` | a member (a device, or the website) | `{ shares: [{ id, project, name, chats, owner: { uid, name }, mine, keyVersion, rotationNeeded, hasWrap, usageBytes, updatedAt, latest }] }`: the team's shares by their labels. `latest` is the label of the newest snapshot record (`info`), or null. `hasWrap`: a wrap for the caller exists for the current generation. |
-| `PUT shares/{project}` `{ name, chats, wraps: { <uid>: <wrap> } }` | a device, in a team, with sync on (not lapsed) | Makes the caller's share of that project (id `<caller>.<project>`; again: updates `name` and `chats`). `wraps` are for generation 1 and are stored only for current members. Answers the share as `GET shares` lists it. |
+| `GET shares` | a member (a device, or the website) | `{ shares: [{ id, project, name, chats, owner: { uid, name }, mine, keyVersion, rotationNeeded, hasWrap, chosen, readers?, usageBytes, updatedAt, latest }], features, asks }`: the shares the caller may read, by their labels (on the website the team's owner sees every share's label). `latest` is the label of the newest snapshot record (`info`), or null. `hasWrap`: a wrap for the caller exists for the current generation. `chosen`: it is for chosen people; `readers` (their ids, or null) only on the caller's own share. `features`: what the service does beyond its first version (`readers`, `chats`); a service that says none is from before D453. `asks`: who asked the caller to share a project (`{ from, name, at }`; none on the website). |
+| `PUT shares/{project}` `{ name, chats, readers?, wraps: { <uid>: <wrap> } }` | a device, in a team, with sync on (not lapsed) | Makes the caller's share of that project (id `<caller>.<project>`; again: updates `name` and `chats`). `readers`: not named, as it is (the whole team for a new share); null, the whole team; a list of members' ids, those people only (ids that aren't members, and the caller's own, are left out). Narrowing drops the wraps of those taken off and sets `rotationNeeded`. `wraps` are for generation 1 and are stored only for current members who may read. Answers the share as `GET shares` lists it. |
+| `POST shares/{uid}/ask` | a member's device | Asks the member `uid` of the caller's team to share a project (D455): kept fourteen days, listed in that member's `asks`. No body. 20 a day. |
+| `DELETE shares/{uid}/ask` | a member's device | Forgets the ask `uid` made of the caller. |
 | `DELETE shares/{id}` | the sharer (a device or the website), or the team's owner | Deletes the share and everything in it. |
-| `GET shares/{id}/keys` | a member's device | `{ keyVersion, rotationNeeded, owner: { uid, memberKey }, wrap }`: the caller's own wrap (`{ wrap, keyVersion }` or null). For the sharer also `members: [{ uid, name, memberKey, hasWrap }]`. |
-| `POST shares/{id}/keys` `{ keyVersion, wraps: { <uid>: <wrap> } }` | the sharer's device | Stores wraps for that generation, for current members only. A generation one above the current becomes current: wraps of the generation before for members not named are dropped, and `rotationNeeded` is cleared. The current generation again: adds wraps (a new member). Anything else: 409 with the current generation. |
+| `GET shares/{id}/keys` | a device of a member who may read it | `{ keyVersion, rotationNeeded, owner: { uid, memberKey }, wrap }`: the caller's own wrap (`{ wrap, keyVersion }` or null). For the sharer also `readers` and `members: [{ uid, name, memberKey, hasWrap }]`, the members it is for. |
+| `POST shares/{id}/keys` `{ keyVersion, wraps: { <uid>: <wrap> } }` | the sharer's device | Stores wraps for that generation, for current members who may read only. A generation one above the current becomes current: wraps of the generation before for members not named are dropped, and `rotationNeeded` is cleared. The current generation again: adds wraps (a new member). Anything else: 409 with the current generation. |
 | `GET shares/{id}/records?since=N`, `GET records/{collection}/{id}`, `POST blobs/have`, `POST blobs/get` | a member's device | As for a vault, on the share. |
 | `PUT records/{collection}/{id}`, `POST blobs`, `POST gc` | the sharer's device | As for a vault, on the share. |
 
 - A member's wrap is dropped, and `rotationNeeded` set on every share of that team, the
   moment the member leaves or is removed. The sharer's shares are deleted then too.
+- A member a share isn't for (D453) gets 404 `no_share` on everything under it, as someone
+  outside the team does, and it isn't in their list.
 - Limits: 20 shares a member; a wrap is at most 4,096 characters; the vault's limits on
   records, chunks and request rates.
 - Errors are the vault's (`{ error, error_description }`), and: 404 `no_share`, 403
@@ -318,7 +324,7 @@ The same record kinds a project has in a vault, under the share's keys:
 |---|---|
 | `project/info` | The project's name, the sharer's computer's name, whether it has a git remote and the remote's address (so a reader can clone it first) |
 | `snap/<time>-<device>` | A snapshot, as in a vault. The label (`info`) is the same as a vault snapshot's |
-| `chats/<chat>` | With the second switch: a chat's summary, and its file and images as chunks |
+| `chats/<chat>` | With the second switch (D454): a chat's summary, and its file and images as chunks, as a synced chat is stored |
 
 - **When:** after each snapshot of a shared project is taken for the vault, the same capture
   runs for the share (unchanged files aren't read or uploaded again), and every ten minutes
@@ -358,9 +364,34 @@ The same record kinds a project has in a vault, under the share's keys:
 - **What is read is checked, not believed:** a snapshot's list is at most 256 MiB, 200,000
   files of at most 100 MB each and 25 bundles; a file's pieces must fit its stated size, and
   reading stops when more arrives; a copy is at most 20 GiB.
-- **A chat** (when shared) is copied into the reader's own chats as a new chat, named with
-  whose it was. Nothing the reader does to it goes back.
+- **A chat** (when shared) is read as a document, written nowhere, or copied into the
+  reader's own chats as a new chat, named with whose it was and ending with a line that says
+  what is above was a teammate's: information, not instructions. Nothing the reader does to
+  it goes back.
 - A reader's computer writes nothing to a share.
+
+### Chosen people (D453)
+
+- The list is in two places that don't rely on each other: on the share at the service
+  (who is refused, who is listed) and in the sharer's own sealed record of the share (who
+  this computer makes wraps for). The record is written first.
+- Taking someone off is a member leaving, for that share: their wrap is dropped, the service
+  refuses them at once, and the sharer's computer renews the keys, whatever the service says.
+- An app asked to choose people against a service that doesn't say it keeps readers
+  (`features`) refuses (`ShareNeedsService`) and changes nothing.
+
+### A shared project's chats (D454)
+
+- Only the chats of the project's folder, the newest hundred, and only while the switch is
+  on; turning it off removes them from the share.
+  The backend goes by each chat's own file for whose folder it is, not by the list it is
+  handed.
+- A chat travels as a conversation: nothing that grants something, no folder path, no
+  checkpoints (`chats::for_teammates`), and not what a tool read from or wrote to a key file
+  (by the same list of names that leaves key files out of a snapshot). Any other secret in a
+  chat travels: the app asks before the switch goes on, and says so.
+- A copy passes the door every downloaded chat passes (`neutralise`), under a new id, never
+  over a chat that exists.
 
 ### What sharing can't promise
 
@@ -381,7 +412,8 @@ The same record kinds a project has in a vault, under the share's keys:
   with the vault and with the team.
 - `scripts/sync-e2e.mjs`: two accounts in one team. One shares a project; the other reads
   its snapshot and opens a copy; a swapped member key is refused; after a removal the next
-  snapshot can't be read with the old wrap.
+  snapshot can't be read with the old wrap. With a third: shared with one chosen member, the
+  other is refused and not shown it; chats shared, read, copied, removed; an ask.
 
 ## What a computer checks about the service and about its own other computers
 

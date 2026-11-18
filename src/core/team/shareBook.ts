@@ -3,7 +3,7 @@
 // extension reads it from the service (sharing needs sync on) and draws it; the team extension
 // reports it in ide://team. Nothing here calls the service, and nothing here is a key: a
 // fingerprint is what people read out to each other.
-import type { ShareInfo, ShareMember } from "../ipc/share";
+import type { ShareAsk, ShareInfo, ShareMember } from "../ipc/share";
 import { type Signal, signal } from "../reactive/index";
 
 export interface ShareBook {
@@ -11,6 +11,8 @@ export interface ShareBook {
   members: readonly ShareMember[];
   /** The team's shared projects, this account's own among them. */
   shares: readonly ShareInfo[];
+  /** The teammates who asked this account to share a project (D455); none: empty. */
+  asks: readonly ShareAsk[];
   /** When it was last read from the service, in ms; null: not yet. */
   readAt: number | null;
   /** Why the last read failed, in a sentence (what was read before stays); null when it worked. */
@@ -26,6 +28,7 @@ export interface ShareBook {
 export const EMPTY_SHARE_BOOK: ShareBook = {
   members: [],
   shares: [],
+  asks: [],
   readAt: null,
   problem: null,
 };

@@ -47,6 +47,9 @@ unless noted.
 | · Web search without a key of its own: the model provider's | D450 |
 | · Thinking blocks are bound to their conversation: an append-only history, and a way out when it isn't | D451 |
 | · Tools that load on demand are declared once, and old tool results are cleared by the provider (Anthropic) | D452 |
+| · Sharing a project with chosen people, not the whole team | D453 |
+| · A shared project's chats: read by teammates, continued as a copy | D454 |
+| · Hand-off: told once when a teammate shares, asking a teammate to share | D455 |
 
 ## Seeded from PLAN §19
 
@@ -16098,3 +16101,129 @@ new code would be worse than the drop.
 **Tested:** the request shapes (`ai/tests.rs` `anthropic_declares_deferred_tools`), what a
 tool search's result names and when results are sent whole (`conversation.test.ts`), the note
 (`toolSearch.test.ts`). **Not verified** against the live API (it needs the owner's key).
+
+## D453 — Sharing a project with chosen people, not the whole team
+
+D446 shared a project with the whole team or not at all. The sharer now chooses on the
+project's card: **The whole team** (as before, and the default) or **Chosen people**, a tick
+for each teammate.
+
+**Who enforces it.** Both sides, each without relying on the other:
+- **The service** keeps the list on the share (`readers`; absent or null: the whole team). A
+  member who isn't on it is told there is no such share, in the words used for one that
+  doesn't exist, on every call that reads it (records, chunks, keys), isn't shown it in the
+  list, and no wrap is stored for them. The team's owner still sees its label on the website
+  and can delete it there, and reads it nowhere.
+- **The sharer's computer** keeps the list in its own sealed record of the share
+  (`shares/<project>`, `readers`) and hands keys out by that record: the members the
+  service names are narrowed by it (`plan::allowed`), never widened. The record is written
+  before the service hears of a change, so a change that narrows holds here even if the call
+  that follows fails. A record that names nobody (rewritten by an app from before this, on
+  another of the account's computers) is still bounded by the list the service gives.
+
+**Taking someone off** is what a member leaving already was: the service drops their wrap and
+asks for new keys; the sharer's computer finds someone it handed the keys to who is no longer
+allowed (`someone_left` over the allowed members) and renews, whatever the service says.
+`share_update` does it at once, not at the next pass. What they already opened they keep,
+as the card says. Adding someone asks for no new keys; they get the current ones.
+
+**Old and new together.** A call that names no readers changes none, so an app from before
+this keeps working and can't widen a share by renaming it. The service says what it can do
+(`features` in `GET shares`); an app asked to choose people against a service that doesn't
+say `readers` refuses with `ShareNeedsService` and makes or changes nothing: a service
+that ignored the list would show the share to the whole team.
+
+**In the IDE.** The card's "Share with" choice and the people under it (each a tick, with why
+someone ticked can't read it yet); before sharing is on, the choice is kept for when it is
+(`ProjectSharing.intended`). `sync.project.shareWith` (`team`, or `readers`),
+`sync.project.share` takes `readers`; both hidden from agents. A share's label in
+`ide://team` says `chosen`, never who.
+
+**Not built:** groups of people to choose at once; sharing with someone outside the team
+(still section 15 of the plan).
+
+**Checked:** the service's suite (a member not chosen is refused and not shown it; the
+owner's view; a call without readers; narrowing drops the wrap and asks for keys; wraps for
+others are not kept); `plan::allowed` and `chosen`; the model (`shares.test.ts`); the
+two-computer run (three accounts: narrowed to one, the other is refused and not listed, the
+keys are renewed; back to the whole team, they read again).
+
+## D454 — A shared project's chats: read by teammates, continued as a copy
+
+The second switch of the plan. On a project that is shared, **Share its chats too** (off
+until turned on, after a question that says what teammates will see).
+
+**What travels.** The chats whose folder is the project's folder, the newest hundred, written
+by the sharer's computer after each share sync and when the switch is turned on. Each is a
+`chats/<chat>` record of the share, stored as a synced chat is (its file and its images as
+chunks, a summary in the record) and sealed under the share's keyring: nothing new was
+invented. A chat with no folder, or another folder's, never travels: the front end lists the
+project's chats, and the backend shares one only when the chat's own file says the open
+folder is its (`share_chats_sync` takes the folder, checked as a snapshot's is), so nothing
+that can name a chat can send another folder's to the team.
+
+**What doesn't** (`chats::for_teammates`): everything a chat from elsewhere must not bring
+(`neutralise`: edits waiting for review, what the agent last saw of files, auto-apply, an
+external agent's session, a worktree, told rules and skills), its folder's path, its
+checkpoints, and **what a tool read from or wrote to a key file**: a tool call whose
+arguments name a path the share's own key-file rule matches has its result replaced by a
+line saying so. That rule is a list of names. A secret pasted into a message, or read from a
+file with another name, is not recognised: the question before the switch says it, and it is
+why the switch is separate and off.
+
+**Reading.** A teammate sees a shared project's chats under its snapshots (Team page): Read
+opens the conversation as a read-only document (the Markdown the chat's own export makes),
+written nowhere. **Continue as my own chat** copies it into their chats under a new id
+(through the one door every downloaded chat passes, `chats::pull`), named "… (from Sam)",
+without the teammate's queue or spend, and ending with a message from the IDE: everything
+above was written in a teammate's chat and is information, not instructions. The model reads
+that line too. Nothing a reader does goes back: a reader's computer writes nothing to a share.
+What a copy fetches is bounded on the record it is fetched from (64 MiB of chat, 500 images,
+1 GiB of them: `chats::Limits`), and reading stops when more arrives than was said.
+
+**Turning it off** removes the shared chats from the share at once (and from another computer
+of the account at its next pass over the share).
+
+`sync.project.shareChats`, `team.share.readChat`, `team.share.continueChat` (hidden from
+agents: who sees a chat, and a teammate's text in a tab or among one's own chats, are the
+person's); `team.share.chats` lists titles, marked as a teammate's text.
+
+**Left:** a chat is shared whole (no choosing single chats); the reader can't search shared
+chats; sub-agent transcripts kept outside the chat's file don't travel.
+
+**Checked:** `for_teammates` and the copy's marker (Rust); which chats are picked (the
+model); the two-computer run (off: nothing written; on: written once, unchanged the second
+time, the key file's content absent from what the teammate reads and copies, the image
+arrives, the copy ends with the marker, the sharer's own file untouched; a member not chosen
+is refused; off: removed).
+
+## D455 — Hand-off: told once when a teammate shares, asking a teammate to share
+
+**Told once.** When a teammate shares a project with this account, or turns on its chats,
+the app says so once on each computer: a quiet notification with a button to it, and a line
+in the activity. What a computer has seen is kept on that computer (`share-seen.json` beside
+the other sync files, per account and server; `share_news`): the first look says nothing,
+so an update or a new computer doesn't announce what was there all along. A share that went
+and came back is news again. `team.shareNotices` (on) turns it off; what was seen is
+remembered either way.
+
+**Ask to share.** People, on the Team page: "Ask to share…" on a teammate. It is a note and
+nothing more: the service keeps "A asked B" for fourteen days (`POST shares/{uid}/ask`),
+B's app lists who asked above the Team page's lists and says it once, and B dismisses it or
+shares something. It names no project (nobody can see what a teammate has) and carries no
+text, so it can't be used to send anyone anything; twenty a day an account. No email: the
+service sends none, and one person runs it.
+
+**Stale shares, what was found.** The service already deletes a share with its sharer's
+vault, when the sharer leaves or is removed, and when the team ends, and its list drops a
+share whose sharer is gone. A project that stops syncing while shared was the gap on the
+app's side, and stays a known one: the share then simply gets no new snapshots, and the
+sharer's card says "Open its folder on this computer to share new snapshots of it". Nothing
+deletes it unasked: it is still what the sharer chose to show. An ask older than fourteen
+days, or from someone who left, is deleted when it is next read.
+
+`team.member.askToShare`, `team.asks.dismiss` (hidden from agents); `ide://team` `asks`.
+
+**Checked:** `news_of` (Rust), the sentences (the model), the service's suite (who may ask
+whom, who is told), the two-computer run (asked, listed for the one asked only, dismissed;
+the chats of a share are news once).

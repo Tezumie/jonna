@@ -257,6 +257,51 @@
       "expectError": "Sign in to your account to use sync."
     },
     { "run": "team.copyFingerprint", "expectError": "Sign in to your account to use sync." },
+    // D453 to D455: who a share is for, its chats, asking a teammate. The same: the
+    // account first, and nothing asked of the service or of the person before that.
+    {
+      "run": "sync.project.share",
+      "input": { "readers": ["none"] },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.project.shareWith",
+      "input": { "team": true },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.project.shareWith",
+      "input": { "readers": ["none"] },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "sync.project.shareChats",
+      "input": { "on": true },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.chats",
+      "input": { "id": "none.none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.readChat",
+      "input": { "id": "none.none", "chat": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.share.continueChat",
+      "input": { "id": "none.none", "chat": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    {
+      "run": "team.member.askToShare",
+      "input": { "uid": "none" },
+      "expectError": "Sign in to your account to use sync."
+    },
+    { "run": "team.asks.dismiss", "expectError": "Sign in to your account to use sync." },
+    { "state": "ide://team", "expect": { "asks": { "$length": 0 } } },
+    // The notices' switch is a setting of this computer's, on unless turned off.
     // Nothing of it reached the page, and the tab still shows the one setup pane.
     {
       "state": "ide://team",
