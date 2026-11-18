@@ -11,6 +11,7 @@ import {
   type OwnServices,
   planPageUrl,
   teamPageUrl,
+  webAppUrl,
 } from "./ownServices";
 
 const config = (over: Partial<OwnServices> = {}): OwnServices => ({
@@ -18,6 +19,7 @@ const config = (over: Partial<OwnServices> = {}): OwnServices => ({
   accountPagePath: "/account",
   planPagePath: "/account#plan",
   teamPagePath: "/account#team",
+  webAppPath: "",
   syncBuiltIn: true,
   ...over,
 });
@@ -121,6 +123,7 @@ test("own services: a build with no plan page says nothing of plans", () => {
     accountsUrl: "https://example.test",
     accountPagePath: "/account",
     teamPagePath: "/account#team",
+    webAppPath: "",
     syncBuiltIn: true,
   };
   assert.equal(hasPlanPage({ ...base, planPagePath: "/account#plan" }), true);
@@ -133,4 +136,15 @@ test("own services: teams' libraries need Sync in the build and a service with t
   assert.equal(hasTeams(config({ teamPagePath: "" })), false);
   assert.equal(hasTeams(config({ syncBuiltIn: false })), false);
   assert.equal(hasTeams(config({ accountsUrl: "" })), false);
+});
+
+test("own services: the web page is where the build says, or nowhere", () => {
+  assert.equal(webAppUrl(config()), null);
+  assert.equal(webAppUrl(config({ webAppPath: "/app/" })), "https://accounts.example.com/app/");
+  assert.equal(
+    webAppUrl(config({ webAppPath: "https://ide.example.com/" })),
+    "https://ide.example.com/",
+  );
+  // A path needs a server to be a path of.
+  assert.equal(webAppUrl(config({ accountsUrl: "", webAppPath: "/app/" })), null);
 });

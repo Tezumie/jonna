@@ -97,15 +97,19 @@ for (const key of optional) {
 // - teamPagePath: the page where a subscriber's team is managed (inviting people, removing
 //   them; the app only opens it). A path or a whole URL, as above. Set to "" for a service
 //   without teams: the app then shows nothing about teams.
+// - webAppPath: where the front end is served as a website that connects to a host (src/web,
+//   `node build.mjs --web`). A path on the accounts server or a whole URL, as above. Left out
+//   or "": the build has no such page, and the app offers no way to open one.
 // - syncBuiltIn: false leaves Sync out of the build (its tab, commands, settings, status bar
 //   item and ide://sync), whatever the server offers. Sync needs an accounts server either way.
 const servicePages = {
   accountPagePath: "/account",
   planPagePath: "/account#plan",
   teamPagePath: "/account#team",
+  webAppPath: "",
 };
 // An empty one of these is a choice (no plans, no teams), not "the default".
-const mayBeEmpty = ["planPagePath", "teamPagePath"];
+const mayBeEmpty = ["planPagePath", "teamPagePath", "webAppPath"];
 for (const key of Object.keys(servicePages)) {
   const value = product[key];
   if (value === undefined || value === "") continue;

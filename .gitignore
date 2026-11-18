@@ -2,6 +2,7 @@ node_modules/
 dist/
 # The brain without a window, for Node (node build.mjs --headless)
 dist-headless/
+dist-web/
 .test-build/
 src-tauri/target/
 # The remote server's own build folder, and its binaries (scripts/build-server.mjs)
@@ -9,6 +10,8 @@ src-tauri/remote-server/target/
 src-tauri/resources/server/
 # A second build folder for UI tests while a dev build runs (its exe is locked).
 src-tauri/target-uitest/
+# The windowless host built apart (scripts/web-host.mjs looks here too).
+src-tauri/target-host/
 src-tauri/gen/
 # Generated from product.json / theme JSON by scripts/gen.mjs (runs on postinstall and before every script)
 src/core/product.ts

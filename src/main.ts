@@ -8,7 +8,7 @@
 import "./styles/index.css";
 import { ExtensionHost } from "./core/extensions/index";
 import { instancesIpc } from "./core/ipc/instances";
-import { hasBackend } from "./core/ipc/invoke";
+import { backendOs, hasBackend } from "./core/ipc/invoke";
 import { execIpc } from "./core/ipc/process";
 import { appIpc, auditIpc, storeIpc } from "./core/ipc/system";
 import type { Platform } from "./core/keybindings/index";
@@ -47,6 +47,18 @@ function detectPlatform(): Platform {
   if (/Mac|iPhone|iPad/.test(ua)) return "mac";
   if (/Windows/.test(ua)) return "windows";
   return "linux";
+}
+
+/**
+ * The OS the backend is on: the window's own in the app, the host's when the page is somewhere
+ * else (the web build, src/web). Paths, shells and line endings follow it; keys follow the screen.
+ */
+function backendPlatform(screen: Platform): Platform {
+  const os = backendOs();
+  if (os === "windows") return "windows";
+  if (os === "macos") return "mac";
+  if (os === "linux") return "linux";
+  return screen;
 }
 
 /** True during a `--run-test-script` run (the policy then allows `caller: test`). */
@@ -102,7 +114,7 @@ async function boot(): Promise<void> {
   const shell: { workbench: Workbench | null } = { workbench: null };
   const services = createServices({
     screenPlatform: platform,
-    backendPlatform: platform,
+    backendPlatform: backendPlatform(platform),
     hasScreen: true,
     settings,
     theme,

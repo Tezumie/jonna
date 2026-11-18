@@ -15,6 +15,8 @@ export interface OwnServices {
   readonly planPagePath: string;
   /** The page where a subscriber's team is managed: a path, or a whole URL; empty: no teams. */
   readonly teamPagePath: string;
+  /** Where the front end is served as a website (a path, or a whole URL); empty: nowhere. */
+  readonly webAppPath: string;
   /** False leaves Sync out of the build. */
   readonly syncBuiltIn: boolean;
 }
@@ -96,6 +98,17 @@ function pageUrl(base: string, page: string): string {
   if (/^https?:\/\//i.test(page)) return page;
   const root = base.replace(/\/+$/, "");
   return page.startsWith("/") || page.startsWith("#") ? `${root}${page}` : `${root}/${page}`;
+}
+
+/**
+ * The page that is the front end as a website (it connects to a host, src/web), or null when the
+ * build names none.
+ */
+export function webAppUrl(config: OwnServices = product): string | null {
+  const page = config.webAppPath.trim();
+  if (!page) return null;
+  if (/^https?:\/\//i.test(page)) return page;
+  return hasAccounts(config) ? pageUrl(config.accountsUrl, page) : null;
 }
 
 /** The account page (devices, storage, resetting sync) of the accounts server `base`. */

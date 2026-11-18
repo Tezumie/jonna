@@ -13,6 +13,7 @@
 mod frame;
 pub mod server;
 mod stdio;
+mod ws;
 
 use std::ffi::OsString;
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -43,6 +44,11 @@ pub enum Info {
 pub struct Options {
     /// `--listen <address>`: serve one TCP client at a time there, not the process's pipes.
     pub listen: Option<SocketAddr>,
+    /// `--listen-ws <address>`: as `--listen`, with the wire inside WebSocket messages, for a
+    /// client that is a page in a browser.
+    pub listen_ws: bool,
+    /// `--allow-origin <origin>`: a page of this origin may connect (`--listen-ws`). Repeatable.
+    pub allow_origins: Vec<String>,
     /// `--token-file <path>`: the file holding the token a TCP client must send.
     pub token_file: Option<PathBuf>,
     /// `--user-data-dir <dir>`: settings and state there, as the desktop app's flag.
@@ -58,6 +64,8 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             listen: None,
+            listen_ws: false,
+            allow_origins: Vec::new(),
             token_file: None,
             user_data_dir: None,
             disable_extensions: false,
@@ -80,19 +88,39 @@ pub fn parse_args(
                 .ok_or_else(|| format!("{name} needs {what} after it"))
         };
         match name.as_str() {
-            "--stdio" => options.listen = None,
-            "--listen" => {
+            "--stdio" => {
+                options.listen = None;
+                options.listen_ws = false;
+            }
+            "--listen" | "--listen-ws" => {
                 let text = value("an address (127.0.0.1:<port>)")?;
                 let text = text.to_string_lossy();
                 let address: SocketAddr = text
                     .parse()
-                    .map_err(|_| format!("--listen: {text} isn't an address like 127.0.0.1:0"))?;
+                    .map_err(|_| format!("{name}: {text} isn't an address like 127.0.0.1:0"))?;
                 if !address.ip().is_loopback() {
                     return Err(format!(
-                        "--listen: {text} isn't a loopback address (127.0.0.1 or [::1])"
+                        "{name}: {text} isn't a loopback address (127.0.0.1 or [::1])"
                     ));
                 }
                 options.listen = Some(address);
+                options.listen_ws = name == "--listen-ws";
+            }
+            "--allow-origin" => {
+                let text = value("an origin (https://example.com)")?;
+                let origin = text.to_string_lossy().trim_end_matches('/').to_string();
+                // An origin is a scheme and a host, nothing after: a path would never match.
+                let ok = ["https://", "http://"].iter().any(|scheme| {
+                    origin
+                        .strip_prefix(scheme)
+                        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+                });
+                if !ok {
+                    return Err(format!(
+                        "--allow-origin: {origin} isn't an origin like https://example.com"
+                    ));
+                }
+                options.allow_origins.push(origin);
             }
             "--token-file" => options.token_file = Some(PathBuf::from(value("a file")?)),
             "--user-data-dir" => options.user_data_dir = Some(PathBuf::from(value("a folder")?)),
@@ -126,8 +154,14 @@ Options:
       --listen <127.0.0.1:port>  Serve one client at a time over TCP on loopback (port 0:
                                  any free port) instead of this process's stdin and stdout.
                                  The port is printed on stderr: \"host: listening on <address>\".
-      --token-file <file>        The file with the token a TCP client must send
-                                 (or the {TOKEN_VAR} variable). Required with --listen.
+      --listen-ws <127.0.0.1:port>
+                                 As --listen, for a page in a browser: the same stream inside
+                                 WebSocket messages. Printed as \"host: listening on ws://<address>\".
+      --allow-origin <origin>    A page of this origin may connect over --listen-ws
+                                 (https://example.com). Repeatable; none: no page may.
+      --token-file <file>        The file with the token a client must send
+                                 (or the {TOKEN_VAR} variable). Required with --listen
+                                 and --listen-ws.
       --linger <seconds>         How long to wait for a TCP client to reconnect before
                                  exiting (default {}).
       --user-data-dir <dir>      Use this folder for settings and state (a separate profile).
@@ -225,7 +259,8 @@ fn run(options: Options, version: &str) -> Result<()> {
         Some(address) => {
             let token = read_token(&options)?;
             let listener = TcpListener::bind(address)?;
-            Some((listener, token))
+            let origins = options.listen_ws.then(|| options.allow_origins.clone());
+            Some((listener, token, origins))
         }
         None => None,
     };
@@ -273,7 +308,7 @@ fn run(options: Options, version: &str) -> Result<()> {
 async fn serve(
     server: &Server,
     pipes: Option<(std::fs::File, std::fs::File)>,
-    listener: Option<(TcpListener, String)>,
+    listener: Option<(TcpListener, String, Option<Vec<String>>)>,
     linger: Duration,
 ) {
     if let Some((input, output)) = pipes {
@@ -285,11 +320,12 @@ async fn serve(
         let _ = server.serve(carrier, None).await;
         return;
     }
-    let Some((listener, token)) = listener else {
+    let Some((listener, token, origins)) = listener else {
         return;
     };
     match listener.local_addr() {
         // One line a launcher can parse for the port.
+        Ok(address) if origins.is_some() => eprintln!("host: listening on ws://{address}"),
         Ok(address) => eprintln!("host: listening on {address}"),
         Err(e) => eprintln!("host: listening ({e})"),
     }
@@ -339,7 +375,17 @@ async fn serve(
                 None => return,
             },
         };
-        let served = match tcp_carrier(stream) {
+        let carrier = match &origins {
+            None => tcp_carrier(stream),
+            // The upgrade waits on the client (five seconds at most): off the runtime's thread.
+            Some(origins) => {
+                let origins = origins.clone();
+                tokio::task::spawn_blocking(move || ws::accept(stream, &origins))
+                    .await
+                    .unwrap_or_else(|e| Err(std::io::Error::other(e)))
+            }
+        };
+        let served = match carrier {
             Ok(carrier) => Some(server.serve(carrier, Some(&token)).await),
             Err(e) => {
                 eprintln!("host: a client's connection failed: {e}");
@@ -502,7 +548,7 @@ mod tests {
             tauri::async_runtime::block_on(serve(
                 &server,
                 None,
-                Some((listener, "secret".to_string())),
+                Some((listener, "secret".to_string(), None)),
                 linger,
             ));
         });

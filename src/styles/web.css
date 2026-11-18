@@ -1,0 +1,73 @@
+/* The browser build's own screens (src/web): where to connect, and a lost connection. */
+@layer components {
+  .web-connect,
+  .web-lost {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--space-5);
+    overflow: auto;
+    background: var(--bg-app);
+    color: var(--fg-default);
+  }
+  .web-lost {
+    z-index: var(--z-tooltip);
+    background: var(--bg-overlay);
+  }
+  .web-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: 26rem;
+    padding: var(--space-6);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2);
+  }
+  .web-card h1 {
+    margin: 0;
+    font-size: var(--text-md-font);
+    font-weight: 600;
+  }
+  .web-card p {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm-lh);
+  }
+  .web-card label,
+  .web-path {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--fg-muted);
+  }
+  .web-card .input,
+  .web-path .input {
+    width: 100%;
+    font-family: var(--font-mono);
+  }
+  .web-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+  .web-status:empty {
+    display: none;
+  }
+  .web-status.is-error {
+    color: var(--status-danger-fg);
+  }
+  /* The window is the browser's tab: no minimize, maximize or close of our own. */
+  .is-web .window-controls {
+    display: none;
+  }
+  .web-card .web-note {
+    color: var(--fg-subtle);
+    font-size: var(--text-xs);
+  }
+}

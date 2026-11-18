@@ -205,6 +205,16 @@ export function getTransport(): Transport {
 }
 
 /**
+ * The OS of the machine the backend runs on ("windows", "macos", "linux") when the transport
+ * knows it: a host says so in its handshake. Null in the app's window, where the backend is on
+ * the machine the window is on.
+ */
+export function backendOs(): string | null {
+  const host = (currentTransport() as { host?: { os?: unknown } | null }).host;
+  return typeof host?.os === "string" && host.os ? host.os : null;
+}
+
+/**
  * True when a backend answers calls: in the app's window, and wherever a transport was installed
  * (a windowless host). False in a plain browser tab (`node build.mjs --serve` opened directly)
  * and in unit tests.

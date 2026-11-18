@@ -5,6 +5,9 @@
 //   add --with-dev to a --prod build to keep dev-only commands (for measuring release startup)
 //   node build.mjs --headless [--prod]   the brain without a window, for Node, to dist-headless/
 //                            (its own folder: dist/ and the window's bundle are not touched)
+//   node build.mjs --web [--prod] [--base=/app/]   the front end as a website, to dist-web/:
+//                            it connects to a host over a WebSocket (src/web/entry.ts). --base is
+//                            the path the site serves it under (default: wherever the page is).
 import { spawnSync } from "node:child_process";
 import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -16,7 +19,10 @@ const args = new Set(process.argv.slice(2));
 const prod = args.has("--prod");
 const serve = args.has("--serve");
 const devFeatures = !prod || args.has("--with-dev");
-const outdir = join(root, "dist");
+/** The front end as a website (src/web), not the app's window. */
+const web = args.has("--web");
+const webBase = [...args].find((a) => a.startsWith("--base="))?.slice("--base=".length) || "./";
+const outdir = join(root, web ? "dist-web" : "dist");
 const headlessOutdir = join(root, "dist-headless");
 const DEV_PORT = 1420;
 
@@ -273,7 +279,9 @@ const htmlPlugin = {
   setup(build) {
     build.onEnd(async (result) => {
       if (result.errors.length > 0) return;
-      let html = await readFile(join(root, "src/index.html"), "utf8");
+      let html = web
+        ? (await readFile(join(root, "src/web/index.html"), "utf8")).replace("__BASE__", webBase)
+        : await readFile(join(root, "src/index.html"), "utf8");
       if (serve) {
         html = html.replace(
           "</body>",
@@ -292,7 +300,8 @@ const htmlPlugin = {
 const appOptions = {
   ...common,
   entryPoints: {
-    main: "src/main.ts",
+    // The website's entry connects to a host first and then loads main.ts itself.
+    ...(web ? { web: "src/web/entry.ts" } : { main: "src/main.ts" }),
     // Loaded after the shell paints (extensions/editor/loader.ts).
     monaco: "src/extensions/editor/monaco/entry.ts",
   },
@@ -344,7 +353,7 @@ if (serve) {
   // Bundle metadata stays outside dist/ so it isn't shipped; `npm run size` reads it.
   await mkdir(join(root, ".build-meta"), { recursive: true });
   await writeFile(
-    join(root, ".build-meta/meta.json"),
+    join(root, web ? ".build-meta/web-meta.json" : ".build-meta/meta.json"),
     JSON.stringify({ app: results[0].metafile, workers: results[1].metafile }),
   );
 }
