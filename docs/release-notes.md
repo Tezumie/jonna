@@ -3,6 +3,22 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.12
+
+Sharing a project with chosen people, and its chats.
+
+- **Share a project with the people you choose,** not only the whole team: "Share with" on
+  the project's card. Taking someone off makes new keys at once.
+- **Share a project's chats too** (off until you turn it on). Teammates read them, and
+  **Continue as my own chat** makes a copy to go on from. Files you attached, tool calls that
+  name a key file and text that looks like a key or token are left out; anything else said
+  in a chat is shared, so look before you turn it on.
+- **A notice when a teammate shares** a project or its chats (setting `team.shareNotices`),
+  and **Ask to share…** on a teammate, which leaves them a note on their Team page.
+- **Long chats on Anthropic models keep more of the provider's cache:** a tool loaded in the
+  middle of a chat no longer changes what was already sent, and over the limit with
+  summaries off the provider clears old tool results itself.
+
 ## 0.1.11
 
 A fix for chats on the newest Claude models, which also makes long chats cheaper.
