@@ -1,14 +1,8 @@
 // Starts the windowless host for a page in a browser and prints the link that connects to it.
-// What a computer runs to be worked on from the web build (src/web); the desktop app does the
-// same from its "Open in the browser" command.
+// What a computer runs to be worked on from the web build (src/web, docs/web-app.md): this
+// computer for its own browser, or a server behind a proxy that carries TLS (--public).
 //
-//   node scripts/web-host.mjs [options]
-//     --host <path>          the host program (else IDE_HOST_PATH, else a checkout's build)
-//     --site <url>           the page that may connect (default: product.json's site and path)
-//     --serve [port]         also serve dist-web/ on http://localhost:<port> (default 4173) and
-//                            allow that page: for trying a local build (`node build.mjs --web`)
-//     --user-data-dir <dir>  a separate profile (default: the app's own settings and chats)
-//     --linger <seconds>     how long the host waits for the page to come back (default 3600)
+//   node scripts/web-host.mjs [options]        (--help prints the list below)
 //
 // Plain Node, no dependencies. The code is made here, handed to the host in its environment
 // (never on its command line, where other programs could read it) and printed once in the link.
@@ -19,6 +13,35 @@ import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const HELP = `Starts the host for the web front end and prints the link that connects to it.
+
+  node scripts/web-host.mjs [options]
+
+  --host <path>          The host program (else IDE_HOST_PATH, else this checkout's build).
+  --site <url>           The page that may connect (default: product.json's webAppPath,
+                         on its accountsUrl when it is a path).
+  --serve [port]         Also serve dist-web/ on http://localhost:<port> (default 4173) and
+                         allow that page: for trying a local build (node build.mjs --web).
+  --port <n>             The loopback port the host listens on (default: any free one).
+                         A proxy in front of the host needs one that stays the same.
+  --public <address>     The address the host is reached by from other computers, when a
+                         proxy that carries TLS forwards to it (dev.example.com, or
+                         dev.example.com:8443). The link then names it, and the host
+                         answers to that name. Without it: this computer only.
+  --user-data-dir <dir>  A separate profile (default: the app's own settings and chats).
+  --linger <seconds>     How long the host waits for the page to come back (default 3600).
+  --disable-extensions   Run the session without extensions.
+  -h, --help             Print this.
+
+The code in the link is new each time, unless IDE_HOST_TOKEN is set (a service that restarts
+the host keeps its links working that way). Anyone with the link can use the computer as the
+account the host runs under.`;
+
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(HELP);
+  process.exit(0);
+}
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const product = JSON.parse(readFileSync(join(root, "product.json"), "utf8"));
 
@@ -27,6 +50,11 @@ function option(name) {
   if (at < 0) return undefined;
   const value = process.argv[at + 1];
   return value && !value.startsWith("--") ? value : "";
+}
+
+function fail(message) {
+  console.error(`web-host: ${message}`);
+  process.exit(2);
 }
 
 function findHost() {
@@ -45,6 +73,49 @@ function findHost() {
       if (existsSync(candidate)) return candidate;
     }
   return null;
+}
+
+/** A page's address, or null when it isn't one. */
+function pageUrl(text) {
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" || url.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The page product.json names (src/core/ownServices.ts `webAppUrl`): `webAppPath` when it is a
+ * whole URL, else that path on the accounts server; null when the build names none.
+ */
+function productPage() {
+  const page = (product.webAppPath ?? "").trim();
+  if (!page) return null;
+  if (/^https?:\/\//i.test(page)) return pageUrl(page);
+  const accounts = (product.accountsUrl ?? "").trim();
+  if (!accounts || !pageUrl(accounts)) return null;
+  return new URL(page, accounts);
+}
+
+/**
+ * Whether a page shares its address with the account pages: the same name, or another name of
+ * the same domain unless product.json says the accounts server keeps nothing there. The rule
+ * is src/core/ownServices.ts `webAppSharesAccounts`, which the page itself follows: keep the
+ * two alike. Such a page runs no extension code, so the host is started without extensions.
+ */
+function sharesAccounts(page) {
+  const accounts = pageUrl((product.accountsUrl ?? "").trim());
+  if (!(product.accountsUrl ?? "").trim()) return false;
+  if (!accounts) return true;
+  const here = page.hostname.toLowerCase();
+  const there = accounts.hostname.toLowerCase();
+  if (here === "localhost" || here === "127.0.0.1") return false;
+  if (here === there) return true;
+  if (product.webAppSubdomainIsolated === true) return false;
+  if (/^[\d.]+$/.test(here) || here.includes(":") || !here.includes(".")) return false;
+  const domain = (name) => name.split(".").slice(-2).join(".");
+  return domain(here) === domain(there);
 }
 
 const TYPES = {
@@ -82,10 +153,8 @@ export const WORKER_POLICY = policy.worker;
 /** Serves dist-web/ as a site would serve it. Loopback only. */
 function serveBuild(port) {
   const folder = join(root, "dist-web");
-  if (!existsSync(join(folder, "index.html"))) {
-    console.error("web-host: no dist-web/ here. Build it first: node build.mjs --web");
-    process.exit(2);
-  }
+  if (!existsSync(join(folder, "index.html")))
+    fail("no dist-web/ here. Build it first: node build.mjs --web");
   const server = createServer((request, response) => {
     let path;
     try {
@@ -100,7 +169,7 @@ function serveBuild(port) {
       return;
     }
     if (existsSync(file) && statSync(file).isDirectory()) file = join(file, "index.html");
-    if (!existsSync(file)) {
+    if (!existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404).end("Not found");
       return;
     }
@@ -111,44 +180,82 @@ function serveBuild(port) {
       "X-Content-Type-Options": "nosniff",
       "X-Robots-Tag": "noindex, nofollow",
     });
-    createReadStream(file).pipe(response);
+    const stream = createReadStream(file);
+    // A file that went away between the check and the read ends the answer, not the server.
+    stream.on("error", () => response.destroy());
+    stream.pipe(response);
   });
-  return new Promise((done) => server.listen(port, "127.0.0.1", () => done(server)));
+  return new Promise((done) => {
+    server.on("error", (e) => fail(`couldn't serve on port ${port}: ${e.message}`));
+    server.listen(port, "127.0.0.1", () => done(server));
+  });
 }
 
 const binary = findHost();
-if (!binary || !existsSync(binary)) {
-  console.error(
-    "web-host: no host program found. Build it (in src-tauri/): cargo build --no-default-features --features host --bin ide-host",
+if (!binary || !existsSync(binary))
+  fail(
+    "no host program found. Build it (in src-tauri/): cargo build --no-default-features --features host --bin ide-host",
   );
-  process.exit(2);
-}
 
 const sites = [];
 const site = option("--site");
-if (site) sites.push(site);
-else if (product.accountsUrl && product.webAppPath)
-  sites.push(new URL(product.webAppPath, product.accountsUrl).toString());
+if (site !== undefined) {
+  const named = pageUrl(site);
+  if (!named) fail(`--site needs a page's address (https://ide.example.com/), not "${site}"`);
+  sites.push(named);
+} else {
+  const named = productPage();
+  if (named) sites.push(named);
+}
 const servePort = option("--serve");
 if (servePort !== undefined) {
   const port = Number(servePort) || 4173;
   await serveBuild(port);
-  sites.unshift(`http://localhost:${port}/`);
+  const local = new URL(`http://localhost:${port}/`);
+  // Named with --site as well: one link, not two.
+  if (!sites.some((page) => page.href === local.href)) sites.unshift(local);
 }
-if (!sites.length) {
-  console.error("web-host: no page to allow. Give one with --site <url>, or use --serve.");
-  process.exit(2);
+if (!sites.length)
+  fail(
+    "no page to allow. Give one with --site <url>, set webAppPath in product.json, or use --serve.",
+  );
+
+const port = option("--port");
+if (port !== undefined && !/^\d{1,5}$/.test(port)) fail("--port needs a port number");
+
+// Where other computers reach the host: a name (and maybe a port) a proxy with TLS answers on.
+const publicAddress = option("--public");
+let publicHost = null;
+if (publicAddress !== undefined) {
+  const text = publicAddress.replace(/^wss:\/\//i, "");
+  let parsed = null;
+  try {
+    parsed = new URL(`wss://${text}`);
+  } catch {
+    // Said below.
+  }
+  if (!text || !parsed || parsed.username || parsed.pathname !== "/" || parsed.search)
+    fail(`--public needs a host name like dev.example.com, not "${publicAddress}"`);
+  publicHost = parsed;
 }
 
-// A page on the accounts server's own origin runs no extension code (src/web/entry.ts): the
-// host is started the same way, so nothing tries.
-const accountsOrigin = product.accountsUrl ? new URL(product.accountsUrl).origin : null;
-const guarded = sites.some((page) => new URL(page).origin === accountsOrigin);
+const guarded = sites.some(sharesAccounts);
+if (guarded && publicHost)
+  console.error(
+    "web-host: a page on the account pages' address connects to its own computer only: --public needs the page on an address of its own (docs/web-app.md).",
+  );
 
-const token = randomBytes(24).toString("base64url");
-const args = ["--listen-ws", "127.0.0.1:0", "--linger", option("--linger") || "3600"];
-for (const page of sites) args.push("--allow-origin", new URL(page).origin);
-if (guarded) args.push("--disable-extensions");
+const token = process.env.IDE_HOST_TOKEN?.trim() || randomBytes(24).toString("base64url");
+const args = ["--listen-ws", `127.0.0.1:${port || 0}`, "--linger", option("--linger") || "3600"];
+const origins = new Set(sites.map((page) => page.origin));
+// The local server answers under both of this computer's names: either may be typed.
+for (const origin of [...origins])
+  if (origin.startsWith("http://localhost:"))
+    origins.add(origin.replace("http://localhost:", "http://127.0.0.1:"));
+for (const origin of origins) args.push("--allow-origin", origin);
+if (publicHost) args.push("--allow-host", publicHost.hostname);
+const noExtensions = guarded || process.argv.includes("--disable-extensions");
+if (noExtensions) args.push("--disable-extensions");
 const profile = option("--user-data-dir");
 if (profile) args.push("--user-data-dir", resolve(profile));
 
@@ -156,6 +263,7 @@ const host = spawn(binary, args, {
   stdio: ["ignore", "inherit", "pipe"],
   env: { ...process.env, IDE_HOST_TOKEN: token },
 });
+host.on("error", (e) => fail(`couldn't start ${binary}: ${e.message}`));
 let printed = false;
 let pending = "";
 host.stderr.on("data", (chunk) => {
@@ -167,16 +275,38 @@ host.stderr.on("data", (chunk) => {
     const listening = /^host: listening on ws:\/\/(\S+)$/.exec(line);
     if (listening && !printed) {
       printed = true;
-      const fragment = new URLSearchParams({ h: listening[1], t: token }).toString();
-      console.log(`The host is running. Open one of these on this computer:\n`);
+      const address = publicHost ? `wss://${publicHost.host}` : listening[1];
+      const fragment = new URLSearchParams({ h: address, t: token }).toString();
+      if (publicHost) {
+        console.log(`The host is running on ${listening[1]}, reached as ${address}.`);
+        console.log("Open one of these, then press Connect:\n");
+      } else console.log("The host is running. Open one of these on this computer:\n");
       for (const page of sites) console.log(`  ${page}#${fragment}\n`);
       console.log("Anyone with a link can use this computer as you: don't share it.");
       if (guarded)
         console.log("Extensions are off in this session (the page is on the accounts' address).");
+      else if (noExtensions) console.log("Extensions are off in this session.");
       console.log("Ctrl+C stops the host.");
     } else if (line) console.error(line);
     end = pending.indexOf("\n");
   }
 });
-host.on("exit", (code) => process.exit(code ?? 0));
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => host.kill());
+let exited = false;
+host.on("exit", (code) => {
+  exited = true;
+  process.exit(code ?? 0);
+});
+// However this script ends, the host (and its code) doesn't outlive it.
+process.on("exit", () => {
+  if (!exited) host.kill();
+});
+for (const signal of ["SIGINT", "SIGTERM"])
+  process.on(signal, () => {
+    // Ctrl+C in a Windows console reaches the host too, and there kill() ends a program at
+    // once: let the host finish its own shutdown (terminals, files it must remove) first.
+    if (process.platform === "win32" && signal === "SIGINT") {
+      setTimeout(() => host.kill(), 5000).unref();
+      return;
+    }
+    host.kill();
+  });

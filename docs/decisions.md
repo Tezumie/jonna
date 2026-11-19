@@ -53,6 +53,7 @@ unless noted.
 | · The audit of team sharing: a shared chat built from a whitelist, the audience in a record old apps can't lose, and twelve smaller findings | D457 |
 | · A proof of possession that says what it is for; the generation floor for chats and snapshots stays open | D458 |
 | · The front end as a website that connects to a host: a proof of concept | D459 |
+| · The web front end and its host for someone else's names and servers: a host behind a proxy, a subdomain as its own address, two audits | D460 |
 
 ## Seeded from PLAN §19
 
@@ -16422,3 +16423,58 @@ a wrong code refused, a 300 KiB file written and read back). Unit tests for the 
 the frames and the address rules. **Not tried:** the deployed page against a host, because
 the browser used for testing refuses every site the permission to reach programs on the
 computer; a person's browser asks once. macOS and Linux.
+
+## D460 — The web front end and its host, ready for someone else's names and servers
+
+An audit of what D459 built, by two readers that hadn't written it: one for what someone
+making their own product from this code would hit, one for bugs. No way past the host's
+checks was found. What changed:
+
+- **A host behind a proxy** (`--allow-host <name>`): the host still listens on loopback only
+  and speaks no TLS; it now answers to the public name of a proxy in front of it, beside
+  `127.0.0.1`. Before, a proxy had to rewrite the `Host` header, and nothing said so. The
+  check against a name pointed at this computer stays.
+- **The launcher takes a server's options**: `--port` (a proxy needs one that stays),
+  `--public <name>` (the link names it and the host answers to it), a code kept across
+  restarts (`IDE_HOST_TOKEN`), `--help`, a whole-URL `webAppPath` without an accounts
+  server. Ctrl+C on Windows lets the host finish its own shutdown; the host doesn't outlive
+  the launcher; a taken port and a file gone mid-answer are said, not thrown.
+- **A subdomain can be an address of its own** (`webAppSubdomainIsolated` in product.json).
+  A page on another name of the accounts server's domain is another origin with its own
+  storage; what the two share is cookies set for the whole domain. A build whose accounts
+  server sets none says so, and the page there is no longer held to this computer and no
+  extensions. Left out, it counts as shared, and "the same domain" now also catches two
+  names beside each other (`app.` and `www.`), which the first rule missed. One rule
+  (`webAppSharesAccounts`) for the page and the launcher, which had decided differently.
+  Ours is set: the account pages sign in with tokens in the browser's storage and set no
+  cookie (checked in the service's code).
+- **The host's one place is taken after the upgrade, not before.** Every socket used to
+  take it, also one that would be refused: any website could keep the real page out by
+  opening sockets. Now up to eight request heads are read at once, each on its own.
+- **A kept code goes only to the address it was kept with.** A link naming another
+  loopback port, opened in a tab that had a code, sent that code to whatever listened
+  there.
+- **Smaller:** one try at a time; a socket that opens and says nothing is given up on after
+  15 seconds; a try that never reached the host keeps the code in the form; the IDE's code
+  failing to load gives the host's place back; the picker asks about a link's kind only
+  (not every entry's: slow on a network drive), reads at most 50,000 entries, doesn't look
+  for servers while a network path is typed, and starts in a file's folder; the page's
+  separator follows the host's system; `--base` must be a folder's path; `--listen-ws` takes
+  `127.0.0.1` only (a page reaches nothing else).
+- **`npm run gen` checks more of product.json:** an accounts server with a path, a page
+  path that is only a fragment, an update address without its key, and a key nothing reads
+  (a warning).
+- **For someone else's build:** `docs/web-app.md` has "Running your own" (name, build,
+  serve from any static host, a host here or behind a proxy, what isn't there yet);
+  `docs/own-services.md` lists the naming keys, the new key, what else carries our names
+  (the bundled extensions' author, the notices file) and where plan wording lives.
+  `npm run web`, `web:host`, `web:host:build`.
+
+**Not done, on purpose:** the host in the installers and a command in the app; forwarded
+ports; keys per device; more than one person a host; `build:web`'s name (it is the app
+window's bundle, and CI calls it: the owner's to rename).
+
+**Tried:** unit tests for the sharing rule, the host's arguments and the upgrade's checks;
+`scripts/web-e2e.mjs` against the real host (a name that isn't the host's refused, the given
+name upgraded, a page let in while a silent socket is open). **Not tried:** a real proxy
+with TLS in front of a host; Linux and macOS for the launcher's new options.

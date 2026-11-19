@@ -1,7 +1,9 @@
 // End-to-end check of the host's WebSocket carrier (src-tauri/src/host/ws.rs), the way the web
 // build (src/web) uses it: starts the real host program with --listen-ws, then
 //   - a page of an origin that isn't allowed gets 403 and no stream,
-//   - an allowed one is upgraded, a wrong code is refused,
+//   - a request for a name that isn't this computer's is refused, unless the host was told
+//     that name is its own (--allow-host: a proxy in front of it),
+//   - an allowed one is upgraded, also while a silent socket is open; a wrong code is refused,
 //   - the right code gets the handshake's answer, a command's answer, and a file written and
 //     read back through raw bodies.
 // Plain Node (22 or later, for its WebSocket), no dependencies.
@@ -34,6 +36,9 @@ if (typeof WebSocket === "undefined") {
 const scratch = resolve(root, "..", `.web-e2e-${process.pid}`);
 const workspace = join(scratch, "workspace");
 const ALLOWED = "https://app.example";
+/** The name a proxy in front of the host would be reached by. */
+const PROXY_NAME = "dev.example";
+const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 const token = randomBytes(18).toString("base64url");
 
 function encodeFrame(header, body = new Uint8Array(0)) {
@@ -97,12 +102,12 @@ function client(address, origin) {
 }
 
 /** The status line a plain upgrade request gets (for an origin a WebSocket can't be given). */
-function upgradeStatus(address, origin) {
+function upgradeStatus(address, origin, named = address) {
   const [host, port] = address.split(":");
   return new Promise((done, failed) => {
     const socket = net.connect(Number(port), host, () => {
       socket.write(
-        `GET / HTTP/1.1\r\nHost: ${address}\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
+        `GET / HTTP/1.1\r\nHost: ${named}\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
       );
     });
     let got = "";
@@ -139,6 +144,8 @@ const host = spawn(
     "127.0.0.1:0",
     "--allow-origin",
     ALLOWED,
+    "--allow-host",
+    PROXY_NAME,
     "--user-data-dir",
     join(scratch, "profile"),
     "--linger",
@@ -162,6 +169,26 @@ try {
 
   const refused = await within(10_000, upgradeStatus(address, "https://evil.example"), "refusal");
   check("a page of another origin is refused", refused.startsWith("HTTP/1.1 403"), refused);
+
+  const rebound = await within(
+    10_000,
+    upgradeStatus(address, ALLOWED, "evil.example"),
+    "a name that isn't the host's",
+  );
+  check("a name pointed at this computer is refused", rebound.startsWith("HTTP/1.1 403"), rebound);
+  const proxied = await within(
+    10_000,
+    upgradeStatus(address, ALLOWED, `${PROXY_NAME}:443`),
+    "the proxy's name",
+  );
+  check("the name the host was given is upgraded", proxied.startsWith("HTTP/1.1 101"), proxied);
+  // That connection was dropped without a hello: the host's one place is free a moment later.
+  await pause(500);
+
+  // A socket that says nothing (any website can open one) doesn't keep a page out: the
+  // host's one place is taken only by a connection that was let in.
+  const silent = net.connect(Number(address.split(":")[1]), "127.0.0.1");
+  await new Promise((done) => silent.once("connect", done));
 
   const stranger = client(address, ALLOWED);
   await within(10_000, stranger.opened, "open");
@@ -216,6 +243,7 @@ try {
   const bye = await within(10_000, page.request("$/shutdown", {}), "shutdown");
   check("the host shuts down when asked", bye.header.error === undefined);
   page.close();
+  silent.destroy();
 } catch (err) {
   check("the run", false, err instanceof Error ? err.message : String(err));
 } finally {

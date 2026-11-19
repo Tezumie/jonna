@@ -65,10 +65,13 @@ accepted `$/hello` is no client: it neither starts that wait nor makes it longer
 desktop one first (the remote relay, git's prompt, the MCP stdio proxy, the Ctrl+C helper).
 `ws.rs` (D459): `--listen-ws`, the same wire inside WebSocket binary messages for a
 client that is a page in a browser (`src/web`): the upgrade is answered only for a `Host` that
-is this computer and an `Origin` on the `--allow-origin` list, then the messages' bytes are
+is this computer (or a name given with `--allow-host`: a proxy with TLS in front, D460) and an
+`Origin` on the `--allow-origin` list, each on a thread of its own so that only an accepted
+one takes the host's one place; then the messages' bytes are
 the carrier's stream (a reader that unmasks as it reads, a writer of messages of at most
 1 MiB, ping answered, text refused; the handshake's SHA-1 is written out there, so no
-dependency). `scripts/web-host.mjs` starts it for a page and prints the link;
+dependency). `scripts/web-host.mjs` starts it for a page and prints the link (`--public`
+for a host behind a proxy);
 `scripts/web-e2e.mjs` checks it against the built program.
 Tests: `server_tests.rs` (a socket pair and a small command table), `shim_tests.rs` (the
 attribute's argument and return mapping), `folders_tests.rs` (the app folders' formulas).

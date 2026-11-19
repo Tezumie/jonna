@@ -11,14 +11,34 @@ holds the product's names). Nothing else in the code spells a server address or 
 `npm run dev`, `build`, `check` and on `npm install`); the code reads the services through
 `src/core/ownServices.ts`.
 
+## The names
+
+The same file names the product. These are required, and nothing else in the code spells
+them:
+
+| Key | What it names |
+|---|---|
+| `nameShort`, `nameLong` | The product, as the app, its installer, its program file and its wording say it. The command-line launcher is `nameShort` in lower case. |
+| `identifier` | The app's id to the system (`com.example.ide`): its data folder, its keychain entries, its installer's identity. Changing it later is a new app to the system: settings and sign-ins don't carry over. |
+| `dataFolderName` | The folder in a person's home for what is theirs across projects (`.example`: rules, skills, commands). |
+| `workspaceFolderName` | The folder in a project for its own settings (`.example`). |
+| `workspaceFolderAliases` | Other names of that folder a project may already have, read when the one above isn't there (ours lists `.vscode` and the folder name of an earlier product of ours: drop that one). |
+| `serverDataFolderName` | The folder in a remote machine's home that the remote server keeps itself in (`.example-server`). |
+| `urlScheme` | The links the system hands to the app (`example://…`). |
+| `extensionApiGlobal` | The name extensions call the API by. Keep `ide` unless you break with existing extensions on purpose. |
+
+`npm run gen` refuses a file without them, and warns about a key nothing reads (a misspelt
+key would otherwise build a product without what it was meant to set).
+
 ## The keys
 
 | Key | What it does | Left out or empty |
 |---|---|---|
-| `accountsUrl` | The accounts server: sign-in, the profile, and the server Sync talks to. `https://…`, without a path. | No account in the build: see "Without accounts". |
+| `accountsUrl` | The accounts server: sign-in, the profile, and the server Sync talks to. `https://…`, without a path (`npm run gen` refuses one with a path). | No account in the build: see "Without accounts". |
 | `accountPagePath` | The account page the app opens in the browser (`sync.openAccountPage`: devices, storage, resetting sync). A path on the accounts server, or a whole URL when the page lives elsewhere. | `/account` |
 | `planPagePath` | The page where a plan is bought, renewed or cancelled (`sync.managePlan`). A path on the accounts server, or a whole URL (a billing portal on another host). Set it to `""` when your service has no plans (sync that is free, or sold elsewhere): the IDE then shows no "Your plan" card, no "See plans" and no "Renew". | `/account#plan` |
-| `webAppPath` | Where the front end is served as a website that connects to a host (`node build.mjs --web`, `docs/web-app.md`). A path on the accounts server, or a whole URL. `scripts/web-host.mjs` allows that page and prints links to it. Leave it out when you serve no such page. A page on the accounts server's own address connects only to the computer it is shown on and runs no extension code; serve it from an address of its own to lift both. The site must send the headers `docs/web-app.md` lists ("What the site must send"). | none |
+| `webAppPath` | Where the front end is served as a website that connects to a host (`npm run web`; [web-app.md](web-app.md), "Running your own", is the guide). A whole URL (it needs no accounts server then), or a path on the accounts server. `scripts/web-host.mjs` allows that page and prints links to it. A page that shares its address with the account pages connects only to the computer it is shown on and runs no extension code; serve it from an address of its own to lift both. Any static web host serves it. | No such page. |
+| `webAppSubdomainIsolated` | `true`: a web front end on another name of the accounts server's domain (`app.example.com` beside `example.com`) counts as an address of its own. Set it only when the accounts server sets no cookie for the whole domain. | Such a page is treated as sharing the account pages' address. |
 | `teamPagePath` | The page where a subscriber's team is managed: inviting and removing people, seats, leaving (`sync.manageTeam`). A path on the accounts server, or a whole URL. Set it to `""` when your service has no teams: the IDE then shows nothing about teams, whatever the profile says, and has no team library (no `team.*` command or setting, no `ide://team`). | `/account#team` |
 | `syncBuiltIn` | `false` leaves Sync out of the build, whatever the server offers. | `true` (Sync also needs `accountsUrl`). |
 | `updates.endpoint` | Where installed copies look for a new version (a `latest.json`). | No updates: the build never checks and never connects. |
@@ -32,9 +52,10 @@ The update keys can also come from the environment when building (`IDE_UPDATE_EN
 [releasing.md](releasing.md).
 
 The setting `accounts.serverUrl` overrides `accountsUrl` on one computer, for developing the
-server (`http://127.0.0.1:<port>` is accepted; any other server must be https). It exists only
-in a build that has an accounts server, and the pages above are then opened on the server it
-names.
+server. It is honoured only when it names this computer itself (`http://127.0.0.1:<port>`,
+`localhost`), or in a development build: a released build talks to the server
+`product.json` names, whatever a settings file says. It exists only in a build that has an
+accounts server, and the pages above are then opened on the server it names.
 
 ## Your own accounts server
 
@@ -51,7 +72,9 @@ through the system browser and a loopback redirect (RFC 8252); the code is
 | `POST /oauth/revoke` | A form: `token`, `client_id`. On sign-out, best effort. | Optional; the answer isn't read. |
 
 The client id is `desktop` (`CLIENT_ID` in `src-tauri/src/accounts/mod.rs`); there is no client
-secret. The page the browser shows after the redirect is the app's own (served from the
+secret. The id and the four paths are fixed in that file, not set in `product.json`: an
+identity provider that assigns its own client ids or paths needs that constant changed, or
+a small server of yours in front that answers these paths. The page the browser shows after the redirect is the app's own (served from the
 loopback address, no network, no names).
 
 The profile, `GET /api/me`:
@@ -260,7 +283,17 @@ Not services, but the same checklist. A build of your own also replaces:
 - `src-tauri/icons/` and the logo (`TRADEMARKS.md` doesn't let a fork use ours), and
   `docs/images/`.
 - `.github/FUNDING.yml` (our sponsors link) and the addresses in `SECURITY.md`,
-  `COMMERCIAL-LICENSING.md` and `TRADEMARKS.md`.
+  `COMMERCIAL-LICENSING.md`, `TRADEMARKS.md` and `CONTRIBUTING.md`, and the root
+  `README.md`.
+- `THIRD_PARTY_NOTICES.md`: written with the product's name by `npm run notices`; run it
+  after renaming.
+- The author of the four bundled extensions (`src-tauri/bundled-extensions/*/extension.json`,
+  `author`): our name and picture show in the Extensions view. Change them if you take the
+  extensions over; keep them if you ship ours as they are.
+- The workflows build what the repository they run in names (`release.yml` takes the update
+  address from it, signing from your own secrets). They build the installers only: neither
+  the host program nor the web page. `npm run build:web` is the app window's bundle, not
+  the web front end (that is `npm run web`).
 - `docs/release-notes.md`: it is bundled and shown after an update, and speaks of our Sync,
   our plans and our account page.
 - `docs/guide/23-sync.md`: the guide's page on Sync and teams, bundled into the
@@ -269,8 +302,11 @@ Not services, but the same checklist. A build of your own also replaces:
 - Wording that assumes Sync is a subscription with seats and pooled storage: the offer and the
   lapsed texts in `src/extensions/sync/view.ts` and `model.ts` (`SYNC_BENEFITS`,
   `LAPSED_*`, the team sentences), "Your plan" in `pages.ts`, and the descriptions of
-  `sync.managePlan` and `sync.manageTeam`. They only show when your server says
-  `syncOffered`, a lapsed `syncState` or a `team`.
+  `sync.managePlan` and `sync.manageTeam`; also the sentences about a subscription that
+  ended or is renewed in `shareCard.ts`, `teamCommands.ts`, `teamPage.model.ts`,
+  `commands.ts` and `index.ts` of the same folder, and in
+  `src/extensions/team/commands.ts` (search them for "subscription", "renew" and "seat").
+  They only show when your server says `syncOffered`, a lapsed `syncState` or a `team`.
 - Pictures of people: the IDE loads an account's picture only from GitHub's avatar hosts or
   from the accounts server itself (`src-tauri/src/ipc/accounts.rs`); serve yours from there.
 
@@ -281,9 +317,13 @@ Tests that read `product.json` or assume our service, and fail in a build that c
   example of what to test against your own.
 - `tests/scripts/sync-m7-129.jsonc`, `features-m6-39.jsonc` and `features-m6-41.jsonc` expect
   an account, Sync, a plan page and teams to be there.
-- The command scripts that name the workspace folder (`.` and the product's short name, as in
-  `tests/scripts/m6-90.jsonc`, `extensions.jsonc`, `m6-92.jsonc`) follow
-  `workspaceFolderName`: change them with it.
+- The command scripts that name the workspace folder (`.` and the product's short name) follow
+  `workspaceFolderName`: change them with it. Search `tests/scripts/` for the name; today
+  `m6-90`, `m6-91`, `m6-92`, `extensions`, `agent`, `canvas-m6-80`, `debug-m6-42`,
+  `features-m6-17` and `workspace-config` have it.
+- `docs/sync.md` says the service's code is in "the website's repository": ours, which isn't
+  part of this one. The contract in that document and in "What a Sync server must answer"
+  below is what a service of yours implements.
 
 ## What a Sync server must answer
 
@@ -338,8 +378,11 @@ build: a release build talks to the server `product.json` names.
 ## Where it is in the code
 
 - `product.json` → `scripts/gen.mjs` → `src/core/product.ts` (generated).
-- `src/core/ownServices.ts`: `hasAccounts`, `hasSync`, `accountsServer`, `accountPageUrl`,
-  `planPageUrl`, `hasPlanPage`, `teamPageUrl`, `hasTeamPage`, `hasTeams`. DOM-free, tested.
+- `src/core/ownServices.ts`: `hasAccounts`, `hasSync`, `accountsServer`, `isLoopbackServer`,
+  `accountPageUrl`, `planPageUrl`, `hasPlanPage`, `teamPageUrl`, `hasTeamPage`, `hasTeams`,
+  `webAppUrl`, `webAppSharesAccounts`. DOM-free, tested.
+- `scripts/web-host.mjs` reads `webAppPath`, `accountsUrl` and `webAppSubdomainIsolated`
+  straight from `product.json` (it is plain Node), by the same rules.
 - `src/extensions/builtins.ts`: Sync is in the list only when `hasSync()`, the team library
   only when `hasTeams()`.
 - `src/extensions/accounts/index.ts` with `model.ts` (`accountsManifest`, `signInProviders`):

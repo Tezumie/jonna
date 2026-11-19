@@ -780,6 +780,10 @@ pub struct BrowseEntry {
 /// The most entries of one folder a picker is sent.
 const BROWSE_LIMIT: usize = 2000;
 
+/// The most entries of one folder that are read at all: a folder with millions of them would
+/// otherwise be listed and sorted whole to send the first few.
+const BROWSE_READ_LIMIT: usize = 50_000;
+
 /// The drives that exist (Windows), or the one root.
 fn browse_roots() -> Vec<String> {
     #[cfg(windows)]
@@ -810,12 +814,24 @@ pub fn browse(dir: &Path) -> Result<Browsed> {
         return Err(Error::Invalid(format!("not a folder: {}", dir.display())));
     }
     let mut entries = Vec::new();
+    let mut truncated = false;
     for item in fs::read_dir(dir)? {
         let Ok(item) = item else { continue };
+        if entries.len() >= BROWSE_READ_LIMIT {
+            truncated = true;
+            break;
+        }
+        // The kind comes with the listing. Only a link is asked about (it may lead to a
+        // folder, which can be opened as one): asking about every entry is slow on a
+        // network drive, and opens what it asks about.
+        let dir = match item.file_type() {
+            Ok(kind) if kind.is_symlink() => item.path().is_dir(),
+            Ok(kind) => kind.is_dir(),
+            Err(_) => false,
+        };
         entries.push(BrowseEntry {
             name: item.file_name().to_string_lossy().into_owned(),
-            // Follows links: a link to a folder can be opened as one.
-            dir: item.path().is_dir(),
+            dir,
         });
     }
     entries.sort_by(|a, b| match (a.dir, b.dir) {
@@ -823,7 +839,7 @@ pub fn browse(dir: &Path) -> Result<Browsed> {
         (false, true) => Ordering::Greater,
         _ => natural_cmp(&a.name, &b.name),
     });
-    let truncated = entries.len() > BROWSE_LIMIT;
+    let truncated = truncated || entries.len() > BROWSE_LIMIT;
     entries.truncate(BROWSE_LIMIT);
     Ok(Browsed {
         path: dir.to_string_lossy().into_owned(),

@@ -135,16 +135,29 @@ pub fn parse_head(text: &str) -> Head {
     head
 }
 
-/// Whether a `Host` header names this computer itself (with or without a port).
-pub fn loopback_host(host: &str) -> bool {
-    let name = if let Some(rest) = host.strip_prefix('[') {
+/// Who may upgrade: the origins a page may have, and the names the host answers to beside
+/// this computer's own (`--allow-host`: the name a proxy in front of it is reached by).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Allowed {
+    pub origins: Vec<String>,
+    pub hosts: Vec<String>,
+}
+
+/// The name in a `Host` header, without its port.
+fn host_name(host: &str) -> &str {
+    if let Some(rest) = host.strip_prefix('[') {
         rest.split(']').next().unwrap_or("")
     } else {
         host.rsplit_once(':')
             .filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit()))
             .map(|(name, _)| name)
             .unwrap_or(host)
-    };
+    }
+}
+
+/// Whether a `Host` header names this computer itself (with or without a port).
+pub fn loopback_host(host: &str) -> bool {
+    let name = host_name(host);
     name.eq_ignore_ascii_case("localhost")
         || name
             .parse::<std::net::IpAddr>()
@@ -152,16 +165,30 @@ pub fn loopback_host(host: &str) -> bool {
             .unwrap_or(false)
 }
 
-/// Why an upgrade is refused (None: it goes ahead). `allowed`: the origins a page may have.
-pub fn refusal(head: &Head, allowed: &[String]) -> Option<&'static str> {
+/// Why an upgrade is refused (None: it goes ahead).
+pub fn refusal(head: &Head, allowed: &Allowed) -> Option<&'static str> {
     if !head.get || !head.upgrade || !head.version13 || head.key.is_none() {
         return Some("not a WebSocket request");
     }
-    if !head.host.as_deref().map(loopback_host).unwrap_or(false) {
+    // A name pointed at this computer's address isn't this computer (DNS rebinding): only
+    // loopback, or a name the host was told it is reached by.
+    let named = |host: &str| {
+        loopback_host(host)
+            || allowed
+                .hosts
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(host_name(host)))
+    };
+    if !head.host.as_deref().map(named).unwrap_or(false) {
         return Some("the Host header isn't this computer");
     }
     match &head.origin {
-        Some(origin) if !allowed.iter().any(|a| a.eq_ignore_ascii_case(origin)) => {
+        Some(origin)
+            if !allowed
+                .origins
+                .iter()
+                .any(|a| a.eq_ignore_ascii_case(origin)) =>
+        {
             Some("this page's origin isn't allowed")
         }
         _ => None,
@@ -170,7 +197,7 @@ pub fn refusal(head: &Head, allowed: &[String]) -> Option<&'static str> {
 
 /// Answers a new connection's upgrade request and returns its two ends as a carrier: bytes read
 /// are the client's binary messages joined, bytes written go out as binary messages.
-pub fn accept(stream: TcpStream, allowed: &[String]) -> io::Result<Carrier> {
+pub fn accept(stream: TcpStream, allowed: &Allowed) -> io::Result<Carrier> {
     let _ = stream.set_nodelay(true);
     let mut input = stream.try_clone()?;
     // For the whole head, not for each read: a client that sends a byte now and then would
@@ -428,6 +455,13 @@ mod tests {
         );
     }
 
+    fn pages(origins: &[&str]) -> Allowed {
+        Allowed {
+            origins: origins.iter().map(|o| o.to_string()).collect(),
+            hosts: Vec::new(),
+        }
+    }
+
     fn head(origin: Option<&str>, host: &str) -> Head {
         let origin = origin
             .map(|o| format!("Origin: {o}\r\n"))
@@ -439,7 +473,7 @@ mod tests {
 
     #[test]
     fn only_an_allowed_page_on_this_computer_is_upgraded() {
-        let allowed = vec!["https://app.example".to_string()];
+        let mut allowed = pages(&["https://app.example"]);
         assert_eq!(
             refusal(&head(Some("https://app.example"), "127.0.0.1:9"), &allowed),
             None
@@ -455,6 +489,22 @@ mod tests {
         )
         .is_some());
         assert!(refusal(&parse_head("POST / HTTP/1.1\r\nHost: localhost"), &allowed).is_some());
+        // Unless the host was told that name is its own (a proxy in front of it).
+        allowed.hosts.push("Dev.Example".to_string());
+        for host in ["dev.example", "DEV.example:443"] {
+            assert_eq!(
+                refusal(&head(Some("https://app.example"), host), &allowed),
+                None
+            );
+        }
+        assert!(refusal(&head(Some("https://app.example"), "evil.example"), &allowed).is_some());
+        assert!(refusal(
+            &head(Some("https://app.example"), "dev.example.evil.example"),
+            &allowed
+        )
+        .is_some());
+        // The page's origin still decides.
+        assert!(refusal(&head(Some("https://evil.example"), "dev.example"), &allowed).is_some());
         assert!(loopback_host("127.0.0.1") && loopback_host("LOCALHOST:80"));
         assert!(!loopback_host("127.0.0.1.evil.example") && !loopback_host("10.0.0.1:80"));
     }
@@ -507,7 +557,7 @@ mod tests {
             got
         });
         let (stream, _) = listener.accept().unwrap();
-        let mut carrier = accept(stream, &["https://app.example".to_string()]).unwrap();
+        let mut carrier = accept(stream, &pages(&["https://app.example"])).unwrap();
         carrier.writer.write_all(b"answer").unwrap();
         let mut read = Vec::new();
         carrier.reader.read_to_end(&mut read).unwrap();
@@ -538,7 +588,7 @@ mod tests {
             got
         });
         let (stream, _) = listener.accept().unwrap();
-        assert!(accept(stream, &["https://app.example".to_string()]).is_err());
+        assert!(accept(stream, &pages(&["https://app.example"])).is_err());
         assert!(client.join().unwrap().starts_with("HTTP/1.1 403"));
     }
 }

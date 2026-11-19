@@ -20,13 +20,18 @@ Ping is answered; no extensions, no subprotocol.
 The upgrade (`GET`, `Upgrade: websocket`, version 13) is refused with 403 unless
 
 - the `Host` header is a loopback address or `localhost` (a name pointed at this computer is
-  not), and
+  not), or a name given with `--allow-host <name>` (repeatable: the public name of a proxy
+  that carries TLS in front of the host, compared without its port), and
 - the `Origin` header, when there is one, is on the list given with `--allow-origin <origin>`
   (repeatable; none given: no page may connect). A request with no `Origin` is not a
   browser's page, and the token decides alone, as on TCP.
 
 The whole request head must arrive within 5 seconds of connecting and be at most 16 KiB. After the upgrade
 everything is as on TCP: `$/hello` with the token first, one client at a time, `--linger`.
+The host's one place is taken only by an upgraded connection: up to eight request heads are
+read at a time, each on its own, and one that is slow or refused keeps no page out. An
+upgraded connection that comes while a client is served is closed.
+`--listen-ws` takes an IPv4 loopback address only (a page reaches nothing else).
 The listening line on stderr is `host: listening on ws://<address>`.
 
 ## Frame

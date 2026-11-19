@@ -4556,3 +4556,22 @@ Three accounts in a team as for D453; the service with these changes.
 7. A link whose address is another machine (`#h=example.com&t=x`): nothing connects by
    itself; on the site's own page Connect answers that it reaches this computer only.
 8. `node scripts/web-e2e.mjs src-tauri/target/debug/ide-host.exe`: all passed.
+
+## D460 — The web front end for someone else's names and servers
+1. `node scripts/web-host.mjs --help`: the options, and nothing starts.
+2. `npm run web:host`, open the link: as D459. Press Ctrl+C: the host stops by itself within
+   a moment, and no `ide-host` is left in the task list.
+3. With a session open, paste the page's address with `#h=127.0.0.1:9` (another port, no
+   code) into a new tab of the same site: the form shows that address with an empty code;
+   nothing was sent.
+4. Stop the host, press Reconnect, Connect: "Couldn't reach the host", and the code is
+   still in the form. Start the host again with the same code (`IDE_HOST_TOKEN` set to it
+   before `npm run web:host`): Connect works.
+5. `node scripts/web-host.mjs --site https://ide.example.com/ --public dev.example.com --port 4000`:
+   it says the host is reached as `wss://dev.example.com`, and the link holds that address.
+6. In the picker (Open folder), type `\\\\server` slowly: nothing is listed until a share
+   and a slash follow. Open a folder with thousands of files: it lists at once.
+7. In `product.json` set `"webAppPaht": "/x/"` and run `npm run gen`: a warning names the
+   key. Set `"accountsUrl": "https://example.com/api"`: refused. Put both back.
+8. Once the page is on a subdomain of the account pages (`webAppSubdomainIsolated` true):
+   extensions load, a reload reconnects by itself, and a `wss://` address is accepted.

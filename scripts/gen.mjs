@@ -86,6 +86,49 @@ for (const key of optional) {
   if (product[key] !== undefined && typeof product[key] !== "string")
     throw new Error(`product.json: "${key}" must be a string`);
 }
+// A key nothing reads is most often a misspelt one, which would silently build a product
+// without what it was meant to set.
+const known = [
+  ...required,
+  ...optional,
+  "workspaceFolderAliases",
+  "updates",
+  "accountPagePath",
+  "planPagePath",
+  "teamPagePath",
+  "webAppPath",
+  "webAppSubdomainIsolated",
+  "syncBuiltIn",
+];
+for (const key of Object.keys(product))
+  if (!known.includes(key))
+    console.warn(
+      `gen: product.json has a key nothing reads: "${key}" (docs/own-services.md lists the keys)`,
+    );
+// The accounts server is an origin: a scheme and a host, nothing after. The app adds the paths.
+if (product.accountsUrl) {
+  let server = null;
+  try {
+    server = new URL(product.accountsUrl);
+  } catch {
+    // Said below.
+  }
+  if (
+    !server ||
+    (server.protocol !== "https:" && server.protocol !== "http:") ||
+    server.username ||
+    server.pathname !== "/" ||
+    server.search ||
+    server.hash
+  )
+    throw new Error(
+      'product.json: "accountsUrl" must be a server\'s address without a path ("https://accounts.example.com"), or ""',
+    );
+}
+if (!!(product.updates?.endpoint || "") !== !!(product.updates?.pubkey || ""))
+  console.warn(
+    'gen: product.json "updates" has an endpoint without a pubkey, or the reverse: this build won\'t check for updates',
+  );
 // The online services the app talks to (docs/own-services.md is the guide to these keys). All of
 // it hangs on accountsUrl, the accounts server: empty means the build has no account of its own
 // (no sign-in, no Sync). The rest, with what is used when the key is left out:
@@ -100,6 +143,10 @@ for (const key of optional) {
 // - webAppPath: where the front end is served as a website that connects to a host (src/web,
 //   `node build.mjs --web`). A path on the accounts server or a whole URL, as above. Left out
 //   or "": the build has no such page, and the app offers no way to open one.
+// - webAppSubdomainIsolated: true says the accounts server sets no cookie for its whole domain,
+//   so a web front end on another name of that domain (app.example.com beside example.com) is
+//   an address of its own. Left out: such a page is treated as sharing the account pages'
+//   address (this computer only, no extension code). src/core/ownServices.ts has the rule.
 // - syncBuiltIn: false leaves Sync out of the build (its tab, commands, settings, status bar
 //   item and ide://sync), whatever the server offers. Sync needs an accounts server either way.
 const servicePages = {
@@ -113,13 +160,16 @@ const mayBeEmpty = ["planPagePath", "teamPagePath", "webAppPath"];
 for (const key of Object.keys(servicePages)) {
   const value = product[key];
   if (value === undefined || value === "") continue;
-  if (typeof value !== "string" || !/^(https?:\/\/|\/|#)\S*$/.test(value))
+  // The page with the front end is a page of its own, never a place in another one.
+  const shape = key === "webAppPath" ? /^(https?:\/\/|\/)\S*$/ : /^(https?:\/\/|\/|#)\S*$/;
+  if (typeof value !== "string" || !shape.test(value))
     throw new Error(
       `product.json: "${key}" must be a path on the accounts server ("/account") or a whole URL`,
     );
 }
-if (product.syncBuiltIn !== undefined && typeof product.syncBuiltIn !== "boolean")
-  throw new Error('product.json: "syncBuiltIn" must be true or false');
+for (const key of ["syncBuiltIn", "webAppSubdomainIsolated"])
+  if (product[key] !== undefined && typeof product[key] !== "boolean")
+    throw new Error(`product.json: "${key}" must be true or false`);
 const services = {
   ...Object.fromEntries(
     Object.entries(servicePages).map(([key, fallback]) => [
@@ -128,6 +178,7 @@ const services = {
       mayBeEmpty.includes(key) ? (product[key] ?? fallback) : product[key] || fallback,
     ]),
   ),
+  webAppSubdomainIsolated: product.webAppSubdomainIsolated === true,
   syncBuiltIn: product.syncBuiltIn !== false,
 };
 const pkg = await read("package.json");
@@ -142,7 +193,7 @@ await writeIfChanged(
       .map((k) => `  readonly ${k}: string;`)
       .join(
         "\n",
-      )}\n  readonly syncBuiltIn: boolean;\n  readonly workspaceFolderAliases: readonly string[];\n  readonly version: string;\n}\n\n` +
+      )}\n  readonly webAppSubdomainIsolated: boolean;\n  readonly syncBuiltIn: boolean;\n  readonly workspaceFolderAliases: readonly string[];\n  readonly version: string;\n}\n\n` +
     `export const product: ProductConfig = ${JSON.stringify({ ...pick(product, required), ...Object.fromEntries(optional.map((k) => [k, product[k] ?? ""])), ...services, workspaceFolderAliases: aliases, version: pkg.version }, null, 2)};\n`,
 );
 

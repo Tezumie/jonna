@@ -1,7 +1,7 @@
 The logo SVGs in this folder come from @lobehub/icons-static-svg (https://github.com/lobehub/lobe-icons),
 except auggie.svg and factory-droid.svg; see SOURCES.md for their sources.
 The logos themselves are trademarks of their respective owners; they are shown only to say which
-products Jonna works with, not to suggest affiliation or endorsement.
+products this software works with, not to suggest affiliation or endorsement.
 
 MIT License
 

@@ -14,6 +14,7 @@ import { blockExtensionCode } from "../core/extensions/codePolicy";
 import { setTransport } from "../core/ipc/invoke";
 import { setShell } from "../core/ipc/shell";
 import { connectStream } from "../core/ipc/streamTransport";
+import { webAppSharesAccounts } from "../core/ownServices";
 import { product } from "../core/product";
 import { type HostLink, isLoopbackHost, linkMayConnect, parseHostLink, socketUrl } from "./address";
 import { createWebShell } from "./shell";
@@ -28,17 +29,9 @@ import { socketDuplex } from "./socketDuplex";
  */
 function sharesAccountOrigin(): boolean {
   if (isLoopbackHost(location.hostname)) return false;
-  try {
-    if (product.accountsUrl === "") return false;
-    // The same name, or one under the other: a subdomain is another origin but the same site
-    // (its cookies), so it counts as shared too. Only another domain is an address of its own.
-    const accounts = new URL(product.accountsUrl).hostname.toLowerCase();
-    const here = location.hostname.toLowerCase();
-    return here === accounts || here.endsWith(`.${accounts}`) || accounts.endsWith(`.${here}`);
-  } catch {
-    // An address that can't be read is no reason to trust more.
-    return true;
-  }
+  // The same name, or another name of the same domain unless product.json says the accounts
+  // server keeps nothing there (`webAppSharesAccounts` has the rule).
+  return webAppSharesAccounts(location.hostname);
 }
 
 /**
@@ -50,6 +43,12 @@ const LINK_KEY = "web.hostLink";
 
 /** Whether a connection is up: a link that arrives then is not followed (see `start`). */
 let connected = false;
+
+/** Whether a try is under way: a second one would be refused by the host and undo the first. */
+let attempting = false;
+
+/** How long a host has to answer the handshake once the socket is open. */
+const HELLO_WITHIN_MS = 15_000;
 
 function keepLink(link: HostLink): void {
   if (sharesAccountOrigin()) return;
@@ -101,8 +100,11 @@ async function blockedFromThisComputer(): Promise<boolean> {
   return false;
 }
 
-/** The browser refused the connection, not the host: the code was never sent and is still good. */
-class BrowserBlocked extends Error {}
+/**
+ * The connection never opened (the browser refused it, the host isn't running, its one place
+ * is taken): the code was never sent and is still good.
+ */
+class CodeNotSent extends Error {}
 
 /** Connects and starts the IDE on that host. Rejects with why when the host can't be reached. */
 async function connect(link: HostLink): Promise<void> {
@@ -113,23 +115,50 @@ async function connect(link: HostLink): Promise<void> {
     blockExtensionCode(
       "Extensions don't run in this page: it shares its address with the account pages.",
     );
-  const transport = await connectStream(socketDuplex(made.url), {
-    client: "web",
-    token: link.token,
-  }).catch(async (err: unknown) => {
-    if (isLoopbackHost(new URL(made.url).hostname) && (await blockedFromThisComputer()))
-      throw new BrowserBlocked(
-        "The browser doesn't let this site reach programs on this computer. Allow it in the site's settings (the icon beside the address: apps on this device, or local network access), then connect again.",
-      );
-    throw err;
+  let reached = false;
+  const duplex = socketDuplex(made.url, () => {
+    reached = true;
   });
+  const answered = connectStream(duplex, { client: "web", token: link.token });
+  // Something that takes the socket and then says nothing isn't a host: don't wait for ever.
+  let gaveUp: ReturnType<typeof setTimeout> | undefined;
+  const silent = new Promise<never>((_, fail) => {
+    gaveUp = setTimeout(() => {
+      duplex.close();
+      fail(new Error("The host didn't answer."));
+    }, HELLO_WITHIN_MS);
+  });
+  // The loser of the race still settles: nothing waits for it.
+  answered.catch(() => {});
+  const transport = await Promise.race([answered, silent])
+    .catch(async (err: unknown) => {
+      if (reached) throw err;
+      if (isLoopbackHost(new URL(made.url).hostname) && (await blockedFromThisComputer()))
+        throw new CodeNotSent(
+          "The browser doesn't let this site reach programs on this computer. Allow it in the site's settings (the icon beside the address: apps on this device, or local network access), then connect again.",
+        );
+      throw new CodeNotSent(err instanceof Error ? err.message : String(err));
+    })
+    .finally(() => clearTimeout(gaveUp));
   keepLink(link);
   connected = true;
   setTransport(transport);
   setShell(createWebShell());
-  transport.onClose(() => showLost());
+  transport.onClose(() => {
+    if (connected) showLost();
+  });
+  try {
+    await import("../main");
+  } catch (err) {
+    // The IDE's own code didn't load (the site, not the host): give the host's place back,
+    // or every later try would find it taken by this one.
+    connected = false;
+    transport.close();
+    throw new Error(
+      `The page couldn't load its code (${err instanceof Error ? err.message : String(err)}). Reload it and connect again.`,
+    );
+  }
   document.querySelector(".web-connect")?.remove();
-  await import("../main");
 }
 
 /** The connection ended under a running IDE: nothing answers any more, so say so over it. */
@@ -218,6 +247,8 @@ function showForm(start: Partial<HostLink>, error?: string): void {
 }
 
 async function attempt(link: HostLink): Promise<void> {
+  if (attempting) return;
+  attempting = true;
   const status = document.querySelector(".web-status");
   const button = document.querySelector<HTMLButtonElement>(".web-connect button[type=submit]");
   if (status) {
@@ -231,11 +262,13 @@ async function attempt(link: HostLink): Promise<void> {
     // The code isn't kept after a failed try: a wrong one would be sent again on every reload.
     forgetLink();
     showForm(
-      // Unless the browser stopped it before the host saw anything: it stays in the form (not
-      // in storage), so allowing the site and pressing Connect is enough.
-      err instanceof BrowserBlocked ? link : { address: link.address },
+      // Unless nothing was sent (the browser stopped it, the host wasn't there): it stays in
+      // the form (not in storage), so pressing Connect again is enough.
+      err instanceof CodeNotSent ? link : { address: link.address },
       err instanceof Error ? err.message : String(err),
     );
+  } finally {
+    attempting = false;
   }
 }
 
@@ -246,7 +279,11 @@ function start(): void {
   const fromLink = parseHostLink(location.hash);
   // Out of the address bar at once: the fragment holds the code.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
-  const link = { ...savedLink(), ...fromLink };
+  const saved = savedLink();
+  // A kept code belongs to the address it was kept with: a link that names another address
+  // (anyone can send one) must not have this tab hand the code to whatever listens there.
+  const link =
+    fromLink.address && fromLink.address !== saved.address ? fromLink : { ...saved, ...fromLink };
   showForm(link);
   // By itself only to this computer; another host's address waits for Connect.
   if (linkMayConnect(link)) void attempt(link);
@@ -257,7 +294,7 @@ function start(): void {
   window.addEventListener("hashchange", () => {
     const next = parseHostLink(location.hash);
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
-    if (connected || !linkMayConnect(next)) return;
+    if (connected || attempting || !linkMayConnect(next)) return;
     showForm(next);
     void attempt(next);
   });

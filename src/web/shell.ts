@@ -5,14 +5,20 @@
 // nothing: the tab is the browser's.
 import { h } from "../core/dom/index";
 import { type BrowsedFolder, fsIpc } from "../core/ipc/fs";
+import { backendOs } from "../core/ipc/invoke";
 import { createWindowlessShell, type PickPathsOptions, type Shell } from "../core/ipc/shell";
 import { toDisposable } from "../core/lifecycle/index";
 import { confirmAction, showDialog } from "../ui/Dialog";
 import { icon } from "../ui/Icon";
 
-/** `name` inside `folder`, with the separator the host's paths use. */
-export function childPath(folder: string, name: string): string {
-  const separator = folder.includes("\\") || /^[A-Za-z]:/.test(folder) ? "\\" : "/";
+/**
+ * `name` inside `folder`, with the separator the host's paths use. `os`: the host's system
+ * when known; a backslash is a letter of a name anywhere but on Windows.
+ */
+export function childPath(folder: string, name: string, os: string | null = backendOs()): string {
+  const windows =
+    os === null ? folder.includes("\\") || /^[A-Za-z]:/.test(folder) : os === "windows";
+  const separator = windows ? "\\" : "/";
   return folder.endsWith(separator) ? `${folder}${name}` : `${folder}${separator}${name}`;
 }
 
@@ -104,7 +110,13 @@ async function pickPath(options: PickOptions): Promise<string | null> {
   let typing: ReturnType<typeof setTimeout> | undefined;
   input.addEventListener("input", () => {
     clearTimeout(typing);
-    typing = setTimeout(() => void show(input.value.trim() || undefined, true), 250);
+    typing = setTimeout(() => {
+      const typed = input.value.trim();
+      // A network path names a server and a share first: asking for less would have the host
+      // look for a machine by every few letters typed.
+      if (typed.startsWith("\\\\") && !/^\\\\[^\\]+\\[^\\]+\\/.test(typed)) return;
+      void show(typed || undefined, true);
+    }, 250);
   });
   // Enter in the field answers as the primary button does. Heard at the window, before the
   // dialog's own key handling.
@@ -124,9 +136,16 @@ async function pickPath(options: PickOptions): Promise<string | null> {
   }, 0);
   // A file's or a new name's folder is what is listed.
   const first = options.start?.trim();
-  void show(first || undefined).then(() => {
-    if (list.childElementCount === 0 && first) void show(undefined, true);
-  });
+  void show(first || undefined)
+    .then(() => {
+      if (list.childElementCount > 0 || !first) return;
+      // Not a folder: a file, or a name that isn't there yet. Its folder, then.
+      const cut = Math.max(first.lastIndexOf("/"), first.lastIndexOf("\\"));
+      if (cut > 0) return show(first.slice(0, cut + 1), true);
+    })
+    .then(() => {
+      if (list.childElementCount === 0 && first) void show(undefined, true);
+    });
   const ok = await showDialog<boolean>({
     title: options.title,
     message: "On the computer you're connected to.",

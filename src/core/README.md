@@ -671,5 +671,8 @@ the online services a build uses. `ownServices.ts` (DOM-free, tested) reads thos
 `accounts.serverUrl` setting wins in a build that has one), `accountPageUrl(base)`,
 `planPageUrl(base)` and `teamPageUrl(base)` (the pages the app opens in the browser;
 `hasPlanPage()` and `hasTeamPage()` say whether the service has them), `hasTeams()` (the build
-has teams' libraries: Sync is built in and the service has teams). `docs/own-services.md` is
+has teams' libraries: Sync is built in and the service has teams), `webAppUrl()` (the page
+that is the front end as a website) and `webAppSharesAccounts(host)` (whether a page on that
+name shares its address with the account pages: the same name, or the same domain unless
+`webAppSubdomainIsolated`; the web entry trusts less there). `docs/own-services.md` is
 the guide to the keys.

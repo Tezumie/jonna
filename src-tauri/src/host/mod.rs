@@ -18,7 +18,7 @@ mod ws;
 use std::ffi::OsString;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,9 @@ use tauri::Manager;
 use crate::error::{Error, Result};
 use crate::AppState;
 use server::{Carrier, Ended, Server};
+
+/// The most WebSocket upgrades answered at once; more are closed unread.
+const MAX_UPGRADES: usize = 8;
 
 /// How long a TCP host waits for its client to come back before it exits.
 const DEFAULT_LINGER: Duration = Duration::from_secs(60);
@@ -49,6 +52,9 @@ pub struct Options {
     pub listen_ws: bool,
     /// `--allow-origin <origin>`: a page of this origin may connect (`--listen-ws`). Repeatable.
     pub allow_origins: Vec<String>,
+    /// `--allow-host <name>`: a name this host is reached by beside loopback (`--listen-ws`):
+    /// the public name of a proxy in front of it. Repeatable.
+    pub allow_hosts: Vec<String>,
     /// `--token-file <path>`: the file holding the token a TCP client must send.
     pub token_file: Option<PathBuf>,
     /// `--user-data-dir <dir>`: settings and state there, as the desktop app's flag.
@@ -66,6 +72,7 @@ impl Default for Options {
             listen: None,
             listen_ws: false,
             allow_origins: Vec::new(),
+            allow_hosts: Vec::new(),
             token_file: None,
             user_data_dir: None,
             disable_extensions: false,
@@ -103,6 +110,13 @@ pub fn parse_args(
                         "{name}: {text} isn't a loopback address (127.0.0.1 or [::1])"
                     ));
                 }
+                // A page reaches this computer as 127.0.0.1 or localhost only (its content
+                // policy names those), so a WebSocket host on [::1] could never be used.
+                if name == "--listen-ws" && !address.is_ipv4() {
+                    return Err(format!(
+                        "{name}: {text} isn't 127.0.0.1 (a page in a browser reaches only that)"
+                    ));
+                }
                 options.listen = Some(address);
                 options.listen_ws = name == "--listen-ws";
             }
@@ -121,6 +135,22 @@ pub fn parse_args(
                     ));
                 }
                 options.allow_origins.push(origin);
+            }
+            "--allow-host" => {
+                let text = value("a host name (dev.example.com)")?;
+                let host = text.to_string_lossy().to_string();
+                // A name or an address, as a Host header carries it without its port.
+                let ok = !host.is_empty()
+                    && host
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+                    && host.chars().any(|c| c.is_ascii_alphanumeric());
+                if !ok {
+                    return Err(format!(
+                        "--allow-host: {host} isn't a host name like dev.example.com (no scheme, no port)"
+                    ));
+                }
+                options.allow_hosts.push(host);
             }
             "--token-file" => options.token_file = Some(PathBuf::from(value("a file")?)),
             "--user-data-dir" => options.user_data_dir = Some(PathBuf::from(value("a folder")?)),
@@ -159,6 +189,9 @@ Options:
                                  WebSocket messages. Printed as \"host: listening on ws://<address>\".
       --allow-origin <origin>    A page of this origin may connect over --listen-ws
                                  (https://example.com). Repeatable; none: no page may.
+      --allow-host <name>        A name this host is reached by beside 127.0.0.1, over
+                                 --listen-ws: the public name of a proxy that carries TLS
+                                 in front of it (dev.example.com). Repeatable.
       --token-file <file>        The file with the token a client must send
                                  (or the {TOKEN_VAR} variable). Required with --listen
                                  and --listen-ws.
@@ -259,7 +292,10 @@ fn run(options: Options, version: &str) -> Result<()> {
         Some(address) => {
             let token = read_token(&options)?;
             let listener = TcpListener::bind(address)?;
-            let origins = options.listen_ws.then(|| options.allow_origins.clone());
+            let origins = options.listen_ws.then(|| ws::Allowed {
+                origins: options.allow_origins.clone(),
+                hosts: options.allow_hosts.clone(),
+            });
             Some((listener, token, origins))
         }
         None => None,
@@ -308,7 +344,7 @@ fn run(options: Options, version: &str) -> Result<()> {
 async fn serve(
     server: &Server,
     pipes: Option<(std::fs::File, std::fs::File)>,
-    listener: Option<(TcpListener, String, Option<Vec<String>>)>,
+    listener: Option<(TcpListener, String, Option<ws::Allowed>)>,
     linger: Duration,
 ) {
     if let Some((input, output)) = pipes {
@@ -331,9 +367,15 @@ async fn serve(
     }
     // One client at a time: while one is served, others are closed at once.
     let busy = Arc::new(AtomicBool::new(false));
-    let (accepted, mut clients) = tokio::sync::mpsc::unbounded_channel::<TcpStream>();
+    let (accepted, mut clients) =
+        tokio::sync::mpsc::unbounded_channel::<std::io::Result<Carrier>>();
     {
         let busy = busy.clone();
+        // Upgrades being answered. Each waits on its client (five seconds at most) on a
+        // thread of its own, and none of them holds the host's one place: any website can
+        // open a socket here, and a request that will be refused must not keep the real
+        // page out while it is read.
+        let upgrading = Arc::new(AtomicUsize::new(0));
         let accepting = std::thread::Builder::new()
             .name("host-accept".into())
             .spawn(move || {
@@ -343,12 +385,51 @@ async fn serve(
                         std::thread::sleep(Duration::from_millis(200));
                         continue;
                     };
-                    if busy.swap(true, Ordering::SeqCst) {
+                    let Some(allowed) = origins.clone() else {
+                        if busy.swap(true, Ordering::SeqCst) {
+                            drop(stream);
+                            continue;
+                        }
+                        if accepted.send(tcp_carrier(stream)).is_err() {
+                            return;
+                        }
+                        continue;
+                    };
+                    // While a client is served nobody else is answered at all, as on TCP: a
+                    // second tab's socket never opens, so its code is never sent.
+                    if busy.load(Ordering::SeqCst) {
                         drop(stream);
                         continue;
                     }
-                    if accepted.send(stream).is_err() {
-                        return;
+                    if upgrading.fetch_add(1, Ordering::SeqCst) >= MAX_UPGRADES {
+                        upgrading.fetch_sub(1, Ordering::SeqCst);
+                        drop(stream);
+                        continue;
+                    }
+                    let (busy, upgrading, accepted) =
+                        (busy.clone(), upgrading.clone(), accepted.clone());
+                    let upgrade = std::thread::Builder::new()
+                        .name("host-upgrade".into())
+                        .spawn({
+                            let upgrading = upgrading.clone();
+                            move || {
+                                let made = ws::accept(stream, &allowed);
+                                upgrading.fetch_sub(1, Ordering::SeqCst);
+                                match made {
+                                    // The place is taken only by a page that was let in.
+                                    Ok(carrier) => {
+                                        if busy.swap(true, Ordering::SeqCst) {
+                                            (carrier.hang_up)();
+                                        } else {
+                                            let _ = accepted.send(Ok(carrier));
+                                        }
+                                    }
+                                    Err(e) => eprintln!("host: a client's connection failed: {e}"),
+                                }
+                            }
+                        });
+                    if upgrade.is_err() {
+                        upgrading.fetch_sub(1, Ordering::SeqCst);
                     }
                 }
             });
@@ -361,29 +442,19 @@ async fn serve(
     // connection neither starts the wait nor makes it longer.
     let mut client_left: Option<Instant> = None;
     loop {
-        let stream = match client_left {
+        let carrier = match client_left {
             Some(left) => {
                 let wait = linger.saturating_sub(left.elapsed());
                 match tokio::time::timeout(wait, clients.recv()).await {
-                    Ok(Some(stream)) => stream,
+                    Ok(Some(carrier)) => carrier,
                     // Nobody came back.
                     _ => return,
                 }
             }
             None => match clients.recv().await {
-                Some(stream) => stream,
+                Some(carrier) => carrier,
                 None => return,
             },
-        };
-        let carrier = match &origins {
-            None => tcp_carrier(stream),
-            // The upgrade waits on the client (five seconds at most): off the runtime's thread.
-            Some(origins) => {
-                let origins = origins.clone();
-                tokio::task::spawn_blocking(move || ws::accept(stream, &origins))
-                    .await
-                    .unwrap_or_else(|e| Err(std::io::Error::other(e)))
-            }
         };
         let served = match carrier {
             Ok(carrier) => Some(server.serve(carrier, Some(&token)).await),
@@ -596,5 +667,27 @@ mod tests {
         assert!(args(&["--frobnicate"]).is_err());
         assert!(args(&["--listen"]).is_err());
         assert!(args(&["some-folder"]).is_err());
+    }
+
+    #[test]
+    fn a_page_is_named_by_its_origin_and_a_proxy_by_its_host_name() {
+        let options = args(&[
+            "--listen-ws",
+            "127.0.0.1:0",
+            "--allow-origin",
+            "https://app.example.com/",
+            "--allow-host",
+            "dev.example.com",
+        ])
+        .unwrap();
+        assert!(options.listen_ws);
+        assert_eq!(options.allow_origins, ["https://app.example.com"]);
+        assert_eq!(options.allow_hosts, ["dev.example.com"]);
+        // An origin has no path; a host name has no scheme and no path.
+        assert!(args(&["--allow-origin", "https://app.example.com/app"]).is_err());
+        assert!(args(&["--allow-origin", "app.example.com"]).is_err());
+        assert!(args(&["--allow-host", "https://dev.example.com"]).is_err());
+        assert!(args(&["--allow-host", "dev.example.com/x"]).is_err());
+        assert!(args(&["--allow-host", ""]).is_err());
     }
 }

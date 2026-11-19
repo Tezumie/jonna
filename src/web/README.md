@@ -7,7 +7,9 @@ computer. `docs/web-app.md` has the design, what works and what doesn't yet.
 - `entry.ts`: the page's entry. Reads the link's fragment (`#h=<address>&t=<code>`) and takes
   it out of the address bar, or shows the form that asks for both; connects (by itself only
   to this computer); on an address shared with the account pages trusts less
-  (`sharesAccountOrigin`: this computer only, no extension code, the code in memory only);
+  (`sharesAccountOrigin`, by `core/ownServices.ts` `webAppSharesAccounts`: this computer
+  only, no extension code, the code in memory only); a kept code goes only to the address it
+  was kept with;
   installs the
   transport (`setTransport`) and the browser's shell (`setShell`); then imports `main.ts`, whose
   boot runs as in the app's window. A connection that ends under a running IDE is said over
@@ -27,8 +29,10 @@ computer. `docs/web-app.md` has the design, what works and what doesn't yet.
 - `index.html`: the page (`noindex`; `<base>` is filled in by the build's `--base`).
 - Styles: `src/styles/web.css`.
 
-Build: `node build.mjs --web [--prod] [--base=/app/]` writes `dist-web/`. Try it:
-`node scripts/web-host.mjs --serve` starts a host and serves the build on
-`http://localhost:4173`, and prints the link to open.
+Build: `node build.mjs --web [--prod] [--base=/app/]` writes `dist-web/` (`npm run web`).
+Try it: `node scripts/web-host.mjs --serve` starts a host and serves the build on
+`http://localhost:4173`, and prints the link to open (`--help` lists the rest: `--site`,
+`--port`, `--public` for a host behind a proxy). Serving your own page and hosts:
+`docs/web-app.md`, "Running your own".
 
 No commands and no state of its own: everything after the connection is the window's.

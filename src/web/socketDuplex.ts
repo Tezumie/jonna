@@ -6,8 +6,11 @@ import type { ByteDuplex } from "../core/ipc/streamTransport";
 /** How long a socket has to open before the attempt is given up. */
 const OPEN_WITHIN_MS = 10_000;
 
-/** A duplex on a new socket to `url`. Bytes written before it opens are sent once it has. */
-export function socketDuplex(url: string): ByteDuplex {
+/**
+ * A duplex on a new socket to `url`. Bytes written before it opens are sent once it has.
+ * `onOpen` runs when it has: until then nothing written has left this page.
+ */
+export function socketDuplex(url: string, onOpen?: () => void): ByteDuplex {
   const socket = new WebSocket(url);
   socket.binaryType = "arraybuffer";
   let onData: (chunk: Uint8Array) => void = () => {};
@@ -30,6 +33,7 @@ export function socketDuplex(url: string): ByteDuplex {
   socket.addEventListener("open", () => {
     opened = true;
     clearTimeout(timer);
+    onOpen?.();
     for (const bytes of queued ?? []) socket.send(bytes as BufferSource);
     queued = null;
   });

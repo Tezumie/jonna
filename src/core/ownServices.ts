@@ -17,6 +17,8 @@ export interface OwnServices {
   readonly teamPagePath: string;
   /** Where the front end is served as a website (a path, or a whole URL); empty: nowhere. */
   readonly webAppPath: string;
+  /** True: the accounts server keeps nothing another name of its domain can reach. */
+  readonly webAppSubdomainIsolated: boolean;
   /** False leaves Sync out of the build. */
   readonly syncBuiltIn: boolean;
 }
@@ -109,6 +111,42 @@ export function webAppUrl(config: OwnServices = product): string | null {
   if (!page) return null;
   if (/^https?:\/\//i.test(page)) return page;
   return hasAccounts(config) ? pageUrl(config.accountsUrl, page) : null;
+}
+
+/** The last two labels of a host name: a rough "same domain" without a list of public suffixes. */
+function domainOf(host: string): string {
+  return host.split(".").slice(-2).join(".");
+}
+
+/**
+ * Whether a page on the host name `pageHost` shares its address with the account pages, so that
+ * what runs in one can reach what the other keeps. The web front end trusts less there
+ * (src/web/entry.ts: this computer only, no extension code, the code in memory only).
+ *
+ * The same name always does. Another name of the same domain (`app.example.com` beside
+ * `example.com` or `www.example.com`) is another origin, with storage of its own, but the same
+ * site: a cookie set for the whole domain reaches both. So it counts as shared too, unless
+ * product.json says the accounts server sets no such cookie (`webAppSubdomainIsolated`).
+ * Without a list of public suffixes "the same domain" is the last two labels, which errs on the
+ * careful side (`a.co.uk` and `b.co.uk` count as one). A build without accounts shares nothing.
+ *
+ * `scripts/web-host.mjs` decides the same way when it starts a host: keep the two alike.
+ */
+export function webAppSharesAccounts(pageHost: string, config: OwnServices = product): boolean {
+  if (!hasAccounts(config)) return false;
+  let accounts: string;
+  try {
+    accounts = new URL(config.accountsUrl.trim()).hostname.toLowerCase();
+  } catch {
+    // An address that can't be read is no reason to trust more.
+    return true;
+  }
+  const here = pageHost.trim().toLowerCase();
+  if (here === accounts) return true;
+  if (config.webAppSubdomainIsolated) return false;
+  // Numbers aren't names: two addresses that end alike are two machines.
+  if (/^[\d.]+$/.test(here) || here.includes(":") || !here.includes(".")) return false;
+  return domainOf(here) === domainOf(accounts);
 }
 
 /** The account page (devices, storage, resetting sync) of the accounts server `base`. */

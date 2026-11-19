@@ -22,6 +22,14 @@ const devFeatures = !prod || args.has("--with-dev");
 /** The front end as a website (src/web), not the app's window. */
 const web = args.has("--web");
 const webBase = [...args].find((a) => a.startsWith("--base="))?.slice("--base=".length) || "./";
+// The path the site serves the page at, written into the page's <base>: a folder's path, so
+// it ends in a slash (without one every file beside the page is asked for one folder up).
+if (web && webBase !== "./" && !/^\/([\w.~-]+\/)*$/.test(webBase)) {
+  console.error(
+    `build: --base must be the path the page is served at, like /app/ (got "${webBase}"). In Git Bash on Windows, set MSYS_NO_PATHCONV=1 so the path isn't rewritten.`,
+  );
+  process.exit(2);
+}
 const outdir = join(root, web ? "dist-web" : "dist");
 const headlessOutdir = join(root, "dist-headless");
 const DEV_PORT = 1420;
@@ -281,7 +289,7 @@ const htmlPlugin = {
       if (result.errors.length > 0) return;
       let html = web
         ? (await readFile(join(root, "src/web/index.html"), "utf8"))
-            .replace("__BASE__", webBase)
+            .replace("__BASE__", () => webBase)
             // The page carries its own policy, so it holds even where a site forgets the
             // header (docs/web-app.md). The header can say more (frame-ancestors) or less.
             .replace(

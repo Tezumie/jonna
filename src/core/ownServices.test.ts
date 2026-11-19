@@ -11,6 +11,7 @@ import {
   type OwnServices,
   planPageUrl,
   teamPageUrl,
+  webAppSharesAccounts,
   webAppUrl,
 } from "./ownServices";
 
@@ -20,6 +21,7 @@ const config = (over: Partial<OwnServices> = {}): OwnServices => ({
   planPagePath: "/account#plan",
   teamPagePath: "/account#team",
   webAppPath: "",
+  webAppSubdomainIsolated: false,
   syncBuiltIn: true,
   ...over,
 });
@@ -124,6 +126,7 @@ test("own services: a build with no plan page says nothing of plans", () => {
     accountPagePath: "/account",
     teamPagePath: "/account#team",
     webAppPath: "",
+    webAppSubdomainIsolated: false,
     syncBuiltIn: true,
   };
   assert.equal(hasPlanPage({ ...base, planPagePath: "/account#plan" }), true);
@@ -147,4 +150,34 @@ test("own services: the web page is where the build says, or nowhere", () => {
   );
   // A path needs a server to be a path of.
   assert.equal(webAppUrl(config({ accountsUrl: "", webAppPath: "/app/" })), null);
+});
+
+test("own services: a web page shares the account pages' address by name, or by domain", () => {
+  const at = (accountsUrl: string) => config({ accountsUrl });
+  // The same name, whatever the port.
+  assert.equal(webAppSharesAccounts("example.com", at("https://example.com")), true);
+  assert.equal(webAppSharesAccounts("EXAMPLE.com", at("https://example.com:8443")), true);
+  // Another name of the same domain: under it, above it, beside it.
+  assert.equal(webAppSharesAccounts("app.example.com", at("https://example.com")), true);
+  assert.equal(webAppSharesAccounts("example.com", at("https://www.example.com")), true);
+  assert.equal(webAppSharesAccounts("app.example.com", at("https://www.example.com")), true);
+  // Another domain is an address of its own.
+  assert.equal(webAppSharesAccounts("example.dev", at("https://example.com")), false);
+  assert.equal(webAppSharesAccounts("notexample.com", at("https://example.com")), false);
+  // Numbers and single names are machines, not domains.
+  assert.equal(webAppSharesAccounts("10.0.0.5", at("https://10.0.0.6")), false);
+  assert.equal(webAppSharesAccounts("10.0.0.5", at("https://10.0.0.5")), true);
+  assert.equal(webAppSharesAccounts("devbox", at("https://example.com")), false);
+});
+
+test("own services: a subdomain is its own address when the accounts server keeps nothing there", () => {
+  const isolated = config({ accountsUrl: "https://example.com", webAppSubdomainIsolated: true });
+  assert.equal(webAppSharesAccounts("app.example.com", isolated), false);
+  // The very same name still shares: that is one origin.
+  assert.equal(webAppSharesAccounts("example.com", isolated), true);
+});
+
+test("own services: a build without accounts shares nothing, an unreadable address everything", () => {
+  assert.equal(webAppSharesAccounts("example.com", config({ accountsUrl: "" })), false);
+  assert.equal(webAppSharesAccounts("example.com", config({ accountsUrl: "nonsense" })), true);
 });
