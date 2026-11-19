@@ -4593,3 +4593,15 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
    with the chat's title and Show; Show opens the chat. Never two.
 3. A prompt that asks for an approval, from another app: the flash, and one notification only
    when the chat isn't on screen.
+
+## D463 — Fewer notifications
+1. Push and pull in Source control: no notice; the counts beside the branch go to zero.
+2. Clone a repository from an address that doesn't exist: one error notice.
+3. Add an MCP server whose command doesn't exist, send three messages: one warning, not three.
+4. Break a file's syntax with format on save on and a project formatter, save three times:
+   one "Couldn't format" until the file formats again.
+5. Put a wrong entry in keybindings.json and save twice without changing it: one warning.
+6. Leave a file unsaved, quit, start again: the tab is back and unsaved, with no notice.
+7. Install an extension from the store: no notice, its row shows it. From a .vsix: one.
+8. Start a helper in a worktree of its own (headless) and go to another app: when it is done
+   there is its one notice with Review changes and Merge, not a second "finished" for its chat.

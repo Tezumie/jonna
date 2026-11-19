@@ -175,7 +175,7 @@ from the store** updates them all.
 
 | Setting | Default | Description |
 |---|---|---|
-| `extensions.autoCheckUpdates` | `true` | A minute after start, check Open VSX for newer versions: a notice offers to update, and the Extensions icon shows how many |
+| `extensions.autoCheckUpdates` | `true` | A minute after start, check Open VSX for newer versions: the Extensions icon shows how many, and each row offers its update |
 | `extensions.autoUpdate` | `false` | Install newer versions by themselves |
 | `extensions.updateDelayHours` | `24` | How long a new version must be out before it's offered (0: at once) |
 

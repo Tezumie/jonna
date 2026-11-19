@@ -5,7 +5,11 @@ export type Effect = "read" | "write" | "exec" | "network" | "destructive";
 
 /** Who is calling. Every execution knows its caller (PLAN §2.2). */
 export type Caller =
-  | { kind: "user" }
+  /**
+   * `quiet`: the code that runs the command for the person reports a failure itself, or means
+   * a background try to stay unseen: the window shows no error notice of its own (D463).
+   */
+  | { kind: "user"; quiet?: true }
   | { kind: "test" }
   /**
    * A front end that isn't the window, acting for the person at it: a terminal session, a client
@@ -22,6 +26,8 @@ export type Caller =
   | { kind: "mcp"; client: string };
 
 export const USER: Caller = Object.freeze({ kind: "user" });
+/** The user, without the window's own notice when the command fails (see `quiet`). */
+export const QUIET_USER: Caller = Object.freeze({ kind: "user", quiet: true });
 
 export function callerLabel(caller: Caller): string {
   switch (caller.kind) {

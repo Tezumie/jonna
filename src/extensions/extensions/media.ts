@@ -45,7 +45,7 @@ export function screenshotGallery(
         e.preventDefault();
         void services.dispatcher
           .execute("extensions.removeScreenshot", { id: r.id, path: shot.path })
-          .catch((err: unknown) => services.notifications.show("error", String(err)));
+          .catch(() => {}); // the window shows a failed command's error
       });
     if (r.dev) setTooltip(tile, `${shot.caption ?? basename(shot.path)} · right-click to remove`);
     strip.append(tile);

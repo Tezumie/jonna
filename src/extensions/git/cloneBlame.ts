@@ -147,8 +147,8 @@ export function registerCloneAndBlame(
           const full = cloneErrorHint(
             last && !message.includes(last) ? `${message}\n${last}` : message,
           );
-          services.notifications.show("error", `Clone failed: ${full}`);
-          throw new Error(full);
+          // One notice: the window shows a failed command's error itself (D463).
+          throw new Error(`Clone failed: ${full}`);
         } finally {
           busy.dispose();
           line.dispose();

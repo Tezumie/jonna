@@ -92,7 +92,6 @@ async function restoreBackups(
   const generation = state.generation;
   const stale = () => generation !== state.generation;
   const find = (path: string) => [...views()].find((v) => pathKey(v.path) === pathKey(path));
-  let restored = 0;
   const reopened: string[] = [];
   for (const b of [...state.pending]) {
     const nb = notebookFromBackup(b.text);
@@ -113,7 +112,6 @@ async function restoreBackups(
           // The file saved elsewhere since with the same cells: nothing to put back.
           if (notebookBackupText(view.toNotebook()) !== b.text) {
             view.applyBackup(nb);
-            restored++;
           }
           applied = true;
         }
@@ -135,13 +133,6 @@ async function restoreBackups(
     }
     state.pending = state.pending.filter((p) => p !== b);
   }
-  if (restored)
-    services.notifications.show(
-      "info",
-      restored === 1
-        ? "Restored unsaved changes in 1 notebook."
-        : `Restored unsaved changes in ${restored} notebooks.`,
-    );
   if (reopened.length)
     services.notifications.show(
       "warning",

@@ -5,14 +5,32 @@
 // question itself (D462). A group round's members taking turns count as one turn (QUIET_MS).
 // Off with agent.notifyWhenAway. The only notice of its kind: one turn, one notification.
 
+import type { Item } from "../../core/agent/conversation";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, untracked } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { agentHost } from "./agentHost";
 import type { AgentSession } from "./session";
 
+/**
+ * Chats another part speaks for: a worktree helper's chat, whose own notices (with Review
+ * changes and Merge) say when it waits or is done (isolatedHelpers.ts). The taskbar flashes for
+ * them; a second notification beside the helper's isn't shown (D463).
+ */
+export const spokenFor = new Set<string>();
+
 /** A turn that ends and stays ended this long is over (the next member doesn't take over). */
 const QUIET_MS = 1500;
+
+/** The chat's latest turn sent a notification of its own (the notify tool, D282). */
+function notifiedInLatestTurn(items: readonly Item[]): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (!it || (it.type === "user" && !it.auto)) return false;
+    if (it.type === "tool" && it.name === "notify" && it.summary === "sent") return true;
+  }
+  return false;
+}
 
 export function watchAttention(services: WorkbenchServices, session: AgentSession): Disposable {
   const store = new DisposableStore();
@@ -26,7 +44,7 @@ export function watchAttention(services: WorkbenchServices, session: AgentSessio
     if (!presence.away() || services.settings.peek<boolean>("agent.notifyWhenAway") === false)
       return;
     presence.requestAttention();
-    if (presence.showing(session.id)) return;
+    if (presence.showing(session.id) || spokenFor.has(session.id)) return;
     services.notifications.show(kind, text, {
       title: session.title.peek(),
       actions: [
@@ -60,6 +78,8 @@ export function watchAttention(services: WorkbenchServices, session: AgentSessio
         } else if (status === "idle" && before === "running") {
           timer = setTimeout(() => {
             if (session.status.peek() !== "idle") return;
+            // The agent sent its own notice this turn (the notify tool): that was the one.
+            if (notifiedInLatestTurn(session.items)) return;
             const error = session.error.peek();
             tell(
               error ? "error" : "success",

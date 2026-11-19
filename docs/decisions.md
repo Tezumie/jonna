@@ -56,6 +56,7 @@ unless noted.
 | · The web front end and its host for someone else's names and servers: a host behind a proxy, a subdomain as its own address, two audits | D460 |
 | · Deferred tools on Anthropic after a review: a subagent's own list, a tool loaded before a summary, trimming only on its own API | D461 |
 | · One notice when a chat needs you, none over a chat on screen | D462 |
+| · Fewer notifications: one per event, none for what the window already shows | D463 |
 
 ## Seeded from PLAN §19
 
@@ -16541,3 +16542,60 @@ A turn over five seconds gave both, and so did a question.
 
 **Tried:** unit tests and the checks. **Not tried:** by hand in the app (two windows needed
 to be away from one); the steps are in `docs/manual-test.md`.
+
+## D463 — Fewer notifications: one per event, none for what the window already shows
+
+After D462 the owner asked for every notification to be read the same way (about 290
+`notifications.show` sites, three readers). What was wrong came in three kinds.
+
+**How a doubled one happens:** the window shows a failed command's error by itself when
+the user is the caller (`createServices.ts`), and `dispatcher.execute` with no caller is
+the user. Code that runs a command and words the failure itself gave two; code that
+swallowed it (`.catch(() => {})`, a timer) still gave one.
+
+- **`QUIET_USER`** (`core/dispatcher/types.ts`): the user as caller, `quiet: true`. Same
+  rights and confirmations; the window adds no notice of its own. For code that reports the
+  failure itself or means a background try to stay unseen: a schedule's send, a companion
+  extension's install, the store's "update all" and its check a minute after start, a
+  team publish (the report names what failed), the automatic memory tidy-up, a helper
+  window's follow-up messages, the log commands' fallback.
+- **One wording where there were two:** a failed clone, the speech model's download (a
+  cancel says nothing now and the command answers `cancelled`), a second MCP sign-in, a
+  missing debug adapter (its offer with Install is the error), merging a workspace folder
+  that had to be kept (one notice, a warning), an update check on a build with no beta
+  channel.
+- **A worktree helper speaks for itself.** Its chat is in `spokenFor` while it works: the
+  away notice (D254) flashes the taskbar without a second notification beside the
+  helper's own, which has Review changes and Merge. Waiting isn't said over its chat on
+  screen. The agent's `notify` tool is the turn's one notice (no "finished" after it), and
+  only flashes when the chat is on screen.
+
+**Said again and again:**
+
+- An MCP server that didn't start, or needs a sign-in, was told at every message (each
+  turn tries the ones not running): now once per failure, again when it changes.
+- A file the project's formatter can't format, at every save: once until it formats again.
+  The choice of a default formatter on save: once per language in a run.
+- `keybindings.json` problems, at each read of the file: when they change.
+- A language server from the settings that fails to start: once per failure.
+- A computer asking to join sync and the storage warning: from the window that syncs only.
+
+**Gone, because the window shows it (VS Code shows none of these either, where it has the
+feature):** "Pushed / Pulled <branch>" after every push, pull and sync; "Restored unsaved
+changes" at start (the warnings for what couldn't be reopened stay); "An update is
+available for…" a minute after start (the Extensions icon's count and each row's Update
+stay) and "Installed X" for an install or update from the store (a .vsix, a folder and a
+repository still say it); "Sync is on.", "<computer> now syncs.", "This folder now syncs
+as…", the three sharing sentences and "Copied as your own chat" (the commands still answer
+with them); "Added <file> to the project."; "Started an agent on <branch> in a new
+window."; "<helper> works in a worktree of its own" (the chat has the note); "Finish
+signing in… in your browser"; "Using OpenCode's free models."; "Signed out.".
+
+**Left on purpose:** the missing language server's offer (the one place the install is
+explained), "That key combination is not a command", the snapshot ignore file's
+explanation, "deleted from the account", and about 45 `.catch` handlers that show the
+command's own error again (the same words within a second are one notice: dead code, not
+a second notice).
+
+**Tried:** the checks and unit tests; the UI scripts for git, extensions, sync and the
+agent's helpers. **Not tried:** each notice by hand; `docs/manual-test.md` has a pass.

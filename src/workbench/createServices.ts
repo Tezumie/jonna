@@ -200,9 +200,10 @@ export function createServices(impl: ServiceImplementations): WorkbenchServices 
     context.set("quickInputVisible", screen.quickInput.visible.value);
     return undefined;
   });
-  // User-run commands that fail surface as a notice (declined confirmations don't).
+  // User-run commands that fail surface as a notice (declined confirmations don't, nor a call
+  // whose own code says what went wrong: QUIET_USER).
   events.on("command.executed", (e) => {
-    if (e.caller.kind === "user" && e.error && e.status !== "denied")
+    if (e.caller.kind === "user" && !e.caller.quiet && e.error && e.status !== "denied")
       notifications.show("error", e.error);
   });
   const services: WorkbenchServices = { ...logic, ...screen };

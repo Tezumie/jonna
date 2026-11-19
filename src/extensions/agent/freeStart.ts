@@ -76,7 +76,6 @@ export function registerFreeStart(sub: DisposableStore, services: WorkbenchServi
           name = result.name;
         }
         await dispatcher.execute("agent.chooseModel", { for: "main", model: `acp/${name}` });
-        notifications.show("info", "Using OpenCode's free models.");
         return { agent: name };
       },
     }),

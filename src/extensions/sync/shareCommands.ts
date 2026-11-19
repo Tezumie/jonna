@@ -361,8 +361,8 @@ export function registerShareCommands(
         }
         refuseLapsed();
         await sharing.change(project.id, { readers: chosen });
+        // The page shows who it is shared with: the sentence is the command's answer (D463).
         const message = `${project.name}: ${audienceSentence(shareBook.peek().members, chosen)}`;
-        notifications.show("info", message, { title: SYNC });
         return { shared: true, readers: chosen, message };
       },
     }),
@@ -407,7 +407,6 @@ export function registerShareCommands(
         const message = on
           ? `${project.name}'s chats are shared. ${done ? chatsSentence(done) : ""}`.trim()
           : `${project.name}'s chats aren't shared any more.`;
-        notifications.show("info", message, { title: SYNC });
         return { chats: on, written: done?.written ?? 0, removed: done?.removed ?? 0, message };
       },
     }),
@@ -495,7 +494,6 @@ export function registerShareCommands(
         );
         // Shown like any chat of one's own; a build without the agent's chats still has the copy.
         await ctx.execute("agent.openThread", { session: copied.id }).catch(() => null);
-        notifications.show("success", `Copied as your own chat: ${copied.title}`, { title: TEAM });
         return fromTeammates({ session: copied.id, title: copied.title });
       },
     }),
@@ -583,9 +581,6 @@ export function registerShareCommands(
           return { stopped: false, cancelled: true };
         await sharing.stop(target.id);
         if (session.shares.opened.peek()?.id === target.id) session.shares.close();
-        notifications.show("info", `${target.name} isn't shared with ${mine.name} any more.`, {
-          title: SYNC,
-        });
         return { stopped: true, id: target.id };
       },
     }),

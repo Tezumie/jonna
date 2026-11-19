@@ -55,6 +55,7 @@ import {
   type WorktreeProgress,
   worktreeEnv,
 } from "../../core/agent/worktrees";
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import { gitIpc } from "../../core/ipc/git";
@@ -63,6 +64,8 @@ import { basename } from "../../core/paths/index";
 import { effect, signal, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
+import { agentHost } from "./agentHost";
+import { spokenFor } from "./attention";
 import { customModes } from "./customModes";
 import { newId } from "./ids";
 import type { AgentSession } from "./session";
@@ -418,24 +421,6 @@ export class IsolatedHelpers {
     }
     this.set([...this.list.peek(), helper]);
     this.schedule(500);
-    // No window pops up for a headless helper: say where to watch it.
-    if (helper.headless)
-      this.services.notifications.show(
-        "info",
-        `${label} works in a worktree of its own (${started.branch}), in this window.`,
-        {
-          title: "Helper in a worktree",
-          actions: [
-            {
-              label: "Open its chat",
-              run: () =>
-                void this.services.dispatcher
-                  .execute("agent.openThread", { session: helper.id })
-                  .catch(() => {}),
-            },
-          ],
-        },
-      );
     return {
       result: `Started ${label} in a git worktree of its own (branch ${started.branch}, folder ${started.folder})${started.headless ? "; it runs in this window without one of its own (the user can open its chat)" : " and a window of its own"}. Its helper id is ${started.chat}. It works in parallel; its report will arrive as a message when it finishes. Go on with other work meanwhile, but don't edit the files it works on.`,
       summary: `in a worktree · ${started.branch}`,
@@ -459,6 +444,7 @@ export class IsolatedHelpers {
   ): Promise<void> {
     await fsIpc.allowRoot(started.folder);
     this.allowed.add(started.chat);
+    spokenFor.add(started.chat);
     const record = this.worktrees.find(started.chat);
     const settings = this.services.settings;
     const env = record
@@ -613,6 +599,7 @@ export class IsolatedHelpers {
     const settings = this.services.settings;
     for (const h of this.list.peek()) {
       if (!h.headless) continue;
+      spokenFor.add(h.id);
       const record = this.worktrees.find(h.id);
       setToolRoot(
         h.id,
@@ -737,6 +724,8 @@ export class IsolatedHelpers {
   }
 
   private sayWaiting(h: IsolatedHelper): void {
+    // Its chat on screen shows the question itself.
+    if (h.headless && agentHost(this.services).presence.showing(h.id)) return;
     this.services.notifications.show(
       "info",
       `${h.label} is waiting for you in its ${h.headless ? "chat" : "window"} (${h.branch}).`,
@@ -767,6 +756,8 @@ export class IsolatedHelpers {
   private async finish(h: IsolatedHelper, report: string, paths: string[] = []): Promise<void> {
     // Its worktree leaves the scope with it (a later turn in its chat lets it in again).
     if (h.headless) {
+      // From here on its chat is an ordinary one (a follow-up turn gets the usual notice).
+      spokenFor.delete(h.id);
       this.allowed.delete(h.id);
       await fsIpc.forgetRoot(h.folder).catch(() => {});
     }
@@ -954,7 +945,11 @@ export function watchForStop(
           }));
           for (const m of messages)
             await services.dispatcher
-              .execute("agent.send", { session: session.id, message: m.text, wait: false })
+              .execute(
+                "agent.send",
+                { session: session.id, message: m.text, wait: false },
+                QUIET_USER,
+              )
               .catch(() => {});
         }
         if (!stopRequested(sanitizeStops(global.agentStops), session.id, Date.now())) return;

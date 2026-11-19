@@ -4,6 +4,7 @@
 // the routing are Rust's (src-tauri/src/remote, docs/remote.md); this is the window's side:
 // connecting at startup (a window launched with `--remote`), Connect to host…, the remote folder
 // picker, the "SSH: host" status item and its menu, forwarded ports, `ide://remote`.
+import { QUIET_USER } from "../../core/dispatcher/index";
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { hasBackend } from "../../core/ipc/invoke";
 import { type RemoteEvent, type RemoteInfo, remoteIpc } from "../../core/ipc/remote";
@@ -419,7 +420,7 @@ export const remoteExtension: BuiltinExtension<WorkbenchServices> = {
         run: async () => {
           const text = await remoteIpc.log();
           await dispatcher
-            .execute("workspace.newUntitledFile", { content: text, language: "log" })
+            .execute("workspace.newUntitledFile", { content: text, language: "log" }, QUIET_USER)
             .catch(() => {
               notifications.show("info", text.slice(-2000) || "Nothing logged yet.", {
                 title: "Remote",

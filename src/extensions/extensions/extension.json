@@ -175,7 +175,7 @@
         "type": "boolean",
         "default": true,
         "scope": "user",
-        "description": "When VS Code extensions from Open VSX are installed, check for newer versions a minute after the IDE starts: a notice offers to update them, and the Extensions icon shows how many. Nothing is installed unless you choose to (or turn on extensions.autoUpdate)."
+        "description": "When VS Code extensions from Open VSX are installed, check for newer versions a minute after the IDE starts: the Extensions icon shows how many there are, and each one's row offers the update. Nothing is installed unless you choose to (or turn on extensions.autoUpdate)."
       },
       "extensions.recommendations.enabled": {
         "type": "boolean",

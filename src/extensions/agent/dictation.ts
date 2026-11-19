@@ -174,7 +174,7 @@ export function registerDictation(
   const download = async (
     model: string,
     test?: { url: string; sha256: string },
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     const info = MODEL_INFO[model];
     const toast = notifications.progress(`Downloading the speech model (${info?.size ?? model})…`, {
       title: "Dictation",
@@ -201,11 +201,10 @@ export function registerDictation(
     } catch (err) {
       await refresh();
       const message = err instanceof Error ? err.message : String(err);
-      if (!/cancel/i.test(message))
-        notifications.show("error", `The speech model didn't download: ${message}`, {
-          title: "Dictation",
-        });
-      throw err;
+      // Cancelled by the person: nothing to say. Anything else is the command's error, which
+      // the window shows once (D463).
+      if (/cancel/i.test(message)) return null;
+      throw new Error(`The speech model didn't download: ${message}`);
     } finally {
       percent.delete(model);
       toast.close();
@@ -282,7 +281,7 @@ export function registerDictation(
         const id = model ?? localModel();
         const test = url && sha256 ? { url, sha256 } : undefined;
         const path = await download(id, test);
-        return { model: id, path };
+        return path === null ? { model: id, cancelled: true } : { model: id, path };
       },
     }),
   );

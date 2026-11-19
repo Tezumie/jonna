@@ -103,6 +103,8 @@ export class LspManager implements Disposable {
   readonly onLog = this.logEmitter.event;
   /** A server wasn't found on PATH (D199: offered for install). */
   private readonly missingEmitter = new Emitter<ServerConfig>();
+  /** The failure last shown for a server from the settings, by its name. */
+  private readonly toldFailures = new Map<string, string>();
   readonly onMissing = this.missingEmitter.event;
   /** A server that started and then failed (its message): a repair can be offered (D369). */
   private readonly failedEmitter = new Emitter<{ config: ServerConfig; message: string }>();
@@ -393,8 +395,11 @@ export class LspManager implements Disposable {
       this.publish();
       if (r.status.state === "missing") this.missingEmitter.fire(config);
       // Built-in definitions for tools you don't have are expected; your own settings aren't.
-      if (config.source === "settings")
+      // Once per failure: it is started again with each file opened (D463).
+      if (config.source === "settings" && this.toldFailures.get(config.name) !== message) {
+        this.toldFailures.set(config.name, message);
         this.services.notifications.show("error", `Language server ${config.name}: ${message}`);
+      }
       return;
     }
     this.processOwner.set(config.name, r);

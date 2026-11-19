@@ -338,17 +338,19 @@ export function notifyTool(items: () => readonly Item[]): AgentTool {
           summary: "not sent",
         };
       presence.requestAttention();
-      host.services.notifications.show("info", r.message, {
-        actions: [
-          {
-            label: "Show",
-            run: () =>
-              void host.services.dispatcher
-                .execute("agent.openSession", { session: host.session })
-                .catch(() => {}),
-          },
-        ],
-      });
+      // The chat on screen has the message in it: the flash is enough (D462).
+      if (!presence.showing(host.session))
+        host.services.notifications.show("info", r.message, {
+          actions: [
+            {
+              label: "Show",
+              run: () =>
+                void host.services.dispatcher
+                  .execute("agent.openSession", { session: host.session })
+                  .catch(() => {}),
+            },
+          ],
+        });
       // D360: to the user's phone too, when they set a webhook.
       const phone = await sendToPhone(host.services, r.message, { chat: host.session });
       const also =

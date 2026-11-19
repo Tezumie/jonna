@@ -263,10 +263,6 @@ export function registerWorktreeAgents(
         }),
       });
       if (!started) return { started: null };
-      if (started.spawned)
-        notifications.show("info", `Started an agent on ${started.branch} in a new window.`, {
-          title: "Agent worktree",
-        });
       return started;
     },
   });

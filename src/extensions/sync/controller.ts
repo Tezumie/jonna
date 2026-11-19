@@ -618,6 +618,8 @@ export class SyncController implements Disposable {
 
   /** Says once per run that storage is filling up, at 80% and at 95%. */
   private warnStorage(status: SyncStatus): void {
+    // One window says it (the one that syncs), as for what arrived (D463).
+    if (!this.leader) return;
     const notice = storageNotice(status.usageBytes, status.storageLimit);
     if (!notice || notice.level <= this.storageWarned) return;
     this.storageWarned = notice.level;
@@ -635,6 +637,7 @@ export class SyncController implements Disposable {
 
   /** Says once per run and computer that one is waiting to be let in. */
   private announceWaiting(status: SyncStatus): void {
+    if (!this.leader) return;
     for (const device of status.devices) {
       if (device.status !== "pending" || this.announced.has(device.id)) continue;
       this.announced.add(device.id);

@@ -732,10 +732,7 @@ export function registerMcpPage(
         const begun = await mcpClientIpc.oauthBegin(server, url, product.nameLong, clientId);
         // UI tests have no browser: the IDE visits the page itself (the mock signs in at once).
         const testing = !!(await appIpc.info().catch(() => null))?.testScript;
-        if (!testing) {
-          await openerIpc.openUrl(begun.authorizeUrl);
-          notifications.show("info", `Finish signing in to ${server} in your browser.`);
-        }
+        if (!testing) await openerIpc.openUrl(begun.authorizeUrl);
         const status = await mcpClientIpc.oauthFinish(begun.flow, testing);
         notifications.show("info", `Signed in to ${server}.`);
         if (again !== false) await restart(server);

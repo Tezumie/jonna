@@ -24,7 +24,7 @@ export function registerGitCommands(
     set(value: string, repo?: GitController): void;
   },
 ): void {
-  const { dispatcher, workspace, notifications } = services;
+  const { dispatcher, workspace } = services;
   // D251: a relative path may start with a workspace folder's name ("api/src/x.ts").
   const resolve = (path: string) => workspace.resolve(path);
   const requireRepo = (git: GitController) => {
@@ -608,7 +608,6 @@ export function registerGitCommands(
     op: RemoteOp,
     title: string,
     verb: string,
-    done: string,
     description: string,
     confirm?: string,
   ) =>
@@ -661,8 +660,9 @@ export function registerGitCommands(
           }
           if (op !== "fetch")
             services.events.emit("files.didChange", { path: requireRepo(git).root });
+          // No notice: the view and the status bar show the counts going to zero, as in VS Code
+          // (D463). What was done is the command's answer.
           const b = git.status.peek()?.branch;
-          if (b && op !== "fetch") notifications.show("info", `${done} ${b.head ?? ""}`.trim());
           return { output: lines.slice(-20), ahead: b?.ahead ?? 0, behind: b?.behind ?? 0 };
         },
       }),
@@ -671,46 +671,35 @@ export function registerGitCommands(
     "fetch",
     "Fetch",
     "Fetching",
-    "Fetched",
     "Fetches from the remote (git fetch --prune); updates ahead/behind counts.",
   );
-  remote(
-    "pull",
-    "Pull",
-    "Pulling",
-    "Pulled",
-    "Pulls the current branch's upstream (fast-forward only).",
-  );
+  remote("pull", "Pull", "Pulling", "Pulls the current branch's upstream (fast-forward only).");
   remote(
     "push",
     "Push",
     "Pushing",
-    "Pushed",
     "Pushes the current branch (publishes it — sets the upstream to origin, or the only remote — on the first push).",
   );
   remote(
     "pullRebase",
     "Pull (rebase)",
     "Pulling",
-    "Pulled",
     "Pulls the upstream and rebases the current branch's new commits on top (git pull --rebase).",
   );
   remote(
     "pullMerge",
     "Pull (merge)",
     "Pulling",
-    "Pulled",
     "Pulls the upstream and merges it into the current branch (git pull --no-rebase).",
   );
   remote(
     "pushForce",
     "Push (force with lease)",
     "Pushing",
-    "Pushed",
     "Overwrites the remote branch with the local one (--force-with-lease: refused if the remote has commits you haven't fetched).",
     "Force push? The remote branch is replaced with yours; commits only on the remote are lost.",
   );
-  remote("pushTags", "Push tags", "Pushing tags", "Pushed tags", "Pushes all tags to the remote.");
+  remote("pushTags", "Push tags", "Pushing tags", "Pushes all tags to the remote.");
 }
 
 interface PickedBranch {

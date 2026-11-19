@@ -8,6 +8,7 @@
 // except the Recommended section's details (icon, downloads), fetched only while the Extensions
 // view is shown and both the store and extensions.recommendations.enabled are on.
 
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { engineSatisfied } from "../../core/extensions/engine";
 import {
   installedOnly,
@@ -516,8 +517,10 @@ export function registerStore(
         const added: string[] = [];
         const skipped: string[] = [];
         // The extension first: the user's one question (its permissions).
+        // From the store: the view's row says it is installed, as in VS Code (no notice, D463).
         const r = (await dispatcher.execute("extensions.installFromVsix", {
           file,
+          quiet: true,
           ...(along && { with: along }),
         })) as { id: string | null; cancelled?: boolean };
         storeUpdates.value = storeUpdates.peek().filter((u) => u.id !== r.id);
@@ -541,10 +544,12 @@ export function registerStore(
               continue;
             }
             try {
-              await dispatcher.execute("extensions.installFromStore", {
-                id: other,
-                ...(allowed && { with: r.id }),
-              });
+              // Quiet: the warning below says it, with what it came with (D463).
+              await dispatcher.execute(
+                "extensions.installFromStore",
+                { id: other, ...(allowed && { with: r.id }) },
+                QUIET_USER,
+              );
               added.push(other);
             } catch (err) {
               services.notifications.show(
@@ -642,7 +647,12 @@ export function registerStore(
       const failed: { id: string; error: string }[] = [];
       for (const u of todo) {
         try {
-          await dispatcher.execute("extensions.installFromStore", { id: u.id, version: u.latest });
+          // Quiet: what failed is this command's answer (the view lists it).
+          await dispatcher.execute(
+            "extensions.installFromStore",
+            { id: u.id, version: u.latest },
+            QUIET_USER,
+          );
           updated.push(`${u.id} ${u.installed} → ${u.latest}`);
         } catch (err) {
           failed.push({ id: u.id, error: err instanceof Error ? err.message : String(err) });

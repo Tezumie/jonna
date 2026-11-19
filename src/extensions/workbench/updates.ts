@@ -78,15 +78,12 @@ export function registerUpdates(sub: DisposableStore, services: WorkbenchService
               "info",
               "This build doesn't update itself: it was made without an update server (a development build, or one you built yourself).",
             );
-        } else if (user && channel() === "beta" && !info.betaAvailable) {
+        } else if (user && channel() === "beta" && !info.betaAvailable && !info.available) {
+          // With a version to offer, the offer below is the one notice (D463).
           notifications.show(
             "info",
-            `This build has no beta channel, so it checked stable releases: ${info.available ? `version ${info.available} is available.` : `you have the latest version (${info.current}).`}`,
+            `This build has no beta channel, so it checked stable releases: you have the latest version (${info.current}).`,
           );
-          if (info.available) {
-            offered = null;
-            offer(info);
-          }
         } else if (info.available) {
           offered = null;
           offer(info);

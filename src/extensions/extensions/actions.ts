@@ -3,6 +3,7 @@
 // Install Specific Version, Download VSIX, Copy, Copy Link, and Add to Workspace Recommendations.
 // The Open VSX ones work for VS Code packages (their id is publisher.name there).
 
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { isNewerVersion, storePageUrl, storeVersions } from "../../core/extensions/openVsx";
 import { extIpc } from "../../core/ipc/extensions";
 import { fsIpc } from "../../core/ipc/fs";
@@ -90,8 +91,9 @@ export function registerExtensionActions(
     const wanted = installed.filter((r) => manager.autoUpdates(r.id));
     const notify = services.settings.peek<boolean>("extensions.autoCheckUpdates") !== false;
     if (!wanted.length && !(notify && installed.length)) return;
+    // In the background, unasked: a failure here stays unseen (D463).
     const found = (await dispatcher
-      .execute("extensions.checkStoreUpdates", {})
+      .execute("extensions.checkStoreUpdates", {}, QUIET_USER)
       .catch(() => null)) as { updates?: { id: string; latest: string }[] } | null;
     const left: string[] = [];
     for (const u of found?.updates ?? []) {
@@ -100,31 +102,11 @@ export function registerExtensionActions(
         continue;
       }
       await dispatcher
-        .execute("extensions.installFromStore", { id: u.id, version: u.latest })
+        .execute("extensions.installFromStore", { id: u.id, version: u.latest }, QUIET_USER)
         .catch(() => {});
     }
-    if (notify && left.length) notifyUpdates(left);
-  };
-  const notifyUpdates = (ids: string[]) => {
-    const name = (id: string) => manager.get(id)?.manifest?.displayName ?? id;
-    notifications.show(
-      "info",
-      ids.length === 1
-        ? `An update is available for ${name(ids[0] ?? "")}.`
-        : `Updates are available for ${ids.length} extensions.`,
-      {
-        actions: [
-          {
-            label: ids.length === 1 ? "Update" : "Update all",
-            run: () => void dispatcher.execute("extensions.updateFromStore", {}).catch(() => {}),
-          },
-          {
-            label: "Show",
-            run: () => void dispatcher.execute("extensions.show", {}).catch(() => {}),
-          },
-        ],
-      },
-    );
+    // What is left to update shows on the Extensions icon and on each row (as in VS Code): no
+    // notice at start (D463).
   };
 
   register({

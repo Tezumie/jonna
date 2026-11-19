@@ -125,6 +125,11 @@ export class McpClients {
   private readonly declined = new Set<string>();
   /** Servers whose process or handshake is under way (not started twice). */
   private readonly launching = new Set<string>();
+  /**
+   * What the person was last told about a server that didn't start, by name. Every turn tries
+   * the ones not running again: the same failure is said once, not at each message (D463).
+   */
+  private readonly told = new Map<string, string>();
   /** Inputs the user dismissed in this window: not asked again on every message. */
   private readonly skippedInputs = new Set<string>();
   /** Non-password input values, asked once per window. */
@@ -608,6 +613,7 @@ export class McpClients {
         },
       };
       this.running.set(name, running);
+      this.told.delete(name);
       onRunning(running);
       status(counts());
       // The client's emitters are disposed with it: no listener outlives the server.
@@ -624,6 +630,8 @@ export class McpClients {
       // page, or agent.mcpSignIn.
       if (config.url && isSignInError(message)) {
         status({ state: "waiting", tools: 0, error: "needs a sign-in", needsSignIn: true });
+        if (this.told.get(name) === "sign-in") return;
+        this.told.set(name, "sign-in");
         this.services.notifications.show("info", `MCP server ${name} needs a sign-in.`, {
           actions: [
             {
@@ -635,6 +643,8 @@ export class McpClients {
         return;
       }
       status({ state: "failed", tools: 0, error: message });
+      if (this.told.get(name) === message) return;
+      this.told.set(name, message);
       this.services.notifications.show("warning", `MCP server ${name}: ${message}`);
     }
   }
@@ -800,11 +810,8 @@ export class McpClients {
     try {
       await this.services.dispatcher.execute("agent.mcpSignIn", { server: name, restart: false });
       return true;
-    } catch (err) {
-      this.services.notifications.show(
-        "warning",
-        `MCP server ${name}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    } catch {
+      // The window showed the command's error already (D463).
       return false;
     }
   }

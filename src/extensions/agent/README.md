@@ -1348,7 +1348,9 @@ folder everything is as before.
   (`windowIpc.requestAttention`, Rust `app_request_attention`) and leaves a notification with
   Show; `agent.notifyWhenAway` (on). No notification when the chat is on screen in the
   window, only the flash, and it is the one notice a turn gives (D462: the older
-  `agent.notifyWhenDone` toast beside it is gone).
+  `agent.notifyWhenDone` toast beside it is gone). Not shown either for a chat in
+  `spokenFor` (a headless worktree helper at work, whose own notices say it, D463) or
+  after a turn whose `notify` tool sent one.
 
 - `schedules.ts` (+ `core/agent/schedules.ts`, tested: parsing "when", the next run, limits,
   descriptions): `ScheduleService` keeps the folder's schedules in the workspace state

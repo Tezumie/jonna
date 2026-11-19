@@ -306,7 +306,6 @@ export function registerSyncCommands(
           }
           session.closeStep();
           await sync().pass(true);
-          notifications.show("success", "Sync is on.", { title: "Sync" });
           return { state: sync().status.peek()?.state ?? "on", confirmed: true };
         }
         if (status.exists)
@@ -386,7 +385,6 @@ export function registerSyncCommands(
         }
         session.closeStep();
         await sync().pass(true);
-        notifications.show("success", "Sync is on.", { title: "Sync" });
         return { state: sync().status.peek()?.state ?? "on", joined: true };
       },
     }),
@@ -478,7 +476,6 @@ export function registerSyncCommands(
         await syncIpc.approve(base, device);
         await sync().refreshStatus();
         sync().note(`${waiting.name} was approved and now syncs.`);
-        notifications.show("success", `${waiting.name} now syncs.`, { title: "Sync" });
         return { approved: waiting.name };
       },
     }),
@@ -872,9 +869,6 @@ export function registerSyncCommands(
             `${project.name} already syncs from ${project.folder ?? "this computer"}.`,
           );
         await sync().linkProject(target);
-        notifications.show("success", `This folder now syncs as ${project.name}.`, {
-          title: "Sync",
-        });
         return { linked: true, id: target, name: project.name };
       },
     }),

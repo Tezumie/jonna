@@ -378,7 +378,6 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
           }
           await accountsIpc.signOut();
           profile.value = null;
-          notifications.show("info", "Signed out.");
           return { signedOut: true };
         },
       }),

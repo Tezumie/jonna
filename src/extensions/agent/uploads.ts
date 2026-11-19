@@ -297,7 +297,6 @@ export function registerUploadCommands(
         if (upload.kind === "image")
           await ctx.execute("explorer.reveal", { path: full }).catch(() => {});
         else await ctx.execute("editor.openFile", { path: full }).catch(() => {});
-        notifications.show("info", `Added ${rel} to the project.`);
         return { path: full };
       },
     }),

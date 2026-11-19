@@ -695,6 +695,8 @@ export interface EditorEngineModule {
 // Loads the Monaco engine bundle (assets/monaco.js + monaco.css, a separate esbuild entry) on
 // demand, once. Kept out of the startup path so the shell paints first (PLAN §13).
 let pending: Promise<EditorEngine> | undefined;
+/** Languages whose save already offered the choice of a formatter. */
+const formatterAsked = new Set<string>();
 
 export function loadEditorEngine(
   theme: () => EditorTheme,
@@ -801,10 +803,14 @@ async function chooseFormatter(
   if ("index" in analysis) return analysis.index;
   const pickAndSave = () => pickDefaultFormatter(services, q);
   if (q.silent) {
-    // A save goes on unformatted; the notice offers the choice (VS Code's silent prompt).
-    services.notifications.show("info", analysis.message, {
-      actions: [{ label: "Configure…", run: () => void pickAndSave() }],
-    });
+    // A save goes on unformatted; the notice offers the choice (VS Code's silent prompt), once
+    // per language in a run of the app, not at every save (D463).
+    if (!formatterAsked.has(q.languageId)) {
+      formatterAsked.add(q.languageId);
+      services.notifications.show("info", analysis.message, {
+        actions: [{ label: "Configure…", run: () => void pickAndSave() }],
+      });
+    }
     return undefined;
   }
   const configure = await showDialog({

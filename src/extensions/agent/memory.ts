@@ -25,6 +25,7 @@ import {
   searchMemory,
   topicFile,
 } from "../../core/agent/memory";
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import { dirname, joinPath } from "../../core/paths/index";
@@ -226,7 +227,7 @@ export class MemoryStore {
       if (since >= AUTO_AFTER_MS && pending >= AUTO_AFTER_SESSIONS) {
         this.suggested = true;
         void this.services.dispatcher
-          .execute("agent.dream", { wait: false, background: true })
+          .execute("agent.dream", { wait: false, background: true }, QUIET_USER)
           .catch(() => {});
       }
       return;

@@ -5,6 +5,7 @@
 // Rebuild container, Reopen folder locally, Attach to running container, the notice on opening
 // a folder that has a configuration, and the containers' log.
 
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { fsIpc } from "../../core/ipc/fs";
 import { execIpc } from "../../core/ipc/process";
 import { remoteIpc } from "../../core/ipc/remote";
@@ -431,7 +432,7 @@ export function registerDevContainers(
       run: async () => {
         const text = log.join("\n");
         await dispatcher
-          .execute("workspace.newUntitledFile", { content: text, language: "log" })
+          .execute("workspace.newUntitledFile", { content: text, language: "log" }, QUIET_USER)
           .catch(() =>
             notifications.show("info", text.slice(-2000) || "Nothing logged yet.", {
               title: "Dev containers",

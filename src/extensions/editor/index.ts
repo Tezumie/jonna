@@ -66,6 +66,9 @@ import { registerUntitled } from "./untitledCommands";
 import { registerUserSnippets } from "./userSnippets";
 import { type EditorView, type EditorViewHost, editorViewDescriptor } from "./view";
 
+/** Files whose project formatter failed the last time it ran: told once, not at each save. */
+const formatFailed = new Set<string>();
+
 export const editorExtension: BuiltinExtension<WorkbenchServices> = {
   manifest,
   activate({ subscriptions: sub, services }) {
@@ -380,13 +383,18 @@ export const editorExtension: BuiltinExtension<WorkbenchServices> = {
         try {
           result = await formatIpc.project(path, model.getText());
         } catch (err) {
-          // A syntax error and the like: say so instead of formatting differently.
-          services.notifications.show(
-            "warning",
-            `Couldn't format: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          // A syntax error and the like: say so instead of formatting differently. Once per
+          // file until it formats again: with format on save, every save would say it (D463).
+          if (!formatFailed.has(path)) {
+            formatFailed.add(path);
+            services.notifications.show(
+              "warning",
+              `Couldn't format: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
           return true;
         }
+        formatFailed.delete(path);
         if (!result) return false;
         lastFormatter.value = result.formatter;
         // Typed into meanwhile: don't clobber it.

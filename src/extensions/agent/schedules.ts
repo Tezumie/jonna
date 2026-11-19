@@ -25,6 +25,7 @@ import {
   validSchedules,
   whenProblem,
 } from "../../core/agent/schedules";
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { type DisposableStore, toDisposable } from "../../core/lifecycle/index";
 import { type ReadonlySignal, signal } from "../../core/reactive/index";
@@ -233,15 +234,18 @@ export class ScheduleService {
       return;
     }
     if (t.kind === "channel") {
-      await this.services.dispatcher.execute("agent.postToChannel", {
-        channel: t.channel,
-        message: text,
-      });
+      // Quiet: a failure is told once, with the schedule's name (D463).
+      await this.services.dispatcher.execute(
+        "agent.postToChannel",
+        { channel: t.channel, message: text },
+        QUIET_USER,
+      );
       return;
     }
     const opened = await this.services.dispatcher.execute<{ session?: string } | null>(
       "agent.chatWith",
       { agent: t.agent },
+      QUIET_USER,
     );
     const session = opened?.session ? this.sessions.find(opened.session) : undefined;
     if (!session) throw new Error(`couldn't start a chat with ${t.agent}`);

@@ -67,6 +67,7 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
         () => "",
       );
     };
+    let toldProblems = "";
     const load = async () => {
       const text = await read();
       if (!text.trim()) {
@@ -91,8 +92,11 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
       const { applied, withheld } = splitBindings(rules, arrived);
       status.withheld = withheld.length;
       keyboard.setUserRules(applied);
-      if (problems.length > 0)
-        notifications.show("warning", `keybindings.json: ${problems.slice(0, 2).join("; ")}`);
+      // Said when the problems change, not each time the file is read again (D463).
+      const words = problems.slice(0, 2).join("; ");
+      if (words && words !== toldProblems)
+        notifications.show("warning", `keybindings.json: ${words}`);
+      toldProblems = words;
     };
     sub.add(settings.onDidChangeKeybindingsFile(() => void load()));
     // Accepting what arrived changes no file: the shortcuts are read again when it happens

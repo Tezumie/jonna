@@ -718,7 +718,8 @@ results are grouped under each provider or agent.
 When a chat asks you something, needs your approval, or finishes while the IDE isn't in front, the
 taskbar button flashes (the Dock icon bounces on macOS) and a notification waits in the window with
 **Show**. With the chat already on screen in the window there is only the flash: the reply is
-there when you come back. A round where several agents answer counts once.
+there when you come back. A round where several agents answer counts once, and a helper in a
+worktree of its own speaks for itself (its notice has **Review changes** and **Merge**).
 `agent.notifyWhenAway` turns it off.
 
 **On your phone:** run **Send agent notifications to my phone** and give an

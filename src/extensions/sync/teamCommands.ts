@@ -2,6 +2,7 @@
 // kind, which of the user's own, and, for the team's owner, who it is on for). It drives the picker and then runs
 // the team extension's `team.publish` for each thing chosen, through the dispatcher: nothing is
 // imported from that extension, and what may be published is decided there, not here.
+import { QUIET_USER } from "../../core/dispatcher/index";
 import { parseExtensionsJson } from "../../core/extensions/recommendations";
 import { accountsIpc } from "../../core/ipc/accounts";
 import { fsIpc } from "../../core/ipc/fs";
@@ -326,7 +327,8 @@ export function registerTeamPageCommands(
         const outcomes: PublishOutcome[] = [];
         for (const request of requests) {
           outcomes.push(
-            await dispatcher.execute("team.publish", request.input).then(
+            // Quiet: the report below names what wasn't published and why (D463).
+            await dispatcher.execute("team.publish", request.input, QUIET_USER).then(
               (result) => publishOutcome(request.what, result),
               (err: unknown) => publishFailure(request.what, err),
             ),

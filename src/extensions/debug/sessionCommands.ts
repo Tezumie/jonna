@@ -485,8 +485,10 @@ export function registerSessionCommands(
     const [present] = await execIpc.installed([adapter.command]).catch(() => [true]);
     if (present !== false) return;
     const message = `${adapter.command} isn't installed: to debug ${config.type}, ${adapter.install ?? `install ${adapter.command}`}.`;
+    // One notice (D463): shown as the error it is, so the same words the window shows for the
+    // failed command right after are this notice (one with Install), not a second.
     if (user && adapter.installCommand)
-      notifications.show("info", message, {
+      notifications.show("error", message, {
         actions: [
           {
             label: "Install",

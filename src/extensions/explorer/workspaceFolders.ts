@@ -347,21 +347,21 @@ export function registerWorkspaceFolders(sub: DisposableStore, services: Workben
         let trashed = false;
         // Anything not carried over keeps the folder: nothing is lost to the trash.
         const unsafe = report.truncated || report.kept.length > 0 || report.skipped.length > 0;
-        if (remove && unsafe)
-          services.notifications.show(
-            "warning",
-            `${name} was kept: ${[
-              report.truncated ? "it has too many files to merge at once" : "",
-              report.kept.length
-                ? `${report.kept.length} file(s) differ from ${workspaceFolderName()}'s (${report.kept.slice(0, 3).join(", ")})`
-                : "",
-              report.skipped.length
-                ? `settings the IDE doesn't know (${report.skipped.slice(0, 3).join(", ")})`
-                : "",
-            ]
-              .filter(Boolean)
-              .join("; ")}.`,
-          );
+        // One notice for the merge (D463): why the folder was kept goes into it.
+        const kept =
+          remove && unsafe
+            ? ` ${name} was kept: ${[
+                report.truncated ? "it has too many files to merge at once" : "",
+                report.kept.length
+                  ? `${report.kept.length} file(s) differ from ${workspaceFolderName()}'s (${report.kept.slice(0, 3).join(", ")})`
+                  : "",
+                report.skipped.length
+                  ? `settings the IDE doesn't know (${report.skipped.slice(0, 3).join(", ")})`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("; ")}.`
+            : "";
         if (remove && !unsafe) {
           await fsIpc.trash(joinPath(root, name));
           events.emit("files.didDelete", { path: joinPath(root, name) });
@@ -373,8 +373,8 @@ export function registerWorkspaceFolders(sub: DisposableStore, services: Workben
         await settings.load();
         schedule();
         services.notifications.show(
-          "info",
-          `Merged ${name} into ${workspaceFolderName()}: ${report.copied.length} copied, ${report.merged.length} combined, ${report.kept.length} kept as ${workspaceFolderName()} had them.${trashed ? ` ${name} is in the trash.` : ""}`,
+          kept ? "warning" : "info",
+          `Merged ${name} into ${workspaceFolderName()}: ${report.copied.length} copied, ${report.merged.length} combined, ${report.kept.length} kept as ${workspaceFolderName()} had them.${trashed ? ` ${name} is in the trash.` : ""}${kept}`,
         );
         return {
           merged: true,

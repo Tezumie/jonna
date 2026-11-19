@@ -39,10 +39,14 @@ export function registerFromVsix(
           "Installed along with this extension, whose permissions the user just granted (its pack or dependencies): granted the same, without a dialog of its own",
         )
         .optional(),
+      quiet: s
+        .boolean()
+        .describe("No notice once installed: the caller shows the result itself (the store's view)")
+        .optional(),
     }),
     effects: ["write"],
     agent: "hidden",
-    run: async ({ file, with: along }, ctx) => {
+    run: async ({ file, with: along, quiet }, ctx) => {
       const root = services.workspace.root.peek();
       const path =
         file === undefined
@@ -87,7 +91,7 @@ export function registerFromVsix(
         if (!id) return { id: null, cancelled: true };
         // From a file now: no longer updated from a repository it may have come from.
         await manager.setSource(id, undefined);
-        if (!along_)
+        if (!along_ && !quiet)
           services.notifications.show(
             "success",
             `Installed ${manager.get(id)?.manifest?.displayName ?? id}.`,

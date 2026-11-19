@@ -266,7 +266,6 @@ async function restoreBackups(
 ): Promise<void> {
   const generation = state.generation;
   const stale = () => generation !== state.generation;
-  let restored = 0;
   const reopened: string[] = [];
   for (const b of [...state.pending]) {
     let applied = false;
@@ -280,7 +279,6 @@ async function restoreBackups(
       if (model) {
         if (model.getText() !== b.text) {
           model.replaceText(b.text);
-          restored++;
         }
         applied = true;
       }
@@ -299,13 +297,7 @@ async function restoreBackups(
     }
     state.pending = state.pending.filter((p) => p !== b);
   }
-  if (restored)
-    services.notifications.show(
-      "info",
-      restored === 1
-        ? "Restored unsaved changes in 1 file."
-        : `Restored unsaved changes in ${restored} files.`,
-    );
+  // Restored files say so themselves (their tabs are back, unsaved), as in VS Code (D463).
   if (reopened.length)
     services.notifications.show(
       "warning",
