@@ -516,10 +516,22 @@ export function registerAcpRegistry(
         };
       } else if (choice?.kind === "binary") {
         const t = choice.target;
+        // Wherever it was started from (the empty chat's card, the palette, a tool's card), the
+        // download shows: only the Models page has a row that says so (D465).
+        const toast = services.notifications.progress(`Downloading ${agent.name}…`, {
+          title: "Agent",
+        });
         const progress = (p: AgentInstallProgress) => {
           const next = new Map(state.installing.peek());
           next.set(id, p);
           state.installing.value = next;
+          if (p.phase === "download")
+            toast.update(
+              `Downloading ${agent.name}…`,
+              p.total ? Math.round((p.received / p.total) * 100) : undefined,
+            );
+          else if (p.phase === "verify") toast.update(`Checking ${agent.name}'s download…`, 100);
+          else if (p.phase === "unpack") toast.update(`Unpacking ${agent.name}…`, 100);
         };
         progress({ phase: "download", received: 0, total: null });
         try {
@@ -551,6 +563,7 @@ export function registerAcpRegistry(
           if (/cancelled/i.test(message)) return { installed: false, reason: "Cancelled." };
           throw new Error(`${agent.name} wasn't installed: ${message}`);
         } finally {
+          toast.close();
           const next = new Map(state.installing.peek());
           next.delete(id);
           state.installing.value = next;

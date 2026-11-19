@@ -4605,3 +4605,7 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
 7. Install an extension from the store: no notice, its row shows it. From a .vsix: one.
 8. Start a helper in a worktree of its own (headless) and go to another app: when it is done
    there is its one notice with Review changes and Merge, not a second "finished" for its chat.
+
+## D465 — An agent's download shows
+1. With no model set up, press "Start free with OpenCode" in an empty chat and confirm: a
+   progress notice shows the download until the chat is ready, then goes.

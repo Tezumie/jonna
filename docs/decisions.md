@@ -58,6 +58,7 @@ unless noted.
 | · One notice when a chat needs you, none over a chat on screen | D462 |
 | · Fewer notifications: one per event, none for what the window already shows | D463 |
 | · The web front end on an address of its own | D464 |
+| · An external agent's download shows wherever it was started | D465 |
 
 ## Seeded from PLAN §19
 
@@ -16617,3 +16618,13 @@ new page by default (it reads the key).
 **Tried:** the new site's headers (page policy, the workers' own, the kind of a .js file).
 **Not tried here:** the page against a host (the built-in browser pane can't reach the
 local network from a public page); the owner tries it.
+
+## D465 — An external agent's download shows wherever it was started
+
+The owner pressed "Start free with OpenCode" in an empty chat (on the web front end, a host
+on a small server) and saw nothing until the chat could be used: the download's progress
+was only on the agent's row on the Models page. `agent.registry.install` now shows a
+progress notice for a downloaded agent (downloading with its percent, checking,
+unpacking), closed when it ends either way. The row on the Models page keeps its own.
+
+**Tried:** the checks, unit tests, and the two UI scripts that install a registry agent.
