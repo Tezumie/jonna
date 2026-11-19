@@ -57,6 +57,7 @@ unless noted.
 | · Deferred tools on Anthropic after a review: a subagent's own list, a tool loaded before a summary, trimming only on its own API | D461 |
 | · One notice when a chat needs you, none over a chat on screen | D462 |
 | · Fewer notifications: one per event, none for what the window already shows | D463 |
+| · The web front end on an address of its own | D464 |
 
 ## Seeded from PLAN §19
 
@@ -16599,3 +16600,20 @@ a second notice).
 
 **Tried:** the checks and unit tests; the UI scripts for git, extensions, sync and the
 agent's helpers. **Not tried:** each notice by hand; `docs/manual-test.md` has a pass.
+
+## D464 — The web front end on an address of its own
+
+`webAppPath` is now a whole URL on a subdomain of the accounts' address, in place of a
+path on it. With `webAppSubdomainIsolated` (D460) the page shares nothing with the
+account pages there, so the limits of D459 (this computer only, no extension code, the
+code kept in memory) no longer apply to it: it may connect to a host anywhere, run
+extensions and the agent's scripts in workers, and keep its code for a reload.
+
+On the owner's site this is a second Hosting site in the same project, serving the build
+at its root (`npm run web`, no `--base`) with the two policies of `src/web/policy.json`
+as headers, `wss:` included. Nothing in the app's code changed. The launcher allows the
+new page by default (it reads the key).
+
+**Tried:** the new site's headers (page policy, the workers' own, the kind of a .js file).
+**Not tried here:** the page against a host (the built-in browser pane can't reach the
+local network from a public page); the owner tries it.

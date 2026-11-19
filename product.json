@@ -12,7 +12,7 @@
   "accountPagePath": "/account",
   "planPagePath": "/account#plan",
   "teamPagePath": "/account#team",
-  "webAppPath": "/app/",
+  "webAppPath": "https://app.jonna.dev/",
   "webAppSubdomainIsolated": true,
   "syncBuiltIn": true,
   "extensionsRepo": "",
