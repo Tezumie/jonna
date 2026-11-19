@@ -166,6 +166,19 @@ export function declaredTools(
   };
 }
 
+/**
+ * Whether a provider clears old tool results itself (D452): Anthropic's own API only. Another
+ * server that speaks its protocol is sent the plain request, and nothing would clear there.
+ */
+export function clearsOldResults(provider: { kind: string; baseUrl: string }): boolean {
+  if (provider.kind !== "anthropic") return false;
+  try {
+    return new URL(provider.baseUrl).hostname === "api.anthropic.com";
+  } catch {
+    return false;
+  }
+}
+
 /** For ide://agent/session: the deferred tools and the ones the chat loaded (nothing: none). */
 export function deferredState(session: { splitTools(): ToolSplit; items: readonly Item[] }): {
   deferredTools?: string[];

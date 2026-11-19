@@ -14,6 +14,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
@@ -292,8 +293,10 @@ fn tool_json(t: &super::ToolSpec) -> Value {
 /// `defer_loading`, so loading one changes nothing already sent (a tool search's result refers
 /// to it); and the provider is asked to clear old tool results itself (`trim_at`).
 pub fn request_body(req: &ChatRequest, extras: bool) -> Value {
-    let declared: Option<HashSet<&str>> = (extras && !req.deferred_tools.is_empty())
-        .then(|| req.deferred_tools.iter().map(|t| t.name.as_str()).collect());
+    // Only beside a tool that isn't deferred: the API refuses a list in which every tool is.
+    let declared: Option<HashSet<&str>> =
+        (extras && !req.deferred_tools.is_empty() && !req.tools.is_empty())
+            .then(|| req.deferred_tools.iter().map(|t| t.name.as_str()).collect());
     let (system, messages) = convert(
         &req.messages,
         req.hosted_search.is_some(),
@@ -325,14 +328,29 @@ pub fn request_body(req: &ChatRequest, extras: bool) -> Value {
         .filter(|t| req.hosted_search.is_none() || t.name != HOSTED_SEARCH_NAME)
         .map(tool_json)
         .collect();
+    // What the chat has loaded: what the front end says (the whole chat), and what the
+    // messages sent show.
+    let mut loaded = loaded_tools(&req.messages);
+    loaded.extend(req.loaded_tools.iter().map(String::as_str));
     if declared.is_some() {
+        // What a tool search's result still sent refers to: the API loads those itself.
+        let referred: HashSet<&str> = req
+            .messages
+            .iter()
+            .flat_map(|m| m.tool_refs.iter().map(String::as_str))
+            .collect();
         tools.extend(req.deferred_tools.iter().map(|t| {
             let mut tool = tool_json(t);
-            tool["defer_loading"] = json!(true);
+            // A loaded tool nothing refers to any more (a summary took the search that
+            // loaded it, or it was called by name) would be out of the model's reach while
+            // the chat says it is loaded: it is offered outright.
+            let name = t.name.as_str();
+            if !loaded.contains(name) || referred.contains(name) {
+                tool["defer_loading"] = json!(true);
+            }
             tool
         }));
     } else {
-        let loaded = loaded_tools(&req.messages);
         tools.extend(
             req.deferred_tools
                 .iter()
@@ -380,12 +398,16 @@ fn wants_extras(req: &ChatRequest) -> bool {
     !req.deferred_tools.is_empty() || req.trim_at.is_some()
 }
 
-/// Models whose endpoint refused the extras and took the plain request: not asked again while
-/// the app runs, so a chat's tool list doesn't change shape from one request to the next.
-fn plain_only() -> &'static Mutex<HashSet<String>> {
-    static PLAIN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    PLAIN.get_or_init(|| Mutex::new(HashSet::new()))
+/// Models whose endpoint refused the extras and took the plain request, and when: not asked
+/// again for a while (`PLAIN_FOR`), so a chat's tool list doesn't change shape from one request
+/// to the next. Not for ever: the refusal may have been of one request, not of the model.
+fn plain_only() -> &'static Mutex<HashMap<String, Instant>> {
+    static PLAIN: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    PLAIN.get_or_init(|| Mutex::new(HashMap::new()))
 }
+
+/// How long a model that refused the extras is asked without them.
+const PLAIN_FOR: Duration = Duration::from_secs(30 * 60);
 
 /// What a request does about thinking blocks its history may have outdated (D451).
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -725,9 +747,15 @@ pub async fn chat<F: FnMut(ChatEvent)>(
         && wants_extras(req)
         && !plain_only()
             .lock()
-            .map(|p| p.contains(&req.model))
+            .map(|p| {
+                p.get(&req.model)
+                    .is_some_and(|since| since.elapsed() < PLAIN_FOR)
+            })
             .unwrap_or(true);
-    let asked_extras = extras;
+    // What was done about thinking blocks when the extras were given up: the model is marked
+    // only when the very next request, changed in nothing else, was taken. A refusal that
+    // was about something else (and ended with the thinking blocks stripped) marks nothing.
+    let mut dropped_at: Option<Replay> = None;
     let response = loop {
         let body = body_for(req, replay, extras);
         let mut builder = with_key(
@@ -748,9 +776,9 @@ pub async fn chat<F: FnMut(ChatEvent)>(
         let response = builder.json(&body).send().await.map_err(http_error)?;
         super::note_limits(seen, &response);
         if response.status().is_success() {
-            if asked_extras && !extras {
+            if dropped_at == Some(replay) {
                 if let Ok(mut plain) = plain_only().lock() {
-                    plain.insert(req.model.clone());
+                    plain.insert(req.model.clone(), Instant::now());
                 }
             }
             break response;
@@ -767,6 +795,7 @@ pub async fn chat<F: FnMut(ChatEvent)>(
         } else if extras && !stale {
             // The refusal may be of the extras themselves (a model or an account without them).
             extras = false;
+            dropped_at = Some(replay);
         } else if replay == Replay::DropStale {
             // Or of the asking to drop (an endpoint without it).
             replay = Replay::Strip;

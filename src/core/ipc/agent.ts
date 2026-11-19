@@ -99,6 +99,11 @@ export interface ChatRequest {
    */
   deferredTools?: ToolSpec[];
   /**
+   * The names of the deferred tools the chat has loaded (from all of it, not only what is
+   * sent): one whose search a summary took is still offered.
+   */
+  loadedTools?: string[];
+  /**
    * The provider clears old tool results itself once the prompt passes this many tokens
    * (Anthropic's context editing, D452).
    */

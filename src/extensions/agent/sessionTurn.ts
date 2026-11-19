@@ -43,7 +43,14 @@ import { chatWorkspaceOf } from "./chatWorkspace";
 import { chatWorktreeNote } from "./chatWorktrees";
 import { ideState, systemPrompt } from "./context";
 import { customModes } from "./customModes";
-import { declaredTools, deferredNote, loadedTools, notLoaded } from "./deferredTools";
+import {
+  clearsOldResults,
+  declaredTools,
+  deferredNote,
+  loadedTools,
+  notLoaded,
+  type ToolSplit,
+} from "./deferredTools";
 import {
   contextKind,
   continueGroup,
@@ -610,6 +617,11 @@ async function sendTurn(
   /** The output limit a key could pay for, learned once per turn (D366, D379). */
   let affordable: number | null = null;
   let turnTools = session.tools().map((t) => t.spec);
+  /**
+   * Which tools load on demand, decided once a turn as the list is: a server that connects
+   * mid-turn must not turn tools the turn already offers into deferred ones.
+   */
+  let turnSplit: ToolSplit | null = null;
   const asksTitle = session.items.some((it) => it.type === "user" && it.askTitle === true);
   let subSystem: string | null = null;
   /** A subagent is talking through the turn's own requests (`subSystem`). */
@@ -833,6 +845,8 @@ From the user's hooks: ${words}`,
     };
     /** Whether the provider takes deferred tool definitions and clears old results (D452). */
     const declares = () => choice.provider.kind === "anthropic";
+    /** Whether it also clears old tool results itself: only its own API does. */
+    const trims = () => clearsOldResults(choice.provider);
     const deps: LoopDeps = {
       stableMessages: true,
       // A subagent's own conversation has one author.
@@ -886,7 +900,7 @@ From the user's hooks: ${words}`,
       },
       // The deferred tools' names (D319), after the kept system prompt.
       system: () => deferredNote(session.splitTools(), declares()),
-      serverTrims: declares,
+      serverTrims: trims,
       tools: () => {
         turnTools = withLoadedTools(
           turnTools,
@@ -946,12 +960,19 @@ From the user's hooks: ${words}`,
                 messages,
                 // Anthropic: the tools that load on demand are declared once, apart (D452), and
                 // it clears old tool results itself past the budget.
-                ...(declares()
+                // Not for a subagent talking through these requests: its list is its own,
+                // with the definitions, and it has no search to load one with.
+                ...(declares() && subSystem === null
                   ? {
-                      ...declaredTools(session.splitTools(), request.tools ?? []),
-                      trimAt: Math.round(budgetChars / 4),
+                      ...declaredTools(
+                        // biome-ignore lint/suspicious/noAssignInExpressions: once a turn
+                        (turnSplit ??= session.splitTools()),
+                        request.tools ?? [],
+                      ),
+                      loadedTools: [...loadedTools(session.items)],
                     }
                   : { tools: request.tools }),
+                ...(trims() && { trimAt: Math.round(budgetChars / 4) }),
                 contextLength,
                 // Read per request: a skill loaded mid-turn may have set its effort (D229).
                 ...requestOptions(session, choice, details),

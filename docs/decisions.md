@@ -54,6 +54,7 @@ unless noted.
 | · A proof of possession that says what it is for; the generation floor for chats and snapshots stays open | D458 |
 | · The front end as a website that connects to a host: a proof of concept | D459 |
 | · The web front end and its host for someone else's names and servers: a host behind a proxy, a subdomain as its own address, two audits | D460 |
+| · Deferred tools on Anthropic after a review: a subagent's own list, a tool loaded before a summary, trimming only on its own API | D461 |
 
 ## Seeded from PLAN §19
 
@@ -16478,3 +16479,41 @@ window's bundle, and CI calls it: the owner's to rename).
 `scripts/web-e2e.mjs` against the real host (a name that isn't the host's refused, the given
 name upgraded, a page let in while a silent socket is open). **Not tried:** a real proxy
 with TLS in front of a host; Linux and macOS for the launcher's new options.
+
+## D461 — Deferred tools on Anthropic, after a review of D452
+
+A reader that hadn't written D452 went through it. Two things it broke, both fixed here:
+
+- **A subagent that talks through the turn's own requests lost its on-demand and MCP
+  tools.** Its list is its own, with the definitions and no search (D319). The turn's
+  requests took every tool that loads on demand out of it and declared them deferred, where
+  a subagent can't load one. Now only the chat's own requests declare; a subagent's list
+  goes as it is.
+- **A tool loaded before a summary went back to being deferred** (or, on a server that
+  only speaks Anthropic's protocol, out of the list), while the note and the chat said it
+  was loaded: what is loaded was read from the messages sent, and a summary takes the
+  search that loaded it. The front end now sends the names it knows from the whole chat
+  (`loadedTools`). A loaded tool that nothing sent still refers to is offered outright,
+  which also covers one of the IDE's own tools called by name (D390).
+
+And what could go wrong at the edges:
+
+- **Old results are left to the provider only on Anthropic's own API** (`clearsOldResults`).
+  A proxy that speaks the protocol gets the plain request, where nothing clears: the
+  history is shortened here as before, in place of running into the limit first.
+- **A model is asked without the extras for half an hour, not until the app restarts,** and
+  only when the request taken was the one right after they were dropped. A refusal that was
+  really about thinking blocks, or about one request's tools, used to switch both off for
+  every chat on that model.
+- **Nothing is declared deferred with no ordinary tool beside it** (the API refuses a list
+  in which every tool is deferred): a turn in the text protocol, a list of on-demand tools
+  only.
+- **The tools that load on demand are decided once a turn,** like the list itself: an MCP
+  server that connects mid-turn no longer turns tools the turn offers into deferred ones.
+
+Left as it is: a tool search's answer is its references alone where they are declared (a
+"did you mean" beside matches is lost); whether the API takes text beside references isn't
+documented.
+
+**Tried:** unit tests for the request's shape in each case and for the address rule.
+**Not tried:** the live API, as for D452 (no key here).

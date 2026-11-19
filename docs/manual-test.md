@@ -4575,3 +4575,13 @@ Three accounts in a team as for D453; the service with these changes.
    key. Set `"accountsUrl": "https://example.com/api"`: refused. Put both back.
 8. Once the page is on a subdomain of the account pages (`webAppSubdomainIsolated` true):
    extensions load, a reload reconnects by itself, and a `wss://` address is accepted.
+
+## D461 — Deferred tools on Anthropic, after a review
+With an Anthropic key and at least one MCP server whose tools are deferred:
+1. Ask the agent to use an MCP tool: it loads it (Loaded tools) and calls it. Run
+   `agent.compact`, then ask for the same tool again: it is called without a new search.
+2. Make a custom agent (`.md` under agents) whose `tools:` names that MCP tool and no model,
+   and have the chat delegate to it: the subagent calls the tool.
+3. A long chat with summaries off (`agent.autoCompact` false) on Anthropic's own API goes
+   past the budget without "prompt is too long"; the same through a proxy address is
+   shortened as before.

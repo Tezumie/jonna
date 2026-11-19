@@ -17,7 +17,11 @@ singleton; `viewState: { session }`); "Focus agent" reuses the most recent one.
   apart in the request (`deferredTools`, `declaredTools()`), all of them, and the note names
   them all (`deferredNote(split, true)`), so loading one changes nothing sent; a tool search's
   result carries what it loaded (`toolRefs`). `trimAt` asks the API to clear old tool results
-  past the budget, and `toMessages`' `serverTrims` then sends them whole.
+  past the budget, and `toMessages`' `serverTrims` then sends them whole. D461: only the
+  chat's own requests declare (a subagent's list goes as it is); `loadedTools` names what the
+  whole chat loaded, so a tool whose search a summary took is still offered; the split is
+  decided once a turn; clearing is left to the provider only on its own API
+  (`clearsOldResults`).
 - **Prompt caching** (D112): the system prompt is built once per session; the IDE state rides on
   each user message; tools are fixed per turn; earlier messages are sent unchanged while they fit;
   summaries reuse the cached prefix. Settings: `agent.cacheTtl`, `agent.effort`,

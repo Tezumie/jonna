@@ -196,6 +196,11 @@ pub struct ChatRequest {
     /// when one is loaded. `tools` holds none of them.
     #[serde(default)]
     pub deferred_tools: Vec<ToolSpec>,
+    /// The names of the deferred tools the chat has loaded, as the front end knows them from
+    /// the whole chat (D460): what was sent may no longer show it, after a summary took the
+    /// search that loaded a tool.
+    #[serde(default)]
+    pub loaded_tools: Vec<String>,
     /// Ask the provider to clear old tool results itself once the prompt passes this many
     /// tokens (Anthropic's context editing, D452), in place of shortening them here.
     #[serde(default)]

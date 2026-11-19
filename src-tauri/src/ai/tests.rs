@@ -64,6 +64,7 @@ fn request(kind: ProviderKind) -> ChatRequest {
         modalities: None,
         hosted_search: None,
         deferred_tools: vec![],
+        loaded_tools: vec![],
         trim_at: None,
     }
 }
@@ -882,4 +883,21 @@ fn anthropic_declares_deferred_tools() {
     assert!(!sent.contains(&"mcp__a__two".to_string()));
     assert_eq!(result(&plain)[0]["type"], "text");
     assert!(plain.get("context_management").is_none());
+
+    // A tool the chat loaded, with the search that loaded it no longer among the messages
+    // (a summary took it): offered outright, declared or not.
+    req.loaded_tools = vec!["mcp__a__two".into(), "mcp__a__one".into()];
+    let body = body_of(&req, true);
+    assert_eq!(names(&body, true), ["mcp__a__one"]);
+    assert!(names(&body, false).contains(&"mcp__a__two".to_string()));
+    assert!(names(&body_of(&req, false), false).contains(&"mcp__a__two".to_string()));
+
+    // With no tool that isn't deferred there is nothing to declare beside: the API refuses a
+    // list in which every tool is deferred.
+    req.tools.clear();
+    req.loaded_tools.clear();
+    let body = body_of(&req, true);
+    assert!(names(&body, true).is_empty());
+    assert_eq!(names(&body, false), ["mcp__a__one"]);
+    assert_eq!(result(&body)[0]["type"], "text");
 }

@@ -4,6 +4,7 @@ import type { Item } from "../../core/agent/conversation";
 import { loadedToolNames, TOOL_SEARCH, withLoadedTools } from "../../core/agent/toolSearch";
 import type { WorkbenchServices } from "../../workbench/services";
 import {
+  clearsOldResults,
   deferredNote,
   deferredState,
   loadedTools,
@@ -120,4 +121,15 @@ test("the IDE's rarely used tools load on demand; called by name, they run and s
   split = splitDeferred(services("never"), tools, []);
   assert.deepEqual(names(split.tools), names(tools));
   assert.equal(deferredNote(split), "");
+});
+
+test("deferred tools: only Anthropic's own API clears old results itself", () => {
+  const at = (kind: string, baseUrl: string) => clearsOldResults({ kind, baseUrl });
+  assert.equal(at("anthropic", "https://api.anthropic.com"), true);
+  assert.equal(at("anthropic", "https://api.anthropic.com/v1/"), true);
+  // Another server that speaks the protocol, another provider, an address that isn't one.
+  assert.equal(at("anthropic", "https://proxy.example.com"), false);
+  assert.equal(at("anthropic", "https://api.anthropic.com.example.com"), false);
+  assert.equal(at("openai", "https://api.anthropic.com"), false);
+  assert.equal(at("anthropic", "nonsense"), false);
 });
