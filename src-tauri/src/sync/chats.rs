@@ -56,13 +56,14 @@ pub async fn push(
     let Some(text) = agent::load_session(data, id)? else {
         return Ok(None);
     };
-    push_text(api, ring, data, collection, id, expect, text)
+    push_text(api, ring, data, collection, id, expect, text, None)
         .await
         .map(Some)
 }
 
 /// Uploads `text` (a chat's file as it should travel) with the chat `id`'s images, as the
 /// record `collection`/`id`.
+#[allow(clippy::too_many_arguments)]
 pub async fn push_text(
     api: &Api,
     ring: &Keyring,
@@ -71,6 +72,7 @@ pub async fn push_text(
     id: &str,
     expect: Option<u64>,
     text: String,
+    only_images: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Put> {
     let meta = serde_json::from_str::<Value>(&text)?
         .get("meta")
@@ -82,6 +84,9 @@ pub async fn push_text(
         let file = uploader.add(text.as_bytes()).await?;
         let mut media = BTreeMap::new();
         for image in image_ids(data, id) {
+            if only_images.is_some_and(|named| !named.contains(&image)) {
+                continue;
+            }
             let bytes = std::fs::read(media_dir(data, id).join(format!("{image}.bin")))?;
             media.insert(image, uploader.add(&bytes).await?);
         }
@@ -191,7 +196,7 @@ pub fn label(text: &str) -> Option<ChatLabel> {
 }
 
 /// A chat's file from the record `collection`/`id`, as a conversation and nothing more
-/// (`neutralise`, with no folder), written nowhere. None when the record holds none. Refused
+/// (`conversation`), written nowhere. None when the record holds none. Refused
 /// when the file says it is larger than `max` bytes.
 pub async fn read_text(
     api: &Api,
@@ -218,9 +223,9 @@ pub async fn read_text(
         ));
     }
     let bytes = chunks::read(api, ring, &entry.file).await?;
-    let mut chat: Value = serde_json::from_slice(&bytes)?;
-    neutralise(&mut chat, None);
-    Ok(Some(serde_json::to_string(&chat)?))
+    let chat: Value = serde_json::from_slice(&bytes)?;
+    // Built anew from what a conversation is: what the other side's app sent isn't believed.
+    Ok(Some(serde_json::to_string(&conversation(&chat))?))
 }
 
 /// The folder a chat's file says it belongs to (`meta.workspace`); None: none, or not a chat.
@@ -243,54 +248,297 @@ pub fn same_folder(a: &str, b: &str) -> bool {
     plain(a) == plain(b)
 }
 
-/// A chat's file as it is shared with teammates (D454): the conversation, with nothing that
-/// grants something or names a place on this computer (`neutralise`, and no folder, no
-/// checkpoints), and without what a tool read from a key file (`key_file` says which paths
-/// are: the same rule that leaves them out of a shared snapshot). How many results were
-/// left out.
-pub fn for_teammates(chat: &mut Value, key_file: fn(&str) -> Option<&'static str>) -> usize {
-    neutralise(chat, None);
-    let Some(top) = chat.as_object_mut() else {
-        return 0;
-    };
-    // This computer's own snapshots of the folder, by turn: they mean nothing elsewhere.
-    top.remove("checkpoints");
-    let mut left_out = 0;
-    let Some(items) = top.get_mut("items").and_then(Value::as_array_mut) else {
-        return 0;
-    };
-    for item in items {
-        if item["type"] != "tool" {
+/// The fields of a chat's items that are the conversation, by the item's type. Everything else
+/// an item holds stays behind: what was attached and the editor's state with a message, the
+/// provider's own reasoning blocks, costs, reviews, buttons, pasted images and their previews.
+const ITEM_FIELDS: &[(&str, &[&str])] = &[
+    (
+        "user",
+        &[
+            "id", "text", "auto", "to", "mode", "steer", "turn", "sideTask",
+        ],
+    ),
+    (
+        "assistant",
+        &[
+            "id",
+            "text",
+            "thinking",
+            "thinkingMs",
+            "raw",
+            "model",
+            "modelKey",
+            "speaker",
+            "media",
+        ],
+    ),
+    (
+        "tool",
+        &[
+            "id", "callId", "name", "args", "status", "result", "summary", "detail", "changes",
+            "media", "check",
+        ],
+    ),
+    ("summary", &["id", "text", "count", "auto"]),
+    ("notice", &["id", "text", "tone", "detail"]),
+];
+
+/// An image a chat's item names (`media`: id and type), and nothing else of it.
+fn image_refs(media: &Value) -> Vec<Value> {
+    media
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|image| {
+            let id = image["id"].as_str().filter(|id| image_id(id))?;
+            let mime = image["mime"].as_str().filter(|m| m.len() <= 80)?;
+            Some(serde_json::json!({ "id": id, "mime": mime }))
+        })
+        .collect()
+}
+
+/// Whether a name is an image's id as a chat makes them, safe as a file's name everywhere.
+pub(crate) fn image_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && !super::snapshot::unsafe_name(id)
+}
+
+/// A chat as a conversation and nothing more, built anew from what is named here (so a
+/// field this doesn't know never comes along): its title and when it changed, its items
+/// with the fields that are content (`ITEM_FIELDS`), the turn counter and how tool calls are
+/// written. No costs, plans, pull requests, modes, members, rooms, models chosen, limits,
+/// pending edits, grants or paths: the chat is then a new one's history. Used on what is
+/// shared with teammates before it leaves, and again on what arrives from one (what the
+/// other side's app sent is not believed).
+pub fn conversation(chat: &Value) -> Value {
+    let mut meta = serde_json::Map::new();
+    if let Some(title) = chat["meta"]["title"].as_str() {
+        let title: String = title
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(160)
+            .collect();
+        meta.insert("title".into(), Value::String(title));
+    }
+    if let Some(updated) = chat["meta"]["updated"].as_u64() {
+        meta.insert("updated".into(), Value::from(updated));
+    }
+    let mut items = Vec::new();
+    for item in chat["items"].as_array().into_iter().flatten() {
+        let Some(kind) = item["type"].as_str() else {
             continue;
-        }
-        let names_key_file = item["args"].as_object().is_some_and(|args| {
-            args.values()
-                .filter_map(Value::as_str)
-                .any(|v| v.len() < 1024 && key_file(&v.replace('\\', "/")).is_some())
-        });
-        if !names_key_file {
+        };
+        let Some((_, fields)) = ITEM_FIELDS.iter().find(|(name, _)| *name == kind) else {
             continue;
+        };
+        let mut kept = serde_json::Map::new();
+        kept.insert("type".into(), Value::String(kind.to_string()));
+        for field in *fields {
+            let Some(value) = item.get(*field) else {
+                continue;
+            };
+            let value = if *field == "media" {
+                Value::Array(image_refs(value))
+            } else {
+                value.clone()
+            };
+            kept.insert((*field).to_string(), value);
         }
-        if let Some(tool) = item.as_object_mut() {
-            tool.insert(
+        match kind {
+            "assistant" => {
+                // A reply that was still being written is one that ended.
+                kept.insert("streaming".into(), Value::Bool(false));
+                kept.entry("thinking")
+                    .or_insert(Value::String(String::new()));
+            }
+            // What was attached to a message stays behind; that something was is said.
+            "user" => {
+                let had = item["attachments"]
+                    .as_array()
+                    .is_some_and(|a| !a.is_empty())
+                    || item["context"].as_array().is_some_and(|c| !c.is_empty())
+                    || item["images"].as_array().is_some_and(|i| !i.is_empty())
+                    || item["previews"].as_array().is_some_and(|p| !p.is_empty());
+                if had {
+                    let text = kept.get("text").and_then(Value::as_str).unwrap_or("");
+                    kept.insert(
+                        "text".into(),
+                        Value::String(format!(
+                            "{text}\n\n[Attachments are not part of the shared chat.]"
+                        )),
+                    );
+                }
+            }
+            _ => {}
+        }
+        items.push(Value::Object(kept));
+    }
+    let mut top = serde_json::Map::new();
+    top.insert("meta".into(), Value::Object(meta));
+    top.insert("items".into(), Value::Array(items));
+    if let Some(turn) = chat["turn"].as_u64() {
+        top.insert("turn".into(), Value::from(turn));
+    }
+    if let Some(protocol) = chat["textProtocol"].as_bool() {
+        top.insert("textProtocol".into(), Value::Bool(protocol));
+    }
+    Value::Object(top)
+}
+
+/// Every string in `value`, at any depth (a string that is itself JSON is looked into).
+fn string_leaves<'a>(value: &'a Value, out: &mut Vec<std::borrow::Cow<'a, str>>, depth: usize) {
+    if depth > 12 {
+        return;
+    }
+    match value {
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(inner) if inner.is_object() || inner.is_array() => {
+                let mut found = Vec::new();
+                string_leaves(&inner, &mut found, depth + 1);
+                out.extend(
+                    found
+                        .into_iter()
+                        .map(|s| std::borrow::Cow::Owned(s.into_owned())),
+                );
+            }
+            _ => out.push(std::borrow::Cow::Borrowed(text)),
+        },
+        Value::Array(list) => list.iter().for_each(|v| string_leaves(v, out, depth + 1)),
+        Value::Object(map) => map.values().for_each(|v| string_leaves(v, out, depth + 1)),
+        _ => {}
+    }
+}
+
+/// Whether a tool call's arguments name a key file anywhere: as a value at any depth, or as
+/// a word of one (a command line: `cat .env | head`).
+fn names_key_file(args: &Value, key_file: fn(&str) -> Option<&'static str>) -> bool {
+    let mut leaves = Vec::new();
+    string_leaves(args, &mut leaves, 0);
+    leaves.iter().any(|leaf| {
+        let is_one = |word: &str| {
+            let word = word.trim_matches(|c: char| "\"'`()[]{}<>|;,=&".contains(c));
+            !word.is_empty() && word.len() < 1024 && key_file(&word.replace('\\', "/")).is_some()
+        };
+        (leaf.len() < 4096 && is_one(leaf))
+            || leaf
+                .split(|c: char| c.is_whitespace() || "|;<>=,&()".contains(c))
+                .take(4096)
+                .any(is_one)
+    })
+}
+
+/// `text` without the folder `root` in it (either slash, any letter case where the file
+/// system ignores it), and with what looks like a secret taken out (the rules the
+/// diagnostics report goes by: keys and tokens by their shape, a home folder's name).
+fn scrubbed(text: &str, root: Option<&str>) -> String {
+    let mut out = text.to_string();
+    if let Some(root) = root
+        .map(|r| r.trim_end_matches(['/', '\\']))
+        .filter(|r| r.len() > 3)
+    {
+        for form in [
+            root.to_string(),
+            root.replace('\\', "/"),
+            root.replace('/', "\\"),
+        ] {
+            let pattern = if cfg!(any(windows, target_os = "macos")) {
+                format!("(?i){}", regex::escape(&form))
+            } else {
+                regex::escape(&form)
+            };
+            if let Ok(re) = regex::Regex::new(&pattern) {
+                out = re.replace_all(&out, ".").into_owned();
+            }
+        }
+    }
+    crate::diagnostics::redact::redact(&out, None)
+}
+
+fn scrub_all(value: &mut Value, root: Option<&str>, depth: usize) {
+    if depth > 12 {
+        return;
+    }
+    match value {
+        Value::String(text) => *text = scrubbed(text, root),
+        Value::Array(list) => list.iter_mut().for_each(|v| scrub_all(v, root, depth + 1)),
+        Value::Object(map) => map.values_mut().for_each(|v| scrub_all(v, root, depth + 1)),
+        _ => {}
+    }
+}
+
+/// What `for_teammates` made of a chat.
+pub struct Shared {
+    pub chat: Value,
+    /// Tool calls left out because they named a key file.
+    pub key_files: usize,
+    /// The images the shared chat still names: only these travel.
+    pub images: std::collections::BTreeSet<String>,
+}
+
+/// A chat's file as it is shared with teammates (D454, D457): the conversation only
+/// (`conversation`), and of it
+/// - a tool call whose arguments name a key file anywhere (`key_file`: the rule that leaves
+///   such files out of a shared snapshot) keeps its name and nothing else: no arguments, no
+///   result, no images;
+/// - the project's folder (`root`) is written `.` wherever it is spelled out, and what has
+///   the shape of a key or token is taken out of every text (`scrubbed`).
+///
+/// What this can't know stays: a secret the model repeated in its own words, or one of a
+/// shape no rule has, in a file with an ordinary name.
+pub fn for_teammates(
+    chat: &Value,
+    key_file: fn(&str) -> Option<&'static str>,
+    root: Option<&str>,
+) -> Shared {
+    let mut chat = conversation(chat);
+    let mut key_files = 0;
+    let mut images = std::collections::BTreeSet::new();
+    if let Some(title) = chat["meta"]["title"].as_str().map(|t| scrubbed(t, root)) {
+        chat["meta"]["title"] = Value::String(title);
+    }
+    for item in chat["items"].as_array_mut().into_iter().flatten() {
+        let Some(fields) = item.as_object_mut() else {
+            continue;
+        };
+        if fields.get("type").and_then(Value::as_str) == Some("tool")
+            && fields
+                .get("args")
+                .is_some_and(|args| names_key_file(args, key_file))
+        {
+            fields.retain(|name, _| {
+                matches!(name.as_str(), "type" | "id" | "callId" | "name" | "status")
+            });
+            fields.insert("args".into(), serde_json::json!({}));
+            fields.insert(
                 "result".into(),
                 Value::String("[Left out of the shared chat: a key file.]".into()),
             );
-            for field in ["detail", "images", "media", "diff"] {
-                tool.remove(field);
-            }
-            // What was written to it travels as little as what was read from it.
-            if let Some(args) = tool.get_mut("args").and_then(Value::as_object_mut) {
-                for field in ["content", "text", "new_string", "old_string", "patch"] {
-                    if args.contains_key(field) {
-                        args.insert(field.into(), Value::String("[left out]".into()));
+            key_files += 1;
+            continue;
+        }
+        for (name, value) in fields.iter_mut() {
+            match name.as_str() {
+                "media" => {
+                    for image in value.as_array().into_iter().flatten() {
+                        if let Some(id) = image["id"].as_str() {
+                            images.insert(id.to_string());
+                        }
                     }
                 }
+                "type" | "id" | "callId" | "status" | "auto" | "mode" | "tone" => {}
+                _ => scrub_all(value, root, 0),
             }
-            left_out += 1;
         }
     }
-    left_out
+    Shared {
+        chat,
+        key_files,
+        images,
+    }
 }
 
 /// What a chat's file says besides the conversation, and that a chat from somewhere else must
@@ -353,6 +601,8 @@ pub(crate) fn neutralise(chat: &mut Value, workspace: Option<&str>) {
 pub struct Limits {
     pub file: u64,
     pub images: usize,
+    /// One image at most (it is read into memory whole).
+    pub image_each: u64,
     pub image_bytes: u64,
 }
 
@@ -361,6 +611,7 @@ impl Limits {
     pub const OWN: Limits = Limits {
         file: u64::MAX,
         images: usize::MAX,
+        image_each: u64::MAX,
         image_bytes: u64::MAX,
     };
 
@@ -370,44 +621,39 @@ impl Limits {
             || entry
                 .media
                 .values()
+                .any(|stored| stored.size > self.image_each)
+            || entry
+                .media
+                .values()
                 .fold(0u64, |sum, stored| sum.saturating_add(stored.size))
                 > self.image_bytes
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`
-/// (the same id, or a new one for a copy). `workspace` replaces the chat's project folder,
-/// which is a path on the computer that pushed it (None: a chat with no folder).
-/// Returns the record's version, or None when it has no readable content.
-pub async fn pull(
+/// A name for a chat's file and folder, nothing else (it reaches paths).
+fn chat_name(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && !super::snapshot::unsafe_name(id)
+}
+
+/// Fetches the chat in the record `collection`/`id`: its file as it was stored (not yet
+/// made harmless, not saved), with its images written into the chat `save_as`'s folder.
+/// None when the record has no readable content. The record's version comes with it.
+pub async fn fetch(
     api: &Api,
     ring: &Keyring,
     data: &Path,
     collection: &str,
     id: &str,
     save_as: &str,
-    workspace: Option<&str>,
-    if_stamp: Option<&str>,
     limits: Limits,
-) -> Result<Option<u64>> {
-    // A name for a chat's file and folder, nothing else (it reaches paths below).
-    if save_as.is_empty()
-        || save_as.len() > 80
-        || !save_as
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
+) -> Result<Option<(Value, u64)>> {
+    if !chat_name(save_as) {
         return Err(Error::Invalid(format!("bad id: {save_as}")));
-    }
-    let stamp = || {
-        agent::session_stamps(data, &[save_as.to_string()])
-            .pop()
-            .flatten()
-    };
-    // Saved here since the caller looked: left for the next pass.
-    if stamp().as_deref() != if_stamp {
-        return Ok(None);
     }
     let Some(record) = records::get(api, ring, collection, id).await? else {
         return Ok(None);
@@ -428,15 +674,11 @@ pub async fn pull(
         ));
     }
     let bytes = chunks::read(api, ring, &entry.file).await?;
-    let mut chat: Value = serde_json::from_slice(&bytes)?;
-    neutralise(&mut chat, workspace);
+    let chat: Value = serde_json::from_slice(&bytes)?;
     // Images first: a chat that names an image it doesn't have yet shows a gap.
     for (image, stored) in &entry.media {
-        if !image
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-            || image.is_empty()
-        {
+        // (A name some computer reads as a device, or as a path, is no image's.)
+        if !image_id(image) {
             continue;
         }
         let dir = media_dir(data, save_as);
@@ -447,12 +689,48 @@ pub async fn pull(
         std::fs::create_dir_all(&dir)?;
         atomic_write(&target, &chunks::read(api, ring, stored).await?)?;
     }
+    Ok(Some((chat, record.version)))
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Downloads the chat in the record `collection`/`id` and saves it as the chat `save_as`
+/// (the same id, or a new one for a copy). `workspace` replaces the chat's project folder,
+/// which is a path on the computer that pushed it (None: a chat with no folder).
+/// Returns the record's version, or None when it has no readable content.
+pub async fn pull(
+    api: &Api,
+    ring: &Keyring,
+    data: &Path,
+    collection: &str,
+    id: &str,
+    save_as: &str,
+    workspace: Option<&str>,
+    if_stamp: Option<&str>,
+    limits: Limits,
+) -> Result<Option<u64>> {
+    if !chat_name(save_as) {
+        return Err(Error::Invalid(format!("bad id: {save_as}")));
+    }
+    let stamp = || {
+        agent::session_stamps(data, &[save_as.to_string()])
+            .pop()
+            .flatten()
+    };
+    // Saved here since the caller looked: left for the next pass.
+    if stamp().as_deref() != if_stamp {
+        return Ok(None);
+    }
+    let Some((mut chat, version)) = fetch(api, ring, data, collection, id, save_as, limits).await?
+    else {
+        return Ok(None);
+    };
+    neutralise(&mut chat, workspace);
     // Again, after the downloads: a save made meanwhile wins.
     if stamp().as_deref() != if_stamp {
         return Ok(None);
     }
     agent::save_session_if(data, save_as, &serde_json::to_string(&chat)?, None)?;
-    Ok(Some(record.version))
+    Ok(Some(version))
 }
 
 #[cfg(test)]
@@ -518,32 +796,134 @@ mod tests {
         assert_eq!(folder_of(&json!({ "meta": { "workspace": null } })), None);
         assert_eq!(folder_of(&json!({ "meta": {} })), None);
 
-        // Shared with teammates: no checkpoints, and nothing a tool read from a key file.
+        // Shared with teammates (D457): built from a whitelist, so what a chat's file holds
+        // besides the conversation never comes along, whatever it is called.
         let mut shared = json!({
-            "meta": { "title": "t", "workspace": "/home/me/p" },
+            "meta": {
+                "title": "t", "workspace": "C:\\work\\p", "model": "openai/gpt", "room": "r1",
+                "members": ["scout"], "status": "working", "mode": "custom:x", "updated": 9,
+            },
             "checkpoints": [1, 2],
             "seen": { "a": "b" },
+            "cost": 12.5,
+            "plan": [{ "text": "step" }],
+            "pullRequest": { "number": 3 },
+            "chatMode": "custom:x",
+            "workMode": "plan",
+            "toolLimit": ["read_file"],
+            "externalSeen": "x",
+            "turn": 2,
+            "textProtocol": false,
             "items": [
-                { "type": "user", "id": "u", "text": "read the env" },
-                { "type": "tool", "id": "t1", "name": "read_file", "args": { "path": "app/.env" }, "result": "SECRET=1", "detail": "SECRET=1" },
-                { "type": "tool", "id": "t2", "name": "write_file", "args": { "path": "C:\\p\\id_rsa", "content": "KEY" }, "result": "ok" },
-                { "type": "tool", "id": "t3", "name": "read_file", "args": { "path": "src/main.rs" }, "result": "fn main() {}" },
+                { "type": "user", "id": "u", "text": "read the env in C:\\work\\p\\src", "state": "open: .env TOKEN=abc",
+                  "context": ["<file path=\".env\">TOKEN=abc</file>"], "attachments": [{ "path": ".env" }], "previews": ["data:x"] },
+                { "type": "tool", "id": "t1", "callId": "c1", "name": "read_file", "status": "done",
+                  "args": { "path": "app/.env" }, "result": "SECRET=1", "detail": "SECRET=1",
+                  "previews": ["data:y"], "media": [{ "id": "img1", "mime": "image/png" }] },
+                { "type": "tool", "id": "t2", "callId": "c2", "name": "run", "status": "done",
+                  "args": { "command": "cat .env | head -3" }, "result": "SECRET=2" },
+                { "type": "tool", "id": "t3", "callId": "c3", "name": "multi", "status": "done",
+                  "args": "{\"files\":[{\"file\":\"C:\\\\p\\\\id_rsa\"}]}", "result": "KEYDATA" },
+                { "type": "tool", "id": "t4", "callId": "c4", "name": "read_file", "status": "done",
+                  "args": { "path": "src/main.rs" }, "result": "fn main() {} // C:/work/p/src/main.rs",
+                  "media": [{ "id": "img2", "mime": "image/png", "preview": "data:z" }, { "id": "nul", "mime": "image/png" }],
+                  "review": { "by": "x" }, "images": ["AAAA"] },
+                { "type": "tool", "id": "t5", "callId": "c5", "name": "search", "status": "done",
+                  "args": { "query": "TOKEN", "path": "." },
+                  "result": "config.txt: key = sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" },
+                { "type": "assistant", "id": "a", "text": "done", "thinking": "hm", "streaming": true,
+                  "cost": 3, "reasoning": [{ "type": "thinking", "signature": "sig" }], "toolDraft": { "name": "x" } },
+                { "type": "notice", "id": "n", "text": "stopped", "tone": "info", "actions": ["retry"] },
+                { "type": "weird", "id": "w", "text": "?" },
             ],
         });
         let key_file = |path: &str| -> Option<&'static str> {
             let name = path.rsplit('/').next().unwrap_or(path);
             (name == ".env" || name == "id_rsa").then_some("a key file")
         };
-        assert_eq!(for_teammates(&mut shared, key_file), 2);
-        assert!(shared.get("checkpoints").is_none() && shared.get("seen").is_none());
-        assert_eq!(shared["meta"]["workspace"], Value::Null);
-        let text = shared.to_string();
-        assert!(
-            !text.contains("SECRET=1") && !text.contains("KEY\""),
-            "{text}"
+        let out = for_teammates(&shared, key_file, Some("C:\\work\\p"));
+        assert_eq!(
+            out.key_files, 3,
+            "by value, by a word of a command, inside a string of JSON"
         );
-        assert_eq!(shared["items"][3]["result"], json!("fn main() {}"));
-        assert_eq!(shared["items"][0]["text"], json!("read the env"));
+        let top: Vec<&str> = out
+            .chat
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(top, ["items", "meta", "textProtocol", "turn"]);
+        assert_eq!(out.chat["meta"], json!({ "title": "t", "updated": 9 }));
+        let text = out.chat.to_string();
+        for gone in [
+            "SECRET=1",
+            "SECRET=2",
+            "KEYDATA",
+            "TOKEN=abc",
+            "sk-ant-api03",
+            "data:",
+            "AAAA\"",
+            "signature",
+            "toolDraft",
+            "review",
+            "retry",
+            "weird",
+            "work\\\\p",
+            "work/p",
+            "id_rsa",
+        ] {
+            assert!(!text.contains(gone), "{gone} in {text}");
+        }
+        let items = out.chat["items"].as_array().unwrap();
+        assert_eq!(items.len(), 8);
+        // A message's attachments stay behind, and it says that there were some.
+        assert!(items[0].get("context").is_none() && items[0].get("state").is_none());
+        assert!(items[0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Attachments are not part"));
+        assert!(items[0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("read the env in .\\src"));
+        // A call that named a key file keeps its name and nothing it said.
+        assert_eq!(items[1]["name"], json!("read_file"));
+        assert_eq!(items[1]["args"], json!({}));
+        assert!(items[1].get("media").is_none() && items[1].get("detail").is_none());
+        // Only images the shared chat still names travel; a device's name is no image's.
+        assert_eq!(
+            out.images.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["img2"]
+        );
+        assert_eq!(
+            items[4]["media"],
+            json!([{ "id": "img2", "mime": "image/png" }])
+        );
+        assert!(items[4]["result"]
+            .as_str()
+            .unwrap()
+            .starts_with("fn main() {}"));
+        assert_eq!(items[6]["streaming"], json!(false));
+        assert!(items[6].get("cost").is_none());
+        // The same whitelist on what arrives: a copy carries no spend, plan, room or mode.
+        shared["cost"] = json!(-100000);
+        let arrived = conversation(&shared);
+        for gone in [
+            "cost",
+            "plan",
+            "pullRequest",
+            "chatMode",
+            "workMode",
+            "toolLimit",
+            "externalSeen",
+        ] {
+            assert!(arrived.get(gone).is_none(), "{gone}");
+        }
+        for gone in ["room", "members", "status", "mode", "model", "workspace"] {
+            assert!(arrived["meta"].get(gone).is_none(), "{gone}");
+        }
+        assert!(image_id("img1") && !image_id("nul") && !image_id("con") && !image_id("a/b"));
 
         // No folder here: none in the chat; odd shapes are left standing, not trusted.
         let mut chat = json!({ "meta": { "workspace": "/x" }, "checkpoints": "all" });

@@ -46,12 +46,38 @@ pub struct News {
     pub kind: &'static str,
 }
 
-/// What this computer has seen of the teammates' shares (id to whether its chats were shared).
+/// What this computer has seen of the teammates' shares (id to whether its chats were
+/// shared), and the asks it has said (`<who asked>@<when>`).
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct SeenShares {
     base: String,
     uid: String,
     seen: std::collections::BTreeMap<String, bool>,
+    #[serde(default)]
+    asks: std::collections::BTreeSet<String>,
+}
+
+/// The asks in `shown` (who asked, when) this computer hasn't said yet, and what it keeps
+/// from now on: only asks that still stand. An ask is said once a computer, also the first
+/// time this computer looks (it is addressed to the person, not something that was there
+/// all along); asked again after it lapsed or was dismissed, it is a new one.
+fn new_asks(
+    said: &std::collections::BTreeSet<String>,
+    shown: &[(String, u64)],
+) -> (Vec<String>, std::collections::BTreeSet<String>) {
+    let mut fresh = Vec::new();
+    let mut next = std::collections::BTreeSet::new();
+    for (uid, at) in shown.iter().take(500) {
+        if !super::keys::valid_uid(uid) {
+            continue;
+        }
+        let key = format!("{uid}@{at}");
+        if !said.contains(&key) && !fresh.contains(uid) {
+            fresh.push(uid.clone());
+        }
+        next.insert(key);
+    }
+    (fresh, next)
 }
 
 /// What is new in `shown` against `seen` (None: nothing was ever kept here, so nothing is
@@ -89,14 +115,20 @@ fn news_of(
 impl Shares {
     /// What is new among the teammates' shares shown now, for this computer; remembered, so
     /// each is said once (`news_of`).
-    pub fn news(&self, shown: Vec<Shown>) -> Result<Vec<News>> {
+    pub fn news(
+        &self,
+        shown: Vec<Shown>,
+        asks: Vec<(String, u64)>,
+    ) -> Result<(Vec<News>, Vec<String>)> {
         let file = self.vault.sync_file("share-seen.json");
         let kept = std::fs::read(&file)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<SeenShares>(&bytes).ok())
             .filter(|kept| kept.base == self.base && kept.uid == self.uid);
         let (news, seen) = news_of(kept.as_ref().map(|k| &k.seen), &shown, super::MAX_SHARES);
-        if kept.as_ref().map(|k| &k.seen) != Some(&seen) {
+        let none = std::collections::BTreeSet::new();
+        let (fresh, said) = new_asks(kept.as_ref().map_or(&none, |k| &k.asks), &asks);
+        if kept.as_ref().map(|k| (&k.seen, &k.asks)) != Some((&seen, &said)) {
             if let Some(dir) = file.parent() {
                 std::fs::create_dir_all(dir)?;
             }
@@ -104,10 +136,11 @@ impl Shares {
                 base: self.base.clone(),
                 uid: self.uid.clone(),
                 seen,
+                asks: said,
             };
             crate::store::atomic_write(&file, &serde_json::to_vec(&kept)?)?;
         }
-        Ok(news)
+        Ok((news, fresh))
     }
 
     /// Asks a teammate to share a project with this account: a note their app shows. It
@@ -610,6 +643,23 @@ mod tests {
         let version = crate::git::run_unattended(&base, &["--version"], minute).unwrap();
         assert!(version.contains("git version"), "{version}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_ask_is_said_once_a_computer_and_again_only_when_it_is_a_new_one() {
+        let none = std::collections::BTreeSet::new();
+        let shown = vec![("ana".to_string(), 10u64), ("../x".to_string(), 1)];
+        // Said the first time this computer looks, and remembered.
+        let (fresh, said) = new_asks(&none, &shown);
+        assert_eq!(fresh, ["ana"]);
+        assert_eq!(said.len(), 1, "what isn't an account's id isn't kept");
+        // The same ask after a restart: nothing.
+        assert!(new_asks(&said, &shown).0.is_empty());
+        // Asked again later (it lapsed, or was dismissed): a new one. One gone is forgotten.
+        let (fresh, said) = new_asks(&said, &[("ana".to_string(), 99)]);
+        assert_eq!(fresh, ["ana"]);
+        let (fresh, said) = new_asks(&said, &[]);
+        assert!(fresh.is_empty() && said.is_empty());
     }
 
     #[test]

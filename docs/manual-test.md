@@ -4520,3 +4520,24 @@ Three accounts in one team (A shares, B and C read), each with sync on.
 3. `team.shareNotices` off: nothing is announced; Team still lists everything.
 4. C: Team, People, "Ask to share…" on A. A's app says "C asked you to share a project" once
    and shows it above Shared projects, with Projects and Dismiss. Dismiss: gone.
+
+## D457 — After the audit of team sharing
+Three accounts in a team as for D453; the service with these changes.
+1. A shares a project's chats where one message has `.env` attached, one tool call ran
+   `cat .env`, and one search printed a line with an API key. B reads the chat: the message
+   says "[Attachments are not part of the shared chat.]", the `cat` call shows only "[Left
+   out of the shared chat: a key file.]", the key in the search result is replaced.
+2. B continues it as their own: the copy's budget meter starts at nothing, it has no plan
+   card, no channel, and ends with "Copied from a teammate's shared chat…" (no name in it).
+3. A narrows the project to B on one computer; on A's other computer (list not read since)
+   press the Share switch off and on, or run "Share this project with your team": it stays
+   for B only.
+4. While A's agent is writing in a shared chat, B still sees that chat listed.
+5. Restart B's app while an ask of B stands: it isn't announced again.
+6. A's sealed record of who a share is for removed by hand (or a share made chosen on the
+   service only): A's card says nobody is handed its keys until A chooses again.
+
+## D458 — The proof that says what it is for
+1. Add a second computer and approve it; make new keys; remove a computer; publish the key
+   for sharing (open Team): each works against the updated service and against the one
+   before.

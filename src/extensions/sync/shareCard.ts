@@ -11,6 +11,7 @@ import {
   AUDIENCE_CHOSEN,
   AUDIENCE_NOTE,
   AUDIENCE_TEAM,
+  AUDIENCE_UNKNOWN,
   KEY_FILES_NOTE,
   keyFilesLine,
   ONLY_VERIFIED_SETTING,
@@ -204,6 +205,9 @@ export function shareCard(
             ? ["Latest shared snapshot ", kit.when(latest)]
             : "Nothing was shared yet: the first snapshot goes with the next one taken.",
       kit.lapsed ? "Nothing new is shared until the subscription is renewed." : null,
+      last?.synced.audienceUnknown
+        ? h("span", { class: "sync-share-problem", role: "alert" }, AUDIENCE_UNKNOWN)
+        : null,
       // Why the last try failed: said in the line's own place, as a failure.
       failure?.project === project.id
         ? h("span", { class: "sync-share-problem", role: "alert" }, failure.message)

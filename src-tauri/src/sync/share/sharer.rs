@@ -10,8 +10,10 @@ use serde_json::json;
 use super::keys::{make_wrap, share_id, split_share_id, valid_project};
 use super::pins::recipients;
 use super::plan::{
-    self, allowed, chosen, keys_plan, someone_left, start_plan, KeysPlan, StartPlan, KEY_FILE,
+    self, allowed, audience, chosen, keys_plan, same_people, someone_left, start_audience,
+    start_plan, KeysPlan, StartPlan, KEY_FILE,
 };
+use super::{audience_id, Audience, SHARE_WRITE};
 use super::{
     clean, failed, gone, members_of, now_ms, read, read_info, share_gone, snapshot_records, write,
     Folder, Info, Last, Maintained, Own, OwnRead, Read, ShareInfo, Shares, Synced, INFO,
@@ -60,6 +62,59 @@ use crate::sync::crypto::{self, Keyring};
 use crate::sync::snapshot::{self, Manifest};
 
 impl Shares {
+    /// Whom this account's share of `project` is for, by its own sealed record
+    /// (`Audience`): None when there is none (or it isn't this share's).
+    async fn audience(&self, project: &str) -> Result<Option<Option<Vec<String>>>> {
+        match read(&self.vault.api, &self.ring, "sys", &audience_id(project)).await? {
+            Read::Text { text, .. } => Ok(serde_json::from_str::<Audience>(&text)
+                .ok()
+                .filter(|a| a.share == share_id(&self.uid, project))
+                .map(|a| a.readers)),
+            Read::Absent { .. } | Read::Damaged { .. } => Ok(None),
+        }
+    }
+
+    /// Writes whom the share is for (None: the record goes, with the share).
+    async fn save_audience(
+        &self,
+        project: &str,
+        readers: Option<&Option<Vec<String>>>,
+    ) -> Result<()> {
+        let id = audience_id(project);
+        let text = match readers {
+            Some(readers) => Some(serde_json::to_string(&Audience {
+                v: 1,
+                share: share_id(&self.uid, project),
+                readers: readers.clone(),
+            })?),
+            None => None,
+        };
+        for _ in 0..4 {
+            let version = match read(&self.vault.api, &self.ring, "sys", &id).await? {
+                Read::Absent { version } if text.is_none() && version.is_none() => return Ok(()),
+                Read::Absent { version } | Read::Damaged { version } => version,
+                Read::Text { text: now, version } => {
+                    if text.as_deref() == Some(now.as_str()) {
+                        return Ok(());
+                    }
+                    Some(version)
+                }
+            };
+            if write(
+                &self.vault.api,
+                &self.ring,
+                ("sys", id.as_str()),
+                version,
+                text.as_deref(),
+            )
+            .await?
+            {
+                return Ok(());
+            }
+        }
+        Err(failed("Sync", "The share kept changing; try again."))
+    }
+
     /// The keyring of this account's share of `project`, from its own vault.
     pub(super) async fn own(&self, project: &str) -> Result<OwnRead> {
         match read(&self.vault.api, &self.ring, OWN, project).await? {
@@ -122,17 +177,24 @@ impl Shares {
         if matches!(readers, Readers::Chosen(_)) && !keeps_readers {
             return Err(needs_service());
         }
-        // Whom it is for from here on: what is asked for now, else what the account's own
-        // record says (a share that exists), else the whole team.
-        let kept_readers = self
-            .own(project)
-            .await?
-            .own
-            .and_then(|(own, _)| own.readers);
-        let wanted: Option<Vec<String>> = match readers.clone() {
-            Readers::Chosen(list) => chosen(Some(list), &self.uid, MAX_MEMBERS),
-            Readers::Team => None,
-            Readers::Keep => kept_readers,
+        // Whom it is for from here on (`plan::start_audience`): written down in the
+        // account's own record before anything else happens, when this start decides it.
+        let kept_audience = self.audience(project).await?;
+        let asked = match readers.clone() {
+            Readers::Chosen(list) => Some(chosen(Some(list), &self.uid, MAX_MEMBERS)),
+            Readers::Team => Some(None),
+            Readers::Keep => None,
+        };
+        let decided = start_audience(asked, exists, kept_audience.as_ref());
+        if let Some(now) = &decided {
+            if kept_audience.as_ref() != Some(now) {
+                self.save_audience(project, Some(now)).await?;
+            }
+        }
+        // Who the first keys of a new share go to. (On one that exists `maintain` decides.)
+        let wanted: Option<Vec<String>> = match &decided {
+            Some(now) => now.clone(),
+            None => audience(kept_audience.as_ref(), None).0,
         };
         let those = for_whom(&members, wanted.as_deref(), &self.uid);
         // Who the first keys would go to, with the share itself.
@@ -154,13 +216,9 @@ impl Shares {
                     ));
                 }
                 (StartPlan::Reuse, Some((mut own, held))) => {
-                    let mut changed =
-                        own.name != name || own.chats != chats || own.readers != wanted;
+                    let mut changed = own.name != name || own.chats != chats;
                     own.name = name.clone();
                     own.chats = chats;
-                    // Written here before the service hears of it: keys are handed out by
-                    // this record, so they never go wider than what it says.
-                    own.readers = wanted.clone();
                     // A start taken up again (no share yet, keys nobody holds): who the keys
                     // are about to be handed to is written down before any wrap is made.
                     if !exists {
@@ -187,7 +245,6 @@ impl Shares {
                         chats,
                         // Written with the keyring, before any wrap of it is made.
                         handed: intended.clone(),
-                        readers: wanted.clone(),
                     };
                     // Kept before the service hears of the share: its keys are never only there.
                     if self.save_own(project, &own, read.version).await? {
@@ -210,8 +267,8 @@ impl Shares {
         let mut body = json!({ "name": name, "chats": chats, "wraps": wraps });
         // Named only for a service that keeps to it (another takes no such word, and with
         // `Keep` on a share that exists nothing is said, so nothing changes).
-        if keeps_readers && (readers != Readers::Keep || !exists) {
-            body["readers"] = json!(wanted);
+        if let (true, Some(now)) = (keeps_readers, &decided) {
+            body["readers"] = json!(now);
         }
         let mut reply = self.team.put(&format!("shares/{project}"), &body).await?;
         if reply.status == 409 && reply.error() == "no_member_key" {
@@ -266,17 +323,44 @@ impl Shares {
                 continue;
             }
             let pins = self.observe(&members).await?;
-            // Whom the share is for by this account's own record: the service's list of
-            // members is narrowed by it, never the other way round. A record that names
-            // nobody (written by an app from before people could be chosen, on another of
-            // the account's computers) is bounded by the service's own list all the same.
-            let listed_readers: Option<Vec<String>> = answer["readers"].as_array().map(|list| {
-                list.iter()
-                    .filter_map(|uid| uid.as_str().map(str::to_string))
-                    .collect()
+            // Whom the share is for: this account's own sealed record decides
+            // (`plan::audience`). What the service lists is never whom keys go to; where
+            // there is no record and the service calls the share chosen, nobody gets keys.
+            let listed: Option<Option<Vec<String>>> = answer.get("readers").map(|list| {
+                list.as_array().map(|list| {
+                    list.iter()
+                        .filter_map(|uid| uid.as_str().map(str::to_string))
+                        .collect()
+                })
             });
-            let readers = own.readers.as_deref().or(listed_readers.as_deref());
-            let members = for_whom(&members, readers, &self.uid);
+            let mut kept_audience = self.audience(project).await?;
+            // Someone chosen who is no longer in the team is no longer chosen: coming back
+            // doesn't make them a reader again.
+            if let Some(Some(list)) = &kept_audience {
+                let still: Vec<String> = list
+                    .iter()
+                    .filter(|uid| members.iter().any(|m| &m.uid == *uid))
+                    .cloned()
+                    .collect();
+                if still.len() != list.len() {
+                    let pruned = Some(still);
+                    match self.save_audience(project, Some(&pruned)).await {
+                        Ok(()) | Err(Error::Sync("SyncLapsed", _)) => {}
+                        Err(e) => return Err(e),
+                    }
+                    kept_audience = Some(pruned);
+                }
+            }
+            // The service says something else than the record (a change that didn't reach
+            // it): it is told again. Not being able to doesn't stop the keys being right.
+            if let (Some(own_list), Some(theirs)) = (&kept_audience, &listed) {
+                if !same_people(own_list, theirs) {
+                    let said = json!({ "name": own.name, "chats": own.chats, "readers": own_list });
+                    let _ = self.team.put(&format!("shares/{project}"), &said).await;
+                }
+            }
+            let (readers, audience_unknown) = audience(kept_audience.as_ref(), listed.as_ref());
+            let members = for_whom(&members, readers.as_deref(), &self.uid);
             let (to, waiting) = recipients(&pins, &members, &self.uid, only_verified);
             let wrapped: BTreeSet<String> = answer["members"]
                 .as_array()
@@ -294,6 +378,7 @@ impl Shares {
                 wraps_added: added,
                 renewed,
                 waiting,
+                audience_unknown,
             };
             // Someone who was handed these keys is gone from the team, or is no longer one
             // of the people chosen: new keys, whether or not the service asks for them (its
@@ -360,7 +445,9 @@ impl Shares {
                 );
             }
             let count = wraps.len();
-            let body = json!({ "keyVersion": generation, "wraps": wraps });
+            // (`audience`: said by apps that keep whom a share is for in a record of its
+            // own; the service takes wraps for a chosen share from no other.)
+            let body = json!({ "keyVersion": generation, "wraps": wraps, "audience": 1 });
             let reply = api.post("keys", &body).await?;
             // The keys moved on meanwhile, or a member's key went away: look again.
             if reply.status == 409 && matches!(reply.error(), "conflict" | "no_member_key") {
@@ -374,7 +461,7 @@ impl Shares {
         Err(failed("Sync", "The share's keys kept changing; try again."))
     }
 
-    fn last_file(&self, project: &str) -> PathBuf {
+    pub(super) fn last_file(&self, project: &str) -> PathBuf {
         self.vault
             .sync_file("shares")
             .join(format!("{project}.json"))
@@ -418,6 +505,7 @@ impl Shares {
         readers: Readers,
         capture: Option<Folder<'_>>,
     ) -> Result<Synced> {
+        let _writing = SHARE_WRITE.lock().await;
         let kept = {
             let _step = STEP.lock().await;
             self.start(project, name, chats, only_verified, readers)
@@ -437,6 +525,7 @@ impl Shares {
         if !valid_project(project) {
             return Err(Error::Invalid("that isn't a project".into()));
         }
+        let _writing = SHARE_WRITE.lock().await;
         let kept = {
             let _step = STEP.lock().await;
             self.maintain(project, only_verified).await?
@@ -458,6 +547,7 @@ impl Shares {
             wraps_added: kept.wraps_added,
             renewed: kept.renewed,
             waiting: kept.waiting,
+            audience_unknown: kept.audience_unknown,
         };
         let Some(capture) = capture else {
             return Ok(out);
@@ -568,6 +658,7 @@ impl Shares {
         readers: Readers,
         only_verified: bool,
     ) -> Result<ShareInfo> {
+        let _writing = SHARE_WRITE.lock().await;
         let _step = STEP.lock().await;
         let name = clean(name, 120);
         if !valid_project(project) || name.is_empty() {
@@ -592,28 +683,13 @@ impl Shares {
                 Readers::Chosen(list) => chosen(Some(list), &self.uid, MAX_MEMBERS),
                 _ => None,
             };
-            let mut saved = false;
-            for _ in 0..4 {
-                let read = self.own(project).await?;
-                let Some((mut own, _)) = read.own else {
-                    return Err(failed(
-                        "ShareNotShared",
-                        "This project isn't shared from this account.",
-                    ));
-                };
-                if own.readers == next {
-                    saved = true;
-                    break;
-                }
-                own.readers = next.clone();
-                if self.save_own(project, &own, read.version).await? {
-                    saved = true;
-                    break;
-                }
+            if self.own(project).await?.own.is_none() {
+                return Err(failed(
+                    "ShareNotShared",
+                    "This project isn't shared from this account.",
+                ));
             }
-            if !saved {
-                return Err(failed("Sync", "The share kept changing; try again."));
-            }
+            self.save_audience(project, Some(&next)).await?;
             wanted = Some(next);
         }
         let mut body = json!({ "name": name, "chats": chats });
@@ -674,6 +750,11 @@ impl Shares {
             return Ok(());
         }
         let _ = std::fs::remove_file(self.last_file(project));
+        // Whom it was for goes with it (a share made again starts as it is asked to).
+        match self.save_audience(project, None).await {
+            Ok(()) | Err(Error::Sync("SyncLapsed", _)) => {}
+            Err(e) => return Err(e),
+        }
         for _ in 0..3 {
             let version = match read(&self.vault.api, &self.ring, OWN, project).await? {
                 Read::Absent { .. } => return Ok(()),

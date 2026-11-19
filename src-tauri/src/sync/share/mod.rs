@@ -77,6 +77,11 @@ const RING_TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_MEMBERS: usize = 500;
 const MAX_SHARES: usize = 5_000;
 
+/// One writer at a time to a share from this computer (D457): renewing its keys, writing a
+/// snapshot into it and writing its chats don't overlap, so nothing is sealed under keys
+/// that were replaced while it was being written. Taken before `STEP`, never after.
+static SHARE_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// One step at a time on the account's own records (the member key, the pins, a share's
 /// keyring): two at once would only meet as write conflicts.
 static STEP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -236,6 +241,9 @@ pub struct Synced {
     pub renewed: bool,
     /// Members who don't have the keys, and why.
     pub waiting: Vec<Waiting>,
+    /// The share is for chosen people and this account's own record of who they are is
+    /// missing: nobody was handed keys until the person chooses again.
+    pub audience_unknown: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -308,10 +316,26 @@ struct Own {
     /// renewed, whatever the service says.
     #[serde(default)]
     handed: Vec<String>,
-    /// The people the sharer chose (D453); None: the whole team. What this computer goes by
-    /// when it hands out keys, whatever the service lists.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+}
+
+/// `sys/readers-<project>` in the account's own vault (D457): whom this account's share of
+/// the project is for. A record of its own, in the collection no front end writes and no
+/// record of which is taken when sealed with keys older than the account's newest: an app
+/// from before people could be chosen never rewrites it (it rewrites `shares/<project>`,
+/// and would drop the list from there), and a removed computer can't put an older one back.
+/// Written before the service hears of a change. Missing, for a share the service calls
+/// chosen: nobody is handed keys (`plan::audience`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Audience {
+    v: u32,
+    /// The share's id.
+    share: String,
+    /// The members chosen; None: the whole team.
     readers: Option<Vec<String>>,
+}
+
+fn audience_id(project: &str) -> String {
+    format!("readers-{project}")
 }
 
 /// The version of `Own` that says who was handed the keys: an older record doesn't, so its
@@ -498,6 +522,9 @@ struct Maintained {
     wraps_added: usize,
     renewed: bool,
     waiting: Vec<Waiting>,
+    /// The service calls the share chosen and this account has no record of for whom:
+    /// nobody was handed keys.
+    audience_unknown: bool,
 }
 
 /// What `sync` captures: the open folder, and this computer as the vault knows it.
@@ -778,7 +805,7 @@ impl Shares {
     /// Publishes the public half, with proof of holding the private one (as a device proves
     /// its key).
     async fn publish(&self, key: &PrivateKey) -> Result<()> {
-        let challenge = self.vault.proof(key).await?;
+        let challenge = self.vault.proof(key, "member-key").await?;
         let body = json!({ "publicKey": key.public(), "challenge": challenge });
         self.team.put("key", &body).await?.into_ok()?;
         Ok(())
@@ -1273,7 +1300,6 @@ mod tests {
             name: "p".into(),
             chats: false,
             handed: handed.iter().map(|u| u.to_string()).collect(),
-            readers: None,
         };
         assert!(own(OWN_VERSION, &[]).never_handed());
         assert!(!own(OWN_VERSION, &["a"]).never_handed());

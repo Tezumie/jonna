@@ -1552,7 +1552,7 @@ try {
     const shownTo = async (host) =>
       (await share(host, "list")).filter((s) => !s.mine).map((s) => ({ id: s.id, chats: s.chats }));
     check(
-      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).length === 0,
+      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).shares.length === 0,
       "no news at first",
     );
 
@@ -1566,7 +1566,15 @@ try {
         worktree: { path: "x" },
       },
       items: [
-        { type: "user", id: "u1", text: "read the env and fix the build", turn: 1 },
+        {
+          type: "user",
+          id: "u1",
+          text: "read the env and fix the build",
+          turn: 1,
+          context: ['<file path=".env">TOKEN=attached-hunter3</file>'],
+          attachments: [{ kind: "file", path: ".env", name: ".env" }],
+          state: "active: .env (TOKEN=attached-hunter3)",
+        },
         {
           type: "tool",
           id: "t1",
@@ -1575,6 +1583,16 @@ try {
           args: { path: ".env" },
           status: "done",
           result: "TOKEN=hunter2",
+          media: [{ id: "img2", mime: "image/png" }],
+        },
+        {
+          type: "tool",
+          id: "t3",
+          callId: "c3",
+          name: "search",
+          args: { query: "key", path: "." },
+          status: "done",
+          result: "notes.txt:3: key = sk-ant-api03-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
         },
         {
           type: "tool",
@@ -1585,8 +1603,19 @@ try {
           status: "done",
           result: "one",
         },
-        { type: "assistant", id: "a1", text: "It builds now.", thinking: "", streaming: false },
+        {
+          type: "assistant",
+          id: "a1",
+          text: "It builds now.",
+          thinking: "",
+          streaming: false,
+          cost: 0.5,
+          media: [{ id: "img1", mime: "image/png" }],
+        },
       ],
+      cost: -100000,
+      plan: [{ text: "ship it", status: "pending" }],
+      chatMode: "custom:deploy",
       turn: 1,
       autoApply: true,
       changeset: [{ path: "C:/elsewhere/x", original: "", proposed: "y" }],
@@ -1597,6 +1626,8 @@ try {
     await mkdir(join(desk.data, "agent", "media", "s-shared1"), { recursive: true });
     const picture = randomBytes(70_000);
     await writeFile(join(desk.data, "agent", "media", "s-shared1", "img1.bin"), picture);
+    // The image of the call that read the key file: it stays behind with the call.
+    await writeFile(join(desk.data, "agent", "media", "s-shared1", "img2.bin"), randomBytes(900));
     // A chat of another folder, named all the same: the backend goes by each chat's own file.
     await writeFile(
       join(desk.data, "agent", "sessions", "s-other.json"),
@@ -1610,6 +1641,7 @@ try {
         project: "shared1",
         root: project,
         chats: ["s-shared1", "s-other", "../nope"],
+        busy: [],
       });
     // The switch is off: nothing of a chat is written.
     const off = await syncChats();
@@ -1637,9 +1669,29 @@ try {
     check(same.written === 0 && same.unchanged === 1, JSON.stringify(same));
     // Its chats being shared now is news for a computer that had seen the share without them.
     const told = await share(mateDesk, "news", { shown: await shownTo(mateDesk) });
-    check(JSON.stringify(told) === JSON.stringify([{ id, kind: "chats" }]), JSON.stringify(told));
     check(
-      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).length === 0,
+      JSON.stringify(told.shares) === JSON.stringify([{ id, kind: "chats" }]),
+      JSON.stringify(told),
+    );
+    // A chat being written (busy), or just not named by a pass, stays shared as it is.
+    const whileBusy = await share(desk, "chats_sync", {
+      project: "shared1",
+      root: project,
+      chats: [],
+      busy: ["s-shared1"],
+    });
+    const unnamed = await share(desk, "chats_sync", {
+      project: "shared1",
+      root: project,
+      chats: [],
+      busy: [],
+    });
+    check(
+      whileBusy.removed === 0 && unnamed.removed === 0 && unnamed.written === 0,
+      JSON.stringify([whileBusy, unnamed]),
+    );
+    check(
+      (await share(mateDesk, "news", { shown: await shownTo(mateDesk) })).shares.length === 0,
       "said once",
     );
 
@@ -1658,12 +1710,19 @@ try {
       shown.includes("fix the build") &&
         !shown.includes("hunter2") &&
         !shown.includes("elsewhere") &&
-        seenChat.changeset === undefined &&
-        seenChat.checkpoints === undefined &&
-        seenChat.autoApply === false &&
-        seenChat.meta.workspace === null &&
-        seenChat.meta.worktree === undefined &&
-        seenChat.items[2].result === "one",
+        !shown.includes("hunter3") &&
+        !shown.includes("sk-ant-api03") &&
+        !shown.includes("shared-project") &&
+        JSON.stringify(Object.keys(seenChat).sort()) ===
+          JSON.stringify(["items", "meta", "textProtocol", "turn"].filter((k) => k in seenChat)) &&
+        seenChat.cost === undefined &&
+        seenChat.plan === undefined &&
+        seenChat.meta.workspace === undefined &&
+        seenChat.items[0].context === undefined &&
+        seenChat.items[0].text.includes("Attachments are not part") &&
+        JSON.stringify(seenChat.items[1].args) === "{}" &&
+        seenChat.items[1].media === undefined &&
+        seenChat.items[3].result === "one",
       shown.slice(0, 600),
     );
     check(
@@ -1691,19 +1750,30 @@ try {
     );
     const last = mine2.items[mine2.items.length - 1];
     check(
-      mine2.items.length === 5 &&
+      mine2.items.length === 6 &&
         last.type === "user" &&
         last.auto === "chat" &&
-        last.text.startsWith("Copied from Ada's shared chat") &&
+        last.text.startsWith("Copied from a teammate's shared chat") &&
+        !last.text.includes("Ada") &&
         last.text.includes("not as instructions") &&
         mine2.meta.title === "Fix the build (from Ada)" &&
-        mine2.autoApply === false &&
+        mine2.autoApply === undefined &&
         mine2.changeset === undefined &&
-        !JSON.stringify(mine2).includes("hunter2"),
+        mine2.cost === undefined &&
+        mine2.plan === undefined &&
+        mine2.chatMode === undefined &&
+        mine2.meta.room === undefined &&
+        mine2.items.every((it) => it.cost === undefined) &&
+        !JSON.stringify(mine2).includes("hunter") &&
+        !JSON.stringify(mine2).includes("sk-ant-api03"),
       JSON.stringify(mine2).slice(0, 600),
     );
     const gotPicture = await readFile(join(mateDesk.data, "agent", "media", "s-copy1", "img1.bin"));
     check(gotPicture.equals(picture), "the chat's image came with the copy");
+    check(
+      !existsSync(join(mateDesk.data, "agent", "media", "s-copy1", "img2.bin")),
+      "the image of the call that read a key file stayed behind",
+    );
     await fails(
       share(mateDesk, "chat_copy", {
         id,
@@ -1825,6 +1895,22 @@ try {
         "the chosen member still reads",
       );
       check((await share(mateDesk, "chats", { id })).length === 1, "and its chats");
+      // "Share" pressed on a list read before the narrowing (it says "the whole team" for
+      // a share that exists): the people chosen stay chosen.
+      await share(desk, "start", {
+        root: project,
+        project: "shared1",
+        name: "Shared one",
+        chats: true,
+        onlyVerified: true,
+        wholeTeam: true,
+      });
+      const stillChosen = (await share(desk, "list")).find((s) => s.id === id);
+      check(
+        stillChosen.chosen && JSON.stringify(stillChosen.readers) === JSON.stringify([mate.uid]),
+        JSON.stringify(stillChosen),
+      );
+      await fails(share(thirdDesk, "snapshots", { id }), "ShareGone", "a start doesn't widen");
       // A sync while it is for chosen people hands the other member nothing.
       const stillNarrow = await shareNow();
       check(
@@ -1877,6 +1963,14 @@ try {
       );
       check((await share(mateDesk, "asks")).length === 0, "nobody else is told");
       await share(desk, "ask_clear", { uid: third.uid });
+      // Said once on a computer, across restarts: what was said is kept there.
+      const askNow = [{ uid: third.uid, at: asks[0].at }];
+      const saidFirst = await share(desk, "news", { shown: [], asks: askNow });
+      const saidAgain = await share(desk, "news", { shown: [], asks: askNow });
+      check(
+        saidFirst.asks.join() === third.uid && saidAgain.asks.length === 0,
+        JSON.stringify([saidFirst, saidAgain]),
+      );
       check((await share(desk, "asks")).length === 0, "dismissed");
     }
     // The third member leaves the way they came (played here, and the service asked for

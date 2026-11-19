@@ -221,7 +221,7 @@ export class SyncController implements Disposable {
         projectChats: async (root) => {
           const chats = await agentStoreIpc.list();
           const busy = this.busyChats();
-          return chatsToShare(
+          const mine = chatsToShare(
             chats.map((chat) => {
               const meta = (chat.meta ?? {}) as { workspace?: unknown; updated?: unknown };
               return {
@@ -234,9 +234,10 @@ export class SyncController implements Disposable {
             (a, b) => pathKey(a) === pathKey(b),
             (id) => busy.has(id),
           );
+          return { chats: mine, busy: [...busy] };
         },
         notices: () => this.services.settings.peek<boolean>(SHARE_NOTICES_SETTING) !== false,
-        announce: (message, share) => this.announceTeam(message, share),
+        announce: (message, share, log) => this.announceTeam(message, share, log),
       }),
     );
     const backend: SyncBackend = {
@@ -507,8 +508,9 @@ export class SyncController implements Disposable {
    * Something new of the team (a teammate shared a project, or asked for one): a quiet
    * notification with a way to the Team page, and a line in the activity.
    */
-  private announceTeam(message: string, share: string | null): void {
-    this.note(message);
+  private announceTeam(message: string, share: string | null, log: string): void {
+    // (Fixed words: the activity is state agents read, and `message` holds a teammate's.)
+    this.note(log);
     this.services.notifications.show("info", message, {
       title: "Team",
       actions: [

@@ -298,11 +298,11 @@ a session tied to an approved device of the caller's own vault (as for `/api/syn
 | `GET` (the team's view, as before) | a member | Each member now also carries `memberKey` (the public key, or null). |
 | `GET shares` | a member (a device, or the website) | `{ shares: [{ id, project, name, chats, owner: { uid, name }, mine, keyVersion, rotationNeeded, hasWrap, chosen, readers?, usageBytes, updatedAt, latest }], features, asks }`: the shares the caller may read, by their labels (on the website the team's owner sees every share's label). `latest` is the label of the newest snapshot record (`info`), or null. `hasWrap`: a wrap for the caller exists for the current generation. `chosen`: it is for chosen people; `readers` (their ids, or null) only on the caller's own share. `features`: what the service does beyond its first version (`readers`, `chats`); a service that says none is from before D453. `asks`: who asked the caller to share a project (`{ from, name, at }`; none on the website). |
 | `PUT shares/{project}` `{ name, chats, readers?, wraps: { <uid>: <wrap> } }` | a device, in a team, with sync on (not lapsed) | Makes the caller's share of that project (id `<caller>.<project>`; again: updates `name` and `chats`). `readers`: not named, as it is (the whole team for a new share); null, the whole team; a list of members' ids, those people only (ids that aren't members, and the caller's own, are left out). Narrowing drops the wraps of those taken off and sets `rotationNeeded`. `wraps` are for generation 1 and are stored only for current members who may read. Answers the share as `GET shares` lists it. |
-| `POST shares/{uid}/ask` | a member's device | Asks the member `uid` of the caller's team to share a project (D455): kept fourteen days, listed in that member's `asks`. No body. 20 a day. |
+| `POST shares/{uid}/ask` | a member's device | Asks the member `uid` of the caller's team to share a project (D455): kept fourteen days, listed in that member's `asks`. No body. 20 a day; asked again while it stands, nothing is written. Deleted when either leaves the team. |
 | `DELETE shares/{uid}/ask` | a member's device | Forgets the ask `uid` made of the caller. |
 | `DELETE shares/{id}` | the sharer (a device or the website), or the team's owner | Deletes the share and everything in it. |
 | `GET shares/{id}/keys` | a device of a member who may read it | `{ keyVersion, rotationNeeded, owner: { uid, memberKey }, wrap }`: the caller's own wrap (`{ wrap, keyVersion }` or null). For the sharer also `readers` and `members: [{ uid, name, memberKey, hasWrap }]`, the members it is for. |
-| `POST shares/{id}/keys` `{ keyVersion, wraps: { <uid>: <wrap> } }` | the sharer's device | Stores wraps for that generation, for current members who may read only. A generation one above the current becomes current: wraps of the generation before for members not named are dropped, and `rotationNeeded` is cleared. The current generation again: adds wraps (a new member). Anything else: 409 with the current generation. |
+| `POST shares/{id}/keys` `{ keyVersion, audience?, wraps: { <uid>: <wrap> } }` | the sharer's device (also while its subscription is ended) | Stores wraps for that generation, for current members who may read only. On a share for chosen people `audience: 1` is required (409 `needs_update` without). A generation one above the current becomes current: wraps of the generation before for members not named are dropped, and `rotationNeeded` is cleared. The current generation again: adds wraps (a new member). Anything else: 409 with the current generation. |
 | `GET shares/{id}/records?since=N`, `GET records/{collection}/{id}`, `POST blobs/have`, `POST blobs/get` | a member's device | As for a vault, on the share. |
 | `PUT records/{collection}/{id}`, `POST blobs`, `POST gc` | the sharer's device | As for a vault, on the share. |
 
@@ -373,8 +373,16 @@ The same record kinds a project has in a vault, under the share's keys:
 ### Chosen people (D453)
 
 - The list is in two places that don't rely on each other: on the share at the service
-  (who is refused, who is listed) and in the sharer's own sealed record of the share (who
-  this computer makes wraps for). The record is written first.
+  (who is refused, who is listed) and in a sealed record of the sharer's own vault,
+  `sys/readers-<project>` (who this computer makes wraps for). The record is written
+  first, is in the collection no front end writes and no app from before rewrites, and is
+  not taken when sealed with keys older than the account's newest (D457).
+- Keys go by the record alone. Where there is none and the service calls the share chosen,
+  nobody is handed keys and the card says so. What the service lists is never whom keys go
+  to; when the two differ, the service is told the record's list again.
+- The service takes wraps for a chosen share only from an app that says it keeps that
+  record (`audience: 1` in `POST shares/{id}/keys`; otherwise 409 `needs_update`).
+- A start ("Share") never changes whom a share that exists is for; only a change does.
 - Taking someone off is a member leaving, for that share: their wrap is dropped, the service
   refuses them at once, and the sharer's computer renews the keys, whatever the service says.
 - An app asked to choose people against a service that doesn't say it keeps readers
@@ -386,12 +394,22 @@ The same record kinds a project has in a vault, under the share's keys:
   on; turning it off removes them from the share.
   The backend goes by each chat's own file for whose folder it is, not by the list it is
   handed.
-- A chat travels as a conversation: nothing that grants something, no folder path, no
-  checkpoints (`chats::for_teammates`), and not what a tool read from or wrote to a key file
-  (by the same list of names that leaves key files out of a snapshot). Any other secret in a
-  chat travels: the app asks before the switch goes on, and says so.
-- A copy passes the door every downloaded chat passes (`neutralise`), under a new id, never
-  over a chat that exists.
+- A chat travels as a conversation built from a whitelist (`chats::for_teammates`, D457):
+  its title, its items with the fields that are content, the turn counter. Nothing else of
+  the chat's file: no spend, plan, mode, model, room, grants, pending edits or checkpoints.
+  A message's attachments, context and editor state stay behind. A tool call that names a
+  key file anywhere in its arguments (by the list of names that leaves key files out of a
+  snapshot) keeps only its name. The folder's path is written `.`, and text shaped like a
+  key or token is taken out. Only images the shared chat still names are uploaded.
+- What travels all the same: what was typed, what the agent wrote and thought, other tool
+  calls' results. A secret in words, or from an ordinary file, isn't recognised. The app
+  says this before the switch goes on.
+- A chat is taken out of the share only when the computer that wrote it finds its file gone
+  or in another folder (or the switch off), never because a pass didn't name it.
+- A reader's computer builds what it shows and what it copies from the same whitelist again
+  (it doesn't go by what the sharer's app sent), within limits (a copy: 32 MiB of chat, 32
+  MiB an image, 500 images, 1 GiB; a view: 8 MiB), under a new id, never over a chat that
+  exists, saved once. It opens as plain text.
 
 ### What sharing can't promise
 
@@ -438,6 +456,11 @@ team; a computer of the account is trusted with the keys. Neither is trusted fur
   list states the generation below which such a record is no longer taken (`floors`).
 - **The recovery wrap states how far the trusted list had got** (`listN`, inside what its tag
   covers): a computer joining by recovery key refuses an older list.
+- **A proof says what it is for** (D458). A challenge is asked for with a purpose (setup,
+  join, own, rotate-self, member-key); a service that knows this answers `v: 2` and the
+  proof signs `sync-proof-v2:<purpose>:<nonce>`, taken only by the call it was made for.
+  Without `v: 2` in the answer (a service from before) the first form is given, and the
+  service still takes the first form from apps from before.
 - **Calls that change keys carry a proof.** Approving a device, a new recovery key, new keys
   and removing another device send a fresh proof of this device's key
   (`challenge: { id, proof }`; on DELETE also the header `X-Sync-Challenge`), so a stolen

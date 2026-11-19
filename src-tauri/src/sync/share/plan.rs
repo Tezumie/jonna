@@ -155,6 +155,57 @@ pub fn allowed<'a, T>(
         .collect()
 }
 
+/// Whom keys are handed to, from the two places that say whom a share is for: `own`, this
+/// account's sealed record (None: there is none; Some(None): the whole team), and `listed`,
+/// what the service says (None: a service that keeps no lists; Some(None): the whole team).
+/// The account's record decides whenever there is one. Without one, a share the service
+/// calls chosen is for nobody but the sharer (the second value: said to the person), and
+/// only a share neither side calls chosen is the whole team's. The service's list is never
+/// whom keys go to.
+pub fn audience(
+    own: Option<&Option<Vec<String>>>,
+    listed: Option<&Option<Vec<String>>>,
+) -> (Option<Vec<String>>, bool) {
+    match (own, listed) {
+        (Some(own), _) => (own.clone(), false),
+        (None, Some(Some(_))) => (Some(Vec::new()), true),
+        (None, _) => (None, false),
+    }
+}
+
+/// Whom a start shares with: `asked` (None: nothing was said; Some(None): the whole team;
+/// Some(list): chosen people), for a share that `exists` or not, with `kept` the account's
+/// record (as for `audience`). What to write down as the audience; None: nothing (it stays
+/// as it is, or unknown). On a share that exists, "the whole team" said by a start changes
+/// nothing: a start is not where an audience is widened (a list read before it was narrowed
+/// would undo the narrowing). Only a change says so (`share_update`).
+pub fn start_audience(
+    asked: Option<Option<Vec<String>>>,
+    exists: bool,
+    kept: Option<&Option<Vec<String>>>,
+) -> Option<Option<Vec<String>>> {
+    match (asked, exists) {
+        (Some(Some(list)), _) => Some(Some(list)),
+        (_, true) => None,
+        (Some(None), false) => Some(None),
+        // A start taken up again: what was written down for it, else the whole team.
+        (None, false) => Some(kept.cloned().unwrap_or(None)),
+    }
+}
+
+/// Whether two lists of people are the same people.
+pub fn same_people(a: &Option<Vec<String>>, b: &Option<Vec<String>>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            let (a, b): (BTreeSet<&String>, BTreeSet<&String>) =
+                (a.iter().collect(), b.iter().collect());
+            a == b
+        }
+        _ => false,
+    }
+}
+
 /// The people a sharer chose, as they are kept: ids that are ones, each once, without the
 /// sharer, at most `max`. None stays None (the whole team).
 pub fn chosen(readers: Option<Vec<String>>, me: &str, max: usize) -> Option<Vec<String>> {
@@ -480,6 +531,55 @@ mod tests {
         ] {
             assert_eq!(shown(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn keys_go_by_the_accounts_own_record_never_by_the_services_list() {
+        let list = |names: &[&str]| Some(uids(names));
+        // The record decides, whatever the service says.
+        assert_eq!(
+            audience(Some(&list(&["ben"])), Some(&None)),
+            (list(&["ben"]), false)
+        );
+        assert_eq!(
+            audience(Some(&list(&["ben"])), Some(&list(&["ben", "cy"]))),
+            (list(&["ben"]), false)
+        );
+        assert_eq!(audience(Some(&None), Some(&list(&["cy"]))), (None, false));
+        assert_eq!(
+            audience(Some(&list(&["ben"])), None),
+            (list(&["ben"]), false)
+        );
+        // No record, and the service calls it chosen: nobody, and that is said.
+        assert_eq!(
+            audience(None, Some(&list(&["ben", "cy"]))),
+            (Some(vec![]), true)
+        );
+        // No record and nobody calls it chosen: the whole team, as before lists existed.
+        assert_eq!(audience(None, Some(&None)), (None, false));
+        assert_eq!(audience(None, None), (None, false));
+
+        // A start on a share that exists never widens it (a stale list asked for the team).
+        assert_eq!(
+            start_audience(Some(None), true, Some(&list(&["ben"]))),
+            None
+        );
+        assert_eq!(start_audience(None, true, Some(&list(&["ben"]))), None);
+        // Chosen people are what they are asked to be; a new share is the team's unless said.
+        assert_eq!(
+            start_audience(Some(list(&["cy"])), true, None),
+            Some(list(&["cy"]))
+        );
+        assert_eq!(start_audience(Some(None), false, None), Some(None));
+        assert_eq!(
+            start_audience(None, false, Some(&list(&["ben"]))),
+            Some(list(&["ben"]))
+        );
+        assert_eq!(start_audience(None, false, None), Some(None));
+
+        assert!(same_people(&list(&["a", "b"]), &list(&["b", "a"])));
+        assert!(!same_people(&list(&[]), &None));
+        assert!(same_people(&None, &None));
     }
 
     #[test]

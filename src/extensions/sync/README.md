@@ -225,6 +225,11 @@ its commands through the dispatcher.
   is off. A teammate's side: `ShareLook.chats`, the "Chats" part of an opened share,
   `team.share.chats`, `team.share.readChat` (a read-only document made by
   `conversationMarkdown`), `team.share.continueChat` (a copy among one's own chats).
+- After the audit (D457): `sync.project.share` reads the list first and never changes whom
+  a share that exists is for; the chats pass hands the backend the busy chats (left as they
+  are); the activity gets fixed words (`NEWS_LOG`, `ASK_LOG`), names only in the
+  notification; the card says when this account has no record of whom a chosen share is for
+  (`audienceUnknown`); a shared chat opens as `.txt`.
 - Hand-off (D455): after each read of the book, `ProjectSharing.tell` asks `share_news`
   what this computer hasn't seen and announces it once (`SharingHost.announce`; the
   `team.shareNotices` setting), and the same for a new ask. `team.member.askToShare`,

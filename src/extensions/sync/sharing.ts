@@ -19,10 +19,12 @@ import { type Signal, signal } from "../../core/reactive/index";
 import { codeOf, messageOf } from "../../core/sync/errors";
 import { EMPTY_SHARE_BOOK, settledByStartingOver, shareBook } from "../../core/team/shareBook";
 import {
+  ASK_LOG,
   askSentence,
   chatsSentence,
   keyFilesLine,
   keysDue,
+  NEWS_LOG,
   newsSentence,
   noTeamCode,
   ownShareOf,
@@ -48,12 +50,19 @@ export interface SharingHost {
   afterSnapshots<T>(work: () => Promise<T>): Promise<T>;
   /** A line in the sync activity. */
   note(text: string, failure?: boolean): void;
-  /** The chats of the project in `root` to share, newest first (D454). */
-  projectChats(root: string): Promise<string[]>;
+  /**
+   * The chats of the project in `root` to share, newest first (D454), and the ones being
+   * written right now (`busy`: left as they are in the share).
+   */
+  projectChats(root: string): Promise<{ chats: string[]; busy: string[] }>;
   /** Whether teammates' new shares are announced here (the `team.shareNotices` setting). */
   notices(): boolean;
-  /** Says something new of the team once, quietly, with a way to the Team page (D455). */
-  announce(message: string, share: string | null): void;
+  /**
+   * Says something new of the team once, quietly, with a way to the Team page (D455).
+   * `log` is what the activity keeps of it: fixed words, since agents read the activity and
+   * `message` names a teammate and a project (D457).
+   */
+  announce(message: string, share: string | null, log: string): void;
 }
 
 /** What the last share sync of a project came to, in this window. */
@@ -104,8 +113,6 @@ export class ProjectSharing implements Disposable {
   private readonly syncedAt = new Map<string, number>();
   /** The failure last said in the activity (said once, until a sync goes through). */
   private saidFailure = "";
-  /** The teammates whose ask was said in this window. */
-  private readonly toldAsks = new Set<string>();
   /** What the last pass over each project's shared chats came to (project id). */
   readonly chatsOutcome = new Map<string, ShareChatsSynced>();
   /** The projects whose chats switch is off and whose shared chats were seen to be gone. */
@@ -132,7 +139,6 @@ export class ProjectSharing implements Disposable {
     this.syncedAt.clear();
     this.chatsOutcome.clear();
     this.chatsCleared.clear();
-    this.toldAsks.clear();
     this.saidFailure = "";
     shareBook.value = EMPTY_SHARE_BOOK;
     this.outcome.value = null;
@@ -194,9 +200,8 @@ export class ProjectSharing implements Disposable {
       // Who asked this account to share something; a service without asks has none.
       const asks = await shareIpc.asks(base).catch(() => []);
       if (this.disposed || !this.available()) return;
-      const before = shareBook.peek();
       shareBook.value = { members, shares, asks, readAt: Date.now(), problem: null };
-      void this.tell(base, shares, asks, before.readAt === null ? [] : before.asks);
+      void this.tell(base, shares, asks);
     } catch (err) {
       if (this.disposed) return;
       const code = codeOf(err);
@@ -217,14 +222,13 @@ export class ProjectSharing implements Disposable {
 
   /**
    * What is new for this computer among what teammates share, and who newly asked for a
-   * share: said once each (the shares are remembered on this computer, the asks while the
-   * window is open), unless notices are off. Never throws.
+   * share: said once each (both are remembered on this computer, across restarts), unless
+   * notices are off. Never throws.
    */
   private async tell(
     base: string,
     shares: readonly ShareInfo[],
-    asks: readonly { uid: string; name: string }[],
-    askedBefore: readonly { uid: string }[],
+    asks: readonly { uid: string; name: string; at: number }[],
   ): Promise<void> {
     try {
       // Remembered whether or not it is said: turning notices on later doesn't replay the past.
@@ -233,15 +237,13 @@ export class ProjectSharing implements Disposable {
         shares
           .filter((share) => !share.mine)
           .map((share) => ({ id: share.id, chats: share.chats })),
+        asks.map((ask) => ({ uid: ask.uid, at: ask.at })),
       );
       if (this.disposed || !this.host.notices()) return;
-      const told = newsSentence(news, shares);
-      if (told) this.host.announce(told.message, told.share);
-      const fresh = asks.filter(
-        (ask) => !this.toldAsks.has(ask.uid) && !askedBefore.some((old) => old.uid === ask.uid),
-      );
-      for (const ask of asks) this.toldAsks.add(ask.uid);
-      if (fresh.length > 0) this.host.announce(askSentence(fresh), null);
+      const told = newsSentence(news.shares, shares);
+      if (told) this.host.announce(told.message, told.share, NEWS_LOG);
+      const fresh = asks.filter((ask) => news.asks.includes(ask.uid));
+      if (fresh.length > 0) this.host.announce(askSentence(fresh), null, ASK_LOG);
     } catch {
       // Nothing to say then.
     }
@@ -447,8 +449,16 @@ export class ProjectSharing implements Disposable {
     // computer) is taken out once a window, not asked about every pass.
     if (!share.chats && this.chatsCleared.has(project.id)) return null;
     try {
-      const ids = share.chats ? await this.host.projectChats(project.root) : [];
-      const done = await shareIpc.chatsSync(this.host.base(), project.id, project.root, ids);
+      const listed = share.chats
+        ? await this.host.projectChats(project.root)
+        : { chats: [], busy: [] };
+      const done = await shareIpc.chatsSync(
+        this.host.base(),
+        project.id,
+        project.root,
+        listed.chats,
+        listed.busy,
+      );
       this.chatsOutcome.set(project.id, done);
       if (share.chats) this.chatsCleared.delete(project.id);
       else this.chatsCleared.add(project.id);

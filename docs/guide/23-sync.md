@@ -144,9 +144,11 @@ changes, as snapshots, for teammates to look at or pick up.
   then on, and your computer makes new keys at once; what they had already opened, they
   have. Nobody you didn't tick is shown that the project exists.
 - **Share its chats too** (a second switch, off until you turn it on): the same people can
-  read the project's chats with the agent, images included. Only the chats of this folder
-  travel, the newest hundred. What the agent read from key files is left out; anything else
-  said or read in a chat is not, so look through them first. Turning it off removes them.
+  read the project's chats with the agent. Only the chats of this folder travel, the newest
+  hundred. Left out: what you attached to a message, tool calls that name a key file, text
+  shaped like a key or token, and the folder's path. Not left out: what you typed, what the
+  agent wrote, and other tool results, so a secret written out in words travels. Look
+  through them first. Turning it off removes them.
 - **Key files are left out:** `.env` files, keys, certificates, tokens and sign-in files of
   common tools, by name. It is a list of names, not a guarantee: don't share a project whose
   secrets are in other files. If a key file is in a commit you haven't pushed, sharing stops
@@ -155,9 +157,10 @@ changes, as snapshots, for teammates to look at or pick up.
   folder you have open is a clone of the same repository, you also see how each file differs
   from yours.
 - **Chats** (when the sharer shares them) are listed under the project's snapshots. **Read**
-  opens one as a read-only document. **Continue as my own chat** makes a copy among your own
-  chats, named with whose it was; it ends with a line saying where their part ends, and
-  nothing you do in it goes back.
+  opens one as read-only text. **Continue as my own chat** makes a copy among your own
+  chats, named with whose it was: the conversation only (none of their spend, plan or
+  settings); it ends with a line saying where their part ends, and nothing you do in it
+  goes back.
 - **Open a copy…** puts a snapshot into a new folder. You are shown the address it would
   clone from and asked first. The folder opens like any folder someone else made: not trusted,
   with git off, until you say so.

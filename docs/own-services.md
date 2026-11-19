@@ -313,6 +313,10 @@ A server of your own that offers teams also answers, as [sync.md](sync.md) lists
   people its sharer chose; without it the app offers the whole team only) and `asks`;
   `POST` and `DELETE /api/team/shares/{uid}/ask` (optional: without them "Ask to share"
   says it isn't available);
+- `POST /api/sync/challenge` taking `purpose` and answering `v: 2` (optional: without
+  `v: 2` the app gives the proof's first form), and `POST shares/{id}/keys` taking
+  `audience: 1` (a service that keeps readers should refuse a chosen share's wraps
+  without it);
 - `/api/team/shares` and everything under it: a share is stored and answered like a vault
   (the same record and chunk calls), with one writer and the team's members as readers.
 

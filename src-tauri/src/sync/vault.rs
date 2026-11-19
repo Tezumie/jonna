@@ -594,16 +594,24 @@ impl Vault {
         }})
     }
 
-    /// Proof for the service that `key`'s private half is held here (its challenge, answered).
-    pub(super) async fn proof(&self, key: &PrivateKey) -> Result<Value> {
+    /// Proof for the service that `key`'s private half is held here (its challenge,
+    /// answered), for `purpose`: "setup", "join", "own", "rotate-self" or "member-key". A
+    /// service that knows the proof's second form says so in its challenge (`v`: 2), and
+    /// the purpose is then part of what is signed; one that doesn't gets the first form.
+    pub(super) async fn proof(&self, key: &PrivateKey, purpose: &str) -> Result<Value> {
         let challenge = self
             .api
-            .post("challenge", &json!({ "publicKey": key.public() }))
+            .post(
+                "challenge",
+                &json!({ "publicKey": key.public(), "purpose": purpose }),
+            )
             .await?
             .into_ok()?;
+        let labelled = challenge["v"].as_u64() == Some(2);
         let answer = key.prove(
             challenge["publicKey"].as_str().unwrap_or(""),
             challenge["nonce"].as_str().unwrap_or(""),
+            labelled.then_some(purpose),
         )?;
         Ok(json!({ "id": challenge["id"], "proof": answer }))
     }
@@ -612,7 +620,7 @@ impl Vault {
     /// holds the account's keys (approving, new keys, a new recovery key, removing a device):
     /// a stolen sign-in alone can't make one. A proof works once, so each call gets its own.
     async fn own_proof(&self) -> Result<Value> {
-        self.proof(&self.device_key()?).await
+        self.proof(&self.device_key()?, "own").await
     }
 
     /// The account's state as the service gives it, refused when it isn't in the shape a
@@ -722,7 +730,7 @@ impl Vault {
             // A new sign-in is a new session: tell the server which device it is again.
             if server["self"].as_str() != Some(local.device_id.as_str()) {
                 let mut body = self.device_body(&local, &key.public());
-                body["proof"] = self.proof(&key).await?;
+                body["proof"] = self.proof(&key, "join").await?;
                 self.api.post("devices", &body).await?.into_ok()?;
                 server = self.server_state().await?;
             }
@@ -1113,7 +1121,7 @@ impl Vault {
         };
         let bytes = prepared.ring.to_bytes()?;
         let mut body = self.device_body(&local, &public);
-        body["proof"] = self.proof(&prepared.device).await?;
+        body["proof"] = self.proof(&prepared.device, "setup").await?;
         // Boxed from this device to itself: what it takes back, should the reply be lost.
         body["wrap"] = json!(crypto::box_to(&prepared.device, &public, &bytes)?);
         body["recovery"] = json!({
@@ -1170,7 +1178,7 @@ impl Vault {
         local.device_name = clean_name(name);
         let key = self.device_key()?;
         let mut body = self.device_body(&local, &key.public());
-        body["proof"] = self.proof(&key).await?;
+        body["proof"] = self.proof(&key, "join").await?;
         self.api.post("devices", &body).await?.into_ok()?;
         // Kept once the account has it, so the two never disagree.
         self.save_local(&local)?;
@@ -1206,7 +1214,7 @@ impl Vault {
         };
         let mut body = self.device_body(&local, &key.public());
         body["device"]["commit"] = json!(crypto::commitment(&key.public(), &local.pair_value));
-        body["proof"] = self.proof(&key).await?;
+        body["proof"] = self.proof(&key, "join").await?;
         self.api.post("devices", &body).await?.into_ok()?;
         Ok(())
     }
@@ -1283,7 +1291,7 @@ impl Vault {
             "self": true,
             "wrap": crypto::box_to(&key, &public, &ring.to_bytes()?)?,
             "keyVersion": version,
-            "proof": self.proof(&recovery).await?,
+            "proof": self.proof(&recovery, "rotate-self").await?,
         });
         self.api.post("keyring", &body).await?.into_ok()?;
         self.store_keyring(&ring)?;

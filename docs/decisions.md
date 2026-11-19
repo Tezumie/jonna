@@ -50,6 +50,8 @@ unless noted.
 | · Sharing a project with chosen people, not the whole team | D453 |
 | · A shared project's chats: read by teammates, continued as a copy | D454 |
 | · Hand-off: told once when a teammate shares, asking a teammate to share | D455 |
+| · The audit of team sharing: a shared chat built from a whitelist, the audience in a record old apps can't lose, and twelve smaller findings | D457 |
+| · A proof of possession that says what it is for; the generation floor for chats and snapshots stays open | D458 |
 
 ## Seeded from PLAN §19
 
@@ -16227,3 +16229,139 @@ days, or from someone who left, is deleted when it is next read.
 **Checked:** `news_of` (Rust), the sentences (the model), the service's suite (who may ask
 whom, who is told), the two-computer run (asked, listed for the one asked only, dismissed;
 the chats of a share are news once).
+
+## D457 — The audit of team sharing (D453 to D455): what was wrong, and what is true now
+
+A reviewer that didn't write the code read the two commits. Fourteen findings, all fixed.
+Where D453 to D455 say something that was not true, this entry is the correction.
+
+**A shared chat held more than D454 said (1).** D454 listed what was taken out; everything
+not on the list travelled: what was attached to a message (files' text, the editor's
+state), tool calls that reached a key file without naming it in a top-level argument (a
+command line, a nested or string-encoded argument), image previews, every image in the
+chat's folder, absolute paths, the sharer's spend, plan and model. It is now the other way
+round. `chats::for_teammates` builds the shared chat from a **whitelist**
+(`chats::conversation`): the title, when it changed, the turn counter, and of each item only
+the fields that are the conversation (`ITEM_FIELDS`). Then:
+- a tool call whose arguments name a key file **anywhere** (any depth, inside a string of
+  JSON, or as a word of a command) keeps its name and nothing else;
+- the project folder's path is written `.`, and text with the shape of a key or token is
+  taken out of every string, by the rules the diagnostics report already used
+  (`diagnostics::redact`);
+- a message's attachments, context and editor state are dropped, and the message says that
+  there were some;
+- only images the shared chat still names are uploaded.
+
+What it still can't know, and the dialog now says so in these words: what was typed, what
+the agent wrote and thought, and the results of other tool calls travel; a secret written
+out in words, or read from a file with an ordinary name by a tool that didn't name a key
+file (a search over the folder that printed a line of `.env` and whose value has no known
+shape), travels. D454's "what a tool read from a key file is left out" was too strong.
+
+**A copy kept what the code believed it removed (2).** `mark_copied` deleted fields that
+don't exist in a chat's file and left the real ones: `cost` (a negative one defeats the
+per-chat budget), the room, members, mode, plan, pull request, tool limit, buttons on
+notices. The reader's computer now builds the copy from the same whitelist, whatever the
+sharer's app sent, and the test uses the names `sessionStore.ts` writes.
+
+**"Two places that don't rely on each other" was not true (3).** The chosen list was a
+field of `shares/<project>`, which an 0.1.11 app on another of the sharer's computers
+rewrites without it, and the code then fell back to the service's list. Now:
+- the list is its own sealed record, `sys/readers-<project>` (`Audience`): in the
+  collection no front end writes, that old apps never rewrite, and whose records sealed with
+  keys older than the account's newest are not taken;
+- keys go by that record alone (`plan::audience`). With no record, a share the service
+  calls chosen is handed to **nobody** and the card says so; the service's list is never
+  whom keys go to;
+- the service takes wraps for a chosen share only from an app that says it keeps such a
+  record (`audience: 1`; otherwise 409 `needs_update`), so an 0.1.11 app can't hand a
+  chosen share's keys out by the service's word.
+
+**"Share" on a stale list widened a chosen share (4).** A start that said "the whole team"
+for a share that existed wrote exactly that. A start no longer changes whom a share that
+exists is for (`plan::start_audience`); only `share_update` does. `sync.project.share`
+reads the list first.
+
+**Chats vanished from the share (5).** Every chat a pass didn't name was deleted, so the
+chat being written disappeared for readers, and two computers removed each other's. A chat
+is now taken out only when this computer wrote it and its file is gone or says another
+folder; chats being written are passed as busy and left alone.
+
+**The smaller ones.**
+- (6) The line a copy ends with is fixed text, with no teammate's name in it (the model
+  reads it). The activity, which agents read, says "A teammate shared something with you";
+  names stay in the notification. `ide://team` marks its names as teammates' text
+  (`contentFrom`, `notice`), as command results are.
+- (7) `share_chats_sync` writes only from the folder this computer shares that project
+  from (the folder of its last snapshot into the share, kept by the backend).
+- (8) A copy is built in memory and saved once, complete.
+- (9) A change of audience that didn't reach the service is sent again at the next pass
+  (the record is the truth; `maintain` tells the service when they differ).
+- (10) An ask asked again while it stands isn't written or counted and keeps its date; asks
+  to and from a member who left are deleted; what was said is kept on the computer
+  (`share-seen.json`), so a restart doesn't say it again.
+- (11) A sharer whose subscription ended can still take people off a share at the service,
+  and store the new keys. The app can't use that yet: taking someone off writes a record in
+  the account's own vault, which a lapsed account can't; it offers Stop sharing. A member who
+  leaves is taken off every list, at the service and in the sharer's record: coming back
+  doesn't make them a reader again.
+- (12) A copied chat is at most 32 MiB, each image 32 MiB, 500 images, 1 GiB together; a chat
+  shown is at most 8 MiB; an image named like a Windows device (`nul`, `con`) is not
+  written.
+- (13) A chat's folder is checked before anything else is decided about it.
+- (14) Renewing a share's keys, writing a snapshot into it and writing its chats take one
+  lock on a computer; what this computer remembers of a shared chat includes the key
+  generation it was sealed under, so after new keys every chat is sealed again.
+
+**Two things the audit asked to check.** A shared chat opens in the text editor as a
+`.txt` document, not as rendered Markdown (it was `.md`: the editor showed text, but a
+preview of it could have fetched an image a teammate's chat named): nothing in it makes the
+reader's computer fetch anything. And the new backend commands are all in
+`capabilities/default.json` (the eight `share_*` added by D453 to D455).
+
+**Corrections to earlier entries.** D453: "the service's list of members is narrowed by
+[the record], never the other way round" and "still bounded by the list the service gives"
+are replaced by the above; `Own.readers` no longer exists. D454: "What doesn't", and
+"mark_copied … without the teammate's queue or spend", as above. D455: "says it once" is
+now once a computer.
+
+**Checked:** Rust (the whitelist with every finding's case, the audience rules, a start on
+a share that exists, when a chat is taken out, the asks' memory), the service's suite (an
+unmarked `POST keys` on a chosen share, a lapsed sharer narrowing, a removed member taken
+off lists and asks), the two-computer run in both modes (an attached key file and a search
+result with a key are in neither the reader's view nor their copy; a copy has no cost, plan
+or mode; Share on a share that exists keeps a chosen list; a busy or unnamed chat stays).
+**Not checked:** the drawn pages, by hand or by script (no account in the UI tests); a real
+0.1.11 app beside the new one.
+
+## D458 — A proof of possession that says what it is for; what stays open from D447
+
+**Done: the proof's second form.** A proof of holding a key was HMAC of the challenge's
+nonce under the shared secret, the same for every call that takes one. A challenge is now
+asked for with what the proof is for (`purpose`: setup, join, own, rotate-self,
+member-key); the service that knows this answers `v: 2`, the proof signs
+`sync-proof-v2:<purpose>:<nonce>`, and the call that takes it accepts it only for its own
+purpose. Compatible both ways: an app from before names no purpose and gets and gives the
+first form, which the service still takes; the new app against a service that doesn't
+answer `v: 2` gives the first form. `SYNC_REQUIRE_PROOF` is untouched (off).
+
+**Left open: a generation floor for chats and snapshots.** Not done, because it can't be
+done soundly from the app alone:
+- Their records name chunks. Sealing one again is a write, and a write without its chunk
+  names makes the service forget them, after which the sweep deletes the content
+  (`records::reseal` refuses such records for that reason). Naming them again means
+  reading every snapshot's file list, or a new call on the service that keeps a record's
+  names (`refs: "keep"`), with a way for the app to know the service has it.
+- The floor in the trusted list is by collection name; chats and snapshots live in
+  collections named per project, so it needs floors by prefix (apps from before look up the
+  exact name and would ignore one, which is compatible).
+- A computer that hasn't the newest keys yet can still write a chat under the older ones.
+  With a floor the others refuse it, and nothing makes that computer write it again once it
+  has the keys. That has to be decided and tested in the chats layer first, or chats are
+  lost between computers.
+What it needs: the service call, floors by prefix, that rule, and a step in the
+two-computer run that removes a device and shows an old-generation chat refused and a
+legitimate one arriving.
+
+**Still open, not looked into further here:** a deletion of a snapshot or a project is the
+service's unsealed word; switches outside the guarded areas still sync.

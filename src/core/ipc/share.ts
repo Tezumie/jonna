@@ -117,6 +117,11 @@ export interface ShareSynced {
   renewed: boolean;
   /** Members who don't have the keys, and why. */
   waiting: ShareWaiting[];
+  /**
+   * The share is for chosen people and this account's own record of who they are is missing
+   * (D457): nobody was handed keys. Choosing who it is for again settles it.
+   */
+  audienceUnknown: boolean;
 }
 
 export interface SharedSnapshot {
@@ -198,15 +203,18 @@ export const shareIpc = {
    * on this computer, newest first): new and changed ones are written, the rest of what the
    * share held is taken out. With the share's chats switch off, every shared chat goes.
    * `root`: the project's open folder (the backend shares a chat only when its own file says
-   * that folder is its); null: nothing is written, what is shared only goes.
+   * that folder is its); null: nothing is written, what is shared only goes. `busy`: chats
+   * being written now, left as they are. A chat is taken out only when this computer wrote
+   * it and its file is gone or in another folder, never because a pass didn't name it.
    */
   chatsSync: (
     base: string,
     project: string,
     root: string | null,
     chats: string[],
+    busy: string[] = [],
   ): Promise<ShareChatsSynced> =>
-    call<ShareChatsSynced>("share_chats_sync", { base, project, root, chats }),
+    call<ShareChatsSynced>("share_chats_sync", { base, project, root, chats, busy }),
   /** The chats a share holds, newest first. Titles are a teammate's text. */
   chats: (base: string, id: string): Promise<SharedChat[]> =>
     call<SharedChat[]>("share_chats", { base, id }),
@@ -235,10 +243,14 @@ export const shareIpc = {
     call<void>("share_ask_clear", { base, uid }),
   /**
    * What is new among the teammates' shares shown now, for this computer; each is said once,
-   * and the first look says nothing.
+   * and the first look says nothing. `asks`: the asks made of this account now; the answer's
+   * `asks` are those this computer hasn't said yet (kept across restarts).
    */
-  news: (base: string, shown: { id: string; chats: boolean }[]): Promise<ShareNews[]> =>
-    call<ShareNews[]>("share_news", { base, shown }),
+  news: (
+    base: string,
+    shown: { id: string; chats: boolean }[],
+    asks: { uid: string; at: number }[] = [],
+  ): Promise<{ shares: ShareNews[]; asks: string[] }> => call("share_news", { base, shown, asks }),
   /** This account's fingerprint; makes and publishes its member key when that wasn't done. */
   me: (base: string): Promise<ShareMe> => call<ShareMe>("share_me", { base }),
   /**

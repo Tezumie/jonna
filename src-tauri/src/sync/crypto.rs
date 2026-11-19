@@ -89,8 +89,11 @@ impl PrivateKey {
 
     /// Answers the service's challenge: proof that this key's private half is held, without
     /// showing it. X25519 with the service's one-time public key gives a secret only the two
-    /// share; the answer is HMAC-SHA256 of the challenge's nonce under it.
-    pub fn prove(&self, their_public: &str, nonce: &str) -> Result<String> {
+    /// share; the answer is HMAC-SHA256 of the challenge's nonce under it. With `purpose`
+    /// (D458, the proof's second form) what the proof is for is part of what is signed, so
+    /// a proof made for one call is none for another; without, the first form (a service
+    /// that doesn't know the second).
+    pub fn prove(&self, their_public: &str, nonce: &str, purpose: Option<&str>) -> Result<String> {
         let theirs: [u8; 32] = unb64(their_public)?
             .try_into()
             .map_err(|_| keys_error("the service's challenge isn't valid"))?;
@@ -98,7 +101,11 @@ impl PrivateKey {
             curve25519_dalek::montgomery::MontgomeryPoint(theirs).mul_clamped(self.0.to_bytes());
         let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(shared.as_bytes())
             .map_err(|_| keys_error("a key isn't valid"))?;
-        mac.update(format!("sync-proof:{nonce}").as_bytes());
+        let signed = match purpose {
+            Some(purpose) => format!("sync-proof-v2:{purpose}:{nonce}"),
+            None => format!("sync-proof:{nonce}"),
+        };
+        mac.update(signed.as_bytes());
         Ok(b64(&mac.finalize().into_bytes()))
     }
 
@@ -683,17 +690,35 @@ mod tests {
         // Two key pairs agree on the secret, so each can check the other's answer.
         let device = PrivateKey::generate().unwrap();
         let service = PrivateKey::generate().unwrap();
-        let from_device = device.prove(&service.public(), "nonce").unwrap();
-        let from_service = service.prove(&device.public(), "nonce").unwrap();
+        let from_device = device.prove(&service.public(), "nonce", None).unwrap();
+        let from_service = service.prove(&device.public(), "nonce", None).unwrap();
         assert_eq!(from_device, from_service);
         assert_ne!(
             from_device,
-            device.prove(&service.public(), "other").unwrap()
+            device.prove(&service.public(), "other", None).unwrap()
         );
         let stranger = PrivateKey::generate().unwrap();
         assert_ne!(
             from_device,
-            stranger.prove(&service.public(), "nonce").unwrap()
+            stranger.prove(&service.public(), "nonce", None).unwrap()
+        );
+        // The second form says what it is for: a proof for one purpose is none for another,
+        // and none of the first form.
+        let own = device
+            .prove(&service.public(), "nonce", Some("own"))
+            .unwrap();
+        assert_eq!(
+            own,
+            service
+                .prove(&device.public(), "nonce", Some("own"))
+                .unwrap()
+        );
+        assert_ne!(own, from_device);
+        assert_ne!(
+            own,
+            device
+                .prove(&service.public(), "nonce", Some("join"))
+                .unwrap()
         );
     }
 

@@ -312,7 +312,10 @@ pub async fn share_open_copy(
 /// conversation only: nothing that grants something, no folder, and not what a tool read
 /// from a key file. `root`: the open folder the project syncs from; a chat is shared only
 /// when its own file says that folder is its. Without `root` nothing is written (what is
-/// shared only goes).
+/// shared only goes). The folder must be the one this computer shares `project` from (the
+/// backend keeps which that is). `busy`: chats being written now, left as they are. A chat
+/// is taken out only when this computer wrote it and its file is gone or moved to another
+/// folder, never because a pass didn't name it.
 #[tauri::command]
 pub async fn share_chats_sync(
     state: State<'_, AppState>,
@@ -320,13 +323,14 @@ pub async fn share_chats_sync(
     project: String,
     root: Option<String>,
     chats: Vec<String>,
+    busy: Option<Vec<String>>,
 ) -> Result<ChatsSynced> {
     let root = match root {
         Some(root) => Some(snapshot_root(&state, &root)?),
         None => None,
     };
     shares(&state, &base)?
-        .sync_chats(&project, root.as_deref(), chats)
+        .sync_chats(&project, root.as_deref(), chats, busy.unwrap_or_default())
         .await
 }
 
@@ -395,11 +399,36 @@ pub async fn share_ask_clear(state: State<'_, AppState>, base: String, uid: Stri
 /// whether its chats are shared), for this computer: a share it hasn't seen, or one whose
 /// chats weren't shared when it last looked. Remembered here, so each is said once. The
 /// first look of an account on a computer says nothing (what was there before isn't news).
+/// `asks`: the asks made of this account now (who, when); `asks` in the answer are the
+/// ones this computer hasn't said yet (each is said once a computer, across restarts).
 #[tauri::command]
 pub async fn share_news(
     state: State<'_, AppState>,
     base: String,
     shown: Vec<Shown>,
-) -> Result<Vec<News>> {
-    shares(&state, &base)?.news(shown)
+    asks: Option<Vec<AskShown>>,
+) -> Result<NewsNow> {
+    let asks = asks
+        .unwrap_or_default()
+        .into_iter()
+        .map(|ask| (ask.uid, ask.at))
+        .collect();
+    let (shares, asks) = shares(&state, &base)?.news(shown, asks)?;
+    Ok(NewsNow { shares, asks })
+}
+
+/// An ask as the list shows it now.
+#[derive(Debug, serde::Deserialize)]
+pub struct AskShown {
+    pub uid: String,
+    #[serde(default)]
+    pub at: u64,
+}
+
+/// What `share_news` answers.
+#[derive(Debug, serde::Serialize)]
+pub struct NewsNow {
+    pub shares: Vec<News>,
+    /// Who newly asked this account to share a project.
+    pub asks: Vec<String>,
 }

@@ -316,7 +316,7 @@ export function chatsSentence(result: ShareChatsSynced): string {
     result.written > 0 ? `${plural(result.written, "chat")} shared.` : "",
     result.removed > 0 ? `${plural(result.removed, "chat")} taken out of what is shared.` : "",
     result.keyFiles > 0
-      ? `What the agent read from key files was left out (${result.keyFiles}).`
+      ? `Tool calls that named key files were left out (${result.keyFiles}).`
       : "",
     result.skipped > 0 ? `${plural(result.skipped, "chat")} will follow.` : "",
   ]
@@ -331,7 +331,7 @@ export function shareChatsQuestion(
 ): { title: string; message: string } {
   return {
     title: `Share ${name}'s chats too?`,
-    message: `${audience}\n\nThey will be able to read this project's chats with the agent, images included, and continue a copy as their own. A chat holds whatever was said in it and whatever the agent read or ran: look through them for anything private first. What the agent read from key files (.env, keys and tokens) is left out; other secrets are not recognised.\n\nChats in other folders, and chats with no folder, are never shared. Turning this off removes the shared chats.`,
+    message: `${audience}\n\nThey will be able to read this project's chats with the agent and continue a copy as their own.\n\nLeft out: what you attached to a message (files, images, the editor's state), any tool call that names a key file (.env, keys and tokens) with its result, text that has the shape of a key or token, and this folder's path.\n\nNot left out: what you typed, what the agent wrote and thought, and the results of other tool calls. A secret written out in words, or read from a file with an ordinary name, travels. Look through the chats first.\n\nChats in other folders, and chats with no folder, are never shared. Turning this off removes the shared chats.`,
   };
 }
 
@@ -343,7 +343,7 @@ export function sharedChatTitle(chat: Pick<SharedChat, "title">): string {
 /** The file name a shared chat opens under, read only. */
 export function sharedChatDocument(chat: Pick<SharedChat, "title">, owner: string): string {
   const who = owner.trim() || "a teammate";
-  return `${sharedChatTitle(chat).slice(0, 40)} (${who}, shared).md`;
+  return `${sharedChatTitle(chat).slice(0, 40)} (${who}, shared).txt`;
 }
 
 /** What a notice says of something new among the teammates' shares; null: nothing to say. */
@@ -382,7 +382,15 @@ export function askSentence(asks: readonly Pick<ShareAsk, "name">[]): string {
 /** The second switch on a shared project (D454). */
 export const SHARE_CHATS_LABEL = "Share its chats too";
 export const SHARE_CHATS_NOTE =
-  "The same people can then read this project's chats with the agent, images included, and continue a copy as their own. A chat holds whatever was said and whatever the agent read.";
+  "The same people can then read this project's chats with the agent and continue a copy as their own. Attachments, and tool calls that name a key file, are left out; what was typed and what the agent wrote is not.";
+
+/** Said on the card when this account has no record of whom a chosen share is for (D457). */
+export const AUDIENCE_UNKNOWN =
+  "This account's record of who this project is shared with can't be found, so nobody is handed its keys. Choose who it is for again.";
+
+/** What the activity says of news from the team: no teammate's words in it (D457). */
+export const NEWS_LOG = "A teammate shared something with you (Sync, Team).";
+export const ASK_LOG = "A teammate asked you to share a project (Sync, Team).";
 
 /** The two ways a project is shared (D453). */
 export const AUDIENCE_TEAM = "The whole team";

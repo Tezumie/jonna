@@ -711,8 +711,11 @@ taking the accounts server as `base`.
   `reader` (also what is news for this computer, `news_of`, and asks), `chats` (D454: a
   shared project's chats, written by the sharer as `chats/<chat>` records through
   `sync/chats.rs` `for_teammates` and `push_text`, listed, read and copied by a reader).
-  Whom a share is for (D453) is `Own.readers`, applied by `plan::allowed` wherever keys
-  are handed out. Commands in `ipc/share.rs`.
+  Whom a share is for (D453, D457) is the sealed record `sys/readers-<project>`
+  (`Audience`), and keys go by it alone (`plan::audience`, `plan::allowed`); a shared or
+  copied chat is built from a whitelist (`chats::conversation`). The proof of holding a key
+  names its purpose where the service knows that form (`Vault::proof`, D458). Commands in
+  `ipc/share.rs`.
 - `incoming.rs` — which of those files are here as a sync download wrote them and weren't
   accepted on this computer (`<data>/sync-incoming.json`, never synced, kept when sync goes
   off): `downloading` (before the write), `list` (drops what was edited here since), `accept`,

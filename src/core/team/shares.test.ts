@@ -308,6 +308,7 @@ test("sharing: the sentence after a share sync", () => {
     wrapsAdded: 0,
     renewed: false,
     waiting: [],
+    audienceUnknown: false,
     ...over,
   });
   assert.equal(keyFilesLine(0), "");
@@ -597,12 +598,12 @@ test("D454: which chats are shared, and what a pass says", () => {
   assert.equal(chatsSentence(none), "");
   assert.equal(
     chatsSentence({ written: 2, unchanged: 0, removed: 1, skipped: 1, keyFiles: 3 }),
-    "2 chats shared. 1 chat taken out of what is shared. What the agent read from key files was left out (3). 1 chat will follow.",
+    "2 chats shared. 1 chat taken out of what is shared. Tool calls that named key files were left out (3). 1 chat will follow.",
   );
   assert.equal(sharedChatTitle({ title: "  " }), "Untitled chat");
   assert.equal(
     sharedChatDocument({ title: "Fix the build" }, "Sam"),
-    "Fix the build (Sam, shared).md",
+    "Fix the build (Sam, shared).txt",
   );
 });
 

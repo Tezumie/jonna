@@ -303,6 +303,9 @@ export function registerShareCommands(
           throw new Error(
             "Turn sync on for this project first: a project is shared from its synced copy.",
           );
+        // What is shared is read first: on a list from before the project was shared (from
+        // another computer, or narrowed there) this would start over what is there.
+        await fresh();
         const intended = sharing.intended.peek();
         const chosen = readers ?? (intended?.project === project.id ? intended.readers : null);
         const synced = await sharing.start(project, chosen);
