@@ -217,6 +217,12 @@ One program, no window, the same backend as the app; it builds on Windows, Linux
 wire. It reads the product's names from `product.json` when it is built, and keeps its
 settings where the app does (`--user-data-dir` for another place).
 
+On Windows, terminals need the newer ConPTY the app installs beside its own program:
+`conpty.dll` and `OpenConsole.exe` from `src-tauri/conpty/<arch>/` (put there by
+`node scripts/fetch-conpty.mjs`), beside `ide-host.exe`. The launcher copies them when they
+are missing; a host started by hand, or by a service, needs them put there. Without them a
+terminal can stay empty when the host has no console of its own.
+
 ### 4a. A host on the computer the browser is on
 
 ```

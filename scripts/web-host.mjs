@@ -8,7 +8,7 @@
 // (never on its command line, where other programs could read it) and printed once in the link.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,6 +196,22 @@ if (!binary || !existsSync(binary))
   fail(
     "no host program found. Build it (in src-tauri/): cargo build --no-default-features --features host --bin ide-host",
   );
+
+// Windows: the newer ConPTY the app installs beside its program (scripts/fetch-conpty.mjs puts
+// it in src-tauri/conpty/<arch>/). A host built from the repository has none beside it, and
+// with the system's own a terminal may show nothing when the host has no console of its own.
+if (process.platform === "win32") {
+  const from = join(root, "src-tauri", "conpty", process.arch);
+  for (const file of ["conpty.dll", "OpenConsole.exe"]) {
+    const beside = join(dirname(binary), file);
+    if (existsSync(beside) || !existsSync(join(from, file))) continue;
+    try {
+      copyFileSync(join(from, file), beside);
+    } catch {
+      // Read-only place: the system's ConPTY is used.
+    }
+  }
+}
 
 const sites = [];
 const site = option("--site");

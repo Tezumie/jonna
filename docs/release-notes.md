@@ -3,6 +3,19 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.13
+
+Fixes for the agent on Anthropic models, after a review of 0.1.12.
+
+- **A subagent keeps its tools on Anthropic models.** One that named an MCP tool, or one of
+  the tools that load on demand, could find it out of reach.
+- **A tool the chat loaded stays loaded after a summary.** It went back to being found by
+  search first.
+- **A long chat through a server that only speaks Anthropic's protocol** (a proxy) is
+  shortened here again before it reaches the model's limit.
+- **One refused request no longer turns the cache savings off** for that model until the app
+  restarts: it is tried again after half an hour.
+
 ## 0.1.12
 
 Sharing a project with chosen people, and its chats.

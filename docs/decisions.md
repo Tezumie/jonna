@@ -16471,6 +16471,11 @@ checks was found. What changed:
   (the bundled extensions' author, the notices file) and where plan wording lives.
   `npm run web`, `web:host`, `web:host:build`.
 
+- **Terminals in a host built from the repository (Windows):** with no console of its own
+  and the system's ConPTY, a terminal showed nothing (`scripts/host-smoke.mjs` found it:
+  it passes with the app's `conpty.dll` and `OpenConsole.exe` beside the host, fails
+  without). The launcher now puts them there; the guide says so for a host started by hand.
+
 **Not done, on purpose:** the host in the installers and a command in the app; forwarded
 ports; keys per device; more than one person a host; `build:web`'s name (it is the app
 window's bundle, and CI calls it: the owner's to rename).
