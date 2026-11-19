@@ -1,0 +1,13 @@
+[Unit]
+Description=Workspace machine: who may connect
+Wants=network-online.target
+After=network-online.target
+Before=caddy.service ide-host.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/ide/boot.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -65,14 +65,128 @@
     font-size: var(--text-sm);
     color: var(--fg-muted);
   }
-  .web-path-roots {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1);
-  }
-  .web-path-roots:empty,
   .web-path-note:empty {
     display: none;
+  }
+  /* The picker as a file manager: a path bar, places beside the folder's entries, the field. */
+  .web-path-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .web-path-crumbs {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+    min-height: var(--size-row);
+    padding: 0 var(--space-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+  }
+  .web-path-crumbs > .icon {
+    flex: none;
+    color: var(--fg-subtle);
+  }
+  .web-path-crumb {
+    flex: none;
+    padding: var(--space-1) var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .web-path-crumb:hover,
+  .web-path-crumb:focus-visible {
+    color: var(--fg-default);
+    background: var(--bg-hover);
+  }
+  .web-path-crumb[aria-current] {
+    color: var(--fg-default);
+  }
+  .web-path-body {
+    display: grid;
+    grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+    gap: var(--space-2);
+    min-height: 0;
+  }
+  .web-path-places {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow: auto;
+  }
+  .web-path-place {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--size-row);
+    padding: 0 var(--space-2);
+    color: var(--fg-default);
+    font-size: var(--text-sm);
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .web-path-place:hover,
+  .web-path-place:focus-visible {
+    background: var(--bg-hover);
+  }
+  .web-path-place > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .web-path-place > .icon {
+    flex: none;
+    color: var(--fg-muted);
+  }
+  .web-path-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+  }
+  .web-path-foot .web-path-field {
+    flex: 1;
+    min-width: 12rem;
+  }
+  .web-path label.web-path-hidden {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--size-row);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .web-path-row.is-selected {
+    background: var(--bg-selected);
+  }
+  .web-path-empty {
+    margin: 0;
+    padding: var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  /* A narrow window: the places go above the list, side by side. */
+  @media (max-width: 560px) {
+    .web-path-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .web-path-places {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
   }
   .web-path-list {
     display: flex;

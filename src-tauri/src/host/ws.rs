@@ -183,6 +183,11 @@ pub fn refusal(head: &Head, allowed: &Allowed) -> Option<&'static str> {
         return Some("the Host header isn't this computer");
     }
     match &head.origin {
+        // Through a proxy (a name, not this computer itself) the client is a page: one that
+        // says no origin is a program reaching the proxy from anywhere, and is not answered.
+        None if !head.host.as_deref().map(loopback_host).unwrap_or(false) => {
+            Some("a page's origin is needed through a proxy")
+        }
         Some(origin)
             if !allowed
                 .origins
@@ -505,6 +510,9 @@ mod tests {
         .is_some());
         // The page's origin still decides.
         assert!(refusal(&head(Some("https://evil.example"), "dev.example"), &allowed).is_some());
+        // And through a proxy there must be one: a program that names none is not a page.
+        assert!(refusal(&head(None, "dev.example"), &allowed).is_some());
+        assert_eq!(refusal(&head(None, "127.0.0.1:9"), &allowed), None);
         assert!(loopback_host("127.0.0.1") && loopback_host("LOCALHOST:80"));
         assert!(!loopback_host("127.0.0.1.evil.example") && !loopback_host("10.0.0.1:80"));
     }

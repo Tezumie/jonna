@@ -4609,3 +4609,12 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
 ## D465 — An agent's download shows
 1. With no model set up, press "Start free with OpenCode" in an empty chat and confirm: a
    progress notice shows the download until the chat is ready, then goes.
+
+## D466 — The web picker, and a host behind a proxy
+1. In the web front end, File > Open folder: places at the left (Home, the usual folders,
+   the drives), the path as steps at the top. A click on a folder chooses it (the field shows
+   it), a second click goes in; Up and each step of the path go where they say.
+2. Tick Hidden items: names starting with a dot appear. Type a path in the field: it lists.
+3. A narrow window: the places move above the list.
+4. A host behind a proxy (`docs/workspaces.md`): the page connects; `curl` with no Origin
+   header to the same name gets 403; ten idle connections don't keep the page from connecting.

@@ -59,6 +59,7 @@ unless noted.
 | · Fewer notifications: one per event, none for what the window already shows | D463 |
 | · The web front end on an address of its own | D464 |
 | · An external agent's download shows wherever it was started | D465 |
+| · Workspace machines: an image, a host that strangers can't hold, and a picker like a file manager | D466 |
 
 ## Seeded from PLAN §19
 
@@ -16628,3 +16629,48 @@ progress notice for a downloaded agent (downloading with its percent, checking,
 unpacking), closed when it ends either way. The row on the Models page keeps its own.
 
 **Tried:** the checks, unit tests, and the two UI scripts that install a registry agent.
+
+## D466 — Workspace machines: an image, a host that strangers can't hold, and a picker like a file manager
+
+The owner wants a machine per person, opened in the web front end, as something that could
+be sold with Sync (the plan's "hosted machines"). The service that starts and stops machines
+is the website's (its repository; it is tied to accounts and a cloud). What is in this
+repository is what anyone running their own needs:
+
+- **`scripts/workspace/`: the machine image.** `setup.sh` turns a fresh Ubuntu 24.04 into
+  it: Caddy, the host as a service of the user `dev` (with sudo: the machine is the
+  person's own), common tools, and three units. `boot.sh` reads the code, the page's origin
+  and the machine's name at every start (Google Compute Engine's metadata, or
+  `/etc/ide/workspace.env` on another cloud), checks each (one line, a fixed shape) and
+  writes the host's arguments and the proxy's configuration. `idle.sh` switches the machine
+  off when no page has been connected for half an hour. `docs/workspaces.md` is the guide,
+  with what the service must do and what keeps people apart.
+- **The host, after a review by a reader that hadn't written it:**
+  - *A connection is given the host's one place only once its first message has arrived.*
+    Before, a WebSocket that was let in held the place for five seconds while it said
+    nothing, and anyone who knew a machine's name could repeat that and keep its owner out.
+    The first frame is now read on the connection's own thread (five seconds at most) and
+    put back for the server to read; up to 32 connections may be at that stage at once.
+  - *Through a proxy, an origin is required.* A request to a name the host was given
+    (`--allow-host`) with no `Origin` is refused: it is a program, not the page. On
+    loopback nothing changes (the command line's own clients name none).
+  - *`--active-file <file>`:* the host writes the time into it every half minute while a
+    client that showed the token is connected. The machine's idle switch-off reads that, not
+    the sockets open: sockets that never show the code can't keep a machine running (and its
+    owner's hours draining).
+- **The web picker looks like a file manager** (the owner's ask, with a screenshot of
+  Windows' own): places at the side (the home folder, the usual folders in it, the drives), a
+  path bar whose steps are folders (`pathCrumbs.ts`, DOM-free, tested for Linux, Windows and
+  network paths), entries where a click chooses and a second click or Enter goes in, hidden
+  items behind a checkbox, and the path field kept for typed and pasted paths. No "New
+  folder": the host's file commands are scoped to the open folder, and the picker's own
+  listing is read-only on purpose.
+
+**Left for later, and said in the guide:** names for machines under one's own domain (a name
+made from an address can pass to someone else's machine); forwarding a machine's ports to the
+browser; a proof from the host that it knows the code, so a page can refuse a host that
+doesn't.
+
+**Tried:** the host's tests (609), clippy, `web-e2e`; the picker in a browser against a local
+host; an image built from these scripts on Compute Engine, a machine started from it with
+metadata as the service gives it, and the page's origin let in where others are refused.

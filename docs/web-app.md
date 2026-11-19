@@ -206,6 +206,9 @@ server {
 Hosts configured by a file of header rules (Firebase Hosting, Netlify, Cloudflare Pages)
 take the same two rules: one for the page's folder, a more specific one for `workers/**`.
 
+For a machine per person (an image, and what the service that starts machines must do), see
+`docs/workspaces.md`.
+
 ### 3. Build the host
 
 ```

@@ -1,0 +1,6 @@
+[Unit]
+Description=Workspace machine: switch off when no page is connected
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ide/idle.sh

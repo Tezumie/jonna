@@ -1,0 +1,17 @@
+[Unit]
+Description=Workspace machine: the host
+After=ide-boot.service
+Requires=ide-boot.service
+
+[Service]
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/projects
+EnvironmentFile=/run/ide/env
+Environment=HOME=/home/dev SHELL=/bin/bash
+ExecStart=/opt/ide/ide-host --listen-ws 127.0.0.1:7700 --allow-origin ${IDE_ORIGIN} --allow-host ${IDE_NAME} --token-file /run/ide/token --active-file /run/ide/active --linger 31536000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

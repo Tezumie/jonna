@@ -66,8 +66,12 @@ desktop one first (the remote relay, git's prompt, the MCP stdio proxy, the Ctrl
 `ws.rs` (D459): `--listen-ws`, the same wire inside WebSocket binary messages for a
 client that is a page in a browser (`src/web`): the upgrade is answered only for a `Host` that
 is this computer (or a name given with `--allow-host`: a proxy with TLS in front, D460) and an
-`Origin` on the `--allow-origin` list, each on a thread of its own so that only an accepted
-one takes the host's one place; then the messages' bytes are
+`Origin` on the `--allow-origin` list (required when the name isn't this computer's own: a
+program that names none isn't the page, D466), each on a thread of its own, where the first
+message is waited for too, so that only a client that was let in and has spoken takes the
+host's one place; `--active-file` is written while a client that showed the token is
+connected (a workspace machine's idle switch-off reads it, `scripts/workspace`). Then the
+messages' bytes are
 the carrier's stream (a reader that unmasks as it reads, a writer of messages of at most
 1 MiB, ping answered, text refused; the handshake's SHA-1 is written out there, so no
 dependency). `scripts/web-host.mjs` starts it for a page and prints the link (`--public`

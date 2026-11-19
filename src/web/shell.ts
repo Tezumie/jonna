@@ -10,6 +10,7 @@ import { createWindowlessShell, type PickPathsOptions, type Shell } from "../cor
 import { toDisposable } from "../core/lifecycle/index";
 import { confirmAction, showDialog } from "../ui/Dialog";
 import { icon } from "../ui/Icon";
+import { HOME_PLACES, pathCrumbs } from "./pathCrumbs";
 
 /**
  * `name` inside `folder`, with the separator the host's paths use. `os`: the host's system
@@ -30,8 +31,10 @@ interface PickOptions {
 }
 
 /**
- * Asks for a path on the host: a field with the path (typed or pasted paths work), and under
- * it the folder's entries to walk through. Null when cancelled or left empty.
+ * Asks for a path on the host, as a file manager would: places at the side (the home folder,
+ * its usual folders, the drives), a path bar whose steps are folders to go to, the folder's
+ * entries (a click chooses one, a second click or Enter goes into a folder), and a field with
+ * the path, where a typed or pasted path works as well. Null when cancelled or left empty.
  */
 async function pickPath(options: PickOptions): Promise<string | null> {
   const label = options.kind === "folder" ? "Folder" : options.kind === "file" ? "File" : "Save as";
@@ -43,7 +46,16 @@ async function pickPath(options: PickOptions): Promise<string | null> {
     "aria-label": label,
   });
   input.value = options.start ?? "";
-  const roots = h("div", { class: "web-path-roots" });
+  const places = h("nav", { class: "web-path-places", "aria-label": "Places" });
+  const crumbs = h("div", { class: "web-path-crumbs", "aria-label": "Path" });
+  const up = h("button", {
+    class: "icon-button",
+    type: "button",
+    title: "Up one folder",
+    "aria-label": "Up one folder",
+  });
+  up.append(icon("arrow-up"));
+  const hidden = h("input", { type: "checkbox" });
   const list = h("div", {
     class: "web-path-list",
     role: "listbox",
@@ -53,18 +65,82 @@ async function pickPath(options: PickOptions): Promise<string | null> {
   const content = h(
     "div",
     { class: "web-path" },
-    h("label", null, h("span", null, label), input),
-    roots,
-    list,
+    h("div", { class: "web-path-bar" }, up, crumbs),
+    h("div", { class: "web-path-body" }, places, list),
     note,
+    h(
+      "div",
+      { class: "web-path-foot" },
+      h("label", { class: "web-path-field" }, h("span", null, label), input),
+      h("label", { class: "web-path-hidden" }, hidden, h("span", null, "Hidden items")),
+    ),
   );
   /** The newest listing asked for: an answer to an older one is dropped. */
   let asked = 0;
-  const row = (text: string, glyph: Parameters<typeof icon>[0], run: () => void) => {
+  /** The folder listed now. */
+  let shown: BrowsedFolder | null = null;
+  const windows = () => {
+    const os = backendOs();
+    return os === null ? /^[A-Za-z]:|^\\\\/.test(shown?.path ?? "") : os === "windows";
+  };
+  const row = (text: string, glyph: Parameters<typeof icon>[0], path: string, dir: boolean) => {
     const button = h("button", { class: "web-path-row", type: "button", role: "option" });
     button.append(icon(glyph), h("span", null, text));
-    button.addEventListener("click", run);
+    const choose = () => {
+      for (const other of list.querySelectorAll(".is-selected")) {
+        other.classList.remove("is-selected");
+        other.setAttribute("aria-selected", "false");
+      }
+      button.classList.add("is-selected");
+      button.setAttribute("aria-selected", "true");
+      input.value = path;
+    };
+    button.addEventListener("click", () => {
+      // A folder already chosen is gone into: a double click, or two taps on a touch screen.
+      if (dir && button.classList.contains("is-selected")) void show(path);
+      else choose();
+    });
+    if (dir)
+      button.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.stopPropagation();
+        void show(path);
+      });
     return button;
+  };
+  const draw = (): void => {
+    const folder = shown;
+    if (!folder) return;
+    up.disabled = folder.parent === null;
+    crumbs.replaceChildren(
+      ...pathCrumbs(folder.path, windows()).flatMap((crumb, index, all) => {
+        const step = h("button", { class: "web-path-crumb", type: "button" }, crumb.label);
+        if (index === all.length - 1) step.setAttribute("aria-current", "location");
+        step.addEventListener("click", () => void show(crumb.path));
+        return index === 0 ? [step] : [icon("chevron-right"), step];
+      }),
+    );
+    crumbs.scrollLeft = crumbs.scrollWidth;
+    const rows: HTMLElement[] = [];
+    for (const entry of folder.entries) {
+      if (!hidden.checked && entry.name.startsWith(".")) continue;
+      const path = childPath(folder.path, entry.name);
+      if (entry.dir) rows.push(row(entry.name, "folder", path, true));
+      else if (options.kind !== "folder") rows.push(row(entry.name, "file", path, false));
+    }
+    list.replaceChildren(
+      ...(rows.length
+        ? rows
+        : [
+            h(
+              "p",
+              { class: "web-path-empty" },
+              options.kind === "folder" ? "No folders in here." : "Nothing in here.",
+            ),
+          ]),
+    );
+    list.scrollTop = 0;
   };
   const show = async (path?: string, keepField = false): Promise<void> => {
     const mine = ++asked;
@@ -78,34 +154,35 @@ async function pickPath(options: PickOptions): Promise<string | null> {
       return;
     }
     if (mine !== asked) return;
+    shown = folder;
     note.textContent = folder.truncated ? "This folder holds more than is shown." : "";
     if (!keepField) input.value = folder.path;
-    roots.replaceChildren(
-      ...(folder.roots.length > 1
-        ? folder.roots.map((root) => {
-            const button = h("button", { class: "button button-sm", type: "button" }, root);
-            button.addEventListener("click", () => void show(root));
-            return button;
-          })
-        : []),
-    );
-    const rows: HTMLElement[] = [];
-    const parent = folder.parent;
-    if (parent !== null) rows.push(row("..", "folder", () => void show(parent)));
-    for (const entry of folder.entries) {
-      const path = childPath(folder.path, entry.name);
-      if (entry.dir) rows.push(row(entry.name, "folder", () => void show(path)));
-      else if (options.kind !== "folder")
-        rows.push(
-          row(entry.name, "file", () => {
-            input.value = path;
-            input.focus();
-          }),
-        );
-    }
-    list.replaceChildren(...rows);
-    list.scrollTop = 0;
+    draw();
   };
+  up.addEventListener("click", () => {
+    const parent = shown?.parent;
+    if (parent !== null && parent !== undefined) void show(parent);
+  });
+  hidden.addEventListener("change", draw);
+  // The places: the home folder (what the host lists when asked for nothing), the folders in
+  // it people keep work in, and the drives. Read once; the picker works without them.
+  const place = (text: string, glyph: Parameters<typeof icon>[0], path: string) => {
+    const button = h("button", { class: "web-path-place", type: "button" });
+    button.append(icon(glyph), h("span", null, text));
+    button.addEventListener("click", () => void show(path));
+    return button;
+  };
+  void fsIpc.pickerBrowse().then(
+    (home) => {
+      const inHome = home.entries.filter((e) => e.dir && HOME_PLACES.includes(e.name));
+      places.replaceChildren(
+        place("Home", "folder-open", home.path),
+        ...inHome.map((e) => place(e.name, "folder", childPath(home.path, e.name))),
+        ...home.roots.map((root) => place(root, "folder", root)),
+      );
+    },
+    () => {},
+  );
   // A typed or pasted path that is a folder is listed as it is typed.
   let typing: ReturnType<typeof setTimeout> | undefined;
   input.addEventListener("input", () => {
@@ -138,19 +215,19 @@ async function pickPath(options: PickOptions): Promise<string | null> {
   const first = options.start?.trim();
   void show(first || undefined)
     .then(() => {
-      if (list.childElementCount > 0 || !first) return;
+      if (shown || !first) return;
       // Not a folder: a file, or a name that isn't there yet. Its folder, then.
       const cut = Math.max(first.lastIndexOf("/"), first.lastIndexOf("\\"));
       if (cut > 0) return show(first.slice(0, cut + 1), true);
     })
     .then(() => {
-      if (list.childElementCount === 0 && first) void show(undefined, true);
+      if (!shown && first) void show(undefined, true);
     });
   const ok = await showDialog<boolean>({
     title: options.title,
     message: "On the computer you're connected to.",
     content,
-    size: "md",
+    size: "lg",
     actions: [
       { label: "Cancel", value: false },
       { label: options.kind === "save" ? "Save" : "Open", value: true, variant: "primary" },

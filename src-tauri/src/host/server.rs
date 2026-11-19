@@ -278,6 +278,8 @@ pub struct Server {
     version: String,
     hello_within: Duration,
     flush_within: Duration,
+    /// A client that said `$/hello` with the token is connected now.
+    client: Arc<AtomicBool>,
 }
 
 impl Server {
@@ -289,7 +291,14 @@ impl Server {
             version: version.to_string(),
             hello_within: HELLO_WITHIN,
             flush_within: FLUSH_WITHIN,
+            client: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Whether an accepted client is connected, to read from another thread (the host's
+    /// `--active-file`). A connection that hasn't shown the token never counts.
+    pub fn client_connected(&self) -> Arc<AtomicBool> {
+        self.client.clone()
     }
 
     /// Shorter waits, for tests of what happens when they pass.
@@ -392,6 +401,7 @@ impl Server {
         let _ = tokio::time::timeout(self.flush_within, &mut writer_ended).await;
         connection.close();
         hang_up();
+        self.client.store(false, Ordering::SeqCst);
         Served { ended, greeted }
     }
 
@@ -456,6 +466,7 @@ impl Server {
                 }
             }
             *greeted = true;
+            self.client.store(true, Ordering::SeqCst);
             connection
                 .reply(
                     id,

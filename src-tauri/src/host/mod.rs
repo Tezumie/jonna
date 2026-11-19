@@ -29,7 +29,14 @@ use crate::AppState;
 use server::{Carrier, Ended, Server};
 
 /// The most WebSocket upgrades answered at once; more are closed unread.
-const MAX_UPGRADES: usize = 8;
+const MAX_UPGRADES: usize = 32;
+
+/// How long a client that was let in has to send its first message, before it is given the
+/// host's one place.
+const GREET_WITHIN: Duration = Duration::from_secs(5);
+
+/// How often `--active-file` is written while a client is connected.
+const ACTIVE_EVERY: Duration = Duration::from_secs(30);
 
 /// How long a TCP host waits for its client to come back before it exits.
 const DEFAULT_LINGER: Duration = Duration::from_secs(60);
@@ -63,6 +70,8 @@ pub struct Options {
     pub disable_extensions: bool,
     /// `--linger <seconds>`: how long a TCP host outlives its client.
     pub linger: Duration,
+    /// `--active-file <file>`: written with the time while an accepted client is connected.
+    pub active_file: Option<PathBuf>,
     pub info: Option<Info>,
 }
 
@@ -77,6 +86,7 @@ impl Default for Options {
             user_data_dir: None,
             disable_extensions: false,
             linger: DEFAULT_LINGER,
+            active_file: None,
             info: None,
         }
     }
@@ -163,6 +173,7 @@ pub fn parse_args(
                     .map_err(|_| "--linger needs a number of seconds".to_string())?;
                 options.linger = Duration::from_secs(seconds);
             }
+            "--active-file" => options.active_file = Some(PathBuf::from(value("a file")?)),
             "--help" | "-h" => options.info = Some(Info::Help),
             "--version" | "-v" => options.info = Some(Info::Version),
             other => return Err(format!("unknown argument: {other}")),
@@ -195,6 +206,9 @@ Options:
       --token-file <file>        The file with the token a client must send
                                  (or the {TOKEN_VAR} variable). Required with --listen
                                  and --listen-ws.
+      --active-file <file>       Written with the time (seconds) every half minute while a
+                                 client that showed the token is connected: what a machine's
+                                 switch-off when idle reads.
       --linger <seconds>         How long to wait for a TCP client to reconnect before
                                  exiting (default {}).
       --user-data-dir <dir>      Use this folder for settings and state (a separate profile).
@@ -324,6 +338,23 @@ fn run(options: Options, version: &str) -> Result<()> {
     state.set_local_dirs();
 
     let server = Server::new(app.clone(), crate::host_commands(), version);
+    if let Some(file) = options.active_file.clone() {
+        let connected = server.client_connected();
+        // Only an accepted client counts: a connection that never shows the token must not
+        // look like someone at work (it would keep an idle machine running).
+        let _ = std::thread::Builder::new()
+            .name("host-active".into())
+            .spawn(move || loop {
+                if connected.load(Ordering::SeqCst) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let _ = std::fs::write(&file, now.to_string());
+                }
+                std::thread::sleep(ACTIVE_EVERY);
+            });
+    }
     tauri::async_runtime::block_on(async {
         tokio::select! {
             _ = serve(&server, pipes, listener, options.linger) => {}
@@ -413,10 +444,11 @@ async fn serve(
                         .spawn({
                             let upgrading = upgrading.clone();
                             move || {
-                                let made = ws::accept(stream, &allowed);
+                                // The place is taken only by a page that was let in and has
+                                // sent its first message: one that says nothing never holds it.
+                                let made = ws::accept(stream, &allowed).and_then(first_message);
                                 upgrading.fetch_sub(1, Ordering::SeqCst);
                                 match made {
-                                    // The place is taken only by a page that was let in.
                                     Ok(carrier) => {
                                         if busy.swap(true, Ordering::SeqCst) {
                                             (carrier.hang_up)();
@@ -473,6 +505,47 @@ async fn serve(
             client_left = Some(Instant::now());
         }
     }
+}
+
+/// Waits for a new client's first frame (its `$/hello`) and hands the connection on with the
+/// frame put back, so that serving it starts with the frame already there. A client that sends
+/// none in time is closed here, on its own thread, having held nothing of the host's.
+fn first_message(carrier: Carrier) -> std::io::Result<Carrier> {
+    use std::io::Read;
+    let Carrier {
+        mut reader,
+        writer,
+        hang_up,
+    } = carrier;
+    let (sent, got) = std::sync::mpsc::channel();
+    let reading = std::thread::Builder::new()
+        .name("host-greet".into())
+        .spawn(move || {
+            let first = frame::read_frame_within(&mut reader, frame::MAX_FIRST_HEADER, 0);
+            let _ = sent.send((reader, first));
+        });
+    let first = match reading {
+        Ok(_) => got.recv_timeout(GREET_WITHIN).ok(),
+        Err(_) => None,
+    };
+    let Some((reader, Ok(Some(frame)))) = first else {
+        // Ends the read the other thread may still be in.
+        hang_up();
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "no first message in time",
+        ));
+    };
+    let mut again = Vec::with_capacity(8 + frame.header.len() + frame.body.len());
+    again.extend_from_slice(&(frame.header.len() as u32).to_le_bytes());
+    again.extend_from_slice(&(frame.body.len() as u32).to_le_bytes());
+    again.extend_from_slice(&frame.header);
+    again.extend_from_slice(&frame.body);
+    Ok(Carrier {
+        reader: Box::new(std::io::Cursor::new(again).chain(reader)),
+        writer,
+        hang_up,
+    })
 }
 
 fn tcp_carrier(stream: TcpStream) -> std::io::Result<Carrier> {

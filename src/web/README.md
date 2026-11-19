@@ -22,7 +22,9 @@ computer. `docs/web-app.md` has the design, what works and what doesn't yet.
   (`src-tauri/src/host/ws.rs`).
 - `shell.ts`: `createWebShell()`: the IDE's own dialogs for confirmations, a picker of its
   own where the desktop opens a native one (the host's folders, `fsIpc.pickerBrowse`), the
-  browser's clipboard, full screen. Window controls do nothing.
+  browser's clipboard, full screen. Window controls do nothing. The picker is laid out as a
+  file manager (D466): places, a path bar (`pathCrumbs.ts`: a host path as steps, DOM-free),
+  entries chosen with a click and gone into with a second, hidden items behind a checkbox.
 - `policy.json`: the two content policies (the page's, the workers'). The build writes the
   page's into `index.html`; `scripts/web-host.mjs` serves with both; a site that serves the
   build sends them as headers (`docs/web-app.md`).

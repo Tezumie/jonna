@@ -1,0 +1,9 @@
+[Unit]
+Description=Workspace machine: look for a connected page every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
