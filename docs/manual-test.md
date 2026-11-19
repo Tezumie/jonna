@@ -4636,3 +4636,7 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
    chooses it, Escape drops it. Right-click a folder: Open, Rename, Copy path. F2 renames. A
    name that is taken says so and changes nothing. A double click goes into a folder.
 7. In a terminal on the machine: `gh --version` answers.
+
+## D468 — A menu in a dialog
+1. In the web front end, File > Open folder, right-click a folder and move the pointer over
+   the menu: it stays open and the items highlight. Escape closes the menu; the dialog stays.

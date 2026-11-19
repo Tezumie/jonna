@@ -3,6 +3,21 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.14
+
+Fewer notifications.
+
+- **One notice when a chat needs you, and none when you can see it.** A chat that finished
+  or asks for an approval while it is on screen says nothing more; otherwise there is one
+  notice, with Show. The setting `agent.notifyWhenDone` is gone: there is nothing left to
+  turn off.
+- **No notice for what the window already shows:** a push or pull that worked, an extension
+  installed from the store, files kept unsaved over a restart, signing out.
+- **One notice for one problem.** A formatter that fails, a wrong line in keybindings.json,
+  an MCP server that doesn't start or a language server that stops are said once, not every
+  time they happen again.
+- **Setting up an agent shows that it is downloading,** wherever it was started from.
+
 ## 0.1.13
 
 Fixes for the agent on Anthropic models, after a review of 0.1.12.

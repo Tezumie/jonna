@@ -61,6 +61,7 @@ unless noted.
 | · An external agent's download shows wherever it was started | D465 |
 | · Workspace machines: an image, a host that strangers can't hold, and a picker like a file manager | D466 |
 | · The web page comes to the account's machine by itself, signs it in, and its picker makes folders | D467 |
+| · A menu opened from a dialog stays open; 0.1.14 | D468 |
 
 ## Seeded from PLAN §19
 
@@ -16741,3 +16742,17 @@ rid of.
 **Tried:** unit tests (the arrivals, the number, the trip's address, PKCE against the RFC's
 example), `npm run check`, clippy; the picker in a browser against a local host; the trip
 against the service's emulators with a page on this computer.
+
+## D468 — A menu opened from a dialog stays open; 0.1.14
+
+The owner: the web picker's menu (D467) disappeared as soon as the mouse moved. A dialog
+takes focus back when it lands outside it (`ui/Dialog.ts`), a menu is drawn outside the
+dialog, and a menu closes when focus goes elsewhere: the pointer reaching an item focused it,
+the dialog took the focus back, and the menu closed. Scripted events in D467's check moved no
+focus, so it passed there. A dialog now leaves focus alone when it is inside a menu: a menu
+opened from a dialog is part of it. Tried with a real pointer in a browser against a local
+host: the menu stays, and Escape closes the menu and not the dialog.
+
+**0.1.14** is D462 to D468: fewer notifications, an agent's download that shows, and what the
+web front end and hosted machines needed. The release notes say only what an installed app's
+user sees (the web front end and the machines are not offered to anyone yet).

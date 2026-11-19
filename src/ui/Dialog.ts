@@ -146,6 +146,9 @@ export function showDialog<T>(options: DialogOptions<T>): Promise<T> {
       on(document, "focusin", (e) => {
         if (openDialogs[openDialogs.length - 1] !== scrim) return;
         if (e.target instanceof Node && scrim.contains(e.target)) return;
+        // A menu opened from the dialog (the web picker's, D468) is part of it: taking the
+        // focus back would close the menu the moment the pointer reaches an item.
+        if (e.target instanceof Element && e.target.closest(".menu")) return;
         dialog.focus();
       }),
     );
