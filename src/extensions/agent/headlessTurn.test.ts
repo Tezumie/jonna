@@ -376,7 +376,7 @@ const backend = installFakeBackend(root, scratch);
 const SETTINGS = {
   "agent.model": "fake/fake",
   "agent.runCommands": "ask",
-  "agent.notifyWhenDone": true,
+  "agent.notifyWhenAway": true,
   "agent.maxSteps": 20,
   "agent.providers": [{ id: "fake", name: "fake", baseUrl: "http://x", kind: "openai" }],
   "agent.ollama.enabled": false,

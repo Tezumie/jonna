@@ -51,7 +51,7 @@ flowchart TD
   APPLY --> CHECK["Checks after edits<br/>agent.checkEdits ✅ · agent.verify = auto<br/>agent.formatOnFinish ⬜"]
   CHECK --> DONE([Turn ends])
   REPLY --> DONE
-  DONE -->|"agent.notifyWhenDone ✅"| NOTE[Notification]
+  DONE -->|"agent.notifyWhenAway ✅"| NOTE[Notification]
   DONE -->|"after 5 chats + 24 h<br/>(agent.memory.autoTidyUp ✅)"| DREAM["Memory tidy-up runs by itself<br/>(you review its changes before they apply)"]
 ```
 

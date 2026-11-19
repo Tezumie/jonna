@@ -341,33 +341,14 @@ export class AgentSession {
     this.changeset = new Changeset(services, id);
     // Where it belongs (D251): the window's first folder (a multi-root workspace's too).
     this.workspaceRoot = chatWorkspaceOf(services);
-    // Away from the window: say when the agent is done or needs an answer (D107).
-    let startedAt = 0;
+    // What a person away from the window is told is attention.ts's (D462).
     let last: SessionStatus = "idle";
     this.notifier = effect(() => {
       const status = this.status.value;
       const before = last;
       last = status;
-      if (status === "running" && before === "idle") startedAt = Date.now();
       // The saved chat says how it's doing (the worktree agents' overview reads it, D204).
       if (status !== before) this.scheduleSave();
-      // Who is watching comes from the agent's host (the window's document; nobody, with none).
-      const presence = agentHost(services).presence;
-      if (!presence.away() || services.settings.peek<boolean>("agent.notifyWhenDone") === false)
-        return undefined;
-      const title = this.title.peek();
-      if (status === "waiting" && before === "running") {
-        // Its chat on screen already shows the question: no toast for it.
-        if (!presence.showing(this.id))
-          services.notifications.show("info", `The agent needs your answer: ${title}`, {
-            title: "Agent",
-          });
-      } else if (status === "idle" && before !== "idle" && Date.now() - startedAt > 5000)
-        services.notifications.show(
-          this.error.peek() ? "error" : "success",
-          `${this.error.peek() ? "The agent stopped with an error" : "The agent finished"}: ${title}`,
-          { title: "Agent" },
-        );
       return undefined;
     });
   }

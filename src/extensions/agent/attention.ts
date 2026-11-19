@@ -1,8 +1,9 @@
 // A chat that needs the user while the window is in the background (D254): it asks a question or
 // an approval, or its turn ended (finished, or stopped by an error). The taskbar button flashes
 // (the Dock icon bounces, Linux marks the window urgent) and a notification with Show waits in
-// the window. A group round's members taking turns count as one turn (QUIET_MS). Off with
-// agent.notifyWhenAway.
+// the window, unless the chat is on screen there: coming back, the person sees the reply or the
+// question itself (D462). A group round's members taking turns count as one turn (QUIET_MS).
+// Off with agent.notifyWhenAway. The only notice of its kind: one turn, one notification.
 
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, untracked } from "../../core/reactive/index";
@@ -25,6 +26,7 @@ export function watchAttention(services: WorkbenchServices, session: AgentSessio
     if (!presence.away() || services.settings.peek<boolean>("agent.notifyWhenAway") === false)
       return;
     presence.requestAttention();
+    if (presence.showing(session.id)) return;
     services.notifications.show(kind, text, {
       title: session.title.peek(),
       actions: [

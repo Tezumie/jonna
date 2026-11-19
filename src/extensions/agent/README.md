@@ -425,7 +425,7 @@ Charts and diagrams are ```mermaid in the answer and math is `$…$`, drawn by t
   | `formatOnFinish` | `session.formatChanged` |
 
   Others, by group: the turn (`thinking`, `contextLength`, `maxSteps`, `autoCompact`,
-  `streamText`, `autoTitle`, `notifyWhenDone`), helpers (`explore`, `delegate`, `autoReview`),
+  `streamText`, `autoTitle`, `notifyWhenAway`), helpers (`explore`, `delegate`, `autoReview`),
   checks (`checkEdits`, `verify`, `verifyCommand`, `verifyTimeoutSeconds`, `reloadBrowser`),
   memory (`memory.enabled`, `memory.model`, `memory.suggestTidyUp`, `memory.autoTidyUp`), and
   `ollama.enabled`, `externalAgents`.
@@ -1346,7 +1346,9 @@ folder everything is as before.
 - `attention.ts` (D254): a chat that asks a question or an approval, or whose turn (a group
   round, counted once) ends while the window is in the background flashes the taskbar
   (`windowIpc.requestAttention`, Rust `app_request_attention`) and leaves a notification with
-  Show; `agent.notifyWhenAway` (on).
+  Show; `agent.notifyWhenAway` (on). No notification when the chat is on screen in the
+  window, only the flash, and it is the one notice a turn gives (D462: the older
+  `agent.notifyWhenDone` toast beside it is gone).
 
 - `schedules.ts` (+ `core/agent/schedules.ts`, tested: parsing "when", the next run, limits,
   descriptions): `ScheduleService` keeps the folder's schedules in the workspace state

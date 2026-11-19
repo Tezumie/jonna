@@ -4585,3 +4585,11 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
 3. A long chat with summaries off (`agent.autoCompact` false) on Anthropic's own API goes
    past the budget without "prompt is too long"; the same through a proxy address is
    shortened as before.
+
+## D462 — One notice when a chat needs you
+1. Send a prompt that takes over five seconds, click another app before it ends: the taskbar
+   button flashes; back in the window, with the chat on screen, there is no notification.
+2. The same with another dock tab over the chat (or the agent panel closed): one notification
+   with the chat's title and Show; Show opens the chat. Never two.
+3. A prompt that asks for an approval, from another app: the flash, and one notification only
+   when the chat isn't on screen.

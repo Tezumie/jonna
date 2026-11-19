@@ -717,7 +717,9 @@ results are grouped under each provider or agent.
 
 When a chat asks you something, needs your approval, or finishes while the IDE isn't in front, the
 taskbar button flashes (the Dock icon bounces on macOS) and a notification waits in the window with
-**Show**. A round where several agents answer counts once. `agent.notifyWhenAway` turns it off.
+**Show**. With the chat already on screen in the window there is only the flash: the reply is
+there when you come back. A round where several agents answer counts once.
+`agent.notifyWhenAway` turns it off.
 
 **On your phone:** run **Send agent notifications to my phone** and give an
 [ntfy](https://ntfy.sh) topic URL, a Discord or Slack incoming webhook, or any https address that
@@ -844,7 +846,7 @@ The agent's settings are under Settings → **Agent**. The ones that matter most
 | `agent.formatOnFinish` | `false` | Run the formatter on the files the agent changed. |
 | `agent.followEdits` | `false` | Open each file the agent edits at the change, keeping focus in the chat. |
 | `agent.budget.perChat` | `0` | A spending limit per chat, in dollars (0: none). |
-| `agent.notifyWhenDone` | `true` | A notification when the agent finishes or needs you, while the window isn't focused. |
+| `agent.notifyWhenAway` | `true` | The taskbar flash, and a notification when the chat isn't on screen, when the agent finishes or needs you while the window isn't focused. |
 | `agent.outputStyle` | `default` | How the agent talks while it works (`default`, `explanatory`, `learning`, or your own style's name). |
 | `agent.statusLine` | `{}` | A command whose first line of output shows in the status bar (Claude Code's `statusLine`). |
 

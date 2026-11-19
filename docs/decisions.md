@@ -55,6 +55,7 @@ unless noted.
 | · The front end as a website that connects to a host: a proof of concept | D459 |
 | · The web front end and its host for someone else's names and servers: a host behind a proxy, a subdomain as its own address, two audits | D460 |
 | · Deferred tools on Anthropic after a review: a subagent's own list, a tool loaded before a summary, trimming only on its own API | D461 |
+| · One notice when a chat needs you, none over a chat on screen | D462 |
 
 ## Seeded from PLAN §19
 
@@ -16522,3 +16523,21 @@ documented.
 
 **Tried:** unit tests for the request's shape in each case and for the address rule.
 **Not tried:** the live API, as for D452 (no key here).
+
+## D462 — One notice when a chat needs you, none over a chat on screen
+
+The owner got two notifications for one reply. Two features told a person away from the
+window that a turn ended: D107's (`agent.notifyWhenDone`, a turn over five seconds, no
+button) and D254's (`agent.notifyWhenAway`, the taskbar flash and a notification with Show).
+A turn over five seconds gave both, and so did a question.
+
+- **D107's notification and its setting are gone.** D254's is the one notice; a settings
+  file that still has `agent.notifyWhenDone` loses nothing but that key's meaning.
+- **No notification when the chat is on screen in the window** (its view laid out, as the
+  "needs your answer" toast already checked): the reply or the card is
+  what the person sees coming back. The taskbar still flashes. A chat in a hidden tab, or
+  with the panel closed, gets the notification with Show as before.
+- With no window (the headless host) nothing is on screen, so nothing changes there.
+
+**Tried:** unit tests and the checks. **Not tried:** by hand in the app (two windows needed
+to be away from one); the steps are in `docs/manual-test.md`.

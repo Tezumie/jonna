@@ -702,14 +702,6 @@
         "order": 61,
         "title": "Computer use: apps allowed in every chat"
       },
-      "agent.notifyWhenDone": {
-        "type": "boolean",
-        "default": true,
-        "description": "When the IDE window isn't focused, show a notification when the agent finishes or needs your answer.",
-        "order": 17,
-        "section": "Conversation",
-        "title": "Notify when done"
-      },
       "agent.projectsFolder": {
         "type": "string",
         "default": "",
@@ -864,7 +856,7 @@
       "agent.notifyWhenAway": {
         "type": "boolean",
         "default": true,
-        "description": "When the window is in the background and a chat asks a question, needs an approval, or finishes its turn (or stops on an error), flash the taskbar button (bounce the Dock icon on macOS) and leave a notification in the window. A group round counts once.",
+        "description": "When the window is in the background and a chat asks a question, needs an approval, or finishes its turn (or stops on an error), flash the taskbar button (bounce the Dock icon on macOS) and, when that chat isn't on screen, leave a notification in the window. A group round counts once.",
         "order": 21.04,
         "section": "Context and tools",
         "title": "Notify when the agent needs you"
