@@ -60,6 +60,7 @@ unless noted.
 | · The web front end on an address of its own | D464 |
 | · An external agent's download shows wherever it was started | D465 |
 | · Workspace machines: an image, a host that strangers can't hold, and a picker like a file manager | D466 |
+| · The web page comes to the account's machine by itself, signs it in, and its picker makes folders | D467 |
 
 ## Seeded from PLAN §19
 
@@ -16674,3 +16675,69 @@ doesn't.
 **Tried:** the host's tests (609), clippy, `web-e2e`; the picker in a browser against a local
 host; an image built from these scripts on Compute Engine, a machine started from it with
 metadata as the service gives it, and the page's origin let in where others are refused.
+
+## D467 — The web page comes to the account's machine by itself, signs it in, and its picker makes folders
+
+The owner tried the hosted machine (D466) and found four things: the page showed the form
+with the address and code filled in and waited for Connect; signing in to the account from
+the page ended at `127.0.0.1` on the owner's own computer ("Unable to connect"); the picker
+couldn't make a folder and looked like a box in a box; and `gh` wasn't on the machine. And
+asked that going to the page's address simply open the account's machine.
+
+- **A trip to the account service's launch page, with a number of the tab's own**
+  (`src/web/launch.ts`, DOM-free, tested; product.json `workspaceLaunchPath`,
+  `workspaceLaunchUrl` in `core/ownServices.ts`). Opened with nothing (or `#workspace`), the
+  page makes a number, keeps it for the tab and goes to the launch page with it. That page,
+  where the person is signed in, starts their machine and sends the tab back with the
+  machine's link and the number. A link that carries the number this tab made connects by
+  itself; every other link is treated as before (by itself only to this computer). The rule
+  "a link anyone can send is never followed" stands: nobody else can know the number.
+  Considered and dropped: trusting where the tab came from (the account pages send no
+  referrer, and it would be a weaker proof), a frame of the account pages inside the page
+  (it would give whatever runs in the page a way to the account, which the page's own address
+  exists to prevent), and trusting names under a suffix (anyone can have such a name).
+  `#connect` asks for the form without a trip; a page that shares its address with the account
+  pages makes no trip; a page served from this computer makes one only to a launch page on
+  this computer named in its address (`?launch=`), for trying a service under development.
+- **A reload reconnects.** The link a tab was connected with is tried by itself (before, a
+  host that wasn't this computer waited for Connect again). When it was the account's machine
+  and it no longer answers (stopped when idle, a new code), the tab goes by the launch page,
+  which starts it. A link that came back from the launch page and fails shows the form with
+  why: no circle.
+- **Signing in from a page** (`core/ipc/pageSignIn.ts`, `account_sign_in_code`). The app's
+  sign-in has the browser come back to a listener on the host's computer; with the host
+  somewhere else that is the wrong computer. The page now makes the PKCE verifier and receives
+  the code itself: `accounts.signIn` opens the sign-in page in a tab of its own with this
+  page's address as where to come back to; that tab arrives with `#signin&code=…&state=…`,
+  passes the code to the tab that asked (a `BroadcastChannel`; the code is worth nothing
+  without the verifier, which never leaves the asking tab) and closes. The host exchanges the
+  code and keeps the session, as it does for the app's own sign-in. Only for a host that isn't
+  this computer; the app's window is unchanged. The service must allow the page's address as
+  a place to send a code (`docs/own-services.md`).
+- **The machine is signed in on the way.** The trip to the launch page carries a challenge;
+  the launch page, where the person is signed in, has a code made for it and sends it back
+  with the link. The accounts extension uses it when the host has no session. No code is asked
+  for once the machine was seen signed in (kept in the page's storage; a sign-out clears it).
+- **The picker makes and renames folders** (`picker_create_folder`, `picker_rename`: whole
+  paths, not held to the open folder, as the OS's own dialog isn't; a rename never lands on
+  something that is there). D466 left them out because the file commands are scoped to the
+  open folder; a picker that can't make the folder one is about to open isn't a file manager.
+  Names are typed in the row itself. A menu on an entry (Open, Rename, Copy path, New folder)
+  and on the space under the entries (New folder, Refresh, Copy path, Hidden items); F2
+  renames, a double click goes in, the arrow keys move.
+- **The picker says which computer.** Its side column starts with the computer's name (the
+  address it was reached at, or "Cloud workspace"), and the line under the title says the
+  folders are not on this device. The side column is about half as wide; the entries sit on
+  the dialog itself with a line between them and the places (the owner: no border, no other
+  background).
+- **The image has the GitHub CLI**, and the rest the editor itself runs (ssh, ps, ping), with
+  git-lfs, less and nano. The editor's GitHub sign-in is `gh auth login`.
+
+**Left:** a start by link. Whoever gets a signed-in person to open the page's address makes
+their machine start (it stops itself after the idle time, and the hours it used are theirs).
+The alternative is a button to press before every start, which is what the owner asked to be
+rid of.
+
+**Tried:** unit tests (the arrivals, the number, the trip's address, PKCE against the RFC's
+example), `npm run check`, clippy; the picker in a browser against a local host; the trip
+against the service's emulators with a page on this computer.

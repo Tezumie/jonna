@@ -674,5 +674,10 @@ the online services a build uses. `ownServices.ts` (DOM-free, tested) reads thos
 has teams' libraries: Sync is built in and the service has teams), `webAppUrl()` (the page
 that is the front end as a website) and `webAppSharesAccounts(host)` (whether a page on that
 name shares its address with the account pages: the same name, or the same domain unless
-`webAppSubdomainIsolated`; the web entry trusts less there). `docs/own-services.md` is
-the guide to the keys.
+`webAppSubdomainIsolated`; the web entry trusts less there), `workspaceLaunchUrl()` (the
+service's page that brings the web front end to the account's hosted machine, D467).
+`docs/own-services.md` is the guide to the keys. `ipc/pageSignIn.ts` (D467) is how a page in
+a browser signs in to the account: the web entry installs a way to receive the sign-in code
+in the page (`setPageSignIn`) and a code it was opened with (`setArrivedSignIn`); the
+accounts extension uses them through `accountsIpc.signInWithCode`. Nothing is installed in
+the app's own window.

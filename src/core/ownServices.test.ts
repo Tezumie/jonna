@@ -13,7 +13,20 @@ import {
   teamPageUrl,
   webAppSharesAccounts,
   webAppUrl,
+  workspaceLaunchUrl,
 } from "./ownServices";
+
+test("own services: the launch page exists only beside a web front end", () => {
+  const both = { webAppPath: "https://app.example.com/", workspaceLaunchPath: "/workspace" };
+  assert.equal(workspaceLaunchUrl(config(both)), "https://accounts.example.com/workspace");
+  assert.equal(workspaceLaunchUrl(config({ workspaceLaunchPath: "/workspace" })), null);
+  assert.equal(workspaceLaunchUrl(config({ webAppPath: "https://app.example.com/" })), null);
+  assert.equal(
+    workspaceLaunchUrl(config({ ...both, workspaceLaunchPath: "https://go.example.com/start" })),
+    "https://go.example.com/start",
+  );
+  assert.equal(workspaceLaunchUrl(config({ ...both, accountsUrl: "" })), null);
+});
 
 const config = (over: Partial<OwnServices> = {}): OwnServices => ({
   accountsUrl: "https://accounts.example.com",
@@ -21,6 +34,7 @@ const config = (over: Partial<OwnServices> = {}): OwnServices => ({
   planPagePath: "/account#plan",
   teamPagePath: "/account#team",
   webAppPath: "",
+  workspaceLaunchPath: "",
   webAppSubdomainIsolated: false,
   syncBuiltIn: true,
   ...over,
@@ -126,6 +140,7 @@ test("own services: a build with no plan page says nothing of plans", () => {
     accountPagePath: "/account",
     teamPagePath: "/account#team",
     webAppPath: "",
+    workspaceLaunchPath: "",
     webAppSubdomainIsolated: false,
     syncBuiltIn: true,
   };

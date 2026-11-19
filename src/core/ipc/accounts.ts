@@ -51,6 +51,20 @@ export const accountsIpc = {
   /** Opens nothing itself: `onUrl` gets the sign-in page to open in the browser. */
   signIn: (base: string, onUrl: (url: string) => void): Promise<AccountProfile> =>
     call<AccountProfile>("account_sign_in", { base, onUrl: new Channel<string>(onUrl) }),
+  /**
+   * Signs in with a code the front end received itself (a page in a browser, where the
+   * sign-in page can't come back to the host; `core/ipc/pageSignIn.ts`).
+   */
+  signInWithCode: (
+    base: string,
+    got: { code: string; verifier: string; redirect: string },
+  ): Promise<AccountProfile> =>
+    call<AccountProfile>("account_sign_in_code", {
+      base,
+      code: got.code,
+      verifier: got.verifier,
+      redirect: got.redirect,
+    }),
   cancel: (): Promise<void> => call<void>("account_cancel"),
   signOut: (): Promise<void> => call<void>("account_sign_out"),
   /** An account picture's bytes (cached a day by Rust); `base`: the accounts server, if any. */

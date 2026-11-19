@@ -113,9 +113,33 @@
   }
   .web-path-body {
     display: grid;
-    grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
-    gap: var(--space-2);
+    grid-template-columns: minmax(6.5rem, 8.5rem) minmax(0, 1fr);
     min-height: 0;
+  }
+  .web-path-side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+    padding-right: var(--space-2);
+  }
+  /* The computer the folders are on: said where a file manager says "This PC". */
+  .web-path-computer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--size-row);
+    padding: 0 var(--space-2);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+  }
+  .web-path-computer > .icon {
+    flex: none;
+  }
+  .web-path-computer > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .web-path-places {
     display: flex;
@@ -123,6 +147,9 @@
     gap: 1px;
     min-width: 0;
     overflow: auto;
+  }
+  .web-path-place.is-current {
+    background: var(--bg-selected);
   }
   .web-path-place {
     display: flex;
@@ -183,20 +210,47 @@
     .web-path-body {
       grid-template-columns: minmax(0, 1fr);
     }
+    .web-path-side {
+      padding-right: 0;
+    }
     .web-path-places {
       flex-direction: row;
       flex-wrap: wrap;
     }
+    .web-path-list {
+      padding-left: 0;
+      border-left: 0;
+    }
   }
+  /* The entries sit on the dialog itself, a line apart from the places: one window, as a
+     file manager is, not a box in a box. */
   .web-path-list {
     display: flex;
     flex-direction: column;
-    height: 16rem;
+    gap: 1px;
+    height: 17rem;
     max-height: 40vh;
+    padding-left: var(--space-2);
     overflow: auto;
-    background: var(--bg-input);
-    border: 1px solid var(--border-default);
+    border-left: 1px solid var(--border-subtle);
+  }
+  .web-path-row {
     border-radius: var(--radius-sm);
+  }
+  /* The picker's menus open over its dialog (a menu is otherwise under any dialog). */
+  body:has(.web-path) .menu {
+    z-index: var(--z-palette);
+  }
+  .web-path-row.is-editing {
+    cursor: default;
+  }
+  .web-path-row.is-editing:hover {
+    background: none;
+  }
+  .web-path .web-path-name {
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
   }
   .web-path-row {
     display: flex;
@@ -244,6 +298,58 @@
   /* The window is the browser's tab: no minimize, maximize or close of our own. */
   .is-web .window-controls {
     display: none;
+  }
+  /* On the way to the account's machine: the mark, a moving bar, what is happening. */
+  .web-opening {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    width: 100%;
+    max-width: 20rem;
+    text-align: center;
+  }
+  .web-opening h1 {
+    margin: 0;
+    font-size: var(--text-md-font);
+    font-weight: 600;
+  }
+  .web-opening p {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: var(--text-sm);
+  }
+  .web-opening-bar {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    overflow: hidden;
+    background: var(--border-subtle);
+    border-radius: var(--radius-sm);
+  }
+  .web-opening-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 30%;
+    background: var(--fg-default);
+    border-radius: inherit;
+    animation: web-opening 1.2s var(--ease-standard) infinite;
+  }
+  @keyframes web-opening {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .web-opening-bar::after {
+      width: 100%;
+      opacity: 0.4;
+      animation: none;
+    }
   }
   .web-card .web-note {
     color: var(--fg-subtle);

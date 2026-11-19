@@ -12,11 +12,33 @@ import "../styles/web.css";
 import { h } from "../core/dom/index";
 import { blockExtensionCode } from "../core/extensions/codePolicy";
 import { setTransport } from "../core/ipc/invoke";
+import {
+  type CodeSignIn,
+  onAccountKnown,
+  setArrivedSignIn,
+  setPageSignIn,
+} from "../core/ipc/pageSignIn";
 import { setShell } from "../core/ipc/shell";
 import { connectStream } from "../core/ipc/streamTransport";
-import { webAppSharesAccounts } from "../core/ownServices";
+import {
+  hasAccounts,
+  isLoopbackServer,
+  webAppSharesAccounts,
+  workspaceLaunchUrl,
+} from "../core/ownServices";
 import { product } from "../core/product";
-import { type HostLink, isLoopbackHost, linkMayConnect, parseHostLink, socketUrl } from "./address";
+import { logo } from "../ui/Logo";
+import { type HostLink, isLoopbackHost, linkMayConnect, socketUrl } from "./address";
+import {
+  authorizeUrl,
+  challengeOf,
+  fromOwnLaunch,
+  launchUrl,
+  type PendingLaunch,
+  randomToken,
+  readArrival,
+  readPending,
+} from "./launch";
 import { createWebShell } from "./shell";
 import { socketDuplex } from "./socketDuplex";
 
@@ -41,6 +63,40 @@ function sharesAccountOrigin(): boolean {
  */
 const LINK_KEY = "web.hostLink";
 
+/** The trip to the launch page this tab began (`launch.ts`), kept for the tab until it is back. */
+const LAUNCH_KEY = "web.launch";
+
+/** "1" once a host opened here was seen signed in to the account: no code is asked for then. */
+const ACCOUNT_KEY = "web.accountOn";
+
+/** "1" for the next load of this tab: show the form (asked for with "Another host"). */
+const FORM_KEY = "web.form";
+
+/** Where sign-in tabs tell the tab that opened them the code they came back with. */
+const SIGN_IN_CHANNEL = "web.signIn";
+
+/** A link as it is kept: `workspace` when it came from the launch page (the account's machine). */
+type KeptLink = HostLink & { workspace?: boolean };
+
+/** This page's own address, without what follows `?` or `#`: where a sign-in comes back to. */
+const pageAddress = (): string => location.origin + location.pathname;
+
+/**
+ * The account service's page that starts the person's machine and sends the tab back with its
+ * link, or null when there is none for this page: a build that names none, or a page that
+ * shares its address with the account pages (it trusts only this computer). A page served
+ * from this computer goes to one only when asked to in its address (`?launch=`, itself on this
+ * computer): how the trip is tried against a service under development.
+ */
+function launchPage(): string | null {
+  if (sharesAccountOrigin()) return null;
+  if (isLoopbackHost(location.hostname)) {
+    const asked = new URLSearchParams(location.search).get("launch")?.trim() ?? "";
+    return asked && isLoopbackServer(asked) ? asked : null;
+  }
+  return workspaceLaunchUrl();
+}
+
 /** Whether a connection is up: a link that arrives then is not followed (see `start`). */
 let connected = false;
 
@@ -50,22 +106,30 @@ let attempting = false;
 /** How long a host has to answer the handshake once the socket is open. */
 const HELLO_WITHIN_MS = 15_000;
 
-function keepLink(link: HostLink): void {
+function keepLink(link: KeptLink): void {
   if (sharesAccountOrigin()) return;
   try {
-    sessionStorage.setItem(LINK_KEY, JSON.stringify(link));
+    sessionStorage.setItem(
+      LINK_KEY,
+      JSON.stringify({
+        address: link.address,
+        token: link.token,
+        ...(link.workspace && { workspace: true }),
+      }),
+    );
   } catch {
     // Storage is off: a reload asks again.
   }
 }
 
-function savedLink(): Partial<HostLink> {
+function savedLink(): Partial<KeptLink> {
   if (sharesAccountOrigin()) return {};
   try {
     const saved = JSON.parse(sessionStorage.getItem(LINK_KEY) ?? "null") as unknown;
     if (saved && typeof saved === "object") {
-      const { address, token } = saved as Record<string, unknown>;
-      if (typeof address === "string" && typeof token === "string") return { address, token };
+      const { address, token, workspace } = saved as Record<string, unknown>;
+      if (typeof address === "string" && typeof token === "string")
+        return { address, token, ...(workspace === true && { workspace: true }) };
     }
   } catch {
     // Nothing usable kept.
@@ -106,8 +170,109 @@ async function blockedFromThisComputer(): Promise<boolean> {
  */
 class CodeNotSent extends Error {}
 
+/** The trip this tab began, taken out of storage: it counts once. */
+function takePending(): PendingLaunch | null {
+  try {
+    const pending = readPending(sessionStorage.getItem(LAUNCH_KEY));
+    sessionStorage.removeItem(LAUNCH_KEY);
+    return pending;
+  } catch {
+    return null;
+  }
+}
+
+function accountSeenOn(): boolean {
+  try {
+    return localStorage.getItem(ACCOUNT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Leaves for the launch page, which comes back with the machine's link (`start` reads it).
+ * A sign-in code is asked for along the way unless the machine was last seen signed in.
+ */
+async function goLaunch(page: string): Promise<void> {
+  showOpening("Finding your workspace…");
+  const nonce = randomToken();
+  let verifier: string | undefined;
+  let challenge: string | undefined;
+  if (hasAccounts() && !accountSeenOn()) {
+    verifier = randomToken();
+    challenge = await challengeOf(verifier).catch(() => undefined);
+  }
+  const pending: PendingLaunch = {
+    nonce,
+    at: Date.now(),
+    ...(verifier && challenge && { verifier }),
+  };
+  try {
+    sessionStorage.setItem(LAUNCH_KEY, JSON.stringify(pending));
+  } catch {
+    // Nothing can be kept, so the link that comes back couldn't be told from anyone's.
+    showForm(
+      {},
+      "This browser keeps nothing for the page, so it can't open a workspace by itself.",
+    );
+    return;
+  }
+  location.replace(launchUrl(page, nonce, pending.verifier ? challenge : undefined));
+}
+
+/**
+ * Signs in to the account in a tab of its own: the sign-in page comes back to this page's
+ * address with a code, and that tab passes it here (`start`, a `signIn` arrival). The tab is
+ * opened at once, while the browser still counts the click.
+ */
+function signInInTab(base: string): Promise<CodeSignIn> {
+  const tab = window.open("about:blank", "_blank");
+  if (!tab)
+    return Promise.reject(
+      new Error("The browser blocked the sign-in tab. Allow pop-ups for this page and try again."),
+    );
+  const verifier = randomToken();
+  const state = randomToken(16);
+  const redirect = pageAddress();
+  return new Promise<CodeSignIn>((resolve, reject) => {
+    const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+    let settled = false;
+    const finish = (run: () => void) => {
+      if (settled) return;
+      settled = true;
+      channel.close();
+      clearTimeout(tooLong);
+      clearInterval(watch);
+      run();
+    };
+    const tooLong = setTimeout(
+      () => finish(() => reject(new Error("The sign-in wasn't finished in time."))),
+      5 * 60_000,
+    );
+    // A tab closed by hand: the code, if one came, arrives a moment before.
+    const watch = setInterval(() => {
+      if (!tab.closed) return;
+      clearInterval(watch);
+      setTimeout(() => finish(() => reject(new Error("The sign-in tab was closed."))), 1500);
+    }, 1000);
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      const data = event.data as { code?: unknown; state?: unknown } | null;
+      if (!data || data.state !== state || typeof data.code !== "string") return;
+      const code = data.code;
+      finish(() => resolve({ code, verifier, redirect }));
+    };
+    challengeOf(verifier).then(
+      (challenge) => tab.location.replace(authorizeUrl(base, redirect, challenge, state)),
+      (err: unknown) => {
+        tab.close();
+        finish(() => reject(err instanceof Error ? err : new Error(String(err))));
+      },
+    );
+  });
+}
+
 /** Connects and starts the IDE on that host. Rejects with why when the host can't be reached. */
-async function connect(link: HostLink): Promise<void> {
+async function connect(link: KeptLink, signIn?: CodeSignIn): Promise<void> {
   const guarded = sharesAccountOrigin();
   const made = socketUrl(link.address, { remote: !guarded });
   if ("error" in made) throw new Error(made.error);
@@ -143,7 +308,27 @@ async function connect(link: HostLink): Promise<void> {
   keepLink(link);
   connected = true;
   setTransport(transport);
-  setShell(createWebShell());
+  setShell(
+    createWebShell(
+      link.workspace
+        ? { name: "Cloud workspace", cloud: true }
+        : { name: new URL(made.url).host, cloud: false },
+    ),
+  );
+  if (!guarded && hasAccounts()) {
+    // The host is another computer: the sign-in page comes back here, not to a listener there.
+    if (!isLoopbackHost(new URL(made.url).hostname)) setPageSignIn(signInInTab);
+    setArrivedSignIn(signIn ?? null);
+    if (link.workspace)
+      onAccountKnown((signedIn) => {
+        try {
+          if (signedIn) localStorage.setItem(ACCOUNT_KEY, "1");
+          else localStorage.removeItem(ACCOUNT_KEY);
+        } catch {
+          // Nothing kept: a code is asked for each time.
+        }
+      });
+  }
   transport.onClose(() => {
     if (connected) showLost();
   });
@@ -169,6 +354,12 @@ function showLost(): void {
   const other = h("button", { class: "button button-secondary", type: "button" }, "Another host");
   other.addEventListener("click", () => {
     forgetLink();
+    // The form, not a trip to the launch page.
+    try {
+      sessionStorage.setItem(FORM_KEY, "1");
+    } catch {
+      // Nothing kept: the page decides as if opened anew.
+    }
     location.reload();
   });
   document.body.append(
@@ -189,6 +380,25 @@ function showLost(): void {
     ),
   );
   again.focus();
+}
+
+/** What shows while the page is on its way to the account's machine: a bar, and what is happening. */
+function showOpening(text: string): void {
+  document.querySelector(".web-connect")?.remove();
+  document.body.append(
+    h(
+      "main",
+      { class: "web-connect" },
+      h(
+        "div",
+        { class: "web-opening", role: "status" },
+        logo(40),
+        h("h1", null, "Opening your workspace"),
+        h("div", { class: "web-opening-bar", "aria-hidden": "true" }),
+        h("p", { class: "web-status" }, text),
+      ),
+    ),
+  );
 }
 
 /** The form that asks where the host is. `error`: why the last attempt failed. */
@@ -246,7 +456,15 @@ function showForm(start: Partial<HostLink>, error?: string): void {
   (start.address ? code : address).focus();
 }
 
-async function attempt(link: HostLink): Promise<void> {
+/**
+ * Tries a link. `signIn`: a sign-in code that came with it. `relaunch`: the launch page to go
+ * to when it fails (a kept link to the account's machine, which has stopped since or has a
+ * new code: the launch page starts it and gives the link of now).
+ */
+async function attempt(
+  link: KeptLink,
+  options: { signIn?: CodeSignIn; relaunch?: string | null } = {},
+): Promise<void> {
   if (attempting) return;
   attempting = true;
   const status = document.querySelector(".web-status");
@@ -257,10 +475,15 @@ async function attempt(link: HostLink): Promise<void> {
   }
   if (button) button.disabled = true;
   try {
-    await connect(link);
+    await connect(link, options.signIn);
   } catch (err) {
     // The code isn't kept after a failed try: a wrong one would be sent again on every reload.
     forgetLink();
+    if (options.relaunch) {
+      attempting = false;
+      void goLaunch(options.relaunch);
+      return;
+    }
     showForm(
       // Unless nothing was sent (the browser stopped it, the host wasn't there): it stays in
       // the form (not in storage), so pressing Connect again is enough.
@@ -276,27 +499,91 @@ function start(): void {
   document.title = product.nameLong;
   // The tab is the browser's: the title bar shows no window buttons (styles/web.css).
   document.documentElement.classList.add("is-web");
-  const fromLink = parseHostLink(location.hash);
+  let arrival = readArrival(location.hash);
   // Out of the address bar at once: the fragment holds the code.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  try {
+    if (sessionStorage.getItem(FORM_KEY) === "1") {
+      sessionStorage.removeItem(FORM_KEY);
+      if (arrival.kind === "bare") arrival = { kind: "form" };
+    }
+  } catch {
+    // Storage is off: as opened.
+  }
+  // The sign-in page came back, in the tab opened for it: the code goes to the tab that
+  // asked (only that one knows what makes it worth anything), and this tab is done.
+  if (arrival.kind === "signIn" || arrival.kind === "signInEnded") {
+    const signedIn = arrival.kind === "signIn";
+    if (arrival.kind === "signIn") {
+      const channel = new BroadcastChannel(SIGN_IN_CHANNEL);
+      channel.postMessage({ code: arrival.code, state: arrival.state });
+      channel.close();
+    }
+    document.body.append(
+      h(
+        "main",
+        { class: "web-connect" },
+        h(
+          "div",
+          { class: "web-card" },
+          h("h1", null, signedIn ? "Signed in" : "Not signed in"),
+          h("p", null, "You can close this tab and go back to the editor."),
+        ),
+      ),
+    );
+    setTimeout(() => window.close(), 400);
+    return;
+  }
+  const page = launchPage();
+  const pending = takePending();
   const saved = savedLink();
-  // A kept code belongs to the address it was kept with: a link that names another address
-  // (anyone can send one) must not have this tab hand the code to whatever listens there.
-  const link =
-    fromLink.address && fromLink.address !== saved.address ? fromLink : { ...saved, ...fromLink };
-  showForm(link);
-  // By itself only to this computer; another host's address waits for Connect.
-  if (linkMayConnect(link)) void attempt(link);
+  // A trip is only ever begun from a page that has a launch page (`goLaunch`), so a number
+  // kept for this tab is proof enough that one was.
+  if (fromOwnLaunch(arrival, pending, Date.now())) {
+    // The account's own machine, as the launch page gave it: no form, no question.
+    showOpening("Connecting…");
+    const signIn =
+      arrival.code && pending?.verifier
+        ? { code: arrival.code, verifier: pending.verifier, redirect: pageAddress() }
+        : undefined;
+    void attempt({ ...arrival.link, workspace: true }, { ...(signIn && { signIn }) });
+  } else if (arrival.kind === "link") {
+    // A kept code belongs to the address it was kept with: a link that names another address
+    // (anyone can send one) must not have this tab hand the code to whatever listens there.
+    const fromLink = arrival.link;
+    const link =
+      fromLink.address && fromLink.address !== saved.address
+        ? fromLink
+        : { address: saved.address, token: saved.token, ...fromLink };
+    showForm(link);
+    // By itself only to this computer; another host's address waits for Connect.
+    if (linkMayConnect(link)) void attempt(link);
+  } else if (arrival.kind === "workspace" && page) {
+    void goLaunch(page);
+  } else if (arrival.kind === "bare" && saved.address && saved.token) {
+    // A reload: the link this tab was connected with, which the person typed or was given
+    // by the launch page. The account's machine may have stopped since: the launch page then.
+    if (saved.workspace) showOpening("Connecting…");
+    else showForm(saved);
+    void attempt(
+      { address: saved.address, token: saved.token, ...(saved.workspace && { workspace: true }) },
+      { relaunch: saved.workspace ? page : null },
+    );
+  } else if (arrival.kind === "bare" && page) {
+    void goLaunch(page);
+  } else {
+    showForm(arrival.kind === "form" ? {} : saved);
+  }
   // A link opened in a tab that already shows this page changes only the fragment, which
   // loads nothing: take the link and start over with it.
   // Never under a running session: whoever can change this tab's address could otherwise end
   // it, with its unsaved text, and point the tab at a host of their choosing.
   window.addEventListener("hashchange", () => {
-    const next = parseHostLink(location.hash);
+    const next = readArrival(location.hash);
     if (location.hash) history.replaceState(null, "", location.pathname + location.search);
-    if (connected || attempting || !linkMayConnect(next)) return;
-    showForm(next);
-    void attempt(next);
+    if (connected || attempting || next.kind !== "link" || !linkMayConnect(next.link)) return;
+    showForm(next.link);
+    void attempt(next.link);
   });
 }
 

@@ -4618,3 +4618,21 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
 3. A narrow window: the places move above the list.
 4. A host behind a proxy (`docs/workspaces.md`): the page connects; `curl` with no Origin
    header to the same name gets 403; ten idle connections don't keep the page from connecting.
+
+## D467 — The page comes to the machine, signs it in, and the picker makes folders
+1. Signed in on the account pages with a machine offered: open the web page's bare address.
+   It shows "Opening your workspace" with a bar, goes to the launch page (a bar, three steps),
+   and comes back connected, with no form. With the machine stopped, the same: it is started.
+2. Not signed in on the account pages: the bare address ends at the form. `#connect` shows
+   the form at once.
+3. The first time on a machine: the Accounts menu shows the account signed in, without a
+   sign-in. Sign out there, then Sign in: a tab opens on the sign-in page, says "Signed in"
+   and closes; the menu shows the account.
+4. Reload the page: it reconnects by itself. Stop the machine on the account page, press
+   Reconnect on "The connection to the host was lost": it starts again and connects.
+5. A link with someone else's host (`#h=wss://example.com&t=x`): the form, filled in, waiting.
+6. File > Open folder: the computer's name above the places; no box around the entries. New
+   folder (the button, or the menu on the empty space): a row to type in; Enter makes it and
+   chooses it, Escape drops it. Right-click a folder: Open, Rename, Copy path. F2 renames. A
+   name that is taken says so and changes nothing. A double click goes into a folder.
+7. In a terminal on the machine: `gh --version` answers.

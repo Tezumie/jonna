@@ -364,6 +364,34 @@ pub async fn picker_browse(path: Option<String>) -> Result<fs::Browsed> {
         .map_err(|e| Error::Invalid(e.to_string()))?
 }
 
+/// A new folder made from a path picker (D467): `name` in `parent`, a whole path. Not held to
+/// the open folder, as the OS's own dialog isn't. Resolves with the new folder's path.
+#[tauri::command]
+pub async fn picker_create_folder(parent: String, name: String) -> Result<String> {
+    let parent = std::path::PathBuf::from(parent);
+    if !parent.is_absolute() {
+        return Err(Error::Invalid("not a whole path".into()));
+    }
+    tauri::async_runtime::spawn_blocking(move || fs::create_dir(&parent, name.trim()))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+        .map(|made| made.to_string_lossy().into_owned())
+}
+
+/// Renames a folder or file from a path picker (D467), in place. Never over something that
+/// is there. Resolves with the new path.
+#[tauri::command]
+pub async fn picker_rename(path: String, name: String) -> Result<String> {
+    let path = std::path::PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(Error::Invalid("not a whole path".into()));
+    }
+    tauri::async_runtime::spawn_blocking(move || fs::rename(&path, name.trim()))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+        .map(|made| made.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub async fn fs_list_dir(state: State<'_, AppState>, path: String) -> Result<Vec<DirEntry>> {
     if let Some(p) = remote_path(&state, &path)? {

@@ -14,8 +14,11 @@ here=$(dirname "$0")
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq caddy git curl ca-certificates build-essential pkg-config \
-  python3 python3-pip python3-venv unzip zip jq ripgrep iproute2 xz-utils libdbus-1-3 >/dev/null
+# What the editor itself runs is all here: git, the GitHub CLI (its GitHub sign-in is
+# `gh auth login`), ripgrep, ssh, ps and ping. The rest is what people expect on a machine.
+apt-get install -y -qq caddy git git-lfs gh openssh-client curl ca-certificates build-essential \
+  pkg-config python3 python3-pip python3-venv unzip zip jq ripgrep iproute2 iputils-ping procps \
+  less nano xz-utils libdbus-1-3 >/dev/null
 
 # Node.js: the current LTS line from nodejs.org, checked against its published SHA-256.
 node_line=${NODE_LINE:-v22}

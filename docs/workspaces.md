@@ -89,6 +89,32 @@ certificate limits.
 5. **Answer "open"** with the page's address, the machine's `wss://` name and the code in the
    fragment, once the machine answers through its proxy.
 
+## The launch page
+
+What makes opening the page's address enough (D467). Name it in product.json
+(`workspaceLaunchPath`); the web front end, opened without a host's link, goes there with
+`#n=<number>` and, when the machine isn't known to be signed in, `&c=<PKCE challenge>`.
+Your page, on the address where people are signed in to your service:
+
+1. Reads `n` and `c` from the fragment and takes them out of the address.
+2. Sends anyone it has no machine for (not signed in, not offered one) back to the front
+   end's address with `#connect`, which shows the form. It need say nothing else to them.
+3. Starts the person's machine if it isn't running, waits until its host answers, and shows
+   that it is working: this is where people wait a minute.
+4. Sends the tab to the front end's address with `#h=wss://<machine>&t=<code>&n=<the same
+   number>`, and `&c=<sign-in code>` when a challenge came: a code made as your sign-in page
+   makes one, for that challenge, with the front end's address as where it was sent.
+
+The front end follows that link by itself only when `n` is the number that tab made, within
+half an hour. So a link someone else made is never followed, whatever it names. Always send
+the tab to your one configured address: a launch page that takes the address from its
+visitor is an open door.
+
+Your token endpoint must then accept the front end's address as a place a code was sent to
+(exactly that address, compared whole), beside the app's loopback listener. The same lets
+"Sign in" work in the page for any host that isn't the browser's own computer: the sign-in
+page comes back to `<front end's address>#signin&code=…&state=…`.
+
 ## What keeps people apart
 
 - **A network of their own for the machines**, where the only thing let in is ports 80 and
@@ -113,5 +139,5 @@ certificate limits.
   server needs that (planned).
 - **A project's files live on the machine.** Deleting the machine deletes them; git, or the
   IDE's sync, is what makes them outlast it.
-- **Signing in to the IDE's own account from inside a workspace** doesn't work: that sign-in
-  opens a browser on the machine it runs on.
+- **Moving a folder from your own computer onto the machine** has no button: clone it with
+  git, or sync it. An upload from the browser is planned.

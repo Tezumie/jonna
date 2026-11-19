@@ -205,8 +205,8 @@ pub fn parse_callback(
     Some((code, state, error))
 }
 
-/// Starts a sign-in against `base`: a loopback listener and the authorize URL to open.
-pub fn begin(base: &str) -> Result<Pending> {
+/// The accounts server's address as it is used, or why it can't be.
+fn checked_base(base: &str) -> Result<String> {
     let base = base.trim_end_matches('/').to_string();
     // Plain http only for this computer itself: the host exactly, not a name that starts
     // like it ("127.0.0.1.example.com").
@@ -220,6 +220,12 @@ pub fn begin(base: &str) -> Result<Pending> {
     if !(base.starts_with("https://") || local) {
         return Err(Error::Invalid("the accounts URL must be https".into()));
     }
+    Ok(base)
+}
+
+/// Starts a sign-in against `base`: a loopback listener and the authorize URL to open.
+pub fn begin(base: &str) -> Result<Pending> {
+    let base = checked_base(base)?;
     CANCELLED.store(false, std::sync::atomic::Ordering::SeqCst);
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     let port = listener.local_addr()?.port();
@@ -383,19 +389,53 @@ fn successful(reply: reqwest::Response) -> Result<reqwest::Response> {
 
 /// Exchanges the code for a token, reads the profile and saves the session.
 pub async fn finish(p: &Pending, code: &str, file: &Path) -> Result<Profile> {
+    exchange(&p.base, code, &p.redirect, &p.verifier, file).await
+}
+
+/// Signs in with a code the front end received itself: a page in a browser, where the
+/// sign-in page can't come back to a listener on this computer (it is another one). The page
+/// made the verifier and named the address the code was sent to; the server checks both.
+pub async fn finish_with_code(
+    base: &str,
+    code: &str,
+    verifier: &str,
+    redirect: &str,
+    file: &Path,
+) -> Result<Profile> {
+    let base = checked_base(base)?;
+    let plain = |text: &str, most: usize| {
+        !text.is_empty()
+            && text.len() <= most
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    };
+    if !plain(code, 256) || !plain(verifier, 128) || redirect.len() > 512 {
+        return Err(Error::Invalid("not a sign-in code".into()));
+    }
+    exchange(&base, code, redirect, verifier, file).await
+}
+
+async fn exchange(
+    base: &str,
+    code: &str,
+    redirect: &str,
+    verifier: &str,
+    file: &Path,
+) -> Result<Profile> {
     let client = http::client();
     let net = |e: reqwest::Error| Error::Invalid(format!("Couldn't reach the account server: {e}"));
     let read = |e: http::BodyError| {
         Error::Invalid(format!("The account server's answer couldn't be read: {e}"))
     };
     let reply = client
-        .post(format!("{}/oauth/token", p.base))
+        .post(format!("{base}/oauth/token"))
         .form(&[
             ("grant_type", "authorization_code"),
             ("code", code),
-            ("redirect_uri", p.redirect.as_str()),
+            ("redirect_uri", redirect),
             ("client_id", CLIENT_ID),
-            ("code_verifier", p.verifier.as_str()),
+            ("code_verifier", verifier),
         ])
         .send()
         .await
@@ -404,7 +444,7 @@ pub async fn finish(p: &Pending, code: &str, file: &Path) -> Result<Profile> {
         .map_err(net)?;
     let token: TokenReply = http::json_capped(successful(reply)?).await.map_err(read)?;
     let reply = client
-        .get(format!("{}/api/me", p.base))
+        .get(format!("{base}/api/me"))
         .bearer_auth(&token.access_token)
         .send()
         .await
@@ -415,7 +455,7 @@ pub async fn finish(p: &Pending, code: &str, file: &Path) -> Result<Profile> {
     session::store(
         file,
         session::vault(),
-        &p.base,
+        base,
         &profile,
         &session::Tokens {
             access: token.access_token,

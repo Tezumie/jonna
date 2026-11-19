@@ -97,6 +97,7 @@ const known = [
   "planPagePath",
   "teamPagePath",
   "webAppPath",
+  "workspaceLaunchPath",
   "webAppSubdomainIsolated",
   "syncBuiltIn",
 ];
@@ -143,6 +144,9 @@ if (!!(product.updates?.endpoint || "") !== !!(product.updates?.pubkey || ""))
 // - webAppPath: where the front end is served as a website that connects to a host (src/web,
 //   `node build.mjs --web`). A path on the accounts server or a whole URL, as above. Left out
 //   or "": the build has no such page, and the app offers no way to open one.
+// - workspaceLaunchPath: the account service's page that starts the signed-in account's hosted
+//   machine and sends the web front end to it (docs/workspaces.md). A path or a whole URL, as
+//   above. Left out or "": the web front end asks for a host's address, as it always did.
 // - webAppSubdomainIsolated: true says the accounts server sets no cookie for its whole domain,
 //   so a web front end on another name of that domain (app.example.com beside example.com) is
 //   an address of its own. Left out: such a page is treated as sharing the account pages'
@@ -154,14 +158,16 @@ const servicePages = {
   planPagePath: "/account#plan",
   teamPagePath: "/account#team",
   webAppPath: "",
+  workspaceLaunchPath: "",
 };
 // An empty one of these is a choice (no plans, no teams), not "the default".
-const mayBeEmpty = ["planPagePath", "teamPagePath", "webAppPath"];
+const mayBeEmpty = ["planPagePath", "teamPagePath", "webAppPath", "workspaceLaunchPath"];
 for (const key of Object.keys(servicePages)) {
   const value = product[key];
   if (value === undefined || value === "") continue;
   // The page with the front end is a page of its own, never a place in another one.
-  const shape = key === "webAppPath" ? /^(https?:\/\/|\/)\S*$/ : /^(https?:\/\/|\/|#)\S*$/;
+  const ownPage = key === "webAppPath" || key === "workspaceLaunchPath";
+  const shape = ownPage ? /^(https?:\/\/|\/)\S*$/ : /^(https?:\/\/|\/|#)\S*$/;
   if (typeof value !== "string" || !shape.test(value))
     throw new Error(
       `product.json: "${key}" must be a path on the accounts server ("/account") or a whole URL`,

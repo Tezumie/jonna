@@ -51,6 +51,27 @@ pub async fn account_sign_in(
     )
 }
 
+/// Signs in with a code the front end received (a page in a browser, D467): resolves with
+/// the profile.
+#[tauri::command]
+pub async fn account_sign_in_code(
+    state: State<'_, AppState>,
+    base: String,
+    code: String,
+    verifier: String,
+    redirect: String,
+) -> Result<Profile> {
+    Ok(accounts::finish_with_code(
+        &base,
+        &code,
+        &verifier,
+        &redirect,
+        &accounts::session_file(&state.dirs.data),
+    )
+    .await?
+    .with_defaults())
+}
+
 /// Stops waiting for a browser sign-in.
 #[tauri::command]
 pub async fn account_cancel() -> Result<()> {

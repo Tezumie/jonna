@@ -15,6 +15,14 @@ computer. `docs/web-app.md` has the design, what works and what doesn't yet.
   boot runs as in the app's window. A connection that ends under a running IDE is said over
   it, with Reconnect. The link is kept for the tab (`sessionStorage`), so a reload reconnects;
   a failed try forgets the code.
+- `launch.ts` (DOM-free, tested, D467): the trip to the account service's launch page
+  (product.json `workspaceLaunchPath`) that brings the tab to the account's own machine: what
+  the page was opened with (`readArrival`: nothing, `#connect`, `#workspace`, a link, a
+  sign-in coming back), the number the tab makes and the one link it follows by itself (the
+  one that carries that number, `fromOwnLaunch`), PKCE for a sign-in whose code comes back to
+  this page. `entry.ts` goes on the trip when opened with nothing, reconnects a kept link on
+  reload (by way of the launch page when the account's machine no longer answers), and
+  installs the page's sign-in (`core/ipc/pageSignIn.ts`) for a host that isn't this computer.
 - `address.ts` (DOM-free, tested): the link's fragment, and the WebSocket address for what was
   typed. This computer plainly (`ws://127.0.0.1:…`), any other host only encrypted (`wss://`).
 - `socketDuplex.ts`: a WebSocket as the `ByteDuplex` that `core/ipc/streamTransport.ts` runs
@@ -25,6 +33,9 @@ computer. `docs/web-app.md` has the design, what works and what doesn't yet.
   browser's clipboard, full screen. Window controls do nothing. The picker is laid out as a
   file manager (D466): places, a path bar (`pathCrumbs.ts`: a host path as steps, DOM-free),
   entries chosen with a click and gone into with a second, hidden items behind a checkbox.
+  Since D467 it names the computer above the places, makes and renames folders in the row
+  itself (`fsIpc.pickerCreateFolder`, `pickerRename`), and has a menu on an entry and on
+  the space under them.
 - `policy.json`: the two content policies (the page's, the workers'). The build writes the
   page's into `index.html`; `scripts/web-host.mjs` serves with both; a site that serves the
   build sends them as headers (`docs/web-app.md`).

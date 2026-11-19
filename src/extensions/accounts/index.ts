@@ -7,6 +7,7 @@
 import type { BuiltinExtension } from "../../core/extensions/index";
 import { type AccountProfile, accountsIpc } from "../../core/ipc/accounts";
 import { githubIpc } from "../../core/ipc/git";
+import { noteAccount, pageSignIn, takeArrivedSignIn } from "../../core/ipc/pageSignIn";
 import { openerIpc } from "../../core/ipc/system";
 import { MutableDisposable } from "../../core/lifecycle/index";
 import { accountsServer, hasAccounts, hasPlanPage, hasSync } from "../../core/ownServices";
@@ -82,7 +83,15 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
           }),
         ),
       ]);
-      profile.value = p;
+      // The page was opened with a sign-in code (the account service signed the person's
+      // hosted machine in, D467): used when the host has no session, and only once.
+      const arrived = takeArrivedSignIn();
+      const signedIn =
+        !p && base && arrived
+          ? await accountsIpc.signInWithCode(base, arrived).catch(() => null)
+          : p;
+      profile.value = signedIn;
+      if (base) noteAccount(signedIn !== null);
       github.value = parseGhAuth(gh.text);
       githubProblem.value = gh.problem;
       void showAvatar();
@@ -330,11 +339,16 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
           if (signingIn.peek()) return { signingIn: true };
           signingIn.value = true;
           try {
-            const p = await accountsIpc.signIn(
-              base,
-              (url) => void openerIpc.openUrl(url).catch(() => {}),
-            );
+            // In a browser the page receives the code itself (the host is another computer).
+            const inPage = pageSignIn();
+            const p = inPage
+              ? await accountsIpc.signInWithCode(base, await inPage(base))
+              : await accountsIpc.signIn(
+                  base,
+                  (url) => void openerIpc.openUrl(url).catch(() => {}),
+                );
             profile.value = p;
+            noteAccount(true);
             notifications.show("success", `Signed in as ${p.name}.`);
             return { signedIn: p.name };
           } finally {
@@ -378,6 +392,7 @@ export const accountsExtension: BuiltinExtension<WorkbenchServices> = {
           }
           await accountsIpc.signOut();
           profile.value = null;
+          noteAccount(false);
           return { signedOut: true };
         },
       }),

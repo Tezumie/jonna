@@ -118,6 +118,12 @@ export const fsIpc = {
    */
   pickerBrowse: (path?: string): Promise<BrowsedFolder> =>
     call<BrowsedFolder>("picker_browse", { path: path ?? null }),
+  /** A new folder made from that picker: `name` in `parent`. Resolves with its path. */
+  pickerCreateFolder: (parent: string, name: string): Promise<string> =>
+    call<string>("picker_create_folder", { parent, name }),
+  /** Renames what that picker shows, in place; never over something there. The new path. */
+  pickerRename: (path: string, name: string): Promise<string> =>
+    call<string>("picker_rename", { path, name }),
   /**
    * Starts the OS drag of these workspace files out of the window (D200), while the mouse button
    * is down: other apps (a file manager, a mail, a chat) take them.

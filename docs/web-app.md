@@ -90,6 +90,20 @@ once its upgrade was accepted: sockets that say nothing, or are refused, keep no
 - This computer is reached with `ws://` (nothing leaves it); any other host only with
   `wss://`.
 
+### Without a link
+
+Opened with nothing after its address, the page reconnects to the host this tab was last
+connected to, if any. Otherwise, in a build whose product.json names a launch page
+(`workspaceLaunchPath`, [workspaces.md](workspaces.md)), it goes there and comes back with
+the account's own machine; in any other build it shows the form. `#connect` after the
+address always shows the form.
+
+### Signing in to the account
+
+With the host on another computer, the app's sign-in can't come back to it. The page
+receives the code itself and hands it to the host (D467): Sign in opens a tab, which closes
+when it is done. Allow pop-ups for the page if the browser stops it.
+
 ## Sharing an address with the account pages
 
 A page may be served at a path of the accounts server's own address (`webAppPath: "/app/"`:

@@ -17,6 +17,11 @@ export interface OwnServices {
   readonly teamPagePath: string;
   /** Where the front end is served as a website (a path, or a whole URL); empty: nowhere. */
   readonly webAppPath: string;
+  /**
+   * The account service's page that starts the account's hosted machine and sends the web
+   * front end to it (a path, or a whole URL); empty: the service has no machines.
+   */
+  readonly workspaceLaunchPath: string;
   /** True: the accounts server keeps nothing another name of its domain can reach. */
   readonly webAppSubdomainIsolated: boolean;
   /** False leaves Sync out of the build. */
@@ -109,6 +114,18 @@ function pageUrl(base: string, page: string): string {
 export function webAppUrl(config: OwnServices = product): string | null {
   const page = config.webAppPath.trim();
   if (!page) return null;
+  if (/^https?:\/\//i.test(page)) return page;
+  return hasAccounts(config) ? pageUrl(config.accountsUrl, page) : null;
+}
+
+/**
+ * The page of the account service that the web front end goes to when it is opened without a
+ * host's link: it starts the signed-in person's machine and sends the tab back with its link
+ * (src/web/launch.ts), or null when the build names none or has no web front end.
+ */
+export function workspaceLaunchUrl(config: OwnServices = product): string | null {
+  const page = config.workspaceLaunchPath.trim();
+  if (!page || !webAppUrl(config)) return null;
   if (/^https?:\/\//i.test(page)) return page;
   return hasAccounts(config) ? pageUrl(config.accountsUrl, page) : null;
 }
