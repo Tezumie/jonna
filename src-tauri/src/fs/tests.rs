@@ -438,7 +438,7 @@ fn deleting_a_junction_removes_the_link_alone() -> Result<()> {
     Ok(())
 }
 
-/// D456: a folder as a path picker shows it. Folders first, nothing hidden, the folder above.
+/// D459: a folder as a path picker shows it. Folders first, nothing hidden, the folder above.
 #[test]
 fn browse_lists_a_folder_for_a_picker() -> Result<()> {
     let dir = std::env::temp_dir().join(format!("ide-fs-browse-{}", std::process::id()));

@@ -52,7 +52,7 @@ unless noted.
 | · Hand-off: told once when a teammate shares, asking a teammate to share | D455 |
 | · The audit of team sharing: a shared chat built from a whitelist, the audience in a record old apps can't lose, and twelve smaller findings | D457 |
 | · A proof of possession that says what it is for; the generation floor for chats and snapshots stays open | D458 |
-| · The front end as a website that connects to a host: a proof of concept | D456 |
+| · The front end as a website that connects to a host: a proof of concept | D459 |
 
 ## Seeded from PLAN §19
 
@@ -16366,7 +16366,7 @@ legitimate one arriving.
 
 **Still open, not looked into further here:** a deletion of a snapshot or a project is the
 service's unsealed word; switches outside the guarded areas still sync.
-## D456 — The front end as a website that connects to a host: a proof of concept
+## D459 — The front end as a website that connects to a host: a proof of concept
 
 The owner asked for the editor in a browser, first against their own computer, leaving open
 where a host is (a machine they run, one we run, someone else's). `docs/web-app.md` is the

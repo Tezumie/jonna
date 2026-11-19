@@ -85,7 +85,7 @@ function windowPrompts(services: WorkbenchServices): HostPrompts {
 
 /** The bundled worker scripts, as web workers. */
 const webWorkers: WorkerFactory = (script, name): ScriptWorker => {
-  // A page that runs no extension code (the web build on the accounts' address, D456) runs no
+  // A page that runs no extension code (the web build on the accounts' address, D459) runs no
   // script a model wrote either: a worker has the page's origin.
   const blocked = extensionCodeBlocked();
   if (blocked) throw new Error(blocked);

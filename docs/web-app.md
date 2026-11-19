@@ -1,6 +1,6 @@
 # The front end as a website
 
-A proof of concept (D456): the IDE's own front end, served as a web page, working on a
+A proof of concept (D459): the IDE's own front end, served as a web page, working on a
 **host** it connects to. Nothing in the app's window changes. The page is not linked from
 anywhere and asks not to be indexed.
 

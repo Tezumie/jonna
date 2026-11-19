@@ -63,7 +63,7 @@ waits `--linger` seconds (60) for it to come back, then exits (a connection that
 accepted `$/hello` is no client: it neither starts that wait nor makes it longer). The port is printed on stderr
 (`host: listening on 127.0.0.1:<port>`). The program answers the same helper starts as the
 desktop one first (the remote relay, git's prompt, the MCP stdio proxy, the Ctrl+C helper).
-`ws.rs` (D456): `--listen-ws`, the same wire inside WebSocket binary messages for a
+`ws.rs` (D459): `--listen-ws`, the same wire inside WebSocket binary messages for a
 client that is a page in a browser (`src/web`): the upgrade is answered only for a `Host` that
 is this computer and an `Origin` on the `--allow-origin` list, then the messages' bytes are
 the carrier's stream (a reader that unmasks as it reads, a writer of messages of at most

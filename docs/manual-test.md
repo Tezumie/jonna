@@ -4541,7 +4541,7 @@ Three accounts in a team as for D453; the service with these changes.
 1. Add a second computer and approve it; make new keys; remove a computer; publish the key
    for sharing (open Team): each works against the updated service and against the one
    before.
-## D456 — The editor in a browser, on this computer
+## D459 — The editor in a browser, on this computer
 1. Build the host (`cargo build --no-default-features --features host --bin ide-host` in
    `src-tauri/`), then `node scripts/web-host.mjs`. It prints a link to the site's page.
 2. Open the link in Chrome or Edge on the same computer. The browser asks whether the site

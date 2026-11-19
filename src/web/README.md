@@ -1,7 +1,7 @@
 # src/web
 
 The front end as a website: the same workbench, with a **host** somewhere else in place of the
-app's own backend. A proof of concept (D456): it runs against the windowless host on the same
+app's own backend. A proof of concept (D459): it runs against the windowless host on the same
 computer. `docs/web-app.md` has the design, what works and what doesn't yet.
 
 - `entry.ts`: the page's entry. Reads the link's fragment (`#h=<address>&t=<code>`) and takes

@@ -349,7 +349,7 @@ pub async fn fs_stat(state: State<'_, AppState>, path: String) -> Result<Stat> {
     fs::stat(&crate::ipc::settings::resolve_path(&state, &path)?)
 }
 
-/// A folder for a path picker (D456): its entries by name and kind, the folder above, the
+/// A folder for a path picker (D459): its entries by name and kind, the folder above, the
 /// drives. `path` left out: the user's home folder. Not held to the open folder, as the OS's
 /// own dialog isn't: choosing a folder is how one comes to be open. Names only, no contents.
 #[tauri::command]
