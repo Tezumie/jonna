@@ -21,6 +21,7 @@ import {
   wsProtocols,
 } from "../../core/agent/monitor";
 import { sandboxArg } from "../../core/agent/sandbox";
+import { agentStoreIpc } from "../../core/ipc/agent";
 import type { DisposableStore } from "../../core/lifecycle/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import {
@@ -199,12 +200,19 @@ function watch(
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
   const send = (text: string) => {
-    // Its chat may have been put away (no tab): loaded again to hear it, as an ended command's.
-    const session = sessions.find(p.session) ?? sessions.get(p.session);
-    void session.loaded().then(() => {
-      if (!session.deleted) deliverAutoMessage(session, text, "monitor");
-    });
+    void (async () => {
+      // Its chat may have been put away (no tab): loaded again to hear it, as an ended command's.
+      // Only one that is still saved: asking for an unknown id makes a new chat, and a deleted
+      // chat came back empty that way, with a turn started in it.
+      const loaded = sessions.find(p.session);
+      if (!loaded && !(await agentStoreIpc.stamps([p.session]).catch(() => [null]))[0]) return;
+      const session = loaded ?? sessions.get(p.session);
+      await session.loaded();
+      if (!session.deleted && session.items.length) deliverAutoMessage(session, text, "monitor");
+    })().catch(() => {});
   };
+  /** Killed (kill_process, Stop, its chat deleted): what still arrives or waits isn't sent. */
+  const killed = () => p.status === "killed" && !ending.has(p.id);
   const stop = (end: MonitorEnd) => {
     if (p.status !== "running" || ending.has(p.id)) return;
     ending.set(p.id, end);
@@ -214,7 +222,7 @@ function watch(
   };
   const flush = () => {
     flushTimer = undefined;
-    if (ending.has(p.id)) return;
+    if (ending.has(p.id) || killed()) return;
     const flood = events.flood(Date.now());
     if (flood) {
       stop({ kind: "flood", ...flood });
@@ -228,7 +236,7 @@ function watch(
     send(monitorEventText(p.id, description, batch, !!feed));
   };
   const add = (found: string[]) => {
-    if (!found.length || ending.has(p.id)) return;
+    if (!found.length || ending.has(p.id) || killed()) return;
     if (events.add(found, Date.now())) flushTimer = setTimeout(flush, MONITOR_BATCH_MS);
     if (p.monitor) p.monitor.events = events.total;
   };

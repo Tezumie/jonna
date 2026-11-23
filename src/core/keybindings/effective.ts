@@ -164,12 +164,16 @@ export function validateUserKeybindings(value: unknown): {
       problems.push(`entry ${i + 1}: needs "key" and "command" strings`);
       return;
     }
-    if (!safeParse(e.key)) {
+    // A removal without a key takes every binding of its command away (VS Code's meaning, and
+    // what "Change keybinding" and "Remove keybinding" write).
+    const removesAll = e.command.startsWith("-") && !e.key.trim();
+    if (!removesAll && !safeParse(e.key)) {
       problems.push(`entry ${i + 1}: can't read key "${e.key}"`);
       return;
     }
     rules.push({
-      key: e.key,
+      // "" and not blanks: every reader takes an empty key as "no key".
+      key: removesAll ? "" : e.key,
       command: e.command,
       ...(typeof e.mac === "string" && { mac: e.mac }),
       ...(typeof e.when === "string" && { when: e.when }),

@@ -889,11 +889,34 @@ pub fn validate_name(name: &str) -> Result<()> {
         || name.contains('/')
         || name.contains('\\')
         || name.contains('\0')
-        || (cfg!(windows) && name.contains([':', '*', '?', '"', '<', '>', '|']));
+        || (cfg!(windows)
+            && (name.contains([':', '*', '?', '"', '<', '>', '|']) || windows_refuses(name)));
     if bad {
         return Err(Error::Invalid(format!("invalid file name: {name:?}")));
     }
     Ok(())
+}
+
+/// Names Windows can't keep as written: a device name (`CON`, `NUL`, `COM1`…, whatever the
+/// case, with or without an extension: `nul.txt` opens the device, not a file) and names ending
+/// in a dot or a space (Windows drops those, so the file made isn't the one named, and
+/// Explorer can't delete what a program made with them).
+pub(crate) fn windows_refuses(name: &str) -> bool {
+    if name.ends_with(['.', ' ']) {
+        return true;
+    }
+    // The part before the first dot, spaces at its end ignored (`CON .txt` is the device too).
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let upper = stem.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    let numbered = |prefix: &str| {
+        upper
+            .strip_prefix(prefix)
+            .is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+    };
+    numbered("COM") || numbered("LPT")
 }
 
 pub fn create_file(parent: &Path, name: &str) -> Result<PathBuf> {
@@ -1077,13 +1100,13 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn copy_symlink(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn copy_symlink(from: &Path, to: &Path) -> Result<()> {
     std::os::unix::fs::symlink(fs::read_link(from)?, to)?;
     Ok(())
 }
 
 #[cfg(windows)]
-fn copy_symlink(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn copy_symlink(from: &Path, to: &Path) -> Result<()> {
     let target = fs::read_link(from)?;
     // Whether the link is a directory link decides which call recreates it.
     let is_dir = fs::metadata(from).is_ok_and(|m| m.is_dir());
@@ -1103,7 +1126,7 @@ fn copy_symlink(from: &Path, to: &Path) -> Result<()> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn copy_symlink(_from: &Path, _to: &Path) -> Result<()> {
+pub(crate) fn copy_symlink(_from: &Path, _to: &Path) -> Result<()> {
     Ok(())
 }
 

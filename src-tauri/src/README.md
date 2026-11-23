@@ -308,6 +308,20 @@ Non-interactive commands for agents (`exec_run`): the user's login shell (`$SHEL
 PowerShell `-NoProfile -Command` on Windows), cwd inside the workspace, output streamed as it
 arrives, exit code, timeout and cancel (kills the process group / tree).
 
+`search_dirs` / `path_search_dirs` (D469) are the folders a program is looked up in: PATH's
+absolute entries only. An empty or relative entry means "the working directory" to the
+system, and the app is often started from inside a folder it doesn't trust. Everything that
+finds a program by name (the shells in `pty/`, the formatter lookup, `lsp/`) goes through
+them; a bare name that isn't found is NotFound, never handed to the system to search for.
+
+Since the D469 audit, elsewhere in this folder: addresses are parsed before they are judged
+(`accounts::http::secure_or_loopback`, used for the accounts server, pictures and frames);
+`git` gets `--literal-pathspecs` wherever the IDE names files (`git::LITERAL_PATHS`) and
+`git_show` takes `exact` (non-UTF-8 text is an error, for hunk staging); the registry of
+extensions is never rewritten from a failed read; `ext_webview_page` takes `scripts` (a page
+stored with `false` is served with a policy that runs none); a snapshot's paths are refused
+unless they are written as the file system reads them (`sync::snapshot::safe_join`).
+
 The command sandbox (`exec/sandbox.rs`, D336): `exec_run { sandbox: true }` runs the shell under
 the OS's isolation with writes limited to the command's workspace folder, its repository's git
 folder and a temp folder. Windows: cmd started suspended, its token lowered to low integrity

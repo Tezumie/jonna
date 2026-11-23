@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createWorkerApi, type FromWorker, type ToWorker } from "./rpc";
 import {
+  claimsShippedId,
   extensionMayWriteSetting,
   hasPermission,
   inClaimedNamespace,
@@ -12,8 +13,17 @@ import {
 import { declarativeOnly } from "./vscodePackage";
 
 test("extensionMayWriteSetting: own and folder-level settings, never user-only or blocked ones", () => {
-  assert.equal(extensionMayWriteSetting("acme.todo-tree", "todoTree.colors", "user"), true);
+  const own = "acme.todo-tree";
+  assert.equal(extensionMayWriteSetting(own, "todoTree.colors", "user", own), true);
   assert.equal(extensionMayWriteSetting("acme.todo-tree", "editor.fontSize", undefined), true);
+  // A name alone isn't ownership: the IDE's own settings have no owner.
+  assert.equal(extensionMayWriteSetting("acme.todo-tree", "todoTree.colors", "user"), false);
+  assert.equal(
+    extensionMayWriteSetting("acme.remote", "remote.containers.dockerPath", "user"),
+    false,
+  );
+  assert.equal(extensionMayWriteSetting("bundled.lsp", "lsp.servers", "user"), false);
+  assert.equal(extensionMayWriteSetting("bundled.lsp", "lsp.servers", undefined), false);
   assert.equal(extensionMayWriteSetting("acme.todo-tree", "lsp.servers", "user"), false);
   assert.equal(
     extensionMayWriteSetting("acme.todo-tree", "terminal.profiles.windows", "user"),
@@ -36,6 +46,14 @@ test("extensionMayWriteSetting: own and folder-level settings, never user-only o
     extensionMayWriteSetting("ms-python.python", interpreter, "user", "ms-python.python"),
     true,
   );
+});
+
+test("claimsShippedId: only the seeded ids may start like the IDE's own extensions", () => {
+  const shipped = ["bundled.jupyter", "bundled.gittools"];
+  assert.equal(claimsShippedId("bundled.jupyter", shipped), false);
+  assert.equal(claimsShippedId("acme.todo", shipped), false);
+  assert.equal(claimsShippedId("bundled.lsp", shipped), true);
+  assert.equal(claimsShippedId("bundled.jupyter", []), true);
 });
 
 test("parseManifest: our format with commands, views, settings, permissions", () => {

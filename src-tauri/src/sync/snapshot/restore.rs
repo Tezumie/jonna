@@ -10,7 +10,8 @@ use super::capture::git_changes;
 use super::compare::same_content;
 use super::git::{git, is_git, safe_remote, scratch_file, stash_paths, stashes, take_bundle};
 use super::manifest::{
-    beyond_a_snapshot, within_limits, FileEntry, Manifest, MAX_FILE_BYTES, WRITES_AT_ONCE,
+    beyond_a_snapshot, within_limits, FileEntry, Manifest, MAX_FILE_BYTES, MAX_STAGED_BYTES,
+    WRITES_AT_ONCE,
 };
 use super::paths::{not_a_repository_of_its_own, safe_join, sync_error, Project};
 use crate::error::{Error, Result};
@@ -411,14 +412,18 @@ async fn restore_steps(
                 }
             }
             if let Some(staged) = &state.staged {
-                let patch = chunks::read(api, ring, staged).await?;
-                if crate::git::run(
-                    root,
-                    &["apply", "--cached", "--binary", "--whitespace=nowarn"],
-                    Some(&patch),
-                )
-                .is_err()
-                {
+                // The patch is held whole (git reads it from its input): one larger than
+                // `MAX_STAGED_BYTES` is not fetched, and the restore goes on without it.
+                let applied = staged.size <= MAX_STAGED_BYTES && {
+                    let patch = chunks::read_within(api, ring, staged, MAX_STAGED_BYTES).await?;
+                    crate::git::run(
+                        root,
+                        &["apply", "--cached", "--binary", "--whitespace=nowarn"],
+                        Some(&patch),
+                    )
+                    .is_ok()
+                };
+                if !applied {
                     done.notes.push("What was staged couldn't be staged again; the files themselves are restored.".into());
                 }
             }

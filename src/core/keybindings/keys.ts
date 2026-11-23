@@ -103,16 +103,51 @@ export interface KeyEventLike {
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean;
+  getModifierState?(key: string): boolean;
+}
+
+/** The key a physical key (`code`) is on a US layout: "s", "1", "[", "enter"… */
+function keyOfCode(code: string): string | undefined {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code)) return `numpad${code.slice(6)}`;
+  if (/^F[0-9]{1,2}$/.test(code)) return code.toLowerCase();
+  return CODE_TO_KEY[code];
+}
+
+/**
+ * True when this key press types a character through AltGr ("ś" is AltGr+S on a Polish layout,
+ * "@" AltGr+Q on a German one), so it must not run a Ctrl+Alt binding: Windows reports AltGr as
+ * Ctrl+Alt, and takes Ctrl+Alt for AltGr. As in VS Code, a Ctrl+Alt binding gives way on the keys
+ * where the layout has an AltGr character, and works on the others.
+ *
+ * The event tells: with AltGr (or Ctrl+Alt on Windows) held, `key` is the character typed, and
+ * where the layout has none it is the key's own character. `layoutKey` is that own character
+ * (unshifted) when the layout is known; without it the US key stands in, and a plain letter is
+ * never taken for an AltGr character (QWERTZ's "z" on the US "y" key isn't one). With Shift the
+ * key's own shifted character isn't known, so only characters past ASCII count ("Ś", not "!").
+ */
+export function typesWithAltGr(e: KeyEventLike, platform: Platform, layoutKey?: string): boolean {
+  if (e.metaKey) return false;
+  const altGr =
+    e.getModifierState?.("AltGraph") === true || (platform === "windows" && e.ctrlKey && e.altKey);
+  if (!altGr) return false;
+  const point = e.key.codePointAt(0);
+  // One printable character ("Dead", "Enter", "F5" are names, not text).
+  if (point === undefined || [...e.key].length !== 1 || point < 0x20 || point === 0x7f)
+    return false;
+  // Space and the number pad type the same with AltGr on every layout.
+  if (e.key === " " || e.code.startsWith("Numpad")) return false;
+  if (e.shiftKey) return point > 0x7f;
+  const typed = e.key.toLowerCase();
+  if (layoutKey) return typed !== layoutKey.toLowerCase();
+  if (/^[a-z]$/.test(typed)) return false;
+  return typed !== keyOfCode(e.code);
 }
 
 /** Chord for a keydown event, or null for a bare modifier press / unknown key. */
 export function chordFromEvent(e: KeyEventLike): string | null {
-  let key: string | undefined;
-  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3).toLowerCase();
-  else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
-  else if (/^Numpad[0-9]$/.test(e.code)) key = `numpad${e.code.slice(6)}`;
-  else if (/^F[0-9]{1,2}$/.test(e.code)) key = e.code.toLowerCase();
-  else key = CODE_TO_KEY[e.code];
+  const key = keyOfCode(e.code);
   if (!key) return null;
   const mods: string[] = [];
   if (e.ctrlKey) mods.push("ctrl");

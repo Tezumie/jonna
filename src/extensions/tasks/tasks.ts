@@ -22,6 +22,12 @@ export interface TaskDefinition {
   command: string;
   /** What the terminal runs: the command line through a shell, or a program and its args. */
   spec: RunSpec;
+  /**
+   * A shell task whose args hold `${input:…}` / `${command:…}`: the parts of its command line,
+   * unquoted. Those values are known only when it runs, and must be quoted after they're filled
+   * in (`lateShellCommand`): what's typed at the prompt is one argument, never shell syntax.
+   */
+  lateShell?: { program: string; args: string[]; kind: TaskShellKind };
   cwd?: string;
   /** "build" / "test" group; `isDefault` marks the one Ctrl/Cmd+Shift+B runs. */
   group?: { kind: string; isDefault: boolean };
@@ -306,6 +312,21 @@ export function quoteTaskArg(arg: string, kind: TaskShellKind): string {
   }
 }
 
+/**
+ * A shell task's command line with its late values filled in: each argument is substituted
+ * first and quoted for the shell after, so `don't` or `'; calc; '` typed at an `${input:…}`
+ * prompt is one literal argument. The program is the task author's own command line, as written.
+ */
+export function lateShellCommand(
+  parts: NonNullable<TaskDefinition["lateShell"]>,
+  values: ReadonlyMap<string, string>,
+): string {
+  return [
+    substituteLate(parts.program, values),
+    ...parts.args.map((a) => quoteTaskArg(substituteLate(a, values), parts.kind)),
+  ].join(" ");
+}
+
 const looksBackground = (command: string) =>
   /\b(dev|serve|start|watch|preview)\b|--watch\b|\bnodemon\b|http\.server/.test(command);
 
@@ -337,6 +358,7 @@ export function parseTasksJson(
     const isProcess = t.type === "process";
     let command = "";
     let spec: RunSpec = { kind: "shell", command: "" };
+    let lateShell: TaskDefinition["lateShell"];
     const argValue = (a: unknown) =>
       substitute(
         typeof a === "string"
@@ -362,6 +384,8 @@ export function parseTasksJson(
       );
       command = [program, ...args.map((a) => quoteTaskArg(a, kind))].join(" ");
       spec = isProcess ? { kind: "process", command: program, args } : { kind: "shell", command };
+      if (!isProcess && args.some((a) => lateVariables(a).length > 0))
+        lateShell = { program, args, kind };
     }
     const label =
       typeof t.label === "string"
@@ -415,6 +439,7 @@ export function parseTasksJson(
       label,
       command,
       spec,
+      ...(lateShell && { lateShell }),
       ...(cwd && { cwd }),
       ...(group && { group }),
       background:

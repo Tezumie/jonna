@@ -73,3 +73,41 @@ test("D316: a thrown error, a refusal and Stop end the batch too", async () => {
   assert.equal(fine.isError, false);
   assert.equal(fine.summary, "1 step");
 });
+
+test("each step meets the checks a call of its own would; a refused one doesn't run", async () => {
+  const ran: string[] = [];
+  const r = await runBatch(
+    [
+      { name: "browser_snapshot", input: {} },
+      { name: "browser_eval", input: { code: "1" } },
+      { name: "screenshot", input: {} },
+    ],
+    async (s) => {
+      ran.push(s.name);
+      return { result: "ok" };
+    },
+    (s) => s.name,
+    () => false,
+    async (s) =>
+      s.name === "browser_eval" ? { result: "denied: browser_eval", denied: true } : null,
+  );
+  assert.deepEqual(ran, ["browser_snapshot"]);
+  assert.equal(r.denied, true);
+  assert.match(r.result, /\[2\] browser_eval — refused:\ndenied: browser_eval/);
+  assert.match(r.result, /step 3 didn't run/);
+  // A check that throws refuses too (nothing runs on a broken check).
+  const broken = await runBatch(
+    [{ name: "browser_act", input: {} }],
+    async () => {
+      ran.push("after a broken check");
+      return { result: "ok" };
+    },
+    (s) => s.name,
+    () => false,
+    async () => {
+      throw new Error("hook failed");
+    },
+  );
+  assert.equal(broken.isError, true);
+  assert.equal(ran.includes("after a broken check"), false);
+});

@@ -5,6 +5,7 @@ import {
   isSecretLikeSetting,
   matchesReadsSettings,
   parseReadsSettings,
+  settingsStateForExtension,
 } from "./settingsAccess";
 
 test("parseReadsSettings: keys and prefix.* patterns; credentials' areas refused", () => {
@@ -68,4 +69,43 @@ test("canReadSetting: own, editor/workbench/files, readsSettings; never blocked 
   assert.ok(!canReadSetting(own, ["markdown.*"], "markdown"));
   assert.ok(matchesReadsSettings(["markdown.*"], "markdown.a"));
   assert.ok(!matchesReadsSettings(["markdown.*"], "markdownx.a"));
+});
+
+test("settingsStateForExtension: only readable settings, in every part of the state", () => {
+  const readable = (key: string) => canReadSetting(["todo.tags"], [], key);
+  const state = {
+    files: { user: "/home/u/settings.json", workspace: null },
+    settings: [
+      { key: "editor.fontSize", value: 14 },
+      { key: "todo.tags", value: ["TODO"] },
+      { key: "lsp.servers", value: { pyright: { env: { API_KEY: "s3cret" } } } },
+      { key: "agent.model", value: "m" },
+      { key: "github.token", value: "t" },
+      "… 3 more",
+    ],
+    languages: {
+      python: { "editor.tabSize": 4, "http.proxy": "http://user:pass@host" },
+      go: { "ai.model": "m" },
+    },
+    associations: { "*.foo": "json" },
+    problems: [{ message: 'agent.model: "m" is not valid' }],
+    folders: [{ name: "a", path: "/a", set: ["editor.tabSize", "mcp.servers", 3] }],
+  };
+  const seen = settingsStateForExtension(state, readable);
+  assert.deepEqual(seen, {
+    files: state.files,
+    settings: [
+      { key: "editor.fontSize", value: 14 },
+      { key: "todo.tags", value: ["TODO"] },
+    ],
+    languages: { python: { "editor.tabSize": 4 } },
+    associations: { "*.foo": "json" },
+    folders: [{ name: "a", path: "/a", set: ["editor.tabSize"] }],
+  });
+  assert.ok(!JSON.stringify(seen).includes("s3cret"));
+  // A state cut to its budget (or anything unexpected) gives nothing rather than everything.
+  assert.deepEqual(settingsStateForExtension("truncated", readable), {
+    settings: [],
+    languages: {},
+  });
 });

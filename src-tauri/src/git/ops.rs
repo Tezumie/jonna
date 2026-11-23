@@ -28,9 +28,27 @@ pub fn status(repo: &Path) -> Result<GitStatus> {
 /// File text at `HEAD` (`rev = "HEAD"`) or in the index (`rev = ""`), in working-tree form
 /// (smudge filters and line-ending conversion applied, like a checkout). None if absent there.
 pub fn show(repo: &Path, rev: &str, path: &str) -> Result<Option<String>> {
+    Ok(show_bytes(repo, rev, path)?.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+/// `show` for text that is written back (staging part of a file builds the new index text from
+/// it): an error when the bytes aren't UTF-8, since the replacement characters `show` puts in
+/// their place would be stored as the file's content.
+pub fn show_exact(repo: &Path, rev: &str, path: &str) -> Result<Option<String>> {
+    match show_bytes(repo, rev, path)? {
+        None => Ok(None),
+        Some(bytes) => String::from_utf8(bytes).map(Some).map_err(|_| {
+            Error::Invalid(format!(
+                "{path} isn't UTF-8 text: staging part of it would change its other bytes. Stage the whole file instead."
+            ))
+        }),
+    }
+}
+
+fn show_bytes(repo: &Path, rev: &str, path: &str) -> Result<Option<Vec<u8>>> {
     let spec = format!("{rev}:{path}");
-    match run(repo, &["cat-file", "--filters", &spec], None) {
-        Ok(text) => Ok(Some(text)),
+    match super::run_bytes(repo, &["cat-file", "--filters", &spec], None) {
+        Ok(bytes) => Ok(Some(bytes)),
         Err(Error::Git(_)) => Ok(None), // not in that revision (new file, no commits yet…)
         Err(e) => Err(e),
     }
@@ -93,7 +111,11 @@ pub fn write_index(repo: &Path, path: &str, text: &str) -> Result<()> {
         Some(text.as_bytes()),
     )?;
     let oid = oid.trim();
-    let staged = run(repo, &["ls-files", "-s", "--", path], None)?;
+    let staged = run(
+        repo,
+        &[super::LITERAL_PATHS, "ls-files", "-s", "--", path],
+        None,
+    )?;
     let mode = staged
         .split_whitespace()
         .next()
@@ -103,10 +125,14 @@ pub fn write_index(repo: &Path, path: &str, text: &str) -> Result<()> {
     run(repo, &["update-index", "--add", "--cacheinfo", &info], None).map(|_| ())
 }
 
-fn with_paths<'a>(mut args: Vec<&'a str>, paths: &'a [String]) -> Vec<&'a str> {
-    args.push("--");
-    args.extend(paths.iter().map(String::as_str));
-    args
+/// `git <args> -- <paths>`, the paths taken as file names: they come from the IDE's lists of
+/// changed files, never from a pattern someone typed.
+fn with_paths<'a>(args: Vec<&'a str>, paths: &'a [String]) -> Vec<&'a str> {
+    let mut all = vec![super::LITERAL_PATHS];
+    all.extend(args);
+    all.push("--");
+    all.extend(paths.iter().map(String::as_str));
+    all
 }
 
 pub fn stage(repo: &Path, paths: &[String]) -> Result<()> {

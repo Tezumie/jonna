@@ -34,6 +34,10 @@ export function registerRegionCommands(
   // Zen mode: only the editors — sidebar, activity bar, status bar and the bottom/right regions go
   // away, and come back as they were.
   let zen: { sidebar: boolean; bottom: boolean; right: boolean } | null = null;
+  // Read from the tree as it is now: dock.regionVisible() makes a derived signal that stays
+  // subscribed to the dock for good, one more with every call.
+  const regionShowing = (region: Region): boolean =>
+    dock.regionGroups(region).some((g) => !g.hidden);
   register({
     id: "layout.toggleZenMode",
     title: "Toggle zen mode",
@@ -46,8 +50,8 @@ export function registerRegionCommands(
       if (!zen) {
         zen = {
           sidebar: layout.sidebarVisible.peek(),
-          bottom: dock.regionVisible("bottom").peek(),
-          right: dock.regionVisible("right").peek(),
+          bottom: regionShowing("bottom"),
+          right: regionShowing("right"),
         };
         layout.sidebarVisible.value = false;
         if (zen.bottom) dock.toggleRegion("bottom");
@@ -60,8 +64,8 @@ export function registerRegionCommands(
       const was = zen;
       zen = null;
       layout.sidebarVisible.value = was.sidebar;
-      if (was.bottom && !dock.regionVisible("bottom").peek()) dock.toggleRegion("bottom");
-      if (was.right && !dock.regionVisible("right").peek()) dock.toggleRegion("right");
+      if (was.bottom && !regionShowing("bottom")) dock.toggleRegion("bottom");
+      if (was.right && !regionShowing("right")) dock.toggleRegion("right");
       root?.classList.remove("is-zen");
       services.context.set("zenMode", false);
       return { zen: false };

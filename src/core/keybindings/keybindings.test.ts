@@ -8,6 +8,7 @@ import {
   keybindingLabel,
   normalizeChord,
   parseKeybinding,
+  typesWithAltGr,
 } from "./index";
 
 const always = () => true;
@@ -32,6 +33,45 @@ test("chordFromEvent uses physical keys and ignores bare modifiers", () => {
   assert.equal(chordFromEvent({ ...base, code: "F1", key: "F1" }), "f1");
   assert.equal(chordFromEvent({ ...base, code: "ShiftLeft", key: "Shift", shiftKey: true }), null);
   assert.equal(chordFromEvent({ ...base, code: "KeyS", key: "s", metaKey: true }), "meta+s");
+});
+
+test("AltGr characters are typed, Ctrl+Alt bindings on other keys still run", () => {
+  const ctrlAlt = { ctrlKey: true, shiftKey: false, altKey: true, metaKey: false };
+  // Polish: AltGr+S types "ś"; German: AltGr+Q types "@".
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyS", key: "ś" }, "windows"), true);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyQ", key: "@" }, "windows", "q"), true);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyE", key: "€" }, "windows", "e"), true);
+  // No AltGr character on the key: the binding runs.
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyS", key: "s" }, "windows"), false);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyS", key: "s" }, "windows", "s"), false);
+  // QWERTZ: the key's own letter isn't the US one, with or without a known layout.
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyY", key: "z" }, "windows", "z"), false);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyY", key: "z" }, "windows"), false);
+  // AZERTY's top row: "&" is the key's own character, "~" comes from AltGr.
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "Digit1", key: "&" }, "windows", "&"), false);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "Digit2", key: "~" }, "windows", "é"), true);
+  // Names aren't text; the number pad and Space never change.
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "Enter", key: "Enter" }, "windows"), false);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyE", key: "Dead" }, "windows"), false);
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "Numpad1", key: "1" }, "windows"), false);
+  // With Shift only characters past ASCII count (US: Ctrl+Shift+Alt+1 reports "!").
+  const shifted = { ...ctrlAlt, shiftKey: true };
+  assert.equal(typesWithAltGr({ ...shifted, code: "Digit1", key: "!" }, "windows", "1"), false);
+  assert.equal(typesWithAltGr({ ...shifted, code: "KeyS", key: "Ś" }, "windows", "s"), true);
+  // Ctrl+Alt is AltGr only on Windows; elsewhere the AltGraph state says so.
+  assert.equal(typesWithAltGr({ ...ctrlAlt, code: "KeyS", key: "ß" }, "mac"), false);
+  const altGraph = {
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: true,
+    metaKey: false,
+    getModifierState: (key: string) => key === "AltGraph",
+  };
+  assert.equal(typesWithAltGr({ ...altGraph, code: "KeyS", key: "ś" }, "linux"), true);
+  assert.equal(
+    typesWithAltGr({ ...ctrlAlt, code: "KeyS", key: "s", metaKey: true }, "windows"),
+    false,
+  );
 });
 
 test("labels per platform", () => {

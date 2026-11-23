@@ -7,6 +7,7 @@ import {
   leftText,
   parseChatWorktree,
   removalLoss,
+  startCommit,
 } from "./chatWorktree";
 
 test("D337: a chat's worktree branch comes from its name, or the chat", () => {
@@ -44,6 +45,18 @@ test("D337: removing asks when it would lose changes or commits", () => {
     removalLoss({ changed: 3, commits: 0 }),
     "It has 3 uncommitted changes: removing it deletes them.",
   );
+});
+
+test("a worktree whose start commit isn't known can't have its commits counted", () => {
+  assert.equal(
+    startCommit("0123abcd0123abcd0123abcd0123abcd0123abcd"),
+    "0123abcd0123abcd0123abcd0123abcd0123abcd",
+  );
+  assert.equal(startCommit("0123abc"), "0123abc");
+  assert.equal(startCommit("HEAD"), null);
+  assert.equal(startCommit(""), null);
+  assert.equal(startCommit(undefined), null);
+  assert.equal(startCommit("abc1234; rm -rf ."), null);
 });
 
 test("D337: what the model is told on the way in and out", () => {

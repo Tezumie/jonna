@@ -105,12 +105,67 @@ pub fn session_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// The process that writes a session file, by the file's name (`session-<time>-<pid>.log`).
+fn session_pid(file: &Path) -> Option<u32> {
+    file.file_stem()?.to_str()?.rsplit('-').next()?.parse().ok()
+}
+
+/// Whether a process with this id runs now. (An id is given out again after a while: a
+/// stranger with an old session's id only keeps that one log a little longer.)
+#[cfg(windows)]
+pub fn process_runs(pid: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is this call's own, and closed before it returns.
+    unsafe {
+        let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return false;
+        };
+        let mut code = 0u32;
+        let running =
+            GetExitCodeProcess(handle, &mut code).is_ok() && code == STILL_ACTIVE.0 as u32;
+        let _ = CloseHandle(handle);
+        running
+    }
+}
+
+#[cfg(unix)]
+pub fn process_runs(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: signal 0 sends nothing; it only asks whether one could be sent.
+    let sent = unsafe { libc::kill(pid, 0) };
+    // (Not allowed to signal it: it is there, and someone else's.)
+    sent == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn process_runs(_pid: u32) -> bool {
+    false
+}
+
 /// Deletes the oldest session files so that `keep - 1` remain (room for the new one), with
 /// their channel folders (D209).
 pub fn rotate(dir: &Path, keep: usize) {
+    rotate_sparing(dir, keep, &process_runs);
+}
+
+/// `rotate`, leaving the files of sessions that still run (`running`, by process id): each
+/// window is a process with a log of its own, and with more windows open than logs are kept
+/// (or one open for weeks) the oldest log is one that is still being written.
+pub fn rotate_sparing(dir: &Path, keep: usize, running: &dyn Fn(u32) -> bool) {
     let files = session_files(dir);
     let extra = files.len().saturating_sub(keep.saturating_sub(1));
-    for old in files.into_iter().take(extra) {
+    let ended = files
+        .into_iter()
+        .filter(|file| !session_pid(file).is_some_and(running));
+    for old in ended.take(extra) {
         let _ = fs::remove_dir_all(old.with_extension(""));
         let _ = fs::remove_file(old);
     }
@@ -134,9 +189,13 @@ impl SessionLog {
     /// Opens a new session file in `<logs>/sessions` (rotating old ones). A folder that can't be
     /// written gives a log that drops everything, never an error: logging must not stop a start.
     pub fn open(logs_dir: &Path, home: Option<&Path>) -> Self {
+        let dir = logs_dir.join("sessions");
+        let _ = fs::create_dir_all(&dir);
+        rotate(&dir, KEEP_SESSIONS);
         Self::open_with(logs_dir, home, now_ms(), std::process::id(), MAX_BYTES)
     }
 
+    /// `open` without the rotation, at a given time and process id.
     pub fn open_with(
         logs_dir: &Path,
         home: Option<&Path>,
@@ -146,7 +205,6 @@ impl SessionLog {
     ) -> Self {
         let dir = logs_dir.join("sessions");
         let _ = fs::create_dir_all(&dir);
-        rotate(&dir, KEEP_SESSIONS);
         let stamp: String = iso_time(now)
             .chars()
             .filter(|c| c.is_ascii_digit() || *c == 'T')
@@ -351,6 +409,57 @@ mod tests {
         dir
     }
 
+    /// A session opened as `open` does it, with every earlier session's process taken to
+    /// have ended unless `running` says otherwise.
+    fn open_after_rotating(
+        dir: &Path,
+        home: Option<&Path>,
+        now: u64,
+        pid: u32,
+        running: &dyn Fn(u32) -> bool,
+    ) -> SessionLog {
+        let sessions = dir.join("sessions");
+        let _ = fs::create_dir_all(&sessions);
+        rotate_sparing(&sessions, KEEP_SESSIONS, running);
+        SessionLog::open_with(dir, home, now, pid, MAX_BYTES)
+    }
+
+    #[test]
+    fn a_session_that_still_runs_keeps_its_log() {
+        let dir = temp("running");
+        // The oldest session (process 41) is a window that is still open.
+        let running = |pid: u32| pid == 41;
+        for i in 0..14u32 {
+            let log = open_after_rotating(
+                &dir,
+                None,
+                1_700_000_000_000 + u64::from(i) * 1000,
+                41 + i,
+                &running,
+            );
+            log.write("info", "test", &format!("run {i}"));
+            log.write_channel("git", "info", "git", "x");
+        }
+        let files = session_files(&dir.join("sessions"));
+        assert_eq!(files.len(), KEEP_SESSIONS);
+        let oldest = files.first().expect("a file");
+        assert_eq!(session_pid(oldest), Some(41));
+        assert!(fs::read_to_string(oldest)
+            .unwrap_or_default()
+            .contains("run 0"));
+        assert!(oldest.with_extension("").join("git.log").exists());
+        // The ended ones went instead, oldest first.
+        assert_eq!(session_pid(&files[1]), Some(41 + 5));
+        // This process runs; one with an id nothing has doesn't.
+        assert!(process_runs(std::process::id()));
+        assert!(!process_runs(u32::MAX - 1));
+        assert_eq!(
+            session_pid(Path::new("session-20260101T000000-notanumber.log")),
+            None
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn times_are_iso() {
         assert_eq!(iso_time(0), "1970-01-01T00:00:00.000Z");
@@ -362,7 +471,7 @@ mod tests {
     fn sessions_rotate_keeping_the_last_ten() {
         let dir = temp("rotate");
         for i in 0..14u64 {
-            let log = SessionLog::open_with(&dir, None, 1_700_000_000_000 + i * 1000, 7, MAX_BYTES);
+            let log = open_after_rotating(&dir, None, 1_700_000_000_000 + i * 1000, 7, &|_| false);
             log.write("info", "test", &format!("run {i}"));
         }
         let files = session_files(&dir.join("sessions"));
@@ -382,7 +491,7 @@ mod tests {
     #[test]
     fn channels_go_beside_the_session_and_rotate_with_it() {
         let dir = temp("channels");
-        let first = SessionLog::open_with(&dir, Some(Path::new("/home/ada")), 1_000, 1, MAX_BYTES);
+        let first = open_after_rotating(&dir, Some(Path::new("/home/ada")), 1_000, 1, &|_| false);
         first.write_channel("lsp.rust-analyzer", "info", "lsp", "started /home/ada/p");
         first.write_channel("ext host!", "warn", "ext", "careful");
         first.write_channel("..", "info", "x", "no name: dropped");
@@ -395,7 +504,7 @@ mod tests {
         assert!(channels.join("ext-host-.log").exists());
         assert_eq!(fs::read_dir(&channels).map(|d| d.count()).unwrap_or(0), 2);
         for i in 1..=KEEP_SESSIONS as u64 {
-            let _ = SessionLog::open_with(&dir, None, 1_000 + i * 1000, 1, MAX_BYTES);
+            let _ = open_after_rotating(&dir, None, 1_000 + i * 1000, 1, &|_| false);
         }
         assert!(!channels.exists(), "the folder went with its session");
         let _ = fs::remove_dir_all(&dir);

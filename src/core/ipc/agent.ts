@@ -411,13 +411,16 @@ export const agentStoreIpc = {
   /**
    * Saves a transcript. With `expect` (a version from `version` or an earlier save), only when
    * the file is still at it: else nothing is written and `conflict` is true (another window
-   * saved the chat since, D221).
+   * saved the chat since, D221). `deleted`: `expect` named a version the file had and the file
+   * is gone (deleted in another window, or by sync): nothing is written either, so the chat
+   * doesn't come back. An `expect` that matches no version ("none": never saved) with no file
+   * there is a first save, and writes.
    */
   save: (
     id: string,
     json: string,
     expect?: string | null,
-  ): Promise<{ version: string | null; conflict: boolean }> =>
+  ): Promise<{ version: string | null; conflict: boolean; deleted?: boolean }> =>
     call("agent_session_save", { id, json, expect: expect ?? null }),
   load: (id: string): Promise<string | null> => call<string | null>("agent_session_load", { id }),
   /** Per chat, a stamp that changes whenever it's saved (size and time), null when not saved (D222). */

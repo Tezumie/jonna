@@ -19,6 +19,7 @@ import { basename, joinPath, relativePath, samePath } from "../../core/paths/ind
 import { effect } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { workspaceFolderPath } from "../../workbench/workspaceFolder";
+import { addressFiles, rootsOf } from "../browser/address";
 
 const FILE_NAMES = [".aiignore", ".cursorignore"];
 
@@ -106,9 +107,23 @@ export function ignoredInInput(
   input: unknown,
 ): string | null {
   if (!root) return null;
-  for (const abs of workspaceInputPaths(services, input))
+  for (const abs of inputFilesSeen(services, input))
     if (agentIgnored(services, abs)) return services.workspace.relative(abs);
   return null;
+}
+
+/**
+ * The files a command's input lets the agent see: the paths it names, and what its `url` shows
+ * when that is a workspace file or a page on this machine (the browser previews `.env` as text:
+ * `browser.open {url: ".env"}` then a snapshot read what read_file refuses). Read as the browser
+ * reads an address; a web address names no file.
+ */
+export function inputFilesSeen(services: WorkbenchServices, input: unknown): string[] {
+  const paths = workspaceInputPaths(services, input);
+  const url = (input as { url?: unknown } | null)?.url;
+  return typeof url === "string"
+    ? [...paths, ...addressFiles(url, rootsOf(services.workspace))]
+    : paths;
 }
 
 /** The same against every folder of the workspace (a folder's name in front picks it). */

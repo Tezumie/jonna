@@ -73,7 +73,17 @@ fn message_json(m: &Message) -> Value {
         v["tool_calls"] = m
             .tool_calls
             .iter()
-            .map(|c| json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.arguments.to_string() } }))
+            .map(|c| {
+                // Arguments that never became an object (a call cut off at the output limit is
+                // kept as its raw text) are sent as none: replayed as a string, a strict server
+                // answers 400 to every later request of the chat.
+                let arguments = if c.arguments.is_object() {
+                    c.arguments.to_string()
+                } else {
+                    "{}".to_string()
+                };
+                json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": arguments } })
+            })
             .collect();
     }
     if let Some(id) = &m.tool_call_id {
@@ -109,6 +119,49 @@ pub fn request_body(req: &ChatRequest) -> Value {
         body["modalities"] = json!(m);
     }
     body
+}
+
+/// A setting a server's 400 names as one it doesn't take, which the request can do without.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Refused {
+    /// `max_tokens`: reasoning models take `max_completion_tokens` instead.
+    MaxTokens,
+    /// `temperature`: reasoning models only run at their default.
+    Temperature,
+}
+
+/// What a 400's message says the server won't take, if it is one of the two settings that
+/// titles, summaries and commit messages always send.
+pub fn refused_setting(message: &str) -> Option<Refused> {
+    let m = message.to_ascii_lowercase();
+    // The advice ("use 'max_completion_tokens' instead") must not count as naming `max_tokens`.
+    if m.replace("max_completion_tokens", "")
+        .contains("max_tokens")
+    {
+        Some(Refused::MaxTokens)
+    } else if m.contains("temperature") {
+        Some(Refused::Temperature)
+    } else {
+        None
+    }
+}
+
+/// Changes `body` so it no longer sends what was refused; false when it didn't send it (the
+/// refusal is about something else, and asking again would change nothing).
+pub fn without_refused(body: &mut Value, refused: Refused) -> bool {
+    let Some(map) = body.as_object_mut() else {
+        return false;
+    };
+    match refused {
+        Refused::MaxTokens => match map.remove("max_tokens") {
+            Some(n) => {
+                map.insert("max_completion_tokens".into(), n);
+                true
+            }
+            None => false,
+        },
+        Refused::Temperature => map.remove("temperature").is_some(),
+    }
 }
 
 /// An image part of a reply (D381): OpenRouter's `{ "type": "image_url", "image_url": { "url" } }`
@@ -179,7 +232,10 @@ struct PartialCall {
 /// Accumulates SSE `data:` payloads into events.
 #[derive(Default)]
 pub struct SseParser {
-    calls: BTreeMap<u64, PartialCall>,
+    /// The calls, in the order they started.
+    calls: Vec<PartialCall>,
+    /// Which call the fragments of a stream `index` belong to now.
+    slots: BTreeMap<u64, usize>,
     stop_reason: Option<String>,
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
@@ -278,8 +334,33 @@ impl SseParser {
                         .get("index")
                         .and_then(Value::as_u64)
                         .unwrap_or(n as u64);
-                    let entry = self.calls.entry(index).or_default();
-                    if let Some(id) = call.get("id").and_then(Value::as_str) {
+                    let id = call
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty());
+                    // Some servers send parallel calls with the same index, or none: another
+                    // id at an index is another call, not more of the first (which gave one
+                    // call named `read_fileread_file` with both argument objects in a row).
+                    let slot = match self.slots.get(&index) {
+                        Some(&at)
+                            if !id.is_some_and(|id| {
+                                self.calls
+                                    .get(at)
+                                    .is_some_and(|c| !c.id.is_empty() && c.id != id)
+                            }) =>
+                        {
+                            at
+                        }
+                        _ => {
+                            self.calls.push(PartialCall::default());
+                            self.slots.insert(index, self.calls.len() - 1);
+                            self.calls.len() - 1
+                        }
+                    };
+                    let Some(entry) = self.calls.get_mut(slot) else {
+                        continue;
+                    };
+                    if let Some(id) = id {
                         entry.id = id.to_string();
                     }
                     if let Some(f) = call.get("function") {
@@ -313,8 +394,10 @@ impl SseParser {
             return Vec::new();
         }
         self.finished = true;
+        self.slots.clear();
         let mut out: Vec<ChatEvent> = std::mem::take(&mut self.calls)
             .into_iter()
+            .enumerate()
             .map(|(i, c)| ChatEvent::ToolCall {
                 id: if c.id.is_empty() {
                     format!("call_{i}")
@@ -389,18 +472,31 @@ pub async fn chat<F: FnMut(ChatEvent)>(
     mut emit: F,
     seen: &mut super::SeenLimits,
 ) -> Result<()> {
-    let response = with_key(
-        client.post(api(&req.provider.base_url, "chat/completions")),
-        key,
-    )
-    .json(&request_body(req))
-    .send()
-    .await
-    .map_err(http_error)?;
-    super::note_limits(seen, &response);
-    if !response.status().is_success() {
-        return Err(error_body(response).await);
-    }
+    let mut body = request_body(req);
+    // Asked again without a setting the server's 400 names (`refused_setting`), once for each:
+    // OpenAI's reasoning models refuse `max_tokens` and `temperature`, which every title,
+    // summary and commit message sends.
+    let mut tried: Vec<Refused> = Vec::new();
+    let response = loop {
+        let response = with_key(
+            client.post(api(&req.provider.base_url, "chat/completions")),
+            key.clone(),
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(http_error)?;
+        super::note_limits(seen, &response);
+        if response.status().is_success() {
+            break response;
+        }
+        let bad_request = response.status() == reqwest::StatusCode::BAD_REQUEST;
+        let err = error_body(response).await;
+        match refused_setting(&err.to_string()).filter(|r| bad_request && !tried.contains(r)) {
+            Some(refused) if without_refused(&mut body, refused) => tried.push(refused),
+            _ => return Err(err),
+        }
+    };
     let mut stream = response.bytes_stream();
     let mut lines = LineBuffer::default();
     let mut parser = SseParser::default();

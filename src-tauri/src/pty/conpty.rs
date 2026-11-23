@@ -216,7 +216,24 @@ impl ConPty {
         let program = argv
             .first()
             .ok_or_else(|| io::Error::other("no program to start"))?;
-        let exe = resolve_exe(program, path_env.as_deref(), &pathext, &|p| p.is_file());
+        let exe = resolve_exe(program, path_env.as_deref(), &pathext, &|p| p.is_file())
+            // Windows' own folders, as CreateProcess would look there (a PATH without them).
+            .or_else(|| {
+                let system = std::env::var_os("SystemRoot")
+                    .map(|root| PathBuf::from(root).join("System32"))
+                    .filter(|dir| dir.is_absolute())?;
+                resolve_exe(program, Some(system.as_os_str()), &pathext, &|p| {
+                    p.is_file()
+                })
+            });
+        // A bare name that is nowhere on PATH is not handed to CreateProcess: it would look
+        // in the folder the IDE was started from, which can be a project someone else wrote.
+        if exe.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("couldn't find {} on PATH", program.to_string_lossy()),
+            ));
+        }
         let args: Vec<String> = argv
             .iter()
             .skip(1)
@@ -477,8 +494,8 @@ fn working_dir(cmd: &CommandBuilder) -> Option<PathBuf> {
 }
 
 /// The program to start: as given when it names a folder, else the first PATH folder with that
-/// name, or that name plus one of PATHEXT's extensions. None: not found (CreateProcess then
-/// searches by the command line, its own rules).
+/// name, or that name plus one of PATHEXT's extensions. None: not found (and never started:
+/// CreateProcess would search by the command line, the working folder included).
 pub fn resolve_exe(
     name: &OsString,
     path: Option<&std::ffi::OsStr>,
@@ -499,9 +516,7 @@ pub fn resolve_exe(
             .map(str::to_ascii_lowercase)
             .collect()
     };
-    let dirs: Vec<PathBuf> = path
-        .map(|p| std::env::split_paths(p).collect())
-        .unwrap_or_default();
+    let dirs: Vec<PathBuf> = path.map(crate::exec::search_dirs).unwrap_or_default();
     dirs.iter().find_map(|dir| {
         let exact = dir.join(name);
         if exists(&exact) {
@@ -540,6 +555,35 @@ mod tests {
         assert_eq!(
             resolve_exe(&"C:\\x\\y.exe".into(), Some(&dirs), ext, &exists),
             Some(PathBuf::from("C:\\x\\y.exe"))
+        );
+    }
+
+    #[test]
+    fn an_empty_or_relative_path_entry_finds_nothing() {
+        // Everything "exists": `pwsh.exe` in the working folder would be found through an
+        // empty entry, were one kept.
+        let anything = |_: &Path| true;
+        let ext = ".COM;.EXE";
+        for path in [";;", ".;", "bin;..\\x;", ""] {
+            assert_eq!(
+                resolve_exe(
+                    &"pwsh.exe".into(),
+                    Some(std::ffi::OsStr::new(path)),
+                    ext,
+                    &anything
+                ),
+                None,
+                "{path}"
+            );
+        }
+        assert_eq!(
+            resolve_exe(
+                &"pwsh.exe".into(),
+                Some(std::ffi::OsStr::new(";C:\\a;")),
+                ext,
+                &anything
+            ),
+            Some(PathBuf::from("C:\\a\\pwsh.exe"))
         );
     }
 

@@ -72,9 +72,13 @@ test("dismiss: a match by line, then the whole file when empty", () => {
       { line: 2, text: "a", ranges: [[0, 1]] },
     ],
   } as never);
+  // A file listed whole is replaced whole; with a match dismissed, by the lines that are left.
+  assert.equal(m.replaceLines("/w/a.ts"), undefined);
   assert.equal(m.dismiss("/w/a.ts", 1), true);
   assert.equal(m.matchCount, 1);
+  assert.deepEqual(m.replaceLines("/w/a.ts"), [2]);
   assert.equal(m.dismiss("/w/a.ts", 2), true);
+  assert.equal(m.replaceLines("/w/a.ts"), undefined);
   assert.equal(m.files.length, 0);
   assert.equal(m.dismiss("/w/a.ts"), false);
 });

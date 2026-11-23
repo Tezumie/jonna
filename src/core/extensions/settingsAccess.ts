@@ -115,3 +115,37 @@ export function canReadSetting(
   if (isBlockedSetting(key)) return false;
   return ALWAYS_READABLE.some((p) => key.startsWith(p)) || matchesReadsSettings(readsSettings, key);
 }
+
+/**
+ * `ide://settings` as an extension may see it: only the settings `readable` allows (the rule of
+ * `settings.get`), so reading the state isn't a way around it. Built from the parts known to be
+ * safe: anything else in the state (the files' problems, which can quote values) is left out.
+ */
+export function settingsStateForExtension(
+  value: unknown,
+  readable: (key: string) => boolean,
+): Record<string, unknown> {
+  const record = (v: unknown): Record<string, unknown> =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const state = record(value);
+  const allowed = (key: unknown): key is string => typeof key === "string" && readable(key);
+  const languages: Record<string, unknown> = {};
+  for (const [language, values] of Object.entries(record(state.languages))) {
+    const kept = Object.entries(record(values)).filter(([key]) => readable(key));
+    if (kept.length) languages[language] = Object.fromEntries(kept);
+  }
+  return {
+    ...(state.files !== undefined && { files: state.files }),
+    settings: list(state.settings).filter((entry) => allowed(record(entry).key)),
+    languages,
+    ...(readable("files.associations") &&
+      state.associations !== undefined && { associations: state.associations }),
+    ...(Array.isArray(state.folders) && {
+      folders: state.folders.map((folder) => ({
+        ...record(folder),
+        set: list(record(folder).set).filter(allowed),
+      })),
+    }),
+  };
+}

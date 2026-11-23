@@ -399,9 +399,36 @@ pub(crate) fn url(base: &str, path: &str) -> String {
     )
 }
 
+/// The seconds a `retry-after` header asks for (its whole-seconds form; a date is not read).
+pub(crate) fn retry_after_seconds(header: Option<&str>) -> Option<u64> {
+    header?.trim().parse::<u64>().ok().filter(|s| *s > 0)
+}
+
+/// How an error says when the provider wants to be asked again: after the status, where the
+/// front end's retry reads it (it decides the wait) and a person can too. The unit touches the
+/// number so it can't be read as a status code ("retry after 400s" is not a 400).
+pub(crate) fn with_retry_after(message: &str, status: u16, retry_after: Option<u64>) -> String {
+    match retry_after {
+        Some(seconds) => format!("{message} ({status}), retry after {seconds}s"),
+        None => format!("{message} ({status})"),
+    }
+}
+
 /// A non-success response's message: `{"error": "..."}` / `{"error": {"message": "..."}}`, else text.
 pub(crate) async fn error_body(response: reqwest::Response) -> Error {
     let status = response.status();
+    // Rate limits and overload (429, 503, 529) say how long to wait: asked again sooner, the
+    // retry fails the same way and the turn with it.
+    let retry_after = matches!(status.as_u16(), 429 | 503 | 529)
+        .then(|| {
+            retry_after_seconds(
+                response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok()),
+            )
+        })
+        .flatten();
     let text = response.text().await.unwrap_or_default();
     let message = serde_json::from_str::<Value>(&text)
         .ok()
@@ -416,7 +443,11 @@ pub(crate) async fn error_body(response: reqwest::Response) -> Error {
     if message.contains("does not support tools") {
         return Error::AiNoTools(message);
     }
-    Error::Ai(format!("{} ({})", message.trim(), status.as_u16()))
+    Error::Ai(with_retry_after(
+        message.trim(),
+        status.as_u16(),
+        retry_after,
+    ))
 }
 
 impl AiService {

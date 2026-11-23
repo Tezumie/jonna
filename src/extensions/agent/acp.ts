@@ -213,7 +213,7 @@ export class AcpBackend {
           "Allow the agent to continue?";
         // One of the IDE's own tools (D420): not asked here. The command it runs goes through
         // the IDE's permission policy as this chat's agent, which asks what needs asking.
-        if (this.ideTools === "on" && isIdeToolRequest(raw, product.nameShort)) {
+        if (this.ideTools === "on" && isIdeToolRequest(raw, product.nameShort, toolCall.kind)) {
           const allow = options.find((o) => o.kind === "allow_once");
           if (allow) return { outcome: "selected", optionId: allow.optionId };
         }

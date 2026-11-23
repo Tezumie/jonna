@@ -3,6 +3,71 @@
 Short notes for each release, newest first. The IDE shows this page after an update (turn it off
 with the setting `update.showReleaseNotes`), and Help → Release notes opens it any time.
 
+## 0.1.15
+
+Fixes from a full review of the app: safer agent commands and extensions, and files that can't be lost to a failed read.
+
+**Your files**
+
+- **settings.json and keybindings.json can no longer be replaced by a near-empty file** when
+  they were briefly unreadable (another program holding them) or had a syntax error: the change
+  is refused with a message. Settings changes are made on the file as it is, so an edit from
+  another window or by hand isn't dropped.
+- **Regex "Replace in files" changes only what the search showed** and keeps each file's line
+  endings. Dismissed matches are left alone by Replace all.
+- **Discarding or staging a file whose name has brackets** (`[id].tsx`) no longer touches its
+  neighbours.
+- **Unsaved edits restored after a restart** show "changed on disk" when the file changed
+  meanwhile, instead of saving over it.
+- **Staging or reverting one change of a file that isn't UTF-8** is refused with a message
+  instead of damaging the file.
+- "Change keybinding" really removes the old keys; resetting a setting keeps nearby comments.
+
+**The agent**
+
+- **Allowed commands can't be stretched with quoting tricks.** A line with escaped or curly
+  quotes always asks. "Always allow" on a command that starts with a flag (`git -C web
+  status`) remembers that line, not every `git` command.
+- **Terminal commands run through IDE commands follow the same rules as run_command**:
+  deletion protection and your Ask patterns apply even in Auto, one line at a time.
+- **Files you excluded from the agent** (`.env`, keys, `.aiignore`) can't be opened through
+  the browser preview either.
+- **Deleting a chat ends its pull request watch.** Auto-merge always asks, waits for checks
+  to start on the newest commit, and merges only the commit it looked at.
+- **Chats are saved before the window closes**, a checkpoint exists from a turn's first edit
+  (so Restore works after a crash), a chat that couldn't be saved is retried and said, and a
+  chat deleted in another window stays deleted.
+- A cut-off tool call no longer blocks the chat on Ollama and other strict servers; parallel
+  tool calls from some OpenAI-compatible servers are kept apart; a provider's "retry after"
+  is honoured; titles and summaries work on OpenAI's reasoning models.
+
+**Extensions**
+
+- **An extension can't change settings that start programs, or read settings it has no
+  business reading.** A package's keybindings can't run IDE commands that write, run programs
+  or use the network.
+- **Installing over an installed extension asks first**; only extensions installed from the
+  store update from it (each needs one confirmed update before automatic updates resume); a
+  download with another id than asked for is refused.
+- **A link from outside the IDE that names an extension asks before it reaches it**, and an
+  extension without the network permission asks before opening a site in your browser.
+- An extension that keeps crashing stays stopped; one uncaught error no longer stops a
+  healthy one.
+- **VS Code extensions** follow changes to editor and files settings without a restart, see
+  the cursor where it is after a tab switch, use the file's real indentation, and can save
+  into their storage folder on first use.
+
+**Also**
+
+- AltGr characters (ś, @, €) type normally instead of running Ctrl+Alt shortcuts.
+- Closing the last tab while the terminal panel is hidden shows Welcome, and the terminal
+  keeps running.
+- Copying or moving a folder together with files inside it no longer leaves strays.
+- On Windows: names like `nul` or `a.` are refused; a terminal never starts a `pwsh.exe`
+  found in the folder the app was started from; deleting a folder with links in it to the
+  trash on another drive works.
+- Task inputs with quotes are passed as one argument; terminal suggestions quote branch names.
+
 ## 0.1.14
 
 Fewer notifications.

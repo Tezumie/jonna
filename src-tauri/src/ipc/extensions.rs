@@ -28,7 +28,9 @@ pub async fn ext_list(state: State<'_, AppState>) -> Result<ExtList> {
     }
     Ok(ExtList {
         entries: state.extensions.list(),
-        registry: state.extensions.registry_text(),
+        // (An unreadable registry fails the listing: the page must not take it for an empty
+        // one and save that.)
+        registry: state.extensions.registry_text()?,
     })
 }
 
@@ -513,13 +515,16 @@ pub async fn ext_webview_roots(
 
 /// The page of a webview panel an extension made at run time (`ide.ui.createWebviewPanel`, its
 /// `webview.html`): served on the extension folder's origin at `/__webview-<name>.html`, with
-/// the same CSP as its files. `html: null` removes it (the panel closed).
+/// the same CSP as its files. `html: null` removes it (the panel closed). `scripts: false`
+/// (a panel made without `enableScripts`): the page is served with `script-src 'none'`, so
+/// nothing in it runs; left out, scripts run as before.
 #[tauri::command]
 pub async fn ext_webview_page(
     state: State<'_, AppState>,
     root: String,
     name: String,
     html: Option<String>,
+    scripts: Option<bool>,
 ) -> Result<()> {
     let dir = state.extensions.root(&root)?;
     if !browser::proxy::is_webview_page_name(&name) {
@@ -529,6 +534,27 @@ pub async fn ext_webview_page(
     }
     if html.as_ref().is_some_and(|h| h.len() > 8 * 1024 * 1024) {
         return Err(Error::Invalid("a panel's HTML is limited to 8 MB".into()));
+    }
+    // Before the page itself is there to be asked for: it is never served with scripts
+    // allowed for a moment first.
+    {
+        let mut scriptless = state
+            .browser
+            .shared
+            .webview_scriptless
+            .lock()
+            .map_err(|_| Error::Invalid("lock poisoned".into()))?;
+        let key = (dir.clone(), name.clone());
+        match (&html, scripts) {
+            (Some(_), Some(false)) => {
+                scriptless.insert(key);
+            }
+            // Removed, or scripts asked for. (New HTML that says nothing keeps what it had.)
+            (None, _) | (Some(_), Some(true)) => {
+                scriptless.remove(&key);
+            }
+            (Some(_), None) => {}
+        }
     }
     let mut pages = state
         .browser

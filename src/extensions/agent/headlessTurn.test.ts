@@ -311,6 +311,7 @@ function stubServices(root: string, settingsMap: Record<string, unknown>, used: 
     folderPaths: () => [root],
     contains: (path: string) => resolve(path).startsWith(resolve(root)),
     onDidChangeFolders: () => ({ dispose() {} }),
+    onWillClose: () => ({ dispose() {} }),
   };
   const base: Record<string, unknown> = {
     platform: "windows",

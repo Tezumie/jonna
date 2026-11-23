@@ -72,6 +72,12 @@ export async function runBatch(
   exec: (step: BatchStep, index: number) => Promise<StepOutcome>,
   label: (step: BatchStep) => string = (s) => s.name,
   cancelled: () => boolean = () => false,
+  /**
+   * What each step meets before it runs, as a call of its own would (a deny list, a hook): the
+   * outcome that refuses it, or null. A refused step ends the batch like a failed one — a batch
+   * was a way to run a tool the checks would have stopped.
+   */
+  check: (step: BatchStep, index: number) => Promise<StepOutcome | null> = async () => null,
 ): Promise<BatchResult> {
   const parts: string[] = [];
   const images: string[] = [];
@@ -86,7 +92,7 @@ export async function runBatch(
     ran++;
     let outcome: StepOutcome;
     try {
-      outcome = await exec(step, i);
+      outcome = (await check(step, i)) ?? (await exec(step, i));
     } catch (err) {
       outcome = { result: err instanceof Error ? err.message : String(err), isError: true };
     }

@@ -88,7 +88,9 @@ export function registerExtensionActions(
   const checkAtStart = async () => {
     if (services.settings.peek<boolean>("extensions.store.enabled") === false) return;
     const installed = manager.records.peek().filter(fromStore);
-    const wanted = installed.filter((r) => manager.autoUpdates(r.id));
+    // By themselves, only those that came from the store: a package installed from a file
+    // may share its id with someone else's on the store (its update is offered, never taken).
+    const wanted = installed.filter((r) => manager.isFromStore(r.id) && manager.autoUpdates(r.id));
     const notify = services.settings.peek<boolean>("extensions.autoCheckUpdates") !== false;
     if (!wanted.length && !(notify && installed.length)) return;
     // In the background, unasked: a failure here stays unseen (D463).

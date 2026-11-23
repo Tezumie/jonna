@@ -12,7 +12,13 @@ import type {
 } from "../../core/dock/index";
 import * as dock from "../../core/dock/index";
 import { batch } from "../../core/reactive/index";
-import { DockModel, type OpenPlacement, type Region, STATE_VERSION } from "./model";
+import {
+  DockModel,
+  HIDDEN_BELOW_SHARE,
+  type OpenPlacement,
+  type Region,
+  STATE_VERSION,
+} from "./model";
 
 export type { OpenPlacement, Region, TabOptions } from "./model";
 
@@ -474,6 +480,10 @@ export class DockService extends DockModel {
     if (placement === "bottom" && main)
       return dock.splitGroup(root, main.id, "bottom", this.newGroup(tab), BOTTOM_SHARE);
     if (main) return dock.addTab(root, main.id, tab);
+    // No group on screen. A root that still holds hidden groups (a terminal toggled away) is
+    // never replaced: their views would be disposed and their shells killed without a word.
+    if (dock.allTabs(root).length > 0)
+      return dock.splitRoot(root, "top", this.newGroup(tab), HIDDEN_BELOW_SHARE);
     return { kind: "group", id: "main", tabs: [tab], activeTabId: tab.id };
   }
 }

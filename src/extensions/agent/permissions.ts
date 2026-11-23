@@ -2,18 +2,27 @@
 // matched on word boundaries ("npm test" allows "npm test -- foo", not "npm testx"), or ending in
 // "*" for a raw prefix. Chained commands (&&, ;, |) must have every part allowed. DOM-free.
 
+import { type ApproveRules, commandDecision } from "../../core/agent/autoApprove";
+import { hasTypographicQuotes, outsideQuotes, quotesUnclear } from "../../core/agent/shellQuotes";
+
 const SPLIT = /\s*(?:&&|\|\||;|\|)\s*/;
 
 export function commandAllowed(command: string, allowlist: readonly string[]): boolean {
   const parts = command.trim().split(SPLIT).filter(Boolean);
   if (parts.length === 0 || /[`$]\(|`/.test(command)) return false;
+  // Quotes the shell may pair differently than the check below (`\"`, typographic quotes, one
+  // left open): what looks quoted may run (`npm test \" & rm -rf ~ \"`), so the line asks.
+  if (quotesUnclear(command)) return false;
   // Outside quotes: a redirect (`> file`, `< file`), a background `&` (a second command) or a
   // newline always asks — they'd let an allowed prefix run or overwrite anything. `2>&1` is fine.
-  const bare = command.replace(/'[^']*'|"[^"]*"/g, "''").replace(/\d?>&\d/g, "");
+  const bare = outsideQuotes(command).replace(/\d?>&\d/g, "");
   if (/[<>\r\n]|(^|[^&])&(?!&)/.test(bare.replace(/&&/g, ""))) return false;
   // Groups and script blocks run commands of their own (PowerShell evaluates `(…)` and `@(…)`
   // inside arguments): `npm test (Remove-Item src)` isn't `npm test` (D161).
   if (/[(){}]/.test(bare)) return false;
+  // An allowed program made to run another one (`git -c alias.x=!calc x`, `GIT_PAGER=… git log`)
+  // isn't the command that was allowed.
+  if (parts.some(runsProgramIndirectly)) return false;
   return parts.every((part) =>
     allowlist.some((entry) => {
       const e = entry.trim();
@@ -26,11 +35,15 @@ export function commandAllowed(command: string, allowlist: readonly string[]): b
 
 /** What "Always allow" remembers: the program and its first argument ("npm test", "git status"). */
 export function permissionKey(command: string): string {
-  const first = command.trim().split(SPLIT)[0] ?? "";
+  const first = (command.trim().split(SPLIT)[0] ?? "").trim();
   const [program = "", arg] = first.split(/\s+/);
   // Interpreters run whatever follows: "always" covers this exact line, not every script
   // (`node x.js` mustn't allow `node -e …`, `cmd /c dir` mustn't allow `cmd /c del …`, D163).
-  if (INTERPRETERS.has(commandWords(program)[0] ?? "")) return first.trim();
+  if (INTERPRETERS.has(commandWords(program)[0] ?? "")) return first;
+  // A flag first hides the subcommand (`git -C web status` was remembered as `git`, which then
+  // allowed `git push --force`), and which flags take a value differs by program: this exact
+  // line. The same for a prefix that runs the rest (`env X=1 npm test` isn't every `env …`).
+  if (arg?.startsWith("-") || PASSTHROUGH.has(program)) return first;
   // A subcommand ("npm test", "git status") is part of the key; a path or flag isn't ("ls -la",
   // "cat src/a.ts" → "ls", "cat").
   return arg && /^[a-z][\w:-]*$/i.test(arg) && !/[./\\]/.test(arg) ? `${program} ${arg}` : program;
@@ -277,8 +290,13 @@ export function normalizedCommandParts(command: string): string[] {
  */
 export function commandDenied(command: string, denylist: readonly string[]): boolean {
   if (/[\r\n]/.test(command)) return true;
-  if (/[`$]\(|`/.test(command.replace(/'[^']*'/g, "''"))) return true;
-  const bare = command.replace(/'[^']*'|"[^"]*"/g, "''");
+  // Typographic quotes are quotes to PowerShell only: neither what's inside them nor the
+  // program they wrap (`. ‘Remove-Item’ src`) can be read here.
+  if (hasTypographicQuotes(command)) return true;
+  // Only '…' hides a substitution, and only where the shell pairs the quotes as this does: `"'"`
+  // is a quoted quote, and with `\"` or an open quote the line is read whole (shellQuotes.ts).
+  if (/[`$]\(|`/.test(outsideQuotes(command, true))) return true;
+  const bare = outsideQuotes(command);
   if (/(^|[^&>])&(?![&>])/.test(bare.replace(/&&/g, "").replace(/\d?>&\d/g, ""))) return true;
   // Output piped into a shell or interpreter runs it: `curl … | sh`, `… | iex` (D163).
   if (
@@ -396,6 +414,23 @@ export const DELETE_COMMANDS: readonly string[] = [
 export function mayDeleteFiles(command: string): boolean {
   // find's -delete, rsync's --delete (and --delete-after…).
   return commandDenied(command, DELETE_COMMANDS) || /\s--?delete\b/.test(command);
+}
+
+/**
+ * Why a command line an IDE command types into a terminal (`terminal.runCommand`, `sendText`,
+ * `start`) asks whatever the mode, as run_command's does: "delete" with deletion protection on
+ * and a line that may delete files, "rule" when an agent.autoApprove command pattern says Ask
+ * (also read as the denylist reads the line: `C:\Git\cmd\git.exe push` for `"git push": false`).
+ */
+export function shellLineAsks(
+  line: string,
+  options: { deleteProtection: boolean; rules: ApproveRules },
+): "delete" | "rule" | null {
+  if (options.deleteProtection && mayDeleteFiles(line)) return "delete";
+  const asks =
+    commandDecision(options.rules, line) === "ask" ||
+    normalizedCommandParts(line).some((part) => commandDecision(options.rules, part) === "ask");
+  return asks ? "rule" : null;
 }
 
 /** git config keys whose value is a program (or shell line) git runs. */

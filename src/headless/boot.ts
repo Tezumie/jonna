@@ -13,7 +13,7 @@ import { execIpc } from "../core/ipc/process";
 import { appIpc, auditIpc } from "../core/ipc/system";
 import type { Platform } from "../core/keybindings/index";
 import { type Disposable, DisposableStore } from "../core/lifecycle/index";
-import { effect } from "../core/reactive/index";
+import { effect, untracked } from "../core/reactive/index";
 import { createServices } from "../workbench/createServices";
 import type { WorkbenchServices } from "../workbench/services";
 import { type HeadlessPolicy, type ScreenlessParts, screenlessImplementations } from "./services";
@@ -116,6 +116,14 @@ export async function bootHeadless(options: HeadlessBootOptions): Promise<Headle
     // A multi-root workspace (D251): folders added or removed bring their own settings, and the
     // workspace file's settings are its workspace layer.
     store.add(workspace.onDidChangeFolders(() => void settings.load().catch(() => {})));
+    // No folder open any more: its settings stop applying (a switch keeps them until the next
+    // folder's are read).
+    store.add(
+      effect(() => {
+        if (workspace.root.value === null) untracked(() => settings.workspaceClosed());
+        return undefined;
+      }),
+    );
     store.add(
       effect(() => {
         workspace.fileData.value;

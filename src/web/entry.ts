@@ -33,6 +33,7 @@ import {
   authorizeUrl,
   challengeOf,
   fromOwnLaunch,
+  launchCookie,
   launchUrl,
   type PendingLaunch,
   randomToken,
@@ -217,6 +218,10 @@ async function goLaunch(page: string): Promise<void> {
     );
     return;
   }
+  // So that the launch page knows the trip began here and may act without a click.
+  const cookie = launchCookie(location.hostname, page, await challengeOf(nonce).catch(() => ""));
+  // biome-ignore lint/suspicious/noDocumentCookie: the Cookie Store API is not in every browser this page runs in, and the launch page reads the cookie the same way.
+  if (cookie) document.cookie = cookie;
   location.replace(launchUrl(page, nonce, pending.verifier ? challenge : undefined));
 }
 

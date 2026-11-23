@@ -154,6 +154,20 @@ fn manifest_permissions(files: &[(&str, &str)]) -> Vec<serde_json::Value> {
         .filter(|p| p.is_string())
         .collect()
 }
+/// How often, and how far apart, registry.json is asked for again while something else has
+/// it open (Windows: another window writing it, a virus scanner reading it).
+const REGISTRY_READ_TRIES: u32 = 4;
+const REGISTRY_READ_PAUSE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Held while registry.json is read, changed and written back, so two of this process's
+/// calls (seeding at start, a save from the page) don't write over each other's change.
+fn registry_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // (Nothing is kept in it: a panic while it was held leaves nothing half-made.)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 const MAX_FILE: u64 = 20 * 1024 * 1024;
 const MAX_WALK: usize = 2000;
 
@@ -224,12 +238,36 @@ impl ExtensionStore {
             .unwrap_or_default()
     }
 
-    pub fn registry_text(&self) -> String {
-        fs::read_to_string(self.registry_path()).unwrap_or_else(|_| "{}".into())
+    /// registry.json as it is on disk, `{}` when there is none yet. A file that is there but
+    /// can't be read (another window or a virus scanner has it open) is an error, never
+    /// "empty": what was then written back held only defaults, and the grants, the unpacked
+    /// folders and the list of disabled extensions were gone.
+    pub fn registry_text(&self) -> Result<String> {
+        let path = self.registry_path();
+        let mut tries = 0;
+        loop {
+            match fs::read_to_string(&path) {
+                Ok(text) => return Ok(text),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok("{}".into()),
+                // Such a hold lasts a moment: asked a few times before giving up.
+                Err(_) if tries < REGISTRY_READ_TRIES => {
+                    tries += 1;
+                    std::thread::sleep(REGISTRY_READ_PAUSE);
+                }
+                Err(e) => {
+                    let why = format!("the extensions' registry can't be read right now ({e})");
+                    return Err(Error::Invalid(format!("{why}; nothing was changed")));
+                }
+            }
+        }
     }
 
     pub fn save_registry(&self, json: &str) -> Result<()> {
         serde_json::from_str::<Registry>(json).map_err(|e| Error::Invalid(e.to_string()))?;
+        let _held = registry_lock();
+        // Not written over a file that can't be read: what is being saved was then made
+        // without knowing what the file holds.
+        self.registry_text()?;
         atomic_write(&self.registry_path(), json.as_bytes())
     }
 
@@ -238,8 +276,14 @@ impl ExtensionStore {
     /// registry's `bundled` list remembers what was seeded, so an uninstalled one stays
     /// uninstalled and an enabled (or disabled) one stays so.
     pub fn seed_bundled(&self) -> Result<()> {
+        let _held = registry_lock();
+        self.seed_bundled_held()
+    }
+
+    /// `seed_bundled`, for a caller that holds `registry_lock` already.
+    fn seed_bundled_held(&self) -> Result<()> {
         let mut registry: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&self.registry_text()).unwrap_or_default();
+            serde_json::from_str(&self.registry_text()?).unwrap_or_default();
         let seeded: Vec<String> = registry
             .get("bundled")
             .and_then(|v| v.as_array())
@@ -355,15 +399,16 @@ impl ExtensionStore {
         if missing.is_empty() {
             return Ok(missing);
         }
+        let _held = registry_lock();
         let mut registry: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(&self.registry_text()).unwrap_or_default();
+            serde_json::from_str(&self.registry_text()?).unwrap_or_default();
         if let Some(list) = registry.get_mut("bundled").and_then(|v| v.as_array_mut()) {
             list.retain(|v| !v.as_str().is_some_and(|id| missing.iter().any(|m| m == id)));
         }
         let text =
             serde_json::to_string_pretty(&registry).map_err(|e| Error::Invalid(e.to_string()))?;
         atomic_write(&self.registry_path(), text.as_bytes())?;
-        self.seed_bundled()?;
+        self.seed_bundled_held()?;
         Ok(missing)
     }
 
@@ -730,6 +775,28 @@ mod tests {
     }
 
     #[test]
+    fn a_registry_that_cant_be_read_is_never_taken_for_an_empty_one() {
+        let data = temp("data-unreadable");
+        let store = ExtensionStore::new(&data);
+        // None yet: empty, and a save makes it.
+        assert_eq!(store.registry_text().unwrap(), "{}");
+        let saved = r#"{"dev":["/x"],"disabled":["a.b"],"granted":{"a.b":["fs"]}}"#;
+        store.save_registry(saved).unwrap();
+        assert_eq!(store.registry_text().unwrap(), saved);
+        // There but unreadable (a folder stands in for a file something else holds open):
+        // an error, and neither a save nor the seeding writes defaults in its place.
+        let path = store.registry_path();
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(store.registry_text().is_err());
+        assert!(store.save_registry("{}").is_err());
+        assert!(store.seed_bundled().is_err());
+        assert!(store.restore_bundled().is_err() || path.is_dir());
+        assert!(path.is_dir());
+        let _ = fs::remove_dir_all(data);
+    }
+
+    #[test]
     fn node_extensions_keep_their_node_modules() {
         let data = temp("data-modules");
         let store = ExtensionStore::new(&data);
@@ -818,7 +885,7 @@ mod tests {
         assert!(list
             .iter()
             .any(|e| e.manifest.contains("bundled.todo-tree")));
-        let reg: serde_json::Value = serde_json::from_str(&store.registry_text()).unwrap();
+        let reg: serde_json::Value = serde_json::from_str(&store.registry_text().unwrap()).unwrap();
         assert_eq!(reg["disabled"][0], "bundled.todo-tree");
         assert_eq!(reg["disabled"][1], "bundled.canvas");
         assert_eq!(reg["bundled"][0], "bundled.todo-tree");
@@ -860,7 +927,8 @@ mod tests {
         store.seed_bundled().unwrap();
         assert_ne!(fs::read_to_string(&viewer).unwrap(), "old");
         // A customized one (the user replaced it with their changed copy, D189) is left alone.
-        let mut reg: serde_json::Value = serde_json::from_str(&store.registry_text()).unwrap();
+        let mut reg: serde_json::Value =
+            serde_json::from_str(&store.registry_text().unwrap()).unwrap();
         reg["customized"] = serde_json::json!(["bundled.canvas"]);
         store.save_registry(&reg.to_string()).unwrap();
         fs::write(&viewer, "mine").unwrap();
@@ -891,7 +959,7 @@ mod tests {
         assert!(list[0].dev);
         assert_eq!(list[0].manifest_file, "package.json");
         assert!(store.read(dev.to_str().unwrap(), "package.json").is_ok());
-        assert!(store.registry_text().contains("disabled"));
+        assert!(store.registry_text().unwrap().contains("disabled"));
         // Only listed folders can be deleted.
         let other = temp("other");
         fs::write(other.join("package.json"), "{}").unwrap();

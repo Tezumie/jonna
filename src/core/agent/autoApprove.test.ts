@@ -9,6 +9,7 @@ import {
   readApproveRules,
   withAllowed,
 } from "./autoApprove";
+import { outsideQuotes, quotesUnclear } from "./shellQuotes";
 
 test("Always saves the exact file or the domain, and it beats the glob that asked (D207)", () => {
   assert.equal(alwaysPattern("reads", "src/.env"), "/src/.env");
@@ -143,4 +144,43 @@ test("MCP: a server, a server's tool, wildcards", () => {
   assert.equal(approveDecision(rules, "mcp", "github__create_issue"), "ask");
   assert.equal(approveDecision(rules, "mcp", "docs/search_pages"), "allow");
   assert.equal(approveDecision(rules, "mcp", "docs/read"), null);
+});
+
+test("paths: Windows spellings of a protected file still ask", () => {
+  const rules = readApproveRules({
+    reads: { "**/*.tfvars": false, "config/prod.yaml": false },
+    edits: { "**/*.tfvars": false },
+  });
+  for (const p of ["x.tfvars::$DATA", "x.tfvars.", "x.tfvars ", "infra/x.TFVARS. ."])
+    assert.equal(approveDecision(rules, "edits", p), "ask", p);
+  assert.equal(approveDecision(rules, "reads", "config/prod.yaml."), "ask");
+  assert.equal(approveDecision(rules, "reads", "config\\prod.yaml::$DATA"), "ask");
+  assert.equal(approveDecision(rules, "reads", "config/dev.yaml"), null);
+  // An 8.3 short name may be the protected file: it asks while the category has an Ask rule.
+  assert.equal(approveDecision(rules, "reads", "config/PROD~1.YAM"), "ask");
+  assert.equal(approveDecision(rules, "edits", "X~1.TFV"), "ask");
+  assert.equal(
+    approveDecision({ reads: { "docs/**": true } }, "reads", "docs/PROD~1.YAM"),
+    "allow",
+  );
+  // "Always" on that question saved the exact spelling: allowed.
+  const saved = withAllowed(rules, "reads", "/config/PROD~1.YAM");
+  assert.equal(approveDecision(saved, "reads", "config/PROD~1.YAM"), "allow");
+});
+
+test("commands: quotes a shell may pair differently are never allowed by a pattern", () => {
+  const rules = readApproveRules({ commands: { "npm test": true, "git push": false } });
+  assert.equal(commandDecision(rules, 'npm test -- -t "a & b"'), "allow");
+  // bash's `\"` is a character: the `&` runs rm.
+  assert.equal(commandDecision(rules, 'npm test \\" & rm -rf ~ \\"'), null);
+  assert.equal(commandDecision(rules, 'npm test \\"x\\"'), null);
+  assert.equal(commandDecision(rules, "npm test \u201Cx\u201D"), null);
+  assert.equal(commandDecision(rules, 'npm test "x'), null);
+  // Ask patterns still see every part.
+  assert.equal(commandDecision(rules, 'npm test \\" & git push \\"'), "ask");
+  assert.equal(quotesUnclear("echo 'a' \"b\""), false);
+  assert.equal(quotesUnclear("echo it's"), true);
+  assert.equal(outsideQuotes("a 'b $(c)' \"d $(e)\"", true), "a '' \"d $(e)\"");
+  assert.equal(outsideQuotes("a 'b' \"c\""), "a '' ''");
+  assert.equal(outsideQuotes('a \\" & b \\"'), 'a \\" & b \\"');
 });

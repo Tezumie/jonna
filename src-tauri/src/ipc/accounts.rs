@@ -90,10 +90,22 @@ const AVATAR_CAP: usize = 2 * 1024 * 1024;
 /// Whether a picture may be fetched from `url`: https on GitHub's two hosts or under the
 /// accounts server (`base`); plain http only for this computer's own address.
 fn avatar_url_allowed(url: &str, base: &str) -> bool {
-    let allowed = url.starts_with("https://github.com/")
-        || url.starts_with("https://avatars.githubusercontent.com/")
-        || (!base.is_empty() && url.starts_with(&format!("{}/", base.trim_end_matches('/'))));
-    allowed && (url.starts_with("https://") || url.starts_with("http://127.0.0.1"))
+    // Both read as URLs (`base` is what the page says the server is): a host that only starts
+    // like this computer's (`127.0.0.1.example.com`) or stands behind a name
+    // (`127.0.0.1:80@example.com`) is neither.
+    let Some(target) = accounts::http::secure_or_loopback(url) else {
+        return false;
+    };
+    let github = target.scheme() == "https"
+        && matches!(
+            target.host_str(),
+            Some("github.com" | "avatars.githubusercontent.com")
+        );
+    let under_base = !base.is_empty()
+        && accounts::http::secure_or_loopback(base)
+            .is_some_and(|server| server.origin() == target.origin())
+        && url.starts_with(&format!("{}/", base.trim_end_matches('/')));
+    github || under_base
 }
 
 /// The client a picture is fetched with: a redirect is followed only to an address a picture
@@ -186,6 +198,21 @@ mod tests {
         ] {
             assert!(!avatar_url_allowed(bad, base), "{bad}");
             assert!(!avatar_url_allowed(bad, "http://127.0.0.1:5000"), "{bad}");
+        }
+        // A server address that only looks like this computer's lets nothing through.
+        for (url, base) in [
+            (
+                "http://127.0.0.1.evil.test/a.png",
+                "http://127.0.0.1.evil.test",
+            ),
+            (
+                "http://127.0.0.1:80@evil.test/a.png",
+                "http://127.0.0.1:80@evil.test",
+            ),
+            ("http://evil.test/a.png", "http://evil.test"),
+            ("https://github.com@evil.test/a.png", ""),
+        ] {
+            assert!(!avatar_url_allowed(url, base), "{url}");
         }
         // Without an accounts server nothing but GitHub's hosts.
         assert!(!avatar_url_allowed("https://x.test/a.png", ""));

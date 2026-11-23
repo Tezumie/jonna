@@ -50,9 +50,16 @@ import { commandDenied, DEFAULT_DENIED_COMMANDS } from "./permissions";
 import type { ProviderRegistry } from "./providers";
 import { rulesFor } from "./rules";
 import { SANDBOX_TOOLS } from "./sandboxAllowTool";
+import { noteSnapshot } from "./sessionCheckpoints";
 import { externalConfig, externalFor } from "./sessionExternal";
 import { changedSinceNow, resendNow, restoreNow, retryNow, rewindNow } from "./sessionRewind";
-import { loadSaved, resolveSaveConflict, saveSessionNow, sessionJSON } from "./sessionStore";
+import {
+  endSaveRetry,
+  loadSaved,
+  resolveSaveConflict,
+  saveSessionNow,
+  sessionJSON,
+} from "./sessionStore";
 import { compactNow, sideTaskNow } from "./sessionSummaries";
 import { sendNow } from "./sessionTurn";
 import {
@@ -339,6 +346,7 @@ export class AgentSession {
     readonly id: string = newId("s"),
   ) {
     this.changeset = new Changeset(services, id);
+    this.changeset.onSnapshot = (turn, error) => noteSnapshot(this, turn, error);
     // Where it belongs (D251): the window's first folder (a multi-root workspace's too).
     this.workspaceRoot = chatWorkspaceOf(services);
     // What a person away from the window is told is attention.ts's (D462).
@@ -1308,6 +1316,7 @@ export class AgentSession {
   markDeleted(): void {
     this.deleted = true;
     this.stopBackground();
+    endSaveRetry(this);
     clearTimeout(this.saveTimer);
     clearTimeout(this.reportTimer);
     this.stop();
@@ -1315,6 +1324,8 @@ export class AgentSession {
 
   dispose(): void {
     this.disposed = true;
+    // A failed save's next try goes with the session; the save below is the last one.
+    endSaveRetry(this);
     // What happened since the last save is kept (closing the window mid-turn).
     if (!this.deleted && this.items.length) void this.save();
     this.notifier.dispose();

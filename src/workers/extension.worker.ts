@@ -50,11 +50,26 @@ async function start(init: Extract<ToWorker, { t: "init" }>): Promise<void> {
     debug: log("log"),
   };
   scope.console = console;
+  // An error nothing caught (a timer's callback, a promise) is logged and stops there: left to
+  // reach the page it would count as a crash and take the extension's providers, views and
+  // processes with it, where the Node host only logs the same error.
   scope.addEventListener(
     "error" as "message",
-    ((e: ErrorEvent) => post({ t: "log", level: "error", text: e.message })) as unknown as (
-      e: MessageEvent,
-    ) => void,
+    ((e: ErrorEvent) => {
+      post({ t: "log", level: "error", text: e.message });
+      e.preventDefault();
+    }) as unknown as (e: MessageEvent) => void,
+  );
+  scope.addEventListener(
+    "unhandledrejection" as "message",
+    ((e: PromiseRejectionEvent) => {
+      post({
+        t: "log",
+        level: "error",
+        text: `Unhandled promise rejection: ${format([e.reason])}`,
+      });
+      e.preventDefault();
+    }) as unknown as (e: MessageEvent) => void,
   );
   lockdown();
   try {

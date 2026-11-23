@@ -13,6 +13,7 @@ import { s } from "../../core/schema/index";
 import { fuzzyMatch } from "../../ui/fuzzy";
 import { fileIcon } from "../../ui/Icon";
 import type { QuickPickItem } from "../../ui/QuickInput";
+import { recentWith } from "../../workbench/persistence";
 import type { WorkbenchServices } from "../../workbench/services";
 import { symbolIcon } from "../editor/chrome";
 import { rankCommands } from "./commandRank";
@@ -412,7 +413,19 @@ export const quickOpenExtension: BuiltinExtension<WorkbenchServices> = {
             if (previous >= 0) recentCommands.splice(previous, 1);
             recentCommands.unshift(picked.id);
             recentCommands.length = Math.min(recentCommands.length, MAX_RECENT_COMMANDS);
-            void persistence.saveGlobal({ recentCommands: [...recentCommands] }).catch(() => {});
+            // On the list as stored now, not this window's copy of it: another window's
+            // recent commands stay in it.
+            const ran = picked.id;
+            void persistence
+              .saveGlobal((stored) => ({
+                recentCommands: recentWith(stored.recentCommands, ran, MAX_RECENT_COMMANDS),
+              }))
+              // This window ranks by the merged list from here on.
+              .then(() => {
+                const merged = persistence.globalState().recentCommands;
+                if (merged?.[0] === ran) recentCommands.splice(0, recentCommands.length, ...merged);
+              })
+              .catch(() => {});
             await ctx.execute(picked.id, input);
             return { ran: picked.id };
           }

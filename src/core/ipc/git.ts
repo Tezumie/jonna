@@ -188,8 +188,10 @@ export function createGitIpc(repo?: string) {
      * "" the index, "HEAD", a commit hash (file history), or a conflict's stage ":1" base,
      * ":2" ours, ":3" theirs (D204). null if the file isn't there.
      */
-    show: (rev: string, path: string): Promise<string | null> =>
-      call<string | null>("git_show", { rev, path }),
+    show: (rev: string, path: string, exact = false): Promise<string | null> =>
+      // `exact`: text that isn't UTF-8 is an error, not text with replacement characters
+      // (what is read is written back: staging part of a file must not change its other bytes).
+      call<string | null>("git_show", { rev, path, exact }),
     /** The whole file's `git blame --porcelain` (D204); `contents`: the unsaved text. */
     blameFile: (path: string, contents?: string): Promise<string> =>
       call<string>("git_blame_file", { path, contents: contents ?? null }),
@@ -369,7 +371,10 @@ export interface GhArgs {
   path?: string;
   /** A commit hash (fileAt, compareBase base, prComment). */
   rev?: string;
-  /** compareBase: the head commit. */
+  /**
+   * compareBase: the head commit. prMerge: the pull request's head as the caller last saw it;
+   * the merge is refused when it has moved since (`--match-head-commit`).
+   */
   head?: string;
   /** A review thread's node id (prResolve) or a notification thread id. */
   thread?: string;

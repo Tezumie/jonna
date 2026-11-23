@@ -14,6 +14,7 @@ import type { TaskExecution, WorkbenchServices } from "../../workbench/services"
 import { findNamed } from "./folders";
 import { ProblemCollector, resolveMatchers, stripEscapes } from "./problemMatchers";
 import {
+  lateShellCommand,
   lateVariables,
   substituteLate,
   type TaskDefinition,
@@ -343,7 +344,9 @@ export class TaskRunner {
     return {
       run: {
         ...s,
-        command: sub(s.command),
+        // Args with late values are quoted now that the values are in (not at parse time, when
+        // only the placeholder was there to quote).
+        command: task.lateShell ? lateShellCommand(task.lateShell, values) : sub(s.command),
         ...(s.args && { args: s.args.map(sub) }),
         ...(s.env && {
           env: Object.fromEntries(

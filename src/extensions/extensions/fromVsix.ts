@@ -39,6 +39,12 @@ export function registerFromVsix(
           "Installed along with this extension, whose permissions the user just granted (its pack or dependencies): granted the same, without a dialog of its own",
         )
         .optional(),
+      expect: s
+        .string()
+        .describe(
+          "The id the package must have (what the store was asked for): one that says another id isn't installed",
+        )
+        .optional(),
       quiet: s
         .boolean()
         .describe("No notice once installed: the caller shows the result itself (the store's view)")
@@ -46,7 +52,7 @@ export function registerFromVsix(
     }),
     effects: ["write"],
     agent: "hidden",
-    run: async ({ file, with: along, quiet }, ctx) => {
+    run: async ({ file, with: along, quiet, expect }, ctx) => {
       const root = services.workspace.root.peek();
       const path =
         file === undefined
@@ -86,6 +92,13 @@ export function registerFromVsix(
           joinPath(folder, rel),
           ctx.caller.kind !== "test",
           along_,
+          {
+            ...(expect && { expect }),
+            // The store's update of what came from the store (only the user's call can say so):
+            // not asked about. Anything else over an installed extension is.
+            update:
+              !!expect && isUserCaller(ctx.caller) && manager.isFromStore(expect.toLowerCase()),
+          },
         );
         // Cancelled when asked about its permissions (D259): nothing was installed.
         if (!id) return { id: null, cancelled: true };

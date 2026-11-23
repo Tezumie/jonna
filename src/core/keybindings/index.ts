@@ -22,6 +22,7 @@ export {
   normalizeChord,
   type Platform,
   parseKeybinding,
+  typesWithAltGr,
 } from "./keys";
 
 /** A keybinding as written in manifests and keybindings.json. */

@@ -1,6 +1,50 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyWindowBackups, emptyWindowJson, withoutBackup, withPending } from "./hotExit";
+import {
+  backupsOf,
+  emptyWindowBackups,
+  emptyWindowJson,
+  madeOnOtherText,
+  textStamp,
+  withoutBackup,
+  withPending,
+} from "./hotExit";
+
+test("a backup knows which disk text its edits were made on", () => {
+  const onDisk = "const a = 1;\n";
+  const [backup] = backupsOf([
+    { path: "/a.ts", dirty: true, text: "const a = 2;\n", base: textStamp(onDisk) },
+  ]);
+  assert.ok(backup);
+  assert.equal(backup.base, textStamp(onDisk));
+  // Reopened with the file as it was: the edits go back as before.
+  assert.equal(madeOnOtherText(backup, onDisk), false);
+  // The file changed while the IDE was closed (a pull): a conflict.
+  assert.equal(madeOnOtherText(backup, "const a = 1;\nconst b = 3;\n"), true);
+  assert.equal(madeOnOtherText(backup, "const a = 9;\n"), true);
+  // The stamp survives the saved state's JSON.
+  const [back] = emptyWindowBackups(emptyWindowJson([backup]));
+  assert.deepEqual(back, backup);
+  // What can't be told is no conflict: a backup from before the stamp, an untitled document,
+  // a stamp that isn't a string.
+  assert.equal(madeOnOtherText({ path: "/a.ts", text: "x" }, "anything"), false);
+  assert.equal(madeOnOtherText(backup, undefined), false);
+  assert.equal(
+    madeOnOtherText({ path: "/a.ts", text: "x", base: 5 as unknown as string }, "anything"),
+    false,
+  );
+  assert.deepEqual(backupsOf([{ path: "untitled:Untitled-1", dirty: true, text: "n" }]), [
+    { path: "untitled:Untitled-1", text: "n" },
+  ]);
+});
+
+test("textStamp tells texts apart, same length or not", () => {
+  assert.equal(textStamp("abc"), textStamp("abc"));
+  assert.notEqual(textStamp("abc"), textStamp("abd"));
+  assert.notEqual(textStamp("ab"), textStamp("ba"));
+  assert.notEqual(textStamp("a\n"), textStamp("a\r\n"));
+  assert.notEqual(textStamp(""), textStamp(" "));
+});
 
 // D203: closing the window asks about the dirty documents hot exit can't keep.
 test("withoutBackup lists dirty documents past the limits or without text", () => {

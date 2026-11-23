@@ -41,6 +41,8 @@ export interface PrSnapshot {
   autoMerge?: boolean;
   /** D352: GitHub's mergeStateStatus (CLEAN, BLOCKED, BEHIND, DIRTY, UNSTABLE…), or "". */
   mergeState?: string;
+  /** The head commit's id (`headRefOid`), when the view carries it: what a merge is pinned to. */
+  head?: string;
 }
 
 export type PrEvent =
@@ -124,6 +126,7 @@ export function prSnapshot(view: unknown, threads: unknown): PrSnapshot {
     isDraft: v.isDraft === true,
     autoMerge: !!v.autoMergeRequest && typeof v.autoMergeRequest === "object",
     mergeState: str(v.mergeStateStatus).toUpperCase(),
+    ...(str(v.headRefOid) && { head: str(v.headRefOid) }),
   };
 }
 

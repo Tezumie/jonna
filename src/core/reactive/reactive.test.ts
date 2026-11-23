@@ -175,3 +175,55 @@ test("an effect whose first run throws doesn't stay subscribed", () => {
   s.value = 1;
   assert.equal(runs, 1, "nobody can dispose it, so it must not run again");
 });
+
+test("an effect disposed during its own run keeps no subscriptions and runs its cleanup", () => {
+  const trigger = signal(0);
+  const later = signal(0);
+  let runs = 0;
+  let cleanups = 0;
+  let self: { dispose(): void } | undefined;
+  self = effect(() => {
+    runs++;
+    if (trigger.value === 1) self?.dispose();
+    // Read after the dispose: must not subscribe the dead effect again.
+    void later.value;
+    return () => {
+      cleanups++;
+    };
+  });
+  assert.equal(runs, 1);
+  trigger.value = 1;
+  assert.equal(runs, 2);
+  // The first run's cleanup before the second run, and the second run's own on the way out.
+  assert.equal(cleanups, 2);
+  later.value = 1;
+  trigger.value = 2;
+  assert.equal(runs, 2);
+  assert.equal(cleanups, 2);
+  const observers = (s: unknown) => (s as { observers: Set<unknown> }).observers.size;
+  assert.equal(observers(trigger), 0);
+  assert.equal(observers(later), 0);
+});
+
+test("an effect disposed during a run that then throws still lets go of its subscriptions", () => {
+  const trigger = signal(0);
+  const later = signal(0);
+  let self: { dispose(): void } | undefined;
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => errors.push(args);
+  try {
+    self = effect(() => {
+      if (trigger.value === 1) {
+        self?.dispose();
+        void later.value;
+        throw new Error("after dispose");
+      }
+    });
+    trigger.value = 1;
+  } finally {
+    console.error = original;
+  }
+  assert.equal(errors.length, 1);
+  assert.equal((later as unknown as { observers: Set<unknown> }).observers.size, 0);
+});

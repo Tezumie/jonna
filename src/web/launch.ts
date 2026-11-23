@@ -83,6 +83,33 @@ export function launchUrl(page: string, nonce: string, challenge?: string): stri
   return `${page.replace(/#.*$/, "")}#${params.toString()}`;
 }
 
+/** The cookie that tells the launch page a trip was begun by this page (see `launchCookie`). */
+export const LAUNCH_COOKIE = "launch_n";
+
+/**
+ * The cookie to set before leaving for the launch page: a digest of the trip's number, for
+ * the launch page's own path, gone in two minutes. The launch page acts by itself (starts a
+ * machine, has a sign-in code made) only when it finds the digest of the number it was given:
+ * a link to it that someone else wrote carries a number but no cookie, and then it asks for
+ * a click first. Null when this page can't set one the launch page would see: the launch
+ * page must be on this page's own name or a parent of it (`app.example.com` and
+ * `example.com`), and reached over https.
+ */
+export function launchCookie(pageHost: string, launchPage: string, digest: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(launchPage);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  const here = pageHost.toLowerCase();
+  if (url.protocol !== "https:" || !host.includes(".") || /^[\d.]+$/.test(host)) return null;
+  if (here !== host && !here.endsWith(`.${host}`)) return null;
+  if (!/^[A-Za-z0-9_-]{20,128}$/.test(digest)) return null;
+  return `${LAUNCH_COOKIE}=${digest}; Domain=${host}; Path=${url.pathname || "/"}; Max-Age=120; Secure; SameSite=Strict`;
+}
+
 /** Whether a link came back from the trip this tab began. */
 export function fromOwnLaunch(
   arrival: Arrival,

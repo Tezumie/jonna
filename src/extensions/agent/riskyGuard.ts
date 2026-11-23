@@ -17,6 +17,7 @@
 // The project's instruction files aren't loaded from a risky folder at all (rules.ts, skills.ts,
 // subagents.ts: `projectInstructionsBlocked`). State: ide://agent/riskyFolders.
 
+import { looksLikeShortName } from "../../core/agent/ignore";
 import type { ToolOutcome } from "../../core/agent/loop";
 import { pathPatternMatches } from "../../core/agent/toolRules";
 import { inputPathIn, inputPathsIn } from "../../core/agent/workspaceFolders";
@@ -288,7 +289,8 @@ export function readOnlyTarget(
       )
       .join("/");
     // An 8.3 short name (`GIT~1` for `.git`) is another spelling the patterns can't see: refused.
-    const shortName = isWindowsPath(abs) && plain.split("/").some((s) => /~\d+$/.test(s));
+    const shortName =
+      isWindowsPath(abs) && plain.split("/").some((s) => /~\d+$/.test(s) || looksLikeShortName(s));
     const pattern = shortName
       ? "an 8.3 short name (GIT~1): use the full name"
       : patterns.find(

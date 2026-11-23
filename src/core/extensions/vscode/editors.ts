@@ -3,7 +3,7 @@
 // reveal), showTextDocument and decoration types. DOM-free and unit-tested.
 
 import type { WorkerApi } from "../rpc";
-import type { DecorationTypeOptions } from "../rpcExtras";
+import type { DecorationTypeOptions, SelectionEvent, VisibleRangeEvent } from "../rpcExtras";
 import { fromRange, markdownOf, pathOf, toRange } from "./convert";
 import { type Documents, pathKey, type ShimTextDocument } from "./document";
 import {
@@ -31,15 +31,28 @@ const toSelection = (s: IdeSelection): Selection => {
 // WorkspaceEdit's snippet edits too).
 export { snippetText };
 
+/** VS Code's TextEditorOptions, the part the IDE has: how the file is indented. */
+export interface ShimEditorOptions {
+  tabSize: number;
+  indentSize: number;
+  insertSpaces: boolean;
+  cursorStyle?: number;
+  lineNumbers?: number;
+}
+
+type Indentation = { tabSize: number; insertSpaces: boolean };
+
+/** Until the IDE says how the file is indented (VS Code's defaults). */
+const DEFAULT_INDENTATION: Indentation = { tabSize: 4, insertSpaces: true };
+
 export class ShimTextEditor {
   private current: Selection[];
   visibleRanges: Range[] = [];
   readonly viewColumn = ViewColumn.One;
-  options: { tabSize: number; insertSpaces: boolean; cursorStyle?: number; lineNumbers?: number } =
-    {
-      tabSize: 4,
-      insertSpaces: true,
-    };
+  options: ShimEditorOptions = {
+    ...DEFAULT_INDENTATION,
+    indentSize: DEFAULT_INDENTATION.tabSize,
+  };
 
   constructor(
     readonly document: ShimTextDocument,
@@ -67,6 +80,20 @@ export class ShimTextEditor {
   /** Updates what it holds without selecting (the IDE reported the selection). */
   setSelectionsFromIde(value: Selection[]): void {
     if (value.length) this.current = value;
+  }
+
+  /** The file's indentation as the IDE has it; whether that changed what `options` says. */
+  setIndentationFromIde(value: Indentation): boolean {
+    const { tabSize, insertSpaces } = this.options;
+    if (tabSize === value.tabSize && insertSpaces === value.insertSpaces) return false;
+    // A new object: one an extension kept from before stays what it was then, as in VS Code.
+    this.options = {
+      ...this.options,
+      tabSize: value.tabSize,
+      indentSize: value.tabSize,
+      insertSpaces: value.insertSpaces,
+    };
+    return true;
   }
 
   get selection(): Selection {
@@ -219,9 +246,54 @@ export function createEditors(ide: WorkerApi, docs: Documents) {
     textEditor: ShimTextEditor;
     visibleRanges: readonly Range[];
   }>();
-  const onDidChangeTextEditorOptions = new EventEmitter<unknown>();
+  const onDidChangeTextEditorOptions = new EventEmitter<{
+    textEditor: ShimTextEditor;
+    options: ShimEditorOptions;
+  }>();
   // Latest wins: an older answer arriving late doesn't replace a newer editor.
   let generation = 0;
+  // The IDE's latest selection and visible lines, kept whether or not their editor is the active
+  // one here yet: after a tab switch they arrive while the document is still being read, and
+  // were dropped (activeTextEditor.selection stayed at the file's start).
+  let lastSelection: SelectionEvent | undefined;
+  let lastVisible: VisibleRangeEvent | undefined;
+  const samePath = (a: string, b: string) => pathKey(a) === pathKey(b);
+  const visibleOf = (e: VisibleRangeEvent) =>
+    new Range(Math.max(0, e.startLine - 1), 0, Math.max(0, e.endLine - 1), 0);
+
+  /**
+   * How the IDE indents `path`: its active editor's tab size and spaces (a language's own
+   * settings and what the file itself uses count). Undefined when another file is active there.
+   */
+  const indentationOf = async (path: string): Promise<Indentation | undefined> => {
+    const state = (await ide.state.get("ide://editors/active").catch(() => null)) as {
+      absolutePath?: string | null;
+      indentation?: { tabSize?: unknown; insertSpaces?: unknown };
+    } | null;
+    const i = state?.indentation;
+    if (!i || !state?.absolutePath || !samePath(state.absolutePath, path)) return undefined;
+    return typeof i.tabSize === "number" && i.tabSize >= 1 && typeof i.insertSpaces === "boolean"
+      ? { tabSize: i.tabSize, insertSpaces: i.insertSpaces }
+      : undefined;
+  };
+
+  /** An editor on `doc` with what the IDE said last about `path` (`selections` first, if any). */
+  const editorOf = (
+    doc: ShimTextDocument,
+    path: string,
+    selections: Selection[],
+    indentation: Indentation | undefined,
+  ) => {
+    const selected =
+      !selections.length && lastSelection && samePath(lastSelection.path, path)
+        ? lastSelection.selections.map(toSelection)
+        : selections;
+    const editor = new ShimTextEditor(doc, selected, ide, docs, (x) => x === active);
+    if (lastVisible && samePath(lastVisible.path, path))
+      editor.visibleRanges = [visibleOf(lastVisible)];
+    if (indentation) editor.setIndentationFromIde(indentation);
+    return editor;
+  };
 
   const activate = async (
     path: string | null,
@@ -233,16 +305,14 @@ export function createEditors(ide: WorkerApi, docs: Documents) {
       if (active === undefined) return;
       active = undefined;
     } else {
-      const doc = await docs.sync(path, language).catch(() => undefined);
+      const [doc, indentation] = await Promise.all([
+        docs.sync(path, language).catch(() => undefined),
+        indentationOf(path),
+      ]);
       if (mine !== generation) return;
       if (!doc) return;
-      if (
-        active &&
-        pathKey(pathOf(active.document.uri)) === pathKey(path) &&
-        active.document === doc
-      )
-        return;
-      active = new ShimTextEditor(doc, selections.map(toSelection), ide, docs, (x) => x === active);
+      if (active && samePath(pathOf(active.document.uri), path) && active.document === doc) return;
+      active = editorOf(doc, path, selections.map(toSelection), indentation);
     }
     onDidChangeActiveTextEditor.fire(active);
     onDidChangeVisibleTextEditors.fire(active ? [active] : []);
@@ -255,7 +325,8 @@ export function createEditors(ide: WorkerApi, docs: Documents) {
 
   ide.editor.onDidChangeActive((e) => void activate(e?.path ?? null, e?.language));
   ide.editor.onDidChangeSelection((e) => {
-    if (!active || pathKey(pathOf(active.document.uri)) !== pathKey(e.path)) return;
+    lastSelection = e;
+    if (!active || !samePath(pathOf(active.document.uri), e.path)) return;
     active.setSelectionsFromIde(e.selections.map(toSelection));
     onDidChangeTextEditorSelection.fire({
       textEditor: active,
@@ -264,15 +335,24 @@ export function createEditors(ide: WorkerApi, docs: Documents) {
     });
   });
   ide.editor.onDidChangeVisibleRange((e) => {
-    if (!active || pathKey(pathOf(active.document.uri)) !== pathKey(e.path)) return;
-    active.visibleRanges = [
-      new Range(Math.max(0, e.startLine - 1), 0, Math.max(0, e.endLine - 1), 0),
-    ];
+    lastVisible = e;
+    if (!active || !samePath(pathOf(active.document.uri), e.path)) return;
+    active.visibleRanges = [visibleOf(e)];
     onDidChangeTextEditorVisibleRanges.fire({
       textEditor: active,
       visibleRanges: active.visibleRanges,
     });
   });
+  // A changed setting may change how the active file is indented (editor.tabSize, a language's
+  // own block): asked again, since the IDE has no event for it.
+  const refreshOptions = async () => {
+    const editor = active;
+    if (!editor) return;
+    const indentation = await indentationOf(pathOf(editor.document.uri));
+    if (indentation && editor === active && editor.setIndentationFromIde(indentation))
+      onDidChangeTextEditorOptions.fire({ textEditor: editor, options: editor.options });
+  };
+  ide.settings.onChange(() => void refreshOptions());
 
   const showTextDocument = async (
     target: ShimTextDocument | Uri,
@@ -303,11 +383,12 @@ export function createEditors(ide: WorkerApi, docs: Documents) {
     });
     const doc = await docs.sync(path);
     if (!doc) throw new Error(`Couldn't open ${path}`);
+    const indentation = active?.document === doc ? undefined : await indentationOf(path);
     if (!active || active.document !== doc) {
       const selection = options.selection
         ? [new Selection(options.selection.start, options.selection.end)]
         : [];
-      active = new ShimTextEditor(doc, selection, ide, docs, (x) => x === active);
+      active = editorOf(doc, path, selection, indentation);
       generation++;
       onDidChangeActiveTextEditor.fire(active);
       onDidChangeVisibleTextEditors.fire([active]);

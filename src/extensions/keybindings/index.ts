@@ -24,7 +24,7 @@ import { isUserCaller } from "../../core/permissions/commandGuards";
 import { effect, untracked } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
 import { parseJsonc } from "../../core/settings/jsonc";
-import { appendJsoncArrayItem } from "../../core/settings/jsoncEdit";
+import { appendJsoncArrayItem, assertEditableJsoncArray } from "../../core/settings/jsoncEdit";
 import {
   bindingCanRun,
   incomingKeybindings,
@@ -32,6 +32,7 @@ import {
   splitBindings,
 } from "../../core/sync/incoming";
 import type { WorkbenchServices } from "../../workbench/services";
+import { readTextForEdit } from "../../workbench/settings";
 import manifest from "./extension.json";
 import { referenceText } from "./reference";
 import { printReference, referenceViewDescriptor, shortcutsReference } from "./referenceView";
@@ -59,17 +60,27 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
     const { dispatcher, settings, keyboard, dock, state, notifications } = services;
     const status: KeybindingsState = { problems: [] };
 
+    /**
+     * The file's text: "" only when there is no file. A read that fails for another reason (the
+     * file held by an antivirus, a sync tool, another window) throws: every write here starts
+     * from this text, and an unread file taken for an empty one would be replaced by the one
+     * change.
+     */
     const read = async (): Promise<string> => {
       const path = settings.keybindingsPath;
       if (!path) return "";
-      return fsIpc.read(path).then(
-        (bytes) => new TextDecoder().decode(bytes),
-        () => "",
-      );
+      return readTextForEdit(path, "keybindings.json");
     };
     let toldProblems = "";
     const load = async () => {
-      const text = await read();
+      let text: string;
+      try {
+        text = await read();
+      } catch (err) {
+        // Keep the rules in use: nothing is known about the file right now.
+        status.problems = [err instanceof Error ? err.message : String(err)];
+        return;
+      }
       if (!text.trim()) {
         status.problems = [];
         keyboard.setUserRules([]);
@@ -117,6 +128,9 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
     };
     const append = async (...rules: KeybindingRule[]) => {
       let next = await read();
+      // A file being edited (a syntax error, the closing "]" not typed yet) or one that holds
+      // something else is refused, not replaced by the new rule alone.
+      assertEditableJsoncArray(next, "keybindings.json");
       for (const rule of rules) next = appendJsoncArrayItem(next, rule);
       await write(next);
     };
@@ -235,6 +249,7 @@ export const keybindingsExtension: BuiltinExtension<WorkbenchServices> = {
         run: async (_input, ctx) => {
           const path = settings.keybindingsPath;
           if (!path) throw new Error("Keybindings are only available in the desktop app.");
+          // Only a file that isn't there (or is empty) is made: `read` throws for an unread one.
           if (!(await read())) await write("[\n]\n");
           await ctx.execute("editor.openFile", { path });
           return { path };

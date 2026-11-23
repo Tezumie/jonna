@@ -425,12 +425,40 @@ export const searchExtension: BuiltinExtension<WorkbenchServices> = {
           if (!paths && !sameSearch(model.options, options))
             await ctx.execute("search.run", { ...query, wait: true });
           const targets = paths?.map((p) => workspace.resolve(p)) ?? model.files.map((f) => f.path);
-          const result = await searchIpc.replace(
-            { ...options, ...(lines?.length && { lines }) },
-            replacement,
-            targets,
-          );
-          for (const path of targets) events.emit("files.didChange", { path });
+          // A file with a dismissed match is replaced by the lines still listed, so what the user
+          // took out stays as it is (VS Code's dismiss). Only while the results are this search's.
+          const listed = !lines?.length && sameSearch(model.options, options);
+          const narrowed = new Map<string, number[]>();
+          if (listed)
+            for (const path of targets) {
+              const left = model.replaceLines(path);
+              if (left) narrowed.set(path, left);
+            }
+          const whole = targets.filter((path) => !narrowed.has(path));
+          const result: Awaited<ReturnType<typeof searchIpc.replace>> = {
+            files: 0,
+            replacements: 0,
+            skipped: [],
+            changes: [],
+          };
+          const replaceIn = async (paths: string[], only?: number[]) => {
+            const part = await searchIpc.replace(
+              { ...options, ...(only?.length && { lines: only }) },
+              replacement,
+              paths,
+            );
+            result.files += part.files;
+            result.replacements += part.replacements;
+            result.skipped.push(...part.skipped);
+            result.changes.push(...part.changes);
+          };
+          try {
+            if (whole.length || !narrowed.size) await replaceIn(whole, lines);
+            for (const [path, left] of narrowed) await replaceIn([path], left);
+          } finally {
+            // Also after a failure part way: the files already written have changed.
+            for (const path of targets) events.emit("files.didChange", { path });
+          }
           // Workspace undo: every file back to its snapshot — all of them or none (D141): each
           // must still hold what this replace left (else nothing changes and it says which),
           // and a write failing half way puts the files already done back.

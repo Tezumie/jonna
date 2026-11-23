@@ -96,7 +96,9 @@ impl LocalHistory {
 
     fn next_id(&self) -> String {
         let n = self.counter.fetch_add(1, Ordering::Relaxed);
-        format!("{:x}-{n:x}", now_ms())
+        // With the process's id: each window is a process with a counter of its own, and two
+        // deleting in the same millisecond would otherwise share a trash slot.
+        format!("{:x}-{:x}-{n:x}", now_ms(), std::process::id())
     }
 
     fn load(&self, folder: &Path) -> Index {
@@ -365,7 +367,8 @@ impl LocalHistory {
     }
 }
 
-/// Trash ids come from `next_id` (`<hex millis>-<hex counter>`). Anything else is refused: an
+/// Trash ids come from `next_id` (`<hex millis>-<hex process id>-<hex counter>`; older ones
+/// have no process id). Anything else is refused: an
 /// empty id would name the trash folder itself, and `untrash` would move (and then delete) an
 /// arbitrary entry of it.
 fn valid_trash_id(id: &str) -> bool {
@@ -416,12 +419,16 @@ fn crosses_devices(e: &std::io::Error) -> bool {
         || (cfg!(windows) && e.raw_os_error() == Some(17))
 }
 
-/// Copies a file or folder (symlinks as links on Unix).
+/// Copies a file or folder, links as links: a symbolic link, and on Windows a junction too
+/// (pnpm's `node_modules` is full of them, and `fs::copy` fails on a link to a folder). Where
+/// Windows doesn't let this user make links, the link is left out rather than followed.
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     let meta = fs::symlink_metadata(from)?;
-    #[cfg(unix)]
     if meta.file_type().is_symlink() {
-        return std::os::unix::fs::symlink(fs::read_link(from)?, to);
+        return crate::fs::copy_symlink(from, to).map_err(|e| match e {
+            Error::Io(e) => e,
+            other => std::io::Error::other(other.to_string()),
+        });
     }
     if meta.is_dir() {
         fs::create_dir_all(to)?;
@@ -480,6 +487,69 @@ mod tests {
             history.record(&file, format!("v{i}").as_bytes(), "save")?;
         }
         assert_eq!(history.list(&file).len(), MAX_ENTRIES);
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ids_carry_the_process_and_old_ones_still_read() {
+        let dir = temp("ids");
+        let history = LocalHistory::new(&dir.join("data"));
+        let (a, b) = (history.next_id(), history.next_id());
+        assert_ne!(a, b);
+        assert!(a.contains(&format!("-{:x}-", std::process::id())), "{a}");
+        assert!(valid_trash_id(&a));
+        // An id written before the process id was part of it.
+        assert!(valid_trash_id("18f3a2b4c5d-1f"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A link to the folder `to` at `link`: a symbolic link, on Windows a junction (which
+    /// needs no privilege). False when none could be made.
+    fn folder_link(to: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(to, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/c", "mklink", "/J"])
+                .arg(link)
+                .arg(to)
+                .output()
+                .is_ok_and(|out| out.status.success())
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (to, link);
+            false
+        }
+    }
+
+    #[test]
+    fn a_folder_with_a_link_in_it_is_copied_without_following_it() -> Result<()> {
+        let dir = temp("link");
+        let outside = dir.join("outside");
+        fs::create_dir_all(&outside)?;
+        fs::write(outside.join("secret.txt"), "s")?;
+        let folder = dir.join("pkg");
+        fs::create_dir_all(&folder)?;
+        fs::write(folder.join("a.txt"), "a")?;
+        if !folder_link(&outside, &folder.join("dep")) {
+            let _ = fs::remove_dir_all(dir);
+            return Ok(());
+        }
+        // (This used to fail on Windows: a link to a folder went to `fs::copy`.)
+        copy_tree(&folder, &dir.join("copy"))?;
+        assert_eq!(fs::read_to_string(dir.join("copy/a.txt"))?, "a");
+        // The link is there as a link, or (Windows without the right to make one) not at all:
+        // never a folder holding a copy of what it pointed at.
+        match fs::symlink_metadata(dir.join("copy/dep")) {
+            Ok(meta) => assert!(meta.file_type().is_symlink()),
+            Err(e) => assert_eq!(e.kind(), std::io::ErrorKind::NotFound),
+        }
+        assert!(outside.join("secret.txt").exists());
         fs::remove_dir_all(dir)?;
         Ok(())
     }

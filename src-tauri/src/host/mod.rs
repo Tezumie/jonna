@@ -402,10 +402,11 @@ async fn serve(
         tokio::sync::mpsc::unbounded_channel::<std::io::Result<Carrier>>();
     {
         let busy = busy.clone();
-        // Upgrades being answered. Each waits on its client (five seconds at most) on a
-        // thread of its own, and none of them holds the host's one place: any website can
-        // open a socket here, and a request that will be refused must not keep the real
-        // page out while it is read.
+        // Connections being answered (an upgrade, or a TCP client's first frame). Each waits
+        // on its client (five seconds at most) on a thread of its own, and none of them holds
+        // the host's one place: any website, and any program on this computer, can open a
+        // socket here, and one that will be refused must not keep the real client out while
+        // it is read.
         let upgrading = Arc::new(AtomicUsize::new(0));
         let accepting = std::thread::Builder::new()
             .name("host-accept".into())
@@ -416,18 +417,9 @@ async fn serve(
                         std::thread::sleep(Duration::from_millis(200));
                         continue;
                     };
-                    let Some(allowed) = origins.clone() else {
-                        if busy.swap(true, Ordering::SeqCst) {
-                            drop(stream);
-                            continue;
-                        }
-                        if accepted.send(tcp_carrier(stream)).is_err() {
-                            return;
-                        }
-                        continue;
-                    };
-                    // While a client is served nobody else is answered at all, as on TCP: a
-                    // second tab's socket never opens, so its code is never sent.
+                    let allowed = origins.clone();
+                    // While a client is served nobody else is answered at all: a second
+                    // tab's socket never opens, so its code is never sent.
                     if busy.load(Ordering::SeqCst) {
                         drop(stream);
                         continue;
@@ -444,9 +436,15 @@ async fn serve(
                         .spawn({
                             let upgrading = upgrading.clone();
                             move || {
-                                // The place is taken only by a page that was let in and has
+                                // The place is taken only by a client that was let in and has
                                 // sent its first message: one that says nothing never holds it.
-                                let made = ws::accept(stream, &allowed).and_then(first_message);
+                                // On plain TCP too: any program on this computer can connect,
+                                // and one reconnecting in a loop would keep the real client out.
+                                let made = match &allowed {
+                                    Some(allowed) => ws::accept(stream, allowed),
+                                    None => tcp_carrier(stream),
+                                }
+                                .and_then(first_message);
                                 upgrading.fetch_sub(1, Ordering::SeqCst);
                                 match made {
                                     Ok(carrier) => {
@@ -715,18 +713,22 @@ mod tests {
     }
 
     #[test]
-    fn a_silent_connection_gives_the_place_back_and_is_no_client() {
+    fn a_silent_connection_never_holds_the_place_and_is_no_client() {
         let (address, host) = tcp_host(Duration::from_millis(400));
-        // It holds the one place: the real client is closed at once.
-        let silent = TcpStream::connect(address).unwrap();
+        // Connections that say nothing (a program on this computer, connecting in a loop).
+        let silent: Vec<TcpStream> = (0..4)
+            .map(|_| TcpStream::connect(address).unwrap())
+            .collect();
         std::thread::sleep(Duration::from_millis(100));
-        assert!(hello(address).is_none());
-        // Not for long, and its going doesn't start the wait for a client to come back: the
-        // host is still there well past `--linger`.
-        std::thread::sleep(Duration::from_millis(1200));
+        // They are no clients: the wait for one to come back hasn't started, and the host is
+        // still there well past `--linger`.
+        std::thread::sleep(Duration::from_millis(700));
         assert!(!host.is_finished());
-        let (stream, answer) = hello(address).expect("the place is free again");
+        // And they hold nothing: the real client is served while they are still connected.
+        let (stream, answer) = hello(address).expect("a silent connection holds no place");
         assert_eq!(answer["result"]["protocol"], 1);
+        // While it is served, another client is closed at once.
+        assert!(hello(address).is_none());
         // The real client leaves: now the host waits, then exits.
         drop(stream);
         let left = Instant::now();

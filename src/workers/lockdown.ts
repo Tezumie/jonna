@@ -2,10 +2,32 @@
 // scripts, D338): the network, storage, nested workers and script loading are removed, and once
 // the code's own function exists, code generation too.
 
-const scope = self as unknown as Record<string, unknown>;
+/** What is taken off the worker's `navigator`. */
+const NAVIGATOR_NAMES = [
+  // The origin's file system (navigator.storage.getDirectory) is shared by every extension's
+  // worker and kept on disk: a channel between extensions and around the storage limit.
+  "storage",
+  "serviceWorker",
+  // Storage buckets have their own caches, indexedDB and getDirectory: `cache.add(url)` is a
+  // request without the "network" permission.
+  "storageBuckets",
+  // Named locks are seen by every worker of the origin: a channel between extensions.
+  "locks",
+  // Devices the user allowed for the origin, not for this extension.
+  "usb",
+  "serial",
+  "hid",
+];
 
-/** Removes ways out of the sandbox (network, storage, nested workers, script loading). */
-export function lockdown(): void {
+// In a worker this is `self`; named so that the module also loads where there is no `self`
+// (the unit test).
+const scope = globalThis as unknown as Record<string, unknown>;
+
+/**
+ * Removes ways out of the sandbox (network, storage, nested workers, script loading). `root` is
+ * the worker's global scope (another object only in the unit test).
+ */
+export function lockdown(root: Record<string, unknown> = scope): void {
   const names = [
     "fetch",
     "XMLHttpRequest",
@@ -25,8 +47,16 @@ export function lockdown(): void {
     // A font face loads its `url(…)` from anywhere (the worker has no CSP of its own).
     "FontFace",
     "fonts",
+    // Its `icon` and `image` are URLs the browser loads, and it shows outside the IDE's own
+    // notifications.
+    "Notification",
+    // The old file system API: a folder of the origin every extension's worker shares.
+    "webkitRequestFileSystem",
+    "webkitRequestFileSystemSync",
+    "webkitResolveLocalFileSystemURL",
+    "webkitResolveLocalFileSystemSyncURL",
   ];
-  let target: object | null = scope;
+  let target: object | null = root;
   while (target && target !== Object.prototype) {
     for (const name of names) {
       try {
@@ -39,7 +69,7 @@ export function lockdown(): void {
       } catch {
         // not configurable on this engine: shadow it on the global instead
         try {
-          Object.defineProperty(scope, name, { value: undefined, configurable: false });
+          Object.defineProperty(root, name, { value: undefined, configurable: false });
         } catch {
           /* already locked */
         }
@@ -47,12 +77,10 @@ export function lockdown(): void {
     }
     target = Object.getPrototypeOf(target);
   }
-  // The origin's file system (navigator.storage.getDirectory) is shared by every extension's
-  // worker and kept on disk: a channel between extensions and around the storage limit.
-  const nav = scope.navigator as object | undefined;
+  const nav = root.navigator as object | undefined;
   let proto: object | null = nav ?? null;
   while (proto && proto !== Object.prototype) {
-    for (const name of ["storage", "serviceWorker"])
+    for (const name of NAVIGATOR_NAMES)
       try {
         if (Object.getOwnPropertyDescriptor(proto, name))
           Object.defineProperty(proto, name, { value: undefined, configurable: false });

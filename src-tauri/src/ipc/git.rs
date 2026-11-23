@@ -145,13 +145,16 @@ pub async fn git_trust_settings(state: State<'_, AppState>, repo: Option<String>
 
 /// File text at `HEAD` (`rev: "HEAD"`), in the index (`rev: ""`), at a commit (`rev`: its hash,
 /// 7–40 hex digits; file history, D127) or a conflict's stage (`:1` base, `:2` ours, `:3`
-/// theirs; the merge editor, D204); null if absent there.
+/// theirs; the merge editor, D204); null if absent there. Bytes that aren't UTF-8 come back as
+/// replacement characters, which is fine to look at; with `exact` they are an error instead,
+/// for a caller that writes the text back (staging part of a file).
 #[tauri::command]
 pub async fn git_show(
     state: State<'_, AppState>,
     repo: Option<String>,
     rev: String,
     path: String,
+    exact: Option<bool>,
 ) -> Result<Option<String>> {
     let is_hash = (7..=40).contains(&rev.len()) && rev.bytes().all(|b| b.is_ascii_hexdigit());
     let is_stage = matches!(rev.as_str(), ":1" | ":2" | ":3");
@@ -160,7 +163,14 @@ pub async fn git_show(
     }
     let root = root_of(&state, &repo)?;
     let rel = rel_path(&root, &path)?;
-    blocking(move || ops::show(&root, &rev, &rel)).await
+    blocking(move || {
+        if exact == Some(true) {
+            ops::show_exact(&root, &rev, &rel)
+        } else {
+            ops::show(&root, &rev, &rel)
+        }
+    })
+    .await
 }
 
 /// The merge base of HEAD and the default branch (D200: diffs against what a pull request

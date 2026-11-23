@@ -121,8 +121,20 @@ function objectAt(tokens: Token[], openIndex: number): ObjectTokens | null {
   return null;
 }
 
-function stringify(value: unknown, indent: string): string {
-  return JSON.stringify(value, null, 2).replaceAll("\n", `\n${indent}`);
+function stringify(value: unknown, indent: string, eol = "\n"): string {
+  return JSON.stringify(value, null, 2).replaceAll("\n", `${eol}${indent}`);
+}
+
+/** The document's line ending: what it uses already, so an edit doesn't leave a mixed file. */
+function lineEnding(text: string): string {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+/** The offset after the line break at `offset` (`\n` or `\r\n`), or `offset` when none is there. */
+function afterLineBreak(text: string, offset: number): number {
+  if (text.charAt(offset) === "\n") return offset + 1;
+  if (text.charAt(offset) === "\r" && text.charAt(offset + 1) === "\n") return offset + 2;
+  return offset;
 }
 
 /** Start of the line containing `offset` if only whitespace precedes it there, else `offset`. */
@@ -166,9 +178,10 @@ export function setJsoncProperty(text: string, key: string, value: unknown): str
   if (!doc) {
     if (tokens.length) throw new JsoncEditError("The file has a syntax error; fix it first.");
     if (value === undefined) return text;
+    const eol = lineEnding(text);
     // A comment-only file keeps its comments above the new object.
-    const kept = text.trim() ? `${text.trimEnd()}\n` : "";
-    return `${kept}{\n${indent}${JSON.stringify(key)}: ${stringify(value, indent)}\n}\n`;
+    const kept = text.trim() ? `${text.trimEnd()}${eol}` : "";
+    return `${kept}{${eol}${indent}${JSON.stringify(key)}: ${stringify(value, indent, eol)}${eol}}${eol}`;
   }
   return setInObject(text, doc, key, value, indent, "");
 }
@@ -213,57 +226,82 @@ function setInObject(
   indent: string,
   closeIndent: string,
 ): string {
+  const eol = lineEnding(text);
   const existing = [...doc.props].reverse().find((p) => p.key === key);
   if (existing) {
     if (value !== undefined) {
       return (
         text.slice(0, existing.valueStart) +
-        stringify(value, indent) +
+        stringify(value, indent, eol) +
         text.slice(existing.valueEnd)
       );
     }
     const index = doc.props.indexOf(existing);
     const prev = doc.props[index - 1];
-    let start = lineStartIfBlank(text, existing.keyStart);
+    // Only the property's own span goes (its line, when it had one to itself), and separately
+    // the one comma character: comments around it are the user's and stay.
+    const start = lineStartIfBlank(text, existing.keyStart);
     let end = existing.commaEnd >= 0 ? existing.commaEnd : existing.valueEnd;
-    if (existing.commaEnd < 0 && prev) {
-      // Last property: remove the comma that precedes it instead.
-      start = prev.commaEnd - 1;
-      end = existing.valueEnd;
-    } else if (start !== existing.keyStart && text.charAt(end) === "\n") {
-      end++;
-    }
-    return text.slice(0, start) + text.slice(end);
+    if (start !== existing.keyStart) end = afterLineBreak(text, end);
+    const removed = text.slice(0, start) + text.slice(end);
+    if (existing.commaEnd >= 0 || !prev || prev.commaEnd < 0) return removed;
+    // The last property: the comma before it goes too (a comment after that comma stays).
+    return removed.slice(0, prev.commaEnd - 1) + removed.slice(prev.commaEnd);
   }
   if (value === undefined) return text;
-  const entry = `${JSON.stringify(key)}: ${stringify(value, indent)}`;
+  const entry = `${JSON.stringify(key)}: ${stringify(value, indent, eol)}`;
   const last = doc.props[doc.props.length - 1];
   if (!last) {
     const inner = text.slice(doc.open.end, doc.close.start);
     const body = inner.trim()
-      ? `${inner.replace(/\s+$/, "")}\n${indent}${entry}\n${closeIndent}`
-      : `\n${indent}${entry}\n${closeIndent}`;
+      ? `${inner.replace(/\s+$/, "")}${eol}${indent}${entry}${eol}${closeIndent}`
+      : `${eol}${indent}${entry}${eol}${closeIndent}`;
     return text.slice(0, doc.open.end) + body + text.slice(doc.close.start);
   }
   if (last.commaEnd >= 0) {
     // Trailing comma already there (JSONC allows it): insert after it.
-    return `${text.slice(0, last.commaEnd)}\n${indent}${entry},${text.slice(last.commaEnd)}`;
+    return `${text.slice(0, last.commaEnd)}${eol}${indent}${entry},${text.slice(last.commaEnd)}`;
   }
-  return `${text.slice(0, last.valueEnd)},\n${indent}${entry}${text.slice(last.valueEnd)}`;
+  return `${text.slice(0, last.valueEnd)},${eol}${indent}${entry}${text.slice(last.valueEnd)}`;
 }
 
 /**
- * Appends `value` to the top-level array in `text` (keybindings.json), keeping comments.
- * Text without an array becomes a new one.
+ * Throws `JsoncEditError` (naming `fileLabel` and the line) unless `text` is empty (or only
+ * comments) or a valid JSONC array: the check a keybindings.json write makes first, as
+ * `assertEditableJsoncObject` is for settings.
+ */
+export function assertEditableJsoncArray(text: string, fileLabel: string): void {
+  if (!tokenize(text).length) return;
+  const parsed = parseJsonc(text);
+  if (!parsed.ok)
+    throw new JsoncEditError(
+      `${fileLabel} has a syntax error (line ${parsed.error.line}); fix it first so nothing in it is lost.`,
+    );
+  if (!Array.isArray(parsed.value))
+    throw new JsoncEditError(`${fileLabel} must contain an array ([ … ]); fix it first.`);
+}
+
+/**
+ * Appends `value` to the top-level array in `text` (keybindings.json), keeping comments. Empty
+ * text (or only comments) becomes a new array. Text with content but no closed top-level array
+ * (the `]` not typed yet, an object, anything else) throws `JsoncEditError` instead of being
+ * replaced: adding one entry must never drop the ones a file being edited already holds.
  */
 export function appendJsoncArrayItem(text: string, value: unknown): string {
   const indent = "  ";
-  const entry = `${indent}${stringify(value, indent)}`;
+  const eol = lineEnding(text);
+  const entry = `${indent}${stringify(value, indent, eol)}`;
   const tokens = tokenize(text);
-  const open = tokens.findIndex((t) => t.kind === "punct" && t.text === "[");
-  if (open < 0) return `[\n${entry}\n]\n`;
+  if (!tokens.length) {
+    // A comment-only file keeps its comments above the new array.
+    const kept = text.trim() ? `${text.trimEnd()}${eol}` : "";
+    return `${kept}[${eol}${entry}${eol}]${eol}`;
+  }
+  const first = tokens[0] as Token;
+  if (first.kind !== "punct" || first.text !== "[")
+    throw new JsoncEditError("The file must contain an array ([ … ]); fix it first.");
   let depth = 0;
-  for (let i = open + 1; i < tokens.length; i++) {
+  for (let i = 1; i < tokens.length; i++) {
     const t = tokens[i] as Token;
     if (t.kind !== "punct") continue;
     if (t.text === "[" || t.text === "{") depth++;
@@ -273,14 +311,18 @@ export function appendJsoncArrayItem(text: string, value: unknown): string {
         depth--;
         continue;
       }
+      // Something after the array's end: not a file this can add to safely.
+      if (i !== tokens.length - 1) break;
       const prev = tokens[i - 1] as Token;
       const needsComma = !(prev.kind === "punct" && (prev.text === "[" || prev.text === ","));
       // Keep whatever sits between the last item and "]" (e.g. a trailing comment).
       const between = text.slice(prev.end, t.start).replace(/\s+$/, "");
-      return `${text.slice(0, prev.end)}${needsComma ? "," : ""}${between}\n${entry}\n${text.slice(t.start)}`;
+      return `${text.slice(0, prev.end)}${needsComma ? "," : ""}${between}${eol}${entry}${eol}${text.slice(t.start)}`;
     }
   }
-  return `[\n${entry}\n]\n`;
+  throw new JsoncEditError(
+    "The file's array isn't closed (a syntax error); fix it first so nothing in it is lost.",
+  );
 }
 
 interface ArrayItem {
@@ -327,11 +369,13 @@ export function setJsoncArrayItem(text: string, index: number, value: unknown): 
   const item = items?.[index];
   if (!items || !item) throw new JsoncEditError(`No entry ${index + 1} to change.`);
   if (value !== undefined)
-    return text.slice(0, item.start) + stringify(value, "  ") + text.slice(item.end);
+    return (
+      text.slice(0, item.start) + stringify(value, "  ", lineEnding(text)) + text.slice(item.end)
+    );
   const prev = items[index - 1];
   const start = lineStartIfBlank(text, item.start);
   let end = item.commaEnd >= 0 ? item.commaEnd : item.end;
-  if (start !== item.start && text.charAt(end) === "\n") end++;
+  if (start !== item.start) end = afterLineBreak(text, end);
   const removed = text.slice(0, start) + text.slice(end);
   if (item.commaEnd >= 0 || !prev || prev.commaEnd < 0) return removed;
   // The last item: the comma before it goes too (a comment after that comma stays).

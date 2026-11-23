@@ -95,8 +95,20 @@ fn spawn_error(e: std::io::Error) -> Error {
     }
 }
 
+/// Makes git take the paths after `--` as file names, not patterns (the same as
+/// `GIT_LITERAL_PATHSPECS=1`, but an argument also reaches the git of a remote or WSL
+/// repository). For commands whose paths come from the IDE's file lists: `pages/[ab].txt` is a
+/// file there, and as a pattern it would also name `pages/a.txt`.
+pub const LITERAL_PATHS: &str = "--literal-pathspecs";
+
 /// Runs git with `args` (optionally feeding `stdin`); stdout on success, stderr as the error.
+/// Output that isn't UTF-8 is returned with replacement characters (`run_bytes` keeps it).
 pub fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
+    run_bytes(dir, args, stdin).map(|out| String::from_utf8_lossy(&out).into_owned())
+}
+
+/// `run`, with stdout as git wrote it.
+pub fn run_bytes(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
     let started = std::time::Instant::now();
     // This machine's repositories only: a remote's or WSL's commands never run sandboxed here.
     let local = crate::remote::of_dir(dir).is_none() && crate::wsl::of_dir(dir).is_none();
@@ -126,7 +138,7 @@ pub fn run(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
     result
 }
 
-fn run_git(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
+fn run_git(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<Vec<u8>> {
     let mut cmd = command(dir);
     cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
     if stdin.is_some() {
@@ -154,7 +166,7 @@ fn run_git(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
     });
     let out = out?;
     if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        Ok(out.stdout)
     } else {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         let msg = if err.is_empty() {
@@ -163,7 +175,7 @@ fn run_git(dir: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String> {
                 .unwrap_or_default();
             format!(
                 "git {} failed ({}{cause})",
-                args.first().unwrap_or(&""),
+                guard::subcommand(args).unwrap_or(""),
                 out.status
             )
         } else {
@@ -199,6 +211,11 @@ pub fn run_unattended(dir: &Path, args: &[&str], deadline: std::time::Duration) 
     trust::check(dir, args)?;
     let mut cmd = command(dir);
     askpass::deny_env(&mut cmd);
+    // `command` listed the variables that cross into WSL before these were set: listed again,
+    // or git inside the distribution never sees them.
+    if crate::remote::of_dir(dir).is_none() && crate::wsl::of_dir(dir).is_some() {
+        crate::wsl::share_env(&mut cmd);
+    }
     cmd.args(UNATTENDED_CONFIG)
         .args(args)
         .stdout(Stdio::piped())

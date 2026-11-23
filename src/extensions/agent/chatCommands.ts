@@ -12,6 +12,7 @@ import { isThisWorkspace } from "./chatWorkspace";
 import { memberInfo } from "./groupChat";
 import { newId } from "./ids";
 import { showMoreMenu } from "./menus";
+import { forgetPrWatch } from "./prWatches";
 import { updateSavedMeta } from "./sessionStore";
 import type { SessionManager } from "./sessions";
 import { subagentRuns } from "./subagentRuns";
@@ -251,6 +252,7 @@ export function registerChatCommands(
         // Its dev servers and watchers go with it, as with Delete chat (D201).
         backgroundProcesses.killSession(r.id);
         subagentRuns.forgetSession(r.id);
+        forgetPrWatch(r.id);
         for (const t of dock.tabs("agent"))
           if ((t.viewState as { session?: string } | null)?.session === r.id)
             await dock.closeTab(t.id, true);

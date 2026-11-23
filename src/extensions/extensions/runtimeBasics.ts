@@ -4,6 +4,7 @@
 // `net.fetch`. Each is checked against the permissions the user granted.
 import type { Caller } from "../../core/dispatcher/types";
 import { missingBundledProgram } from "../../core/extensions/missingProgram";
+import { canReadSetting, settingsStateForExtension } from "../../core/extensions/settingsAccess";
 import {
   networkAllows,
   ownsStatePath,
@@ -41,6 +42,8 @@ const STATE_PERMISSIONS: [prefix: string, permission: string][] = [
   ["ide://mcp", ""],
   ["ide://extensions", ""],
 ];
+
+const LSP_SETTINGS = "ide://lsp/settings";
 
 export interface BasicsDeps {
   manifest: ThirdPartyManifest;
@@ -85,6 +88,16 @@ export class ExtensionBasicsHost {
     return REQUESTS.has(method) ? this.answer(method, p) : UNHANDLED;
   }
 
+  /**
+   * Whether it may read setting `key` (D202). Its own are those it registered (or shares), not
+   * those its manifest names: a key the IDE declared first stays the IDE's.
+   */
+  private readableSetting(key: string): boolean {
+    const { manifest, services } = this.deps;
+    const own = services.settings.registry.owners(key).includes(manifest.id) ? [key] : [];
+    return canReadSetting(own, manifest.readsSettings, key);
+  }
+
   private async answer(method: string, p: Record<string, unknown>): Promise<unknown> {
     const { services } = this.deps;
     switch (method) {
@@ -97,8 +110,17 @@ export class ExtensionBasicsHost {
         if (!rule && ownsStatePath(this.deps.manifest.id, path.split("?")[0] ?? path))
           return (await services.state.get(path)).value;
         if (!rule) throw new Error(`${path} isn't available to extensions.`);
+        // Language servers' settings are lsp.servers by another name (commands, env with keys):
+        // an area extensions never read (D202).
+        const bare = path.split("?")[0] ?? path;
+        if (bare === LSP_SETTINGS || bare.startsWith(`${LSP_SETTINGS}/`))
+          throw new Error(`${path} isn't available to extensions.`);
         if (rule[1]) this.deps.need(rule[1], `read ${path}`);
-        return (await services.state.get(path)).value;
+        const value = (await services.state.get(path)).value;
+        // Every setting's value is in there: only what `settings.get` would give it (D202).
+        return rule[0] === "ide://settings"
+          ? settingsStateForExtension(value, (key) => this.readableSetting(key))
+          : value;
       }
       case "fs.read":
         this.deps.need("fs.read", "read files");

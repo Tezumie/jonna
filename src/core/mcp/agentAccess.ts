@@ -95,9 +95,19 @@ export function ideServerName(productName: string): string {
  * agents name MCP tools `mcp__<server>__<tool>` (Claude Code's form). The agent asking "may I use
  * the IDE's tool?" before the IDE asks "may it run this command?" was two questions for one
  * action, and the first says less: the IDE's permission policy decides every such call anyway.
+ *
+ * The whole title must be the tool's name, and the request must not be for something the agent
+ * does itself (`kind`: running a command, editing, deleting, moving): an agent that puts the
+ * command line in the title was answered "allow" for `mcp__<server>__x; curl … | sh`.
  */
-export function isIdeToolRequest(title: string, productName: string): boolean {
-  return title.startsWith(`mcp__${ideServerName(productName)}__`);
+export function isIdeToolRequest(
+  title: string,
+  productName: string,
+  kind?: string | null,
+): boolean {
+  if (kind === "execute" || kind === "edit" || kind === "delete" || kind === "move") return false;
+  const name = `mcp__${ideServerName(productName)}__`;
+  return title.startsWith(name) && /^[\w-]+$/.test(title.slice(name.length));
 }
 
 let lender: McpLender | null = null;

@@ -16,6 +16,7 @@ import {
 import { extensionCodeBlocked } from "../../core/extensions/codePolicy";
 import {
   type ContributedViewContainer,
+  claimsShippedId,
   describePermission,
   hasPermission,
   parseManifest,
@@ -128,6 +129,7 @@ export class ExtensionManager implements Disposable {
     granted: {},
     declined: {},
     bundled: [],
+    fromStore: [],
     sources: {},
     bisect: null,
     disabledIn: {},
@@ -391,6 +393,10 @@ export class ExtensionManager implements Disposable {
     };
     try {
       const manifest = manifestOf(entry);
+      // An id like the IDE's own extensions' gets reserved names ("bundled.lsp" → "lsp."): only
+      // the seeded ones (and development copies of them) load, whatever folder it came from.
+      if (claimsShippedId(manifest.id, this.registry.bundled))
+        throw new Error(`Ids starting with "bundled." are for extensions that come with the IDE.`);
       const source = entry.dev ? undefined : this.registry.sources[manifest.id];
       const dependencies =
         manifest.format === "vscode" ? dependenciesOf(entry.manifest, manifest.id) : [];
@@ -617,6 +623,13 @@ export class ExtensionManager implements Disposable {
         "error",
         `The extension host terminated unexpectedly 3 times within the last 5 minutes (${error.slice(0, 200)}). Its extensions stay stopped until you reload them.`,
       );
+      // Kept so: an activation event would otherwise start the host again, crash after crash.
+      for (const id of ids)
+        this.loaded
+          .get(id)
+          ?.runtime.stayStopped(
+            "The extension host kept crashing: this extension stays stopped until you reload it.",
+          );
       return;
     }
     this.services.notifications.show(
@@ -990,9 +1003,39 @@ export class ExtensionManager implements Disposable {
    * member, a dependency): installed and allowed without a dialog of its own, as VS Code installs
    * them with the extension.
    */
-  async installFrom(folder: string, ask = true, granted = false): Promise<string | null> {
+  async installFrom(
+    folder: string,
+    ask = true,
+    granted = false,
+    /**
+     * `expect`: the id that was asked for (the store's, a repository's update); a package that
+     * says another id isn't installed. `update`: replacing the installed copy is what the user
+     * asked for (not asked about again).
+     */
+    options: { expect?: string; update?: boolean } = {},
+  ): Promise<string | null> {
     const manifest = await this.peekFolder(folder);
+    // Whatever was downloaded names itself: under another id it would replace that extension
+    // and run with what the user allowed it.
+    if (options.expect && manifest.id !== options.expect.toLowerCase())
+      throw new Error(`The package is ${manifest.id}, not ${options.expect}: not installed.`);
     const installed = this.get(manifest.id);
+    // Over an installed one (a development copy's installed one too): it takes its place and
+    // its permissions, so the user says so first.
+    const replaced = installed?.dev ? installed.replaces?.version : installed?.manifest?.version;
+    if (ask && !options.update && installed && (!installed.dev || installed.replaces)) {
+      const ok = await showDialog<boolean>({
+        title: `Replace ${installed.manifest?.displayName ?? manifest.id}?`,
+        message: `An extension with the id ${manifest.id} is installed already${replaced ? ` (version ${replaced})` : ""}. Installing ${manifest.displayName} ${manifest.version}${manifest.publisher ? ` by ${manifest.publisher}` : ""} replaces it, with the permissions you allowed the installed one.`,
+        actions: [
+          { label: "Cancel", value: false, variant: "secondary" },
+          { label: "Replace", value: true, variant: "primary" },
+        ],
+        cancelValue: false,
+        defaultValue: false,
+      });
+      if (!ok) return null;
+    }
     let answered: "grant" | "declarative" | null = granted && !installed ? "grant" : null;
     if (ask && !granted && !installed) {
       const missing = missingPermissions(manifest, this.registry.granted[manifest.id] ?? []);
@@ -1011,11 +1054,17 @@ export class ExtensionManager implements Disposable {
       await this.refresh().catch(() => {});
       throw err;
     });
-    // First installed now (an update keeps its time, D264).
-    if (!this.registry.installedAt?.[manifest.id])
-      await this.saveRegistry((r) => {
+    await this.saveRegistry((r) => {
+      // First installed now (an update keeps its time, D264).
+      if (!r.installedAt?.[manifest.id])
         r.installedAt = { ...r.installedAt, [manifest.id]: Date.now() };
-      });
+      // Where it came from is said after (`setFromStore`): until then, not from the store.
+      r.fromStore = r.fromStore.filter((x) => x !== manifest.id);
+      // In place of one of the IDE's own: the user's copy now, without what only those may do
+      // (and the IDE's updates leave it alone).
+      if (r.bundled.includes(manifest.id) && !r.customized.includes(manifest.id))
+        r.customized.push(manifest.id);
+    });
     if (answered)
       await this.saveRegistry((r) => {
         if (answered === "grant") {
@@ -1068,8 +1117,9 @@ export class ExtensionManager implements Disposable {
       if (replacing) {
         // A bundled extension now has the user's changes: the IDE's updates mustn't undo them.
         if (replaces.bundled && !r.customized.includes(id)) r.customized.push(id);
-        // Changed locally: "Update from repository" would undo the changes.
+        // Changed locally: "Update from repository" (or the store) would undo the changes.
         delete r.sources[id];
+        r.fromStore = r.fromStore.filter((x) => x !== id);
       }
     });
     await this.refresh();
@@ -1115,6 +1165,19 @@ export class ExtensionManager implements Disposable {
       r.customized = r.customized.filter((c) => c !== id);
     });
     await this.refresh();
+  }
+
+  /** Whether it was installed from the extension store: only then do the store's updates apply. */
+  isFromStore(id: string): boolean {
+    return this.registry.fromStore.includes(id);
+  }
+
+  /** Remembers that the installed `id` came from the store (after its install from there). */
+  async setFromStore(id: string): Promise<void> {
+    if (this.isFromStore(id)) return;
+    await this.saveRegistry((r) => {
+      if (!r.fromStore.includes(id)) r.fromStore.push(id);
+    });
   }
 
   /** The repository an installed extension came from (D185), if it did. */
@@ -1192,6 +1255,7 @@ export class ExtensionManager implements Disposable {
       delete r.granted[id];
       delete r.declined[id];
       delete r.sources[id];
+      r.fromStore = r.fromStore.filter((x) => x !== id);
       r.disabled = r.disabled.filter((d) => d !== id);
       r.customized = r.customized.filter((c) => c !== id);
     });

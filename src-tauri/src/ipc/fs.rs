@@ -349,13 +349,29 @@ pub async fn fs_stat(state: State<'_, AppState>, path: String) -> Result<Stat> {
     fs::stat(&crate::ipc::settings::resolve_path(&state, &path)?)
 }
 
+/// A path picker's paths are whole paths the page sends, not held to the open folder: a
+/// network path among them (`\\host\share`) is refused before anything touches it, since
+/// Windows would connect to the host and offer it the user's credentials. A folder on a
+/// share is still opened through the ordinary "open folder", which asks first.
+fn picker_local(path: &str) -> Result<()> {
+    if fs::is_unc(path) {
+        return Err(Error::Invalid(
+            "a network path can't be browsed here: open it with Open folder".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// A folder for a path picker (D459): its entries by name and kind, the folder above, the
 /// drives. `path` left out: the user's home folder. Not held to the open folder, as the OS's
 /// own dialog isn't: choosing a folder is how one comes to be open. Names only, no contents.
 #[tauri::command]
 pub async fn picker_browse(path: Option<String>) -> Result<fs::Browsed> {
     let dir = match path.filter(|p| !p.trim().is_empty()) {
-        Some(path) => std::path::PathBuf::from(path),
+        Some(path) => {
+            picker_local(&path)?;
+            std::path::PathBuf::from(path)
+        }
         None => crate::remote::home_dir()
             .ok_or_else(|| Error::Invalid("this computer names no home folder".into()))?,
     };
@@ -368,6 +384,7 @@ pub async fn picker_browse(path: Option<String>) -> Result<fs::Browsed> {
 /// the open folder, as the OS's own dialog isn't. Resolves with the new folder's path.
 #[tauri::command]
 pub async fn picker_create_folder(parent: String, name: String) -> Result<String> {
+    picker_local(&parent)?;
     let parent = std::path::PathBuf::from(parent);
     if !parent.is_absolute() {
         return Err(Error::Invalid("not a whole path".into()));
@@ -382,6 +399,7 @@ pub async fn picker_create_folder(parent: String, name: String) -> Result<String
 /// is there. Resolves with the new path.
 #[tauri::command]
 pub async fn picker_rename(path: String, name: String) -> Result<String> {
+    picker_local(&path)?;
     let path = std::path::PathBuf::from(path);
     if !path.is_absolute() {
         return Err(Error::Invalid("not a whole path".into()));
@@ -603,6 +621,24 @@ pub(crate) fn percent_decode(s: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_path_picker_never_touches_a_network_path() {
+        use tauri::async_runtime::block_on;
+        for unc in [
+            r"\\host\share",
+            r"\\host\share\folder",
+            "//host/share",
+            r"\\?\UNC\host\share",
+        ] {
+            assert!(super::picker_local(unc).is_err(), "{unc}");
+            assert!(block_on(super::picker_browse(Some(unc.into()))).is_err());
+            assert!(block_on(super::picker_create_folder(unc.into(), "x".into())).is_err());
+            assert!(block_on(super::picker_rename(format!("{unc}/a"), "b".into())).is_err());
+        }
+        assert!(super::picker_local(r"C:\Users\someone").is_ok());
+        assert!(super::picker_local("/home/someone").is_ok());
+    }
+
     #[test]
     fn decodes_percent_escapes() {
         assert_eq!(

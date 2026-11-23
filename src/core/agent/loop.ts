@@ -598,10 +598,23 @@ export function isContextOverflow(message: string): boolean {
   );
 }
 
-/** Backoff before retry `attempt` (1-based): 1 s, 3 s, 8 s, with a little jitter. */
-export function retryDelayMs(attempt: number): number {
+/**
+ * How long the provider asked to wait before trying again, from an error's text
+ * ("… (429), retry after 20s": the backend adds it from the `retry-after` header), or null.
+ * A minute at most: a longer wait is the user's to decide, not a retry's.
+ */
+export function retryAfterMs(message: string): number | null {
+  const asked = /\bretry after (\d+)s\b/.exec(message);
+  return asked ? Math.min(Number(asked[1]), 60) * 1000 : null;
+}
+
+/**
+ * Backoff before retry `attempt` (1-based): 1 s, 3 s, 8 s, with a little jitter; longer when
+ * the error says how long the provider wants (`message`): retrying sooner only fails again.
+ */
+export function retryDelayMs(attempt: number, message = ""): number {
   const base = [1000, 3000, 8000][attempt - 1] ?? 8000;
-  return base + Math.round(Math.random() * 400);
+  return Math.max(base, retryAfterMs(message) ?? 0) + Math.round(Math.random() * 400);
 }
 
 /** The first line of an error, at most 120 characters, for a compact notice. */

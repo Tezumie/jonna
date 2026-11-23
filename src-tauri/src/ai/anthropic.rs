@@ -433,6 +433,38 @@ fn official(base: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// A setting of the request a 400 names as one the model or endpoint doesn't take.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Unsupported {
+    /// The `thinking` setting (adaptive thinking, or its `display`).
+    Thinking,
+    /// `output_config.effort`.
+    Effort,
+}
+
+/// What a 400's message says the model doesn't take, when it is a setting the request can go
+/// without. Not the refusals that are about thinking blocks in the history (`STALE_THINKING`,
+/// the binding controls): those have their own way out.
+pub fn unsupported_setting(message: &str) -> Option<Unsupported> {
+    let m = message.to_ascii_lowercase();
+    if m.contains(STALE_THINKING) || m.contains("block_binding") {
+        return None;
+    }
+    if m.contains("output_config") || m.contains("effort") {
+        return Some(Unsupported::Effort);
+    }
+    let about_the_setting = [
+        "adaptive",
+        "thinking.type",
+        "thinking.display",
+        "does not support",
+        "not supported",
+        "not permitted",
+    ];
+    (m.contains("thinking") && about_the_setting.iter().any(|s| m.contains(s)))
+        .then_some(Unsupported::Thinking)
+}
+
 /// How the API says a request is over the model's context (no other shape of it would fit).
 const TOO_LONG: &str = "prompt is too long";
 
@@ -756,8 +788,19 @@ pub async fn chat<F: FnMut(ChatEvent)>(
     // only when the very next request, changed in nothing else, was taken. A refusal that
     // was about something else (and ended with the thinking blocks stripped) marks nothing.
     let mut dropped_at: Option<Replay> = None;
+    // Settings a 400 named as not taken (`unsupported_setting`): left out from then on, each
+    // given up once, instead of failing the turn after retries that send the same thing.
+    let mut without: Vec<Unsupported> = Vec::new();
     let response = loop {
-        let body = body_for(req, replay, extras);
+        let mut body = body_for(req, replay, extras);
+        if let Some(map) = body.as_object_mut() {
+            if without.contains(&Unsupported::Thinking) {
+                map.remove("thinking");
+            }
+            if without.contains(&Unsupported::Effort) {
+                map.remove("output_config");
+            }
+        }
         let mut builder = with_key(
             client.post(api(&req.provider.base_url, "messages")),
             key.clone(),
@@ -788,6 +831,19 @@ pub async fn chat<F: FnMut(ChatEvent)>(
         let text = err.to_string();
         if !refused || text.contains(TOO_LONG) {
             return Err(err);
+        }
+        let named = unsupported_setting(&text).filter(|u| {
+            !without.contains(u)
+                && body
+                    .get(match u {
+                        Unsupported::Thinking => "thinking",
+                        Unsupported::Effort => "output_config",
+                    })
+                    .is_some()
+        });
+        if let Some(setting) = named {
+            without.push(setting);
+            continue;
         }
         let stale = text.contains(STALE_THINKING);
         if stale && replay != Replay::Strip {

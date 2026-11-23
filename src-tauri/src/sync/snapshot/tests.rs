@@ -397,6 +397,33 @@ fn a_manifest_path_stays_inside_the_project() {
     assert!(safe_join(root, ".github/workflows/ci.yml").is_ok());
     #[cfg(windows)]
     assert!(safe_join(root, "C:\\Windows\\x").is_err());
+    // Spellings the file system reads as another path than the text says.
+    for bad in [
+        "HEAD/",
+        "HEAD/.",
+        "config//",
+        "objects\\x",
+        "./HEAD",
+        "a//b",
+        "a/./b",
+        ".",
+    ] {
+        assert!(safe_join(root, bad).is_err(), "{bad}");
+    }
+    for bad in ["CONIN$", "conout$.txt", "COM\u{b9}", "lpt\u{b2}.log"] {
+        assert!(safe_join(root, bad).is_err(), "{bad}");
+    }
+    assert!(safe_join(root, "common/compute.rs").is_ok());
+}
+
+#[test]
+fn a_repository_part_is_read_as_the_file_system_reads_it() {
+    let parts = |paths: &[&str]| RepositoryParts::named(paths.iter().copied());
+    assert!(parts(&["HEAD/.", "config/."]).is_repository());
+    assert!(parts(&["HEAD/", "config//"]).is_repository());
+    assert!(parts(&["./HEAD", "objects\\x", "refs\\x"]).is_repository());
+    assert!(parts(&["HEAD", "objects//x", "refs/./x"]).is_repository());
+    assert!(!parts(&["HEAD/", "objects/", "refs/."]).is_repository());
 }
 
 #[test]

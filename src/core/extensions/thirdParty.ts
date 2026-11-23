@@ -510,7 +510,26 @@ const RESERVED = new Set([
   "workspace",
   "dev",
   "notifications",
+  // Areas whose settings start programs or say where data goes: never an extension's short name.
+  "remote",
+  "sync",
+  "team",
+  "security",
+  "update",
+  "window",
 ]);
+
+/** The prefix of the ids of the extensions that come with the IDE. */
+const SHIPPED_PREFIX = "bundled.";
+
+/**
+ * Whether `id` only claims to come with the IDE: it starts like the IDE's own extensions' ids
+ * but isn't in `shipped` (the list the IDE seeded). Such an id would get the reserved short names
+ * ("bundled.lsp" → "lsp."), so the host refuses to load it wherever it came from.
+ */
+export function claimsShippedId(id: string, shipped: readonly string[]): boolean {
+  return id.startsWith(SHIPPED_PREFIX) && !shipped.includes(id);
+}
 
 /**
  * Reserved namespaces their VS Code owner (by publisher) still uses, as it does in VS Code:
@@ -583,7 +602,7 @@ const NAMESPACE = /^[a-z][a-zA-Z0-9]*$/;
 
 /**
  * Whether extension `id` may change setting `key` (`settings.set` / `settings.reset`, which only
- * need "fs.write"): its own settings, and others a folder's settings could set too. Never the
+ * need "fs.write"): the settings it declared, and others a folder's settings could set too. Never the
  * user-only ones (`scope: "user"`: they start programs, pick shells and servers, say where the
  * network goes) nor the areas it can't even read (credentials, the agent, MCP, language
  * servers): that would turn "change files" into running any program.
@@ -601,9 +620,9 @@ export function extensionMayWriteSetting(
   const owners = owner === undefined ? [] : typeof owner === "string" ? [owner] : owner;
   // One of the extensions that declared it may change it (VS Code's shared settings).
   if (owners.includes(id)) return true;
-  // Its own name only when no other extension registered the key (D261: "evil.python" isn't the
-  // owner of the Python extension's "python." settings).
-  if (ownsName(id, key) && !owners.length) return true;
+  // A name alone makes nothing its own: the IDE's settings have no owner, so "acme.remote" would
+  // own "remote.*" and an id like the IDE's own extensions' would own a reserved area (D261 was
+  // the same for another extension's settings). Everything else is judged as anyone's.
   if (isBlockedSetting(key)) return false;
   return scope !== "user";
 }

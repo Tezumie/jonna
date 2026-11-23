@@ -12,7 +12,7 @@ import {
   type LineMatch,
   searchIpc,
 } from "../../core/ipc/fs";
-import { clipboardIpc, openerIpc } from "../../core/ipc/system";
+import { clipboardIpc, dialogIpc, openerIpc } from "../../core/ipc/system";
 import type { Disposable } from "../../core/lifecycle/index";
 import { globToRegExp } from "../../core/paths/glob";
 import { resolveInRoot, samePath } from "../../core/paths/index";
@@ -25,10 +25,54 @@ const MAX_FIND = 10_000;
 export interface EnvHostDeps {
   services: WorkbenchServices;
   need(permission: string, what: string): void;
+  /** Whether the extension was granted this permission. */
+  has(permission: string): boolean;
+  /** The extension's name, as the user knows it. */
+  name: string;
 }
 
 export class ExtensionEnvHost implements Disposable {
   constructor(private readonly deps: EnvHostDeps) {}
+
+  /** Sites this extension may open in the browser without asking again (this window). */
+  private readonly sitesAllowed = new Set<string>();
+  /** Sites the user said no to: refused without asking again (this window). */
+  private readonly sitesRefused = new Set<string>();
+  /** One question at a time: an extension can't stack dialogs. */
+  private asking: Promise<boolean> | null = null;
+
+  /**
+   * Whether the extension may open this address in the system's browser. An address carries
+   * whatever is put in it, so opening one is a way to send data out: an extension granted
+   * "network" may already do that; any other is asked about once per site (D469).
+   */
+  private async mayOpen(url: string): Promise<boolean> {
+    if (this.deps.has("network")) return true;
+    let site: string;
+    try {
+      const parsed = new URL(url);
+      site = parsed.protocol === "mailto:" ? "mailto:" : parsed.host;
+    } catch {
+      return false;
+    }
+    if (this.sitesAllowed.has(site)) return true;
+    if (this.sitesRefused.has(site)) return false;
+    while (this.asking) await this.asking.catch(() => false);
+    if (this.sitesAllowed.has(site)) return true;
+    if (this.sitesRefused.has(site)) return false;
+    const shown = url.length > 300 ? `${url.slice(0, 300)}…` : url;
+    this.asking = dialogIpc
+      .confirm(
+        `The extension ${this.deps.name} wants to open this in your browser:\n\n${shown}`,
+        "Open a link from an extension?",
+        "Open",
+      )
+      .catch(() => false);
+    const ok = await this.asking;
+    this.asking = null;
+    (ok ? this.sitesAllowed : this.sitesRefused).add(site);
+    return ok;
+  }
 
   handle(method: string, p: Record<string, unknown>): Promise<unknown> | typeof UNHANDLED {
     switch (method) {
@@ -36,7 +80,10 @@ export class ExtensionEnvHost implements Disposable {
         const url = String(p.url ?? "");
         if (!openableUrl(url))
           throw new Error(`Only https, http and mailto links open (${url.slice(0, 80)}).`);
-        return openerIpc.openUrl(url).then(() => true);
+        // False, as VS Code answers when the user declines.
+        return this.mayOpen(url).then((ok) =>
+          ok ? openerIpc.openUrl(url).then(() => true) : false,
+        );
       }
       case "env.clipboardRead":
         this.deps.need("clipboard", "read the clipboard");

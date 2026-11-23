@@ -569,6 +569,12 @@ function readableKey(key: string): boolean {
 export interface KeybindingTargets {
   /** Whether the dispatcher has this command. */
   has(command: string): boolean;
+  /**
+   * Whether a key may run this command of the IDE's: one that only reads or shows (no "write",
+   * "exec", "network" or "destructive" effect). A key runs as the user, with no prompt, and a
+   * package without code is installed without one too.
+   */
+  harmless(command: string): boolean;
   /** Another loaded extension's declared command with this VS Code id: its dispatcher id. */
   declaredElsewhere(vscodeId: string): string | undefined;
   /** The extension's hidden command into its code (`<ns>.runVscodeCommand`), when it has code. */
@@ -583,6 +589,10 @@ export interface KeybindingTargets {
  * the key is pressed, as VS Code's registry is). Rules nothing can run are left out, each with a
  * warning for the extension's log. A "-command" rule removes the IDE's (or an earlier
  * extension's) binding of the command it resolves to.
+ *
+ * What isn't the extension's own gets none of the rule's `args`, and an IDE command named by its
+ * own id only when it is harmless: a theme binding Ctrl+S to "send this text to the terminal"
+ * would otherwise run it as the user. VS Code's ids keep their fixed mapping.
  */
 export function resolveVscodeKeybindings(
   rules: readonly ContributedKeybinding[],
@@ -590,8 +600,6 @@ export function resolveVscodeKeybindings(
 ): { rules: KeybindingRule[]; warnings: string[] } {
   const out: KeybindingRule[] = [];
   const warnings: string[] = [];
-  const plainObject = (v: unknown): v is Record<string, unknown> =>
-    !!v && typeof v === "object" && !Array.isArray(v);
   for (const original of rules) {
     // A key the keyboard can't read would be dropped without a word: said in its log instead.
     if (!readableKey(original.key)) {
@@ -621,10 +629,17 @@ export function resolveVscodeKeybindings(
     let target: { command: string; args?: unknown } | undefined;
     if (builtin && targets.has(builtin.command))
       target = { command: builtin.command, ...(builtin.input && { args: builtin.input }) };
-    else if (targets.has(id)) target = { command: id, ...(plainObject(args) && { args }) };
-    else {
+    else if (targets.has(id)) {
+      if (removal || targets.harmless(id)) target = { command: id };
+      else {
+        warnings.push(
+          `Keybinding ${base.key} (${id}) skipped: an extension's key can't run a command of the IDE that changes things, runs programs or uses the network.`,
+        );
+        continue;
+      }
+    } else {
       const elsewhere = targets.declaredElsewhere(id);
-      if (elsewhere) target = { command: elsewhere, args: { arguments: vscodeArgs } };
+      if (elsewhere) target = { command: elsewhere, args: { arguments: [] } };
       else if (!removal && targets.shim && !isVscodeBuiltinId(id))
         target = {
           command: targets.shim,

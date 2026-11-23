@@ -103,7 +103,17 @@ fn message_json(m: &Message) -> Value {
         v["tool_calls"] = m
             .tool_calls
             .iter()
-            .map(|c| json!({ "function": { "name": c.name, "arguments": c.arguments } }))
+            .map(|c| {
+                // Arguments that never became an object (a call cut off at the output limit is
+                // kept as its raw text) are sent as none: the server refuses a string there,
+                // for this and every later request of the chat.
+                let arguments = if c.arguments.is_object() {
+                    c.arguments.clone()
+                } else {
+                    json!({})
+                };
+                json!({ "function": { "name": c.name, "arguments": arguments } })
+            })
             .collect();
     }
     if let Some(name) = &m.tool_name {

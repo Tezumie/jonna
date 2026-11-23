@@ -901,3 +901,220 @@ fn anthropic_declares_deferred_tools() {
     assert_eq!(names(&body, false), ["mcp__a__one"]);
     assert_eq!(result(&body)[0]["type"], "text");
 }
+
+fn call_message(arguments: serde_json::Value) -> Message {
+    Message {
+        role: "assistant".into(),
+        content: String::new(),
+        tool_calls: vec![ToolCall {
+            id: "c1".into(),
+            name: "write_file".into(),
+            arguments,
+        }],
+        tool_call_id: None,
+        tool_name: None,
+        images: vec![],
+        thinking_blocks: vec![],
+        tool_refs: vec![],
+    }
+}
+
+#[test]
+fn tool_arguments_that_are_not_an_object_are_replayed_as_none() {
+    // A call cut off at the output limit is kept as its raw text.
+    for broken in [
+        json!("{\"path\": \"a.ts\", \"text\": \"hal"),
+        json!(null),
+        json!([1]),
+    ] {
+        let mut req = request(ProviderKind::Openai);
+        req.messages = vec![call_message(broken.clone())];
+        let body = super::openai::request_body(&req);
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["function"]["arguments"],
+            json!("{}"),
+            "{broken}"
+        );
+        let body = request_body(&req);
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["function"]["arguments"],
+            json!({}),
+            "{broken}"
+        );
+    }
+    // A real object goes as it is (a JSON string for OpenAI, the object for Ollama).
+    let mut req = request(ProviderKind::Openai);
+    req.messages = vec![call_message(json!({ "path": "a.ts" }))];
+    assert_eq!(
+        super::openai::request_body(&req)["messages"][0]["tool_calls"][0]["function"]["arguments"],
+        json!("{\"path\":\"a.ts\"}")
+    );
+    assert_eq!(
+        request_body(&req)["messages"][0]["tool_calls"][0]["function"]["arguments"],
+        json!({ "path": "a.ts" })
+    );
+}
+
+fn openai_calls(lines: &[&str]) -> Vec<(String, String, serde_json::Value)> {
+    let mut p = SseParser::default();
+    let mut events = Vec::new();
+    for line in lines {
+        events.extend(p.line(line).unwrap());
+    }
+    events.extend(p.finish());
+    events
+        .into_iter()
+        .filter_map(|e| match e {
+            ChatEvent::ToolCall {
+                id,
+                name,
+                arguments,
+            } => Some((id, name, arguments)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn parallel_calls_with_the_same_or_no_index_stay_apart() {
+    let two = vec![
+        (
+            "a".to_string(),
+            "read_file".to_string(),
+            json!({ "path": "x" }),
+        ),
+        (
+            "b".to_string(),
+            "read_file".to_string(),
+            json!({ "path": "y" }),
+        ),
+    ];
+    // Every call at index 0.
+    assert_eq!(
+        openai_calls(&[
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"read_file","arguments":"{\"path\":\"x\"}"}}]}}]}"#,
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"b","function":{"name":"read_file","arguments":"{\"path\":\"y\"}"}}]}}]}"#,
+            "data: [DONE]",
+        ]),
+        two
+    );
+    // No index at all, one call per chunk, the second one's arguments in two pieces.
+    assert_eq!(
+        openai_calls(&[
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"name":"read_file","arguments":"{\"path\":\"x\"}"}}]}}]}"#,
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"id":"b","function":{"name":"read_file","arguments":"{\"pa"}}]}}]}"#,
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"th\":\"y\"}"}}]}}]}"#,
+            "data: [DONE]",
+        ]),
+        two
+    );
+    // The usual shape still assembles: one index per call, the id sent once or on every piece.
+    assert_eq!(
+        openai_calls(&[
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"read_","arguments":"{\"pa"}},{"index":1,"id":"b","function":{"name":"read_file","arguments":""}}]}}]}"#,
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"file","arguments":"th\":\"x\"}"}},{"index":1,"id":"","function":{"arguments":"{\"path\":\"y\"}"}}]}}]}"#,
+            "data: [DONE]",
+        ]),
+        two
+    );
+    // Without ids, a call is named after its place.
+    assert_eq!(
+        openai_calls(&[
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":3,"function":{"name":"list","arguments":"{}"}}]}}]}"#,
+            "data: [DONE]",
+        ]),
+        vec![("call_0".to_string(), "list".to_string(), json!({}))]
+    );
+}
+
+#[test]
+fn a_retry_after_header_is_carried_in_the_error() {
+    assert_eq!(retry_after_seconds(Some("20")), Some(20));
+    assert_eq!(retry_after_seconds(Some(" 7 ")), Some(7));
+    assert_eq!(retry_after_seconds(Some("0")), None);
+    assert_eq!(
+        retry_after_seconds(Some("Wed, 21 Oct 2026 07:28:00 GMT")),
+        None
+    );
+    assert_eq!(retry_after_seconds(Some("1.5")), None);
+    assert_eq!(retry_after_seconds(None), None);
+    assert_eq!(
+        with_retry_after("Rate limited", 429, Some(20)),
+        "Rate limited (429), retry after 20s"
+    );
+    assert_eq!(
+        with_retry_after("Overloaded", 529, None),
+        "Overloaded (529)"
+    );
+}
+
+#[test]
+fn a_refused_openai_setting_is_given_up_once() {
+    use super::openai::{refused_setting, without_refused, Refused};
+    assert_eq!(
+        refused_setting("Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead. (400)"),
+        Some(Refused::MaxTokens)
+    );
+    assert_eq!(
+        refused_setting("Unsupported value: 'temperature' does not support 0.2 with this model. Only the default (1) value is supported. (400)"),
+        Some(Refused::Temperature)
+    );
+    // Naming only the replacement isn't a refusal of `max_tokens`.
+    assert_eq!(
+        refused_setting("max_completion_tokens is too large: 999999 (400)"),
+        None
+    );
+    assert_eq!(
+        refused_setting("Invalid schema for function 'x' (400)"),
+        None
+    );
+    let mut body = json!({ "model": "o3", "max_tokens": 64, "temperature": 0.2 });
+    assert!(without_refused(&mut body, Refused::MaxTokens));
+    assert_eq!(
+        body,
+        json!({ "model": "o3", "max_completion_tokens": 64, "temperature": 0.2 })
+    );
+    assert!(without_refused(&mut body, Refused::Temperature));
+    assert_eq!(body, json!({ "model": "o3", "max_completion_tokens": 64 }));
+    // Nothing left to give up: the error stands.
+    assert!(!without_refused(&mut body, Refused::MaxTokens));
+    assert!(!without_refused(&mut body, Refused::Temperature));
+}
+
+#[test]
+fn a_refused_thinking_or_effort_setting_is_recognised() {
+    use super::anthropic::{unsupported_setting, Unsupported};
+    for message in [
+        "thinking.type: Input tag 'adaptive' found using 'type' does not match any of the expected tags: 'disabled', 'enabled' (400)",
+        "adaptive thinking is not supported on this model (400)",
+        "This model does not support thinking. (400)",
+        "thinking.display: Extra inputs are not permitted (400)",
+    ] {
+        assert_eq!(
+            unsupported_setting(message),
+            Some(Unsupported::Thinking),
+            "{message}"
+        );
+    }
+    for message in [
+        "output_config.effort: Extra inputs are not permitted (400)",
+        "This model does not support the effort parameter. (400)",
+        "output_config: Extra inputs are not permitted (400)",
+    ] {
+        assert_eq!(
+            unsupported_setting(message),
+            Some(Unsupported::Effort),
+            "{message}"
+        );
+    }
+    // Refusals about the history's thinking blocks, and unrelated ones, are left to the rest.
+    for message in [
+        "messages.3.content.0: thinking block is bound to a different conversation (400)",
+        "thinking.block_binding: Extra inputs are not permitted (400)",
+        "messages.1.content.0.type: Expected `thinking` or `redacted_thinking`, but found `text` (400)",
+        "prompt is too long: 250000 tokens > 200000 maximum (400)",
+        "tools.0.custom.input_schema: JSON schema is invalid (400)",
+    ] {
+        assert_eq!(unsupported_setting(message), None, "{message}");
+    }
+}

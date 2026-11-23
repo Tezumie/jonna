@@ -69,20 +69,83 @@ pub fn messages_in_json(text: &str) -> Vec<String> {
     }
 }
 
+/// The largest single message a server may send (a JSON body, or one event of a stream): a
+/// tool's result with a few images in it fits; a body that never ends does not fill memory.
+pub const MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
+/// The most one reply's messages may hold together, while the answer is still awaited.
+const MAX_REPLY_BYTES: usize = 64 * 1024 * 1024;
+
+fn too_large() -> Error {
+    Error::Ai(format!(
+        "the server sent more than a reply may hold ({} MB); the request was dropped",
+        MAX_MESSAGE_BYTES / (1024 * 1024)
+    ))
+}
+
+/// A reply's body as text, at most `MAX_MESSAGE_BYTES` of it.
+async fn text_within(response: reqwest::Response) -> Result<String> {
+    use crate::accounts::http::{read_capped, BodyError};
+    match read_capped(response, MAX_MESSAGE_BYTES).await {
+        Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+        Err(BodyError::TooLarge) => Err(too_large()),
+        Err(BodyError::Broken(e)) => Err(Error::Ai(e)),
+    }
+}
+
 /// Server-sent events, fed as they arrive: complete events' `data` (joined lines).
-#[derive(Default)]
 pub struct SseParser {
     /// Bytes of the line in progress: decoded only once whole (a character can straddle chunks).
     buffer: Vec<u8>,
     data: Vec<String>,
+    /// The bytes held in `data`.
+    data_bytes: usize,
+    /// The most one event (its line in progress and its data so far) may hold.
+    cap: usize,
+    /// An event passed `cap`: nothing more is read from this stream.
+    overflowed: bool,
     /// The last event's `id:` (sent back as Last-Event-ID when a GET stream reconnects).
     pub last_id: Option<String>,
     /// The server's `retry:` (milliseconds before reconnecting).
     pub retry_ms: Option<u64>,
 }
 
+impl Default for SseParser {
+    fn default() -> Self {
+        Self::with_cap(MAX_MESSAGE_BYTES)
+    }
+}
+
 impl SseParser {
+    fn with_cap(cap: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            data: Vec::new(),
+            data_bytes: 0,
+            cap,
+            overflowed: false,
+            last_id: None,
+            retry_ms: None,
+        }
+    }
+
+    /// Whether the stream sent an event larger than a message may be (a line with no end, or
+    /// data lines without the blank line that ends an event). What was held is dropped and
+    /// `feed` returns nothing from then on: the caller ends the stream.
+    pub fn too_large(&self) -> bool {
+        self.overflowed
+    }
+
+    fn overflow(&mut self) {
+        self.overflowed = true;
+        self.buffer = Vec::new();
+        self.data = Vec::new();
+        self.data_bytes = 0;
+    }
+
     pub fn feed(&mut self, chunk: &[u8]) -> Vec<String> {
+        if self.overflowed {
+            return Vec::new();
+        }
         self.buffer.extend_from_slice(chunk);
         let mut out = Vec::new();
         while let Some(end) = self.buffer.iter().position(|b| *b == b'\n') {
@@ -93,10 +156,16 @@ impl SseParser {
                 if !self.data.is_empty() {
                     out.push(self.data.join("\n"));
                     self.data.clear();
+                    self.data_bytes = 0;
                 }
             } else if let Some(rest) = line.strip_prefix("data:") {
-                self.data
-                    .push(rest.strip_prefix(' ').unwrap_or(rest).to_string());
+                let rest = rest.strip_prefix(' ').unwrap_or(rest);
+                self.data_bytes += rest.len() + 1;
+                if self.data_bytes > self.cap {
+                    self.overflow();
+                    return out;
+                }
+                self.data.push(rest.to_string());
             } else if let Some(rest) = line.strip_prefix("id:") {
                 let id = rest.trim();
                 // An id with a NUL is ignored (the SSE specification).
@@ -109,6 +178,10 @@ impl SseParser {
                 }
             }
             // `event:` and comments don't change what we do.
+        }
+        // What is left is one line without its end yet.
+        if self.buffer.len() > self.cap {
+            self.overflow();
         }
         out
     }
@@ -246,9 +319,15 @@ pub async fn post(
     if kind.starts_with("text/event-stream") {
         let mut parser = SseParser::default();
         let mut stream = response.bytes_stream();
+        // What the reply holds until the answer comes: bounded too (events without end).
+        let mut held = 0usize;
         'read: while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(crate::ai::http_error)?;
-            for data in parser.feed(&chunk) {
+            let events = parser.feed(&chunk);
+            if parser.too_large() {
+                return Err(too_large());
+            }
+            for data in events {
                 let done = wanted.as_ref().is_some_and(|id| {
                     serde_json::from_str::<Value>(&data)
                         .is_ok_and(|m| m.get("method").is_none() && m.get("id") == Some(id))
@@ -258,7 +337,13 @@ pub async fn post(
                         .is_ok_and(|m| m.get("method").is_some());
                 match on_server_message {
                     Some(deliver) if from_server => deliver(data),
-                    _ => reply.messages.push(data),
+                    _ => {
+                        held += data.len();
+                        if held > MAX_REPLY_BYTES {
+                            return Err(too_large());
+                        }
+                        reply.messages.push(data);
+                    }
                 }
                 if done {
                     break 'read;
@@ -277,7 +362,7 @@ pub async fn post(
             ));
         }
     } else {
-        let text = response.text().await.map_err(crate::ai::http_error)?;
+        let text = text_within(response).await?;
         reply.messages = messages_in_json(&text);
     }
     Ok(reply)
@@ -302,6 +387,31 @@ mod tests {
         let e = "data: \u{e9}\n\n".as_bytes();
         assert!(p.feed(&e[..7]).is_empty());
         assert_eq!(p.feed(&e[7..]).as_slice(), ["\u{e9}"]);
+    }
+
+    #[test]
+    fn an_event_without_end_is_dropped_not_held() {
+        // A line that never ends.
+        let mut p = SseParser::with_cap(16);
+        assert!(p.feed(b"data: 0123456789").is_empty());
+        assert!(!p.too_large());
+        assert!(p.feed(b"0123456789").is_empty());
+        assert!(p.too_large());
+        assert!(p.buffer.is_empty());
+        // Nothing more is read from that stream.
+        assert!(p.feed(b"\n\ndata: x\n\n").is_empty());
+        // Data lines without the blank line that ends the event.
+        let mut q = SseParser::with_cap(16);
+        assert!(q.feed(b"data: 01234567\n").is_empty());
+        assert!(q.feed(b"data: 01234567\n").is_empty());
+        assert!(q.too_large());
+        assert!(q.data.is_empty());
+        // Events that end are counted one by one, not together.
+        let mut r = SseParser::with_cap(16);
+        for _ in 0..10 {
+            assert_eq!(r.feed(b"data: 0123456789\n\n").as_slice(), ["0123456789"]);
+        }
+        assert!(!r.too_large());
     }
 
     #[test]

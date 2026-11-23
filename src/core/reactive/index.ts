@@ -144,6 +144,15 @@ class EffectNode implements Observer, Disposable {
       if (typeof result === "function") this.cleanup = result;
     } finally {
       currentObserver = previous;
+      // Disposed during its own run (a view's effect closing its own tab): dispose() ran before
+      // the rest of `fn` subscribed again and before its cleanup was returned, so both are
+      // dropped here; a dead effect holds no subscriptions and leaves nothing set up.
+      if (this.disposed) {
+        unlink(this);
+        const cleanup = this.cleanup;
+        this.cleanup = undefined;
+        cleanup?.();
+      }
     }
   }
 

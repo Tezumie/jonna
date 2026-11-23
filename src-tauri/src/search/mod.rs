@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use grep_matcher::Matcher;
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
-use grep_searcher::sinks::UTF8;
+use grep_searcher::sinks::Lossy;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
 use ignore::overrides::OverrideBuilder;
 use ignore::WalkBuilder;
@@ -489,7 +489,10 @@ fn search_file(
     let result = searcher.search_path(
         matcher,
         path,
-        UTF8(|line_number, line| {
+        // Lossy: a line that isn't valid UTF-8 (one Latin-1 comment in a UTF-8 file) is shown
+        // with replacement characters. A sink that insists on UTF-8 fails on that line, and the
+        // file's other matches went with it.
+        Lossy(|line_number, line| {
             if multi_line {
                 // `line` is every line the match spans (matches sharing lines come together).
                 for found in block_matches(matcher, line_number, line) {
@@ -524,9 +527,8 @@ fn search_file(
             Ok(more())
         }),
     );
-    if result.is_err() {
-        return Vec::new();
-    }
+    // A read that failed part-way keeps what was found before it.
+    let _ = result;
     matches
 }
 
@@ -639,13 +641,66 @@ pub fn replace_regex(opts: &SearchOptions) -> Result<regex::Regex> {
     regex::RegexBuilder::new(&source)
         .case_insensitive(!opts.match_case)
         .multi_line(true)
+        // Across lines, a Windows line ending is one line break: `$` matches before `\r\n` and
+        // `.` doesn't take the `\r`, so a replacement can't leave a bare `\n` behind. A search
+        // within lines never sees a line break at all (`replace_in_text` holds them back).
+        .crlf(is_multi_line(opts))
         .dot_matches_new_line(opts.multi_line)
         .build()
         .map_err(|e| Error::Invalid(format!("invalid search pattern: {e}")))
 }
 
 /// `text` with the matches of `re` replaced (only on `opts.lines` when given), and how many.
+/// A search within lines is replaced line by line, each line's ending (`\n`, `\r\n`) held
+/// back: the search shows matches in a line's text only, so a pattern such as `foo.*` or
+/// `\s+$` must not reach the line break, join lines or change the file's line endings.
 pub fn replace_in_text(
+    re: &regex::Regex,
+    opts: &SearchOptions,
+    replacement: &str,
+    text: &str,
+) -> (String, usize) {
+    if is_multi_line(opts) {
+        return replace_across_lines(re, opts, replacement, text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut count = 0usize;
+    for (index, line) in text.split_inclusive('\n').enumerate() {
+        // The same cut the search makes before it looks for matches in a line.
+        let body = line.trim_end_matches(['\n', '\r']);
+        let wanted = opts.lines.as_ref().is_none_or(|l| l.contains(&(index + 1)));
+        if wanted {
+            let next = re.replace_all(body, |caps: &regex::Captures<'_>| {
+                count += 1;
+                replacement_for(opts, replacement, caps)
+            });
+            out.push_str(&next);
+        } else {
+            out.push_str(body);
+        }
+        out.push_str(&line[body.len()..]);
+    }
+    (out, count)
+}
+
+/// What one match becomes.
+fn replacement_for(opts: &SearchOptions, replacement: &str, caps: &regex::Captures<'_>) -> String {
+    let mut out = String::new();
+    if opts.is_regex {
+        caps.expand(replacement, &mut out);
+    } else {
+        out.push_str(replacement);
+    }
+    if opts.preserve_case {
+        if let Some(m) = caps.get(0) {
+            out = preserve_case(m.as_str(), &out);
+        }
+    }
+    out
+}
+
+/// `replace_in_text` for a search that looks across lines: the whole text at once.
+fn replace_across_lines(
     re: &regex::Regex,
     opts: &SearchOptions,
     replacement: &str,
@@ -667,16 +722,7 @@ pub fn replace_in_text(
             }
         }
         count += 1;
-        let mut out = String::new();
-        if opts.is_regex {
-            caps.expand(replacement, &mut out);
-        } else {
-            out.push_str(replacement);
-        }
-        if opts.preserve_case {
-            out = preserve_case(m.as_str(), &out);
-        }
-        out
+        replacement_for(opts, replacement, caps)
     });
     (next.into_owned(), count)
 }

@@ -15,17 +15,14 @@ pub fn frame_allowed(uri: &str) -> bool {
     if uri.starts_with("about:") {
         return true;
     }
-    let Some(rest) = uri
-        .strip_prefix("http://127.0.0.1")
-        .or_else(|| uri.strip_prefix("http://localhost"))
-    else {
-        return false;
-    };
-    // The host must end there: a port, a path, or nothing (not 127.0.0.1.evil.example).
-    matches!(
-        rest.chars().next(),
-        None | Some(':') | Some('/') | Some('?') | Some('#')
-    )
+    // Read as a URL: the host must be exactly one of the two (not 127.0.0.1.evil.example),
+    // and nothing may stand before it (`http://127.0.0.1:80@evil.example` is evil.example).
+    reqwest::Url::parse(uri).is_ok_and(|url| {
+        url.scheme() == "http"
+            && url.username().is_empty()
+            && url.password().is_none()
+            && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))
+    })
 }
 
 /// Guards the frames of `window`'s page (Windows only).
@@ -93,6 +90,13 @@ mod tests {
         assert!(frame_allowed("http://localhost:61716/index.html"));
         assert!(!frame_allowed("http://localhost.evil.example/"));
         assert!(!frame_allowed("http://127.0.0.1.evil.example/"));
+        assert!(frame_allowed("http://localhost:61716"));
+        assert!(frame_allowed("http://127.0.0.1:61716/a?b#c"));
+        // The host is what follows an `@`.
+        assert!(!frame_allowed("http://127.0.0.1:80@evil.example/"));
+        assert!(!frame_allowed("http://localhost@evil.example/?data"));
+        assert!(!frame_allowed("http://localhost:x@evil.example/"));
+        assert!(!frame_allowed("http://user@127.0.0.1:61716/"));
         assert!(!frame_allowed("https://127.0.0.1:3000/"));
         assert!(!frame_allowed("https://example.com/"));
         assert!(!frame_allowed("data:text/html,hi"));

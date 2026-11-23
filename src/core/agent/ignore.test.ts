@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentIgnore, DEFAULT_AGENT_IGNORE, parseIgnoreLine } from "./ignore";
+import {
+  AgentIgnore,
+  DEFAULT_AGENT_IGNORE,
+  looksLikeShortName,
+  parseIgnoreLine,
+  plainSegments,
+} from "./ignore";
 
 test("defaults hide secrets, not their examples", () => {
   const ig = new AgentIgnore(DEFAULT_AGENT_IGNORE);
@@ -52,4 +58,17 @@ test("other spellings of an excluded file are excluded too (D199)", () => {
   ])
     assert.equal(ig.ignored(p), true, p);
   assert.equal(ig.ignored("src/main.ts"), false);
+});
+
+test("an 8.3 short name could be any excluded file: excluded", () => {
+  const ig = new AgentIgnore(DEFAULT_AGENT_IGNORE);
+  for (const p of ["SECRET~1.JSO", "config/CREDEN~1.JSO", "ENV~1", "AWS~1/credentials", "id_rsa~2"])
+    assert.equal(ig.ignored(p), true, p);
+  // Not that shape: a backup's tilde, a long name, a home-relative spelling.
+  for (const p of ["notes.txt~", "src/component~1.test.ts", "~/x.ts", "a~b.ts"])
+    assert.equal(ig.ignored(p), false, p);
+  assert.equal(looksLikeShortName("PROGRA~1"), true);
+  assert.equal(looksLikeShortName("readme.md"), false);
+  assert.deepEqual(plainSegments(".\\a.\\b.txt::$DATA"), ["a", "b.txt"]);
+  assert.deepEqual(plainSegments("C:/x /.env "), ["C:", "x", ".env"]);
 });

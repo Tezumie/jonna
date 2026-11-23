@@ -26,6 +26,7 @@ import { pickContextMention, symbolChoices } from "./mentions";
 import { registerModelCommands } from "./modelCommands";
 import { planBuildMessage } from "./planDocs";
 import type { ProviderRegistry } from "./providers";
+import { forgetPrWatch } from "./prWatches";
 import { registerReviewCommands } from "./reviewCommands";
 import { registerSendCommands } from "./sendCommands";
 import type { SessionManager } from "./sessions";
@@ -52,6 +53,8 @@ export async function deleteChat(
   backgroundProcesses.killSession(id);
   // And its subagents' transcripts in the Background tasks view (D326).
   subagentRuns.forgetSession(id);
+  // Its pull request watch too, auto-merge included: nothing merges for a chat that's gone.
+  forgetPrWatch(id);
   for (const t of dock.tabs("agent"))
     if ((t.viewState as { session?: string } | null)?.session === id)
       await dock.closeTab(t.id, true);

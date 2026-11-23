@@ -7,7 +7,7 @@
 // files (`getAt` / `peekAt` with a file's path). With one folder, nothing changes.
 import { Emitter } from "../core/events/index";
 import { fsIpc } from "../core/ipc/fs";
-import { hasBackend } from "../core/ipc/invoke";
+import { hasBackend, IpcError } from "../core/ipc/invoke";
 import { type SettingsPaths, settingsIpc } from "../core/ipc/system";
 import {
   type Disposable,
@@ -96,6 +96,27 @@ export const localStorageFirstPaintCache: FirstPaintCache = {
   },
 };
 
+/** The read failed because there is no such file (and for no other reason). */
+export function isMissingFile(err: unknown): boolean {
+  return err instanceof IpcError && err.code === "NotFound";
+}
+
+/**
+ * A settings or keybindings file's text as the base of an edit: "" only when the file isn't
+ * there. Any other failed read (a sharing violation while an antivirus, a sync tool or another
+ * window holds it, no permission) throws, naming `label`: an edit rewrites the whole file, so
+ * taking an unread file for an empty one would replace everything in it with the one change.
+ */
+export async function readTextForEdit(path: string, label: string): Promise<string> {
+  try {
+    return new TextDecoder().decode(await fsIpc.read(path));
+  } catch (err) {
+    if (isMissingFile(err)) return "";
+    const why = err instanceof Error ? err.message : String(err);
+    throw new Error(`${label} couldn't be read, so nothing was changed (${why}). Try again.`);
+  }
+}
+
 export class SettingsService implements Disposable {
   readonly registry = new SettingsRegistry();
   readonly model = new SettingsModel(this.registry);
@@ -104,8 +125,19 @@ export class SettingsService implements Disposable {
   private readonly store = new DisposableStore();
   private readonly watcher = this.store.add(new MutableDisposable());
   private paths: SettingsPaths | null = null;
-  /** Last text read or written per scope (writes edit this, so comments are kept). */
+  /**
+   * Last text read or written per scope: what the model shows. Never the base of a write (each
+   * write reads its file again, `edit`).
+   */
   private texts: Record<SettingsScope, string> = { user: "", workspace: "" };
+  /**
+   * The file `texts[scope]` is the text of (null: of none, e.g. before the first read, or after a
+   * folder switch until the new folder's file is read).
+   */
+  private readonly textPath: Record<SettingsScope, string | null> = {
+    user: null,
+    workspace: null,
+  };
   private readonly keybindingsChanged = this.store.add(new Emitter<void>());
   /** keybindings.json changed on disk (or its location became known). */
   readonly onDidChangeKeybindingsFile = this.keybindingsChanged.event;
@@ -159,6 +191,12 @@ export class SettingsService implements Disposable {
       this.model.onDidChange(() => {
         this.version.value = this.version.peek() + 1;
         this.cacheFirstPaint();
+      }),
+    );
+    this.store.add(
+      toDisposable(() => {
+        clearTimeout(this.rereads.user);
+        clearTimeout(this.rereads.workspace);
       }),
     );
   }
@@ -390,8 +428,13 @@ export class SettingsService implements Disposable {
     this.model.setTeam(values);
   }
 
+  /** Bumped when the folder closes: a read of its `.vscode` settings still under way is dropped. */
+  private vscodeGeneration = 0;
+
   private async reloadVscode(): Promise<void> {
+    const generation = this.vscodeGeneration;
     const { values, skipped, source, raw } = await this.readFolderFiles(this.aliasPaths);
+    if (generation !== this.vscodeGeneration) return;
     this.vscodeSkipped = skipped;
     this.aliasSource = source;
     this.aliasValues = raw;
@@ -544,6 +587,30 @@ export class SettingsService implements Disposable {
       .catch(() => settingsIpc.setDirs(dirs.slice(0, 2)).catch(() => {}));
   }
 
+  /**
+   * The window has no folder open any more: the closed folder's settings (its own settings.json,
+   * `.vscode`'s, each folder's layer in a multi-root workspace) stop applying, and the workspace
+   * scope has no file to write until a folder opens (`load` reads the next one's). Done here and
+   * not by asking the backend for the paths again: it may still have the folder open when the
+   * window says it closed.
+   */
+  workspaceClosed(): void {
+    if (this.paths) {
+      const { folderSettings: _gone, ...rest } = this.paths;
+      this.paths = { ...rest, workspaceSettings: null };
+    }
+    // A read of the closed folder's file that is still under way is dropped when it lands.
+    this.reloads.workspace++;
+    clearTimeout(this.rereads.workspace);
+    this.show("workspace", null, "");
+    this.vscodeGeneration++;
+    this.vscodeSkipped = [];
+    this.aliasSource = new Map();
+    this.aliasValues = new Map();
+    this.model.setVscode({});
+    for (const key of this.model.folderLayers()) this.model.setFolderLayer(key, null);
+  }
+
   /** Bumped by every write of ours: a reload that started before one is stale (D107). */
   private readonly writes: Record<SettingsScope, number> = { user: 0, workspace: 0 };
   private readonly writing: Record<SettingsScope, Promise<void>> = {
@@ -554,8 +621,18 @@ export class SettingsService implements Disposable {
   /** Bumped by every reload: only the newest reload of a scope may apply what it read. */
   private readonly reloads: Record<SettingsScope, number> = { user: 0, workspace: 0 };
 
-  /** Re-reads one scope's file from disk. */
-  async reload(scope: SettingsScope): Promise<void> {
+  /** Per scope, the pending second look at a file that couldn't be read. */
+  private readonly rereads: Record<SettingsScope, ReturnType<typeof setTimeout> | undefined> = {
+    user: undefined,
+    workspace: undefined,
+  };
+
+  /**
+   * Re-reads one scope's file from disk. A file that isn't there has no values; one that can't
+   * be read right now (held by an antivirus, a sync tool, another window) keeps the values last
+   * read from it and is looked at once more a moment later (`attempt`).
+   */
+  async reload(scope: SettingsScope, attempt = 0): Promise<void> {
     // Overlapping reloads (watcher events, a folder switch) can finish out of order; without this
     // an older read could win — e.g. the previous folder's workspace settings applied to the new.
     const generation = ++this.reloads[scope];
@@ -566,19 +643,33 @@ export class SettingsService implements Disposable {
     const started = this.writes[scope];
     const file = this.filePath(scope);
     let text = "";
+    let unread = false;
     if (scope === "workspace" && this.multiRoot()) {
       // The workspace file as the workspace service last read it: its `settings` object.
       text = JSON.stringify(this.workspace?.fileData.peek()?.settings ?? {}, null, 2);
     } else if (file) {
       try {
         text = new TextDecoder().decode(await fsIpc.read(file));
-      } catch {
-        text = ""; // missing file = no values
+      } catch (err) {
+        // Only a missing file means "no values": any other failure says nothing about what
+        // the file holds.
+        unread = !isMissingFile(err);
       }
     }
     if (generation !== this.reloads[scope]) return; // a newer reload is (or was) reading
     if (file !== this.filePath(scope)) return; // the folder changed while reading
-    if (started !== this.writes[scope] || text === this.texts[scope]) return;
+    if (started !== this.writes[scope]) return;
+    if (unread) {
+      clearTimeout(this.rereads[scope]);
+      if (attempt < 2)
+        this.rereads[scope] = setTimeout(() => void this.reload(scope, attempt + 1), 400);
+      // What was read from this very file before still holds; another file's text (the
+      // previous folder's) never applies to this one.
+      if (this.textPath[scope] === file) return;
+      text = "";
+    }
+    this.textPath[scope] = unread ? null : file;
+    if (text === this.texts[scope]) return;
     this.texts[scope] = text;
     this.model.setText(scope, text);
   }
@@ -590,7 +681,7 @@ export class SettingsService implements Disposable {
       throw new Error("Open a folder to change workspace settings.");
     if (scope === "workspace" && this.multiRoot())
       return this.updateWorkspaceFile({ [key]: value });
-    await this.write(scope, file, setJsoncProperty(this.editableText(scope), key, value));
+    await this.edit(scope, file, (text) => setJsoncProperty(text, key, value));
   }
 
   /**
@@ -612,14 +703,73 @@ export class SettingsService implements Disposable {
   }
 
   /**
-   * The scope's current text, after refusing a file with a syntax error: every edit rewrites the
-   * whole file, so editing one the user is fixing would lose it (the error names the file and line;
+   * Changes a scope's settings.json with `apply` (the file's text in, the new text out). Every
+   * edit rewrites the whole file, so its base is the file as it is on disk at that moment, read
+   * inside the scope's write queue, never the text this window last saw: that one may be another
+   * file's (a folder switch not read yet), nothing at all (before the first read), or older than
+   * another window's or the user's own change. Refused, with nothing written, when the file can't
+   * be read or has a syntax error (the user is fixing it; the error names the file and line, and
    * user-run commands show it as a toast).
    */
-  private editableText(scope: SettingsScope): string {
-    const text = this.texts[scope];
-    assertEditableJsoncObject(text, `Your ${scope} settings.json`);
-    return text;
+  private edit(
+    scope: SettingsScope,
+    file: string | null,
+    apply: (text: string) => string,
+  ): Promise<void> {
+    const label = `Your ${scope} settings.json`;
+    const shown = this.texts[scope];
+    if (!file) {
+      // No file to write (no backend, or its location isn't known yet): the values hold here.
+      try {
+        assertEditableJsoncObject(shown, label);
+        this.writes[scope]++;
+        this.show(scope, null, apply(shown));
+        return Promise.resolve();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+    // The model takes the value at once (a toggle doesn't wait for the disk) when what it shows
+    // is this file's text; the file read below decides what is written and shown in the end.
+    if (this.textPath[scope] === file) {
+      try {
+        assertEditableJsoncObject(shown, label);
+        this.show(scope, file, apply(shown));
+      } catch {
+        // What this window last saw can't be edited; the file as it is now may be.
+      }
+    }
+    const turn = ++this.writes[scope];
+    // A later edit queued behind this one shows its own result: this one's would take its
+    // value back for a moment.
+    const last = () => turn === this.writes[scope] && this.filePath(scope) === file;
+    const run = this.writing[scope].then(async () => {
+      let base: string | undefined;
+      try {
+        base = await readTextForEdit(file, label);
+        assertEditableJsoncObject(base, label);
+        const next = apply(base);
+        // Writes go out in order (each one is the whole file).
+        if (next !== base) await fsIpc.write(file, new TextEncoder().encode(next));
+        if (last()) this.show(scope, file, next);
+      } catch (err) {
+        // Nothing was written: the window shows the file as it is again (or, unread, what it
+        // showed before), not a value that isn't in it.
+        if (last())
+          this.show(scope, base === undefined ? this.textPath[scope] : file, base ?? shown);
+        throw err;
+      }
+    });
+    this.writing[scope] = run.catch(() => {});
+    return run;
+  }
+
+  /** The model shows `text` for a scope, the text of `file` (null: of no file). */
+  private show(scope: SettingsScope, file: string | null, text: string): void {
+    this.textPath[scope] = file;
+    if (text === this.texts[scope]) return;
+    this.texts[scope] = text;
+    this.model.setText(scope, text);
   }
 
   /**
@@ -645,19 +795,7 @@ export class SettingsService implements Disposable {
       else inner[key] = value;
       return this.updateWorkspaceFile({ [block]: Object.keys(inner).length ? inner : undefined });
     }
-    const text = this.editableText(scope);
-    await this.write(scope, file, setJsoncNestedProperty(text, block, key, value));
-  }
-
-  private async write(scope: SettingsScope, file: string | null, next: string): Promise<void> {
-    this.texts[scope] = next;
-    this.writes[scope]++;
-    this.model.setText(scope, next);
-    if (!file) return;
-    // Writes go out in order (each one is the whole file).
-    const write = this.writing[scope].then(() => fsIpc.write(file, new TextEncoder().encode(next)));
-    this.writing[scope] = write.catch(() => {});
-    await write;
+    await this.edit(scope, file, (text) => setJsoncNestedProperty(text, block, key, value));
   }
 
   /** Sets several keys in one write (an import, D193); `undefined` removes a key. */
@@ -666,16 +804,11 @@ export class SettingsService implements Disposable {
     if (scope === "workspace" && !file)
       throw new Error("Open a folder to change workspace settings.");
     if (scope === "workspace" && this.multiRoot()) return this.updateWorkspaceFile(values);
-    let next = this.editableText(scope);
-    for (const [key, value] of Object.entries(values)) next = setJsoncProperty(next, key, value);
-    if (next === this.texts[scope]) return;
-    this.texts[scope] = next;
-    this.writes[scope]++;
-    this.model.setText(scope, next);
-    if (!file) return;
-    const write = this.writing[scope].then(() => fsIpc.write(file, new TextEncoder().encode(next)));
-    this.writing[scope] = write.catch(() => {});
-    await write;
+    await this.edit(scope, file, (text) => {
+      let next = text;
+      for (const [key, value] of Object.entries(values)) next = setJsoncProperty(next, key, value);
+      return next;
+    });
   }
 
   /**
@@ -694,10 +827,8 @@ export class SettingsService implements Disposable {
         : this.update(key, value, "workspace");
     const dir = await ensureWorkspaceFolder(owner.path);
     const file = joinPath(dir, "settings.json");
-    const text = await fsIpc
-      .read(file)
-      .then((b) => new TextDecoder().decode(b))
-      .catch(() => "");
+    // "" only when the folder has no settings.json yet: an unread one is never written over.
+    const text = await readTextForEdit(file, `${owner.name}'s settings.json`);
     assertEditableJsoncObject(text, `${owner.name}'s settings.json`);
     const next = language
       ? setJsoncNestedProperty(text, languageOverrideKey(language), key, value)

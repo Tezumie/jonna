@@ -110,7 +110,9 @@ export class ShimConfiguration {
 
   private lookup(full: string): unknown {
     const known = this.cache.has(full);
-    if (known && this.cache.get(full) !== undefined) return this.cache.get(full);
+    // Copies, as VS Code hands out: an extension that changes the object or array it got
+    // (pushing onto a list setting) doesn't change what the next read answers.
+    if (known && this.cache.get(full) !== undefined) return cloneSetting(this.cache.get(full));
     // A key inside an object setting ("eslint.codeActionsOnSave.mode").
     const parts = full.split(".");
     for (let i = parts.length - 1; i > 0; i--) {
@@ -119,11 +121,11 @@ export class ShimConfiguration {
       let v = this.cache.get(parent);
       for (const p of parts.slice(i))
         v = v && typeof v === "object" ? (v as Record<string, unknown>)[p] : undefined;
-      return v;
+      return cloneSetting(v);
     }
     // A section rather than a setting (`getConfiguration().get("errorLens")`): VS Code answers
     // with an object of the settings under it, nested by the dots in their keys.
-    const section = this.sectionObject(full);
+    const section = full ? this.sectionObject(full) : undefined;
     if (section) return section;
     // Not read before: read now for next time (VS Code's API is synchronous).
     if (!known && this.lateFetches < MAX_LATE_FETCHES) {
@@ -134,9 +136,12 @@ export class ShimConfiguration {
     return undefined;
   }
 
-  /** The cached settings under `section` as one nested object; undefined when there are none. */
+  /**
+   * The cached settings under `section` (all of them for "") as one nested object; undefined when
+   * there are none.
+   */
   private sectionObject(section: string): Record<string, unknown> | undefined {
-    const prefix = `${section}.`;
+    const prefix = section ? `${section}.` : "";
     let out: Record<string, unknown> | undefined;
     for (const [key, value] of this.cache) {
       if (value === undefined || !key.startsWith(prefix)) continue;
@@ -198,14 +203,10 @@ export class ShimConfiguration {
         this.cache.set(prefix + key, value);
       },
     };
-    // VS Code's configuration also has its values as properties ("config.enable").
-    for (const [key, value] of this.cache)
-      if (
-        key.startsWith(prefix) &&
-        !key.slice(prefix.length).includes(".") &&
-        !(key.slice(prefix.length) in config)
-      )
-        config[key.slice(prefix.length)] = value;
+    // VS Code's configuration also has its values as properties, nested by the dots in their keys
+    // ("config.enable", "config.format.enable": the second threw, `format` being undefined).
+    for (const [key, value] of Object.entries(this.sectionObject(section ?? "") ?? {}))
+      if (!(key in config)) config[key] = value;
     return config;
   }
 }
@@ -320,7 +321,7 @@ export function createWorkspace(
     writeFile: (uri: Uri, content: Uint8Array) =>
       run(
         uri,
-        () => fs.writeFile(uri.fsPath, content),
+        () => writeWithParents(fs, uri.fsPath, content),
         (p) =>
           p.writeFile ? p.writeFile(uri, content, { create: true, overwrite: true }) : missing(uri),
       ),
@@ -653,6 +654,26 @@ export function createWorkspace(
       return new Disposable(() => {});
     },
   };
+}
+
+/**
+ * Writes a file, making the folders above it when they're missing, as VS Code's workspace.fs does
+ * (extensions write straight into `context.globalStorageUri`, which nobody created).
+ */
+export async function writeWithParents(
+  fs: ShimFileSystem,
+  path: string,
+  data: Uint8Array,
+): Promise<void> {
+  try {
+    await fs.writeFile(path, data);
+  } catch (err) {
+    // Only when it failed for that: the usual write costs no extra call.
+    const parent = /^(.*[^\\/])[\\/]+[^\\/]+[\\/]*$/.exec(path)?.[1];
+    if ((err as { code?: unknown } | null)?.code !== "FileNotFound" || !parent) throw err;
+    await fs.createDirectory(parent);
+    await fs.writeFile(path, data);
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

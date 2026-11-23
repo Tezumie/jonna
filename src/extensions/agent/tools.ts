@@ -50,7 +50,7 @@ import {
   agentWriteRefusal,
   ignoredInInput,
   ignoredMessage,
-  workspaceInputPaths,
+  inputFilesSeen,
 } from "./ignore";
 import { cleanPathArg } from "./pathArg";
 import {
@@ -254,6 +254,12 @@ export interface ToolHost {
   subagent?(spec: SubagentSpec): Promise<string>;
   /** The tools this turn has, by name (what a subagent may be given, D195). */
   toolNames?(): string[];
+  /**
+   * What a call of tool `name` meets before it runs (a command's disallowed-tools, a run's deny
+   * list, the tool gates, PreToolUse hooks), for a tool that runs other tools' calls itself
+   * (browser_batch): the outcome that refuses it, or null when it may run.
+   */
+  checkCall?(name: string, args: Record<string, unknown>): Promise<ToolOutcome | null>;
   /** Starts a subagent in the background (D195); its report comes back as a message. Its id. */
   background?(spec: SubagentSpec & { name: string }): string;
   /**
@@ -645,7 +651,7 @@ export const IDE_TOOLS: AgentTool[] = [
       const folders = agentFolders(host.services);
       const rules = readApproveRules(host.services.settings.peek<unknown>("agent.autoApprove"));
       const guarded = folders.length
-        ? workspaceInputPaths(host.services, args.input)
+        ? inputFilesSeen(host.services, args.input)
             .flatMap((abs) => pathReadings(folders, abs))
             .find(
               (p) =>

@@ -256,7 +256,7 @@ export function subChat(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (received || cancelled() || attempt >= 2 || !isTransientError(message)) throw err;
-        await new Promise((r) => setTimeout(r, retryDelayMs(attempt + 1)));
+        await new Promise((r) => setTimeout(r, retryDelayMs(attempt + 1, message)));
       } finally {
         requests.delete(id);
       }

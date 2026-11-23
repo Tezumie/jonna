@@ -111,13 +111,12 @@ pub(super) fn apply_run_env(cmd: &mut CommandBuilder, env: &HashMap<String, Opti
 /// (%LOCALAPPDATA%\Microsoft\WindowsApps). It has `&&` / `||`; Windows PowerShell 5.1 doesn't.
 #[cfg(windows)]
 pub fn find_pwsh() -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| {
-            std::env::split_paths(&p)
-                .map(|d| d.join("pwsh.exe"))
-                .collect()
-        })
-        .unwrap_or_default();
+    // (Absolute PATH folders only: an empty entry would name `pwsh.exe` in the folder the
+    // IDE was started from.)
+    let mut candidates: Vec<PathBuf> = crate::exec::path_search_dirs()
+        .into_iter()
+        .map(|d| d.join("pwsh.exe"))
+        .collect();
     for var in ["ProgramFiles", "ProgramW6432"] {
         if let Some(root) = std::env::var_os(var).map(PathBuf::from) {
             candidates.push(root.join(r"PowerShell\7\pwsh.exe"));
@@ -151,8 +150,10 @@ pub fn windows_shell(
     let dirs: Vec<PathBuf> = path
         .to_string_lossy()
         .split(';')
-        .filter(|d| !d.trim().is_empty())
-        .map(|d| PathBuf::from(d.trim().trim_matches('"')))
+        .map(|d| d.trim().trim_matches('"'))
+        // Never a relative entry: it would name a shell in the folder the IDE started in.
+        .filter(|d| crate::exec::windows_absolute(d))
+        .map(PathBuf::from)
         .collect();
     if let Some(pwsh) = dirs.iter().map(|d| d.join("pwsh.exe")).find(|p| exists(p)) {
         return ShellChoice {
@@ -216,5 +217,15 @@ mod tests {
             windows_shell(path, None, None, &nothing).program,
             PathBuf::from("cmd.exe")
         );
+    }
+
+    #[test]
+    fn a_shell_is_never_taken_from_a_relative_path_entry() {
+        let root = Path::new("C:/Windows");
+        let ps = root.join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+        // Every file "exists": a `pwsh.exe` in the working folder must still not be chosen.
+        let anything = |_: &Path| true;
+        let choice = windows_shell(OsStr::new(".;;bin;C:tools;"), Some(root), None, &anything);
+        assert_eq!(choice.program, ps);
     }
 }

@@ -207,7 +207,7 @@ fn which(name: &str) -> Option<PathBuf> {
         &[""]
     };
     let path = std::env::var_os("PATH")?;
-    let mut dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+    let mut dirs: Vec<PathBuf> = super::search_dirs(&path);
     if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
         let home = PathBuf::from(home);
         dirs.push(home.join(".cargo").join("bin"));

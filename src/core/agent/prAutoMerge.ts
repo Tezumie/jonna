@@ -35,12 +35,17 @@ export type MergeDecision =
 /**
  * Whether the IDE merges it now: open, not a draft, every check passed (none at all counts:
  * nothing to wait for, as GitHub does), approved when reviews are required (no changes
- * requested), mergeable, and not blocked by the branch's rules.
+ * requested), mergeable, and not blocked by the branch's rules. `expectChecks`: the pull request
+ * has had checks at an earlier look; with none now, they haven't started on its newest commit
+ * yet (a push just landed), which is not "nothing to wait for": merging then would merge what
+ * no check has run on.
  */
-export function mergeDecision(s: PrSnapshot): MergeDecision {
+export function mergeDecision(s: PrSnapshot, expectChecks = false): MergeDecision {
   if (s.state === "MERGED") return { ready: false, reason: "it's merged already", ended: true };
   if (s.state === "CLOSED") return { ready: false, reason: "it was closed", ended: true };
   if (s.isDraft) return { ready: false, reason: "it's a draft" };
+  if (expectChecks && s.checks.length === 0)
+    return { ready: false, reason: "its checks haven't started on the newest commit" };
   const n = checkCounts(s);
   if (n.fail) return { ready: false, reason: `${n.fail} check${n.fail === 1 ? "" : "s"} failing` };
   if (n.pending)
@@ -59,6 +64,24 @@ export function mergeDecision(s: PrSnapshot): MergeDecision {
     return { ready: false, reason: "the branch's rules block it (GitHub says BLOCKED)" };
   if (state === "DIRTY") return { ready: false, reason: "it has a merge conflict" };
   return { ready: true };
+}
+
+/**
+ * The commit the decision was made on, for the merge call: the merge is refused when the pull
+ * request's head has moved since (`gh pr merge --match-head-commit`). Undefined when the
+ * snapshot doesn't carry it.
+ */
+export function judgedHead(s: PrSnapshot): string | undefined {
+  return s.head && /^[0-9a-f]{7,64}$/i.test(s.head) ? s.head : undefined;
+}
+
+/**
+ * A merge pinned to a commit was refused because the head moved (GitHub's "Head branch was
+ * modified", "head sha didn't match"): not a failure to turn auto-merge off for, the next look
+ * judges the new commit.
+ */
+export function headMoved(error: string): boolean {
+  return /head\b[^.\n]*\b(modified|match)/i.test(error);
 }
 
 /** "all 2 checks passed, approved, mergeable" — why it was merged. */
@@ -97,10 +120,15 @@ export function mergeFailedText(s: PrSnapshot, error: string): string {
 }
 
 /** A line for the watch's status ("auto-merge (squash) by GitHub · waiting: 1 check still running"). */
-export function autoMergeLine(a: AutoMergeState, s: PrSnapshot | null): string {
+export function autoMergeLine(
+  a: AutoMergeState,
+  s: PrSnapshot | null,
+  expectChecks = false,
+): string {
   const who = a.mode === "github" ? "by GitHub" : "by the IDE";
   if (!s) return `auto-merge (${a.method}) ${who}`;
-  const d = mergeDecision(s);
+  // GitHub's own auto-merge waits on GitHub's rules, not on what was seen here.
+  const d = mergeDecision(s, a.mode === "ide" && expectChecks);
   return `auto-merge (${a.method}) ${who}${d.ready ? " · ready" : ` · waiting: ${d.reason}`}`;
 }
 

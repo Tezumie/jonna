@@ -315,9 +315,7 @@ export class Changeset {
     if (!staged) {
       const now = existing ? await readText(this.services, path) : original;
       previous = now;
-      await agentStoreIpc
-        .checkpointAdd(this.session, turn, [{ path, content: now }])
-        .catch(() => {});
+      await this.snapshot(turn, path, now);
       text = await this.write(path, text);
       this.track(path, turn, now, text);
     }
@@ -350,9 +348,7 @@ export class Changeset {
   ): Promise<void> {
     return this.serial(async () => {
       this.rejected.delete(`${turn}#${path}`);
-      await agentStoreIpc
-        .checkpointAdd(this.session, turn, [{ path, content: before }])
-        .catch(() => {});
+      await this.snapshot(turn, path, before);
       this.writes++;
       this.track(path, turn, before, after);
       const existing = this.get(path);
@@ -372,6 +368,31 @@ export class Changeset {
       this.noteSeen(path, after);
       if (before !== after) this.edited(path, before, after, false);
     });
+  }
+
+  /**
+   * Told about every snapshot (set by the chat): `error` null when it was written, else why it
+   * wasn't. The chat lists the turn among its checkpoints at once (a turn that never ended, a
+   * crash or the window closing, could otherwise not be restored though its snapshots were
+   * there), and says so when one couldn't be kept.
+   */
+  onSnapshot: (turn: number, error: string | null) => void = () => {};
+
+  /**
+   * Keeps what `path` held (null: it didn't exist) before turn `turn` changes it. A failure
+   * doesn't stop the edit (the agent's work would stall on a full disk it can't fix), but it is
+   * told: swallowed, Restore checkpoint later put nothing back without a word.
+   */
+  private async snapshot(turn: number, path: string, content: string | null): Promise<void> {
+    const error = await agentStoreIpc.checkpointAdd(this.session, turn, [{ path, content }]).then(
+      () => null,
+      (err: unknown) => (err instanceof Error ? err.message : String(err)),
+    );
+    try {
+      this.onSnapshot(turn, error);
+    } catch (err) {
+      console.warn("checkpoint listener failed", err);
+    }
   }
 
   /** Tells the window the agent changed a file and where (Follow the agent, D383). */
@@ -417,7 +438,7 @@ export class Changeset {
   private async trash(path: string, turn: number): Promise<void> {
     const now = await readText(this.services, path);
     if (now === null) return;
-    await agentStoreIpc.checkpointAdd(this.session, turn, [{ path, content: now }]).catch(() => {});
+    await this.snapshot(turn, path, now);
     await fsIpc.trash(path);
     this.services.events.emit("files.didDelete", { path });
     this.track(path, turn, now, null);
@@ -691,9 +712,7 @@ export class Changeset {
           record.push({ path: f.path, before: f.original, after: now });
           continue;
         }
-        await agentStoreIpc
-          .checkpointAdd(this.session, f.turn, [{ path: f.path, content: now }])
-          .catch(() => {});
+        await this.snapshot(f.turn, f.path, now);
         if (f.deleted) {
           if (now !== f.original) throw new Error(STALE);
           if (now !== null) {
@@ -837,9 +856,7 @@ export class Changeset {
       return;
     }
     const now = await readText(this.services, path);
-    await agentStoreIpc
-      .checkpointAdd(this.session, f.turn, [{ path, content: now }])
-      .catch(() => {});
+    await this.snapshot(f.turn, path, now);
     const next = applyChange(original, proposed, change);
     // The agent changed the file again while this waited: don't overwrite its newer proposal.
     if (this.get(path) !== f) throw new Error("The agent changed this file again; review it anew.");
@@ -920,8 +937,13 @@ export class Changeset {
   }
 
   restore(files: readonly PendingFile[]): void {
+    // From a saved file: an entry may be anything (null ended the whole chat's load).
     this.list.value = files.filter(
-      (f) => typeof f.path === "string" && typeof f.proposed === "string",
+      (f: PendingFile | null) =>
+        !!f &&
+        typeof f === "object" &&
+        typeof f.path === "string" &&
+        typeof f.proposed === "string",
     );
   }
 }

@@ -29,7 +29,9 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
   stops only its code (trust revoked). A VS Code package's contributions as VS Code takes them:
   its manifest's warnings logged, a setting declared already shared (both may change it), its
   `configurationDefaults` registered (not for user-only, restricted or credential settings), its
-  keys resolved (`resolveVscodeKeybindings`; unresolvable ones skipped with a warning), a view
+  keys resolved (`resolveVscodeKeybindings`; unresolvable ones skipped with a warning; a key for
+  a command that isn't its own passes none of its `args`, and an IDE command named by its own id
+  only when it has no write, exec, network or destructive effect), a view
   in another extension's container placed there (`viewContainer` from the manager; VS Code's
   "added to 'Explorer'" when none has it), and a command whose id the IDE has left the IDE's
   (VS Code would let it shadow the built-in one; here agents and the UI run the IDE's), with the
@@ -38,7 +40,9 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
   - `runtimeContributedViews.ts` — `ExtensionContributedViews`: the manifest's views and file
     viewers (placing one, its tree or page when it shows, `<view id>.show`, opening it) and the
     `tree.*`, `view.title` and `webview.*` requests.
-  - `runtimeBasics.ts` — `ExtensionBasicsHost`: `state.get` (the `ide://` paths by permission),
+  - `runtimeBasics.ts` — `ExtensionBasicsHost`: `state.get` (the `ide://` paths by permission;
+    `ide://settings` holds only the settings `settings.get` would give it, `ide://lsp/settings`
+    is refused),
     `fs.*`, `editor.active` / `editor.insert`, `ui.notify`, single-pick `ui.showQuickPick`,
     `ui.showInput`, `net.fetch` (redirects followed here, each address checked).
   - `runtimeSubscriptions.ts` — `ExtensionSubscriptions`: `events.subscribe` / `unsubscribe`.
@@ -154,8 +158,9 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
     a restart it waits in `extensionFeatures.restorablePanels` (`workbench/webviewPanelRestore.ts`)
     until the extension is loaded, which reopens the tab, starts the code and calls
     `webviewPanelSerializer.<viewType>` (VS Code's deserializeWebviewPanel; getState() returns the
-    saved state). Declared localResourceRoots and the workspace's folders are served at
-    `/__fs/<absolute path>` (Rust `ext_webview_roots`, inside the workspace only).
+    saved state). With the `fs.read` permission, declared localResourceRoots and the workspace's
+    folders are served at `/__fs/<absolute path>` (Rust `ext_webview_roots`, inside the workspace
+    only).
   - `runtimeTesting.ts`: `ide.tests.createTestController` (VS Code's test API): each controller is
     an entry of `services.extensionFeatures.tests` (`workbench/extensionTests.ts`, which checks the
     worker's items, profiles and run events); the Testing view shows them and runs their profiles
@@ -284,7 +289,8 @@ Hosts third-party extensions (D102; author guide: `docs/extensions.md`).
   activate first and a missing or failed one refuses with VS Code's message (a notification, the
   extension marked failed, not retried until what's enabled changes); a failed `activate` keeps
   what it registered and isn't retried; the shared host restarts its extensions after a crash
-  (at most 3 in 5 minutes). Disable and Uninstall ask about the extensions that depend on it
+  (at most 3 in 5 minutes; after that they stay stopped, `ExtensionRuntime.stayStopped`, until
+  reloaded or enabled again, as does an extension whose own worker or process keeps crashing). Disable and Uninstall ask about the extensions that depend on it
   (`askAboutDependents`).
 - `contributions.ts` — declarative parts (ours and VS Code's): color themes (with `include`),
   languages (with `filenamePatterns`, `firstLine`), JSON grammars (any language's, injections),
@@ -326,7 +332,10 @@ the extension store (`store.ts`, D254; Rust `extensions/store.rs`): `extensions.
 pause; `@category:Themes` lists a category), `extensions.installFromStore {id, version?}` downloads
 the .vsix (https from Open VSX's hosts only, checked against the SHA-256 it publishes) and installs
 it through `extensions.installFromVsix`, `extensions.checkStoreUpdates` / `extensions.updateFromStore`
-compare installed VS Code extensions with the latest there (the view's "Updates" section),
+compare installed VS Code extensions with the latest there (the view's "Updates" section; the
+registry's `fromStore` lists what was installed from the store: only those update by themselves or
+with "update all", another is updated by name and asked about; the archive must have the id asked
+for, and any install over an installed id from a file, folder or repository asks first),
 `extensions.browseThemes`; `extensions.store.enabled` (on) turns it off; parsing and version order
 in `core/extensions/openVsx.ts` (tested). Results show their icons (fetched when a row is first
 seen) and open a page of their own: `extensions.showStoreDetails {id}` (`storePage.ts`, dock tab

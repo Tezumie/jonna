@@ -38,7 +38,9 @@ export function registerStashCommands(
     services.events.emit("files.didChange", { path: requireRepo(git).root });
     await git.refresh();
   };
-  const pick = async (git: GitController, placeholder: string): Promise<number | undefined> => {
+  const pick = async (git: GitController, placeholder: string): Promise<number | undefined> =>
+    (await pickStash(git, placeholder))?.index;
+  const pickStash = async (git: GitController, placeholder: string): Promise<Stash | undefined> => {
     const list = await git.ipc.stashList();
     if (!list.length) throw new Error("There are no stashes.");
     const picked = await quickInput.pick(
@@ -49,7 +51,31 @@ export function registerStashCommands(
       })),
       { placeholder },
     );
-    return picked ? Number(picked.id) : undefined;
+    return picked ? list.find((st) => String(st.index) === picked.id) : undefined;
+  };
+  const moved = () =>
+    new Error(
+      "The stashes changed in the meantime (one was added or removed). Nothing was dropped: try again.",
+    );
+  /**
+   * The stash at `at` now: its commit and its entry. stash@{n} is a position, and a stash pushed
+   * meanwhile (the agent, a terminal) shifts every one: with `expected` (the entry the user
+   * picked), a different stash at that position is refused.
+   */
+  const stashAt = async (
+    git: GitController,
+    at: number,
+    expected?: Stash,
+  ): Promise<{ hash: string; entry: Stash }> => {
+    const [hash, list] = await Promise.all([
+      git.ipc.revParse(`stash@{${at}}`),
+      git.ipc.stashList(),
+    ]);
+    const entry = list.find((st) => st.index === at);
+    if (!entry) throw new Error(`There is no stash@{${at}}.`);
+    if (expected && (entry.message !== expected.message || entry.time !== expected.time))
+      throw moved();
+    return { hash, entry };
   };
 
   sub.add(
@@ -185,17 +211,21 @@ export function registerStashCommands(
       run: async ({ index, repository: named }, ctx) => {
         const git = repos.pick(named);
         requireRepo(git);
-        const at = index ?? (await pick(git, "Select a stash to drop"));
+        const picked = index === undefined ? await pickStash(git, "Select a stash to drop") : null;
+        const at = index ?? picked?.index;
         if (at === undefined) return { dropped: false };
+        const { hash, entry } = await stashAt(git, at, picked ?? undefined);
         if (ctx.caller.kind === "user") {
           const answer = await confirmAction(
             `Drop stash@{${at}}?`,
-            "Its changes are deleted. This can't be undone.",
+            `${stashLabel(entry)}\n\nIts changes are deleted. This can't be undone.`,
             "Drop",
             true,
           );
           if (!answer) return { dropped: false };
         }
+        // Still the same stash at that position, after the time the question was open.
+        if ((await git.ipc.revParse(`stash@{${at}}`)) !== hash) throw moved();
         await git.ipc.stash("drop", { index: at });
         await git.refresh();
         return { dropped: true, index: at };

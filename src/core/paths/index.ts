@@ -7,6 +7,14 @@ export function isWindowsPath(path: string): boolean {
   return /^[A-Za-z]:([\\/]|$)/.test(path) || path.startsWith("\\\\");
 }
 
+/**
+ * A UNC or "//host" path, in either slash and whatever space leads it: reading one makes Windows
+ * connect to that host (and offer it the user's sign-in).
+ */
+export function isNetworkPath(path: string): boolean {
+  return /^[\\/]{2}/.test(path.trim());
+}
+
 function separatorOf(path: string): "/" | "\\" {
   if (isWindowsPath(path)) return "\\";
   return path.includes("\\") && !path.includes("/") ? "\\" : "/";
@@ -134,6 +142,21 @@ export function resolveInRoot(root: string, path: string): string {
   return parts
     .reduce((dir, part) => (part === ".." ? dirname(dir) : joinPath(dir, part)), root)
     .replaceAll(sep === "\\" ? "/" : "\\", sep);
+}
+
+/**
+ * `paths` without those inside another listed one, and without repeats: what a move, copy or
+ * delete of a selection acts on (a folder takes its selected children with it; acting on them
+ * again would copy them twice, or fail on a path that already moved).
+ */
+export function outermostPaths(paths: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return paths.filter((p) => {
+    const key = pathKey(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return !paths.some((q) => pathKey(q) !== key && isWithin(q, p));
+  });
 }
 
 /** Re-roots `path` from `from` to `to` (rename of a file or one of its parent folders). */

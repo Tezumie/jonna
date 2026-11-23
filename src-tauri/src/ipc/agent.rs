@@ -99,18 +99,8 @@ pub async fn ai_fim(
 
 /// Fetches a web page (http/https, redirects followed, at most `max_bytes`) for agent context.
 #[tauri::command]
-pub async fn web_fetch(
-    state: State<'_, AppState>,
-    url: String,
-    max_bytes: Option<usize>,
-) -> Result<crate::ai::web::WebPage> {
-    let client = state.ai.client();
-    crate::ai::web::fetch(
-        &client,
-        &url,
-        max_bytes.unwrap_or(crate::ai::web::MAX_BYTES),
-    )
-    .await
+pub async fn web_fetch(url: String, max_bytes: Option<usize>) -> Result<crate::ai::web::WebPage> {
+    crate::ai::web::fetch(&url, max_bytes.unwrap_or(crate::ai::web::MAX_BYTES)).await
 }
 
 /// Searches the web with `provider` (brave, tavily, exa or searxng). The provider's key is read

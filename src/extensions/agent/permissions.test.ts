@@ -6,6 +6,7 @@ import {
   DEFAULT_DENIED_COMMANDS,
   looksLikeServer,
   permissionKey,
+  shellLineAsks,
   splitLeadingCd,
 } from "./permissions";
 
@@ -27,8 +28,63 @@ test("allowlist matches word prefixes; every chained part must match", () => {
   assert.equal(permissionKey("npm run build -- --prod"), "npm run");
   assert.equal(permissionKey("cargo test && echo ok"), "cargo test");
   assert.equal(permissionKey("ls .ide/extensions"), "ls");
-  assert.equal(permissionKey("ls -la"), "ls");
   assert.equal(permissionKey("git status"), "git status");
+});
+
+test("quotes a shell may pair differently hide nothing from the command checks", () => {
+  const list = ["npm test", "ls"];
+  const deny = DEFAULT_DENIED_COMMANDS;
+  // bash: `\"` is a character, so the `&` is outside quotes and rm runs.
+  assert.equal(commandAllowed('npm test \\" & rm -rf ~ \\"', list), false);
+  assert.equal(commandAllowed("npm test \\' ; echo \\'", list), false);
+  assert.equal(commandDenied('ls \\" & rm -rf src \\"', deny), true);
+  assert.equal(commandDenied('ls \\"; rm -rf src \\"', deny), true);
+  assert.equal(commandDenied("ls \\' $(rm -rf src) \\'", deny), true);
+  // PowerShell reads typographic quotes as quotes; the checks can't.
+  assert.equal(commandAllowed("npm test \u201Ca\u201D", list), false);
+  assert.equal(commandAllowed("npm test \u2018a\u2019", list), false);
+  assert.equal(commandDenied("ls \u201Ca\u201D", deny), true);
+  assert.equal(commandDenied(". \u2018Remove-Item\u2019 src", deny), true);
+  // A quote left open isn't a quoted `&`.
+  assert.equal(commandAllowed('npm test "a', list), false);
+  // A quoted quote hides nothing either: the backticks run.
+  assert.equal(commandDenied('ls "\'" `rm -rf src` "\'"', deny), true);
+  // Plain quotes still read as before, and an escaped quote alone doesn't make a line denied.
+  assert.equal(commandAllowed('npm test -- -t "a > b & c"', list), true);
+  assert.equal(commandDenied("echo 'a & b (c)'", deny), false);
+  assert.equal(commandDenied('echo "it\'s `fine`"', deny), true);
+  assert.equal(commandDenied('grep \\"key\\" package.json', deny), false);
+});
+
+test("Always remembers the exact line when a flag comes first", () => {
+  // `git -C web status` was remembered as `git`: every git command.
+  assert.equal(permissionKey("git -C web status"), "git -C web status");
+  assert.equal(permissionKey("git --no-pager log -5"), "git --no-pager log -5");
+  assert.equal(permissionKey("ls -la"), "ls -la");
+  assert.equal(permissionKey("rm -rf dist && ls"), "rm -rf dist");
+  assert.equal(permissionKey("env CI=1 npm test"), "env CI=1 npm test");
+  assert.equal(permissionKey("cat src/a.ts"), "cat");
+  assert.equal(commandAllowed("git push --force", [permissionKey("git -C web status")]), false);
+  assert.equal(
+    commandAllowed("git -C web status --short", [permissionKey("git -C web status")]),
+    true,
+  );
+  // An allowed program made to run another isn't the allowed command.
+  assert.equal(commandAllowed("git -c alias.x=!calc x", ["git"]), false);
+  assert.equal(commandAllowed("GIT_PAGER=calc git log", ["GIT_PAGER=calc git", "git"]), false);
+  assert.equal(commandAllowed("git -c color.ui=never status", ["git"]), true);
+});
+
+test("a line typed into a terminal asks as run_command's does", () => {
+  const none = { deleteProtection: false, rules: {} };
+  assert.equal(shellLineAsks("rm -rf src", none), null);
+  assert.equal(shellLineAsks("rm -rf src", { ...none, deleteProtection: true }), "delete");
+  assert.equal(shellLineAsks("npm test", { ...none, deleteProtection: true }), null);
+  const rules = { commands: { "git push": false, "npm test": true } };
+  assert.equal(shellLineAsks("git push origin main", { ...none, rules }), "rule");
+  assert.equal(shellLineAsks("C:\\Git\\cmd\\git.exe -C web push", { ...none, rules }), "rule");
+  assert.equal(shellLineAsks("npm test && git push", { ...none, rules }), "rule");
+  assert.equal(shellLineAsks("npm test", { ...none, rules }), null);
 });
 
 test("splitLeadingCd: cd into a folder, then the real command", () => {

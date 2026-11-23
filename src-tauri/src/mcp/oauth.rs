@@ -208,7 +208,35 @@ pub fn auth_server_metadata_urls(issuer: &str) -> Result<Vec<String>> {
     })
 }
 
-async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
+/// The most a metadata document, a registration or a token answer may be: they are a few
+/// kilobytes, and the server that sends them is one the user hasn't signed in to yet.
+const MAX_ANSWER_BYTES: usize = 1024 * 1024;
+
+/// An answer's body as JSON, at most `MAX_ANSWER_BYTES` of it.
+async fn json_within(response: reqwest::Response) -> Result<Value> {
+    let bytes = crate::accounts::http::read_capped(response, MAX_ANSWER_BYTES)
+        .await
+        .map_err(|e| Error::Ai(format!("the authorization server's answer: {e}")))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| Error::Ai(format!("the authorization server's answer isn't JSON: {e}")))
+}
+
+/// Whether discovery may ask `url`, an address the MCP server (or its metadata) named: by
+/// the rule for the server's own address (https, or http on this machine), and http on this
+/// machine only when the MCP server is itself a local http one. A server on the internet
+/// could otherwise make the IDE send requests to programs listening on this computer.
+fn may_fetch(url: &str, server_url: &str) -> bool {
+    let Ok(parsed) = super::remote::check_url(url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        || reqwest::Url::parse(server_url).is_ok_and(|server| server.scheme() == "http")
+}
+
+async fn get_json(client: &reqwest::Client, url: &str, server_url: &str) -> Option<Value> {
+    if !may_fetch(url, server_url) {
+        return None;
+    }
     let response = client
         .get(url)
         .header("Accept", "application/json")
@@ -220,7 +248,7 @@ async fn get_json(client: &reqwest::Client, url: &str) -> Option<Value> {
     if !response.status().is_success() {
         return None;
     }
-    response.json::<Value>().await.ok()
+    json_within(response).await.ok()
 }
 
 /// What sign-in needs: the authorization server, the resource and the scopes to ask for.
@@ -244,7 +272,7 @@ pub async fn discover(
     let header_scope = www_authenticate.and_then(|h| header_param(h, "scope"));
     let mut prm: Option<ProtectedResource> = None;
     for url in resource_metadata_urls(server_url, header_url.as_deref())? {
-        if let Some(v) = get_json(client, &url).await {
+        if let Some(v) = get_json(client, &url, server_url).await {
             if let Ok(p) = serde_json::from_value::<ProtectedResource>(v) {
                 if !p.authorization_servers.is_empty() {
                     prm = Some(p);
@@ -263,7 +291,7 @@ pub async fn discover(
         .unwrap_or_else(|| base.clone());
     let mut server: Option<AuthServer> = None;
     for url in auth_server_metadata_urls(&issuer)? {
-        if let Some(v) = get_json(client, &url).await {
+        if let Some(v) = get_json(client, &url, server_url).await {
             if let Ok(s) = serde_json::from_value::<AuthServer>(v) {
                 server = Some(s);
                 break;
@@ -392,7 +420,7 @@ pub async fn register(
     if !response.status().is_success() {
         return Err(crate::ai::error_body(response).await);
     }
-    let v: Value = response.json().await.map_err(crate::ai::http_error)?;
+    let v = json_within(response).await?;
     let id = v
         .get("client_id")
         .and_then(Value::as_str)
@@ -469,10 +497,7 @@ async fn token_request(
             error: crate::ai::error_body(response).await,
         });
     }
-    response
-        .json::<Value>()
-        .await
-        .map_err(|e| other(crate::ai::http_error(e)))
+    json_within(response).await.map_err(other)
 }
 
 fn tokens_from(v: &Value, base: &Tokens) -> Result<Tokens> {

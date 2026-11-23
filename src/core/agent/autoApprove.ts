@@ -17,6 +17,11 @@
 // what "Always" on a question saves (`/src/.env`; a domain for the browser and web, D207).
 // DOM-free and tested; extensions/agent/autoApprove.ts applies it.
 import { globToRegExp } from "../paths/glob";
+import { looksLikeShortName, plainSegments } from "./ignore";
+import { outsideQuotes, quotesUnclear } from "./shellQuotes";
+
+/** The score of one exact file: above any glob's. */
+const EXACT_FILE = 1e6;
 
 export type ApproveCategory = "reads" | "edits" | "browser" | "web" | "commands" | "mcp";
 
@@ -80,7 +85,9 @@ export function matchScore(
   switch (category) {
     case "reads":
     case "edits": {
-      const path = subject.replace(/\\/g, "/").replace(/^\.\//, "");
+      // Windows spellings of the same file (`x.tfvars::$DATA`, `prod.yaml.`, `key.pem `) are the
+      // file itself, as the ignore rules read them: an Ask rule was passed by a trailing dot.
+      const path = plainSegments(subject).join("/");
       let glob = p.replace(/\\/g, "/").replace(/^\.\//, "");
       // A leading `/` anchors it at the folder's root, as in .gitignore (D207: what "Always"
       // writes, `/src/.env`); a pattern without a `/` matches the name in any folder (`.env`).
@@ -89,7 +96,7 @@ export function matchScore(
       const inFolder = anchored || glob.includes("/");
       // One exact file is more specific than any glob that also matches it.
       if (inFolder && !/[*?[\]{}]/.test(glob))
-        return glob.toLowerCase() === path.toLowerCase() ? 1e6 : null;
+        return glob.toLowerCase() === path.toLowerCase() ? EXACT_FILE : null;
       const full = inFolder ? glob : `**/${glob}`;
       // Case-insensitive, as Windows and macOS file systems are.
       const re = globToRegExp(full);
@@ -165,6 +172,15 @@ export function approveDecision(
     if (score === null) continue;
     if (!best || score > best.score || (score === best.score && !allow)) best = { score, allow };
   }
+  // An 8.3 short name (`SECRET~1.JSO`) may be any file an Ask rule protects: it asks, unless
+  // that exact spelling was allowed ("Always" on its question).
+  if (
+    (category === "reads" || category === "edits") &&
+    !(best?.allow && best.score >= EXACT_FILE) &&
+    Object.values(map).includes(false) &&
+    plainSegments(subject).some(looksLikeShortName)
+  )
+    return "ask";
   return best ? (best.allow ? "allow" : "ask") : null;
 }
 
@@ -214,11 +230,15 @@ export function commandDecision(rules: ApproveRules, line: string): ApproveDecis
   // So do (outside quotes) a background `&` or a newline (a second command the split above
   // doesn't see: `npm test & rm -rf ~`) and groups, which PowerShell evaluates inside arguments
   // (`npm test (Remove-Item src)`) — the same structure agent.allowedCommands refuses.
-  const bare = line
-    .replace(/'[^']*'|"[^"]*"/g, "''")
+  // Quotes a shell may read differently (`\"`, typographic ones, one left open) hide nothing:
+  // such a line is never allowed by a pattern either (shellQuotes.ts).
+  const bare = outsideQuotes(line)
     .replace(/\d?>&\d/g, "")
     .replace(/&&/g, "");
-  const risky = /[`$]\(|`|[<>]/.test(line.replace(/\d?>&\d/g, "")) || /[\r\n]|&|[(){}]/.test(bare);
+  const risky =
+    quotesUnclear(line) ||
+    /[`$]\(|`|[<>]/.test(line.replace(/\d?>&\d/g, "")) ||
+    /[\r\n]|&|[(){}]/.test(bare);
   // Ask patterns also see the parts a background `&` or a newline separates (`ls & git push`).
   const askParts = line
     .replace(/\d?>&\d/g, "")

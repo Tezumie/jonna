@@ -30,10 +30,19 @@ pub fn valid_id(id: &str) -> bool {
 /// Names Windows keeps for devices, whatever follows the first dot (`NUL.md` is `NUL`).
 fn reserved(part: &str) -> bool {
     let stem = part.split('.').next().unwrap_or("").to_ascii_uppercase();
-    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4
-            && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && stem.ends_with(|c: char| c.is_ascii_digit() && c != '0'))
+    // (The superscript digits count as a port's number too; `CONIN$` and `CONOUT$` can't be
+    // named here at all, `$` is no plain character.)
+    let numbered = |prefix: &str| {
+        stem.strip_prefix(prefix).is_some_and(|rest| {
+            let mut digits = rest.chars();
+            matches!(
+                (digits.next(), digits.next()),
+                (Some(digit), None)
+                    if matches!(digit, '1'..='9' | '\u{b9}' | '\u{b2}' | '\u{b3}')
+            )
+        })
+    };
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || numbered("COM") || numbered("LPT")
 }
 
 /// One part of a name: letters, digits, `. _ -` and spaces; not hidden, not `..`, nothing a
@@ -143,6 +152,9 @@ mod tests {
             ("commands", "commands/con.md"),
             ("skills", "skills/COM1/SKILL.md"),
             ("skills", "skills/review/lpt9.txt"),
+            ("skills", "skills/COM\u{b9}/SKILL.md"),
+            ("skills", "skills/review/lpt\u{b3}.txt"),
+            ("skills", "skills/review/CONIN$"),
             ("skills", "skills/review/.env"),
             ("skills", "skills/review/x.md."),
             ("skills", "skills/review /SKILL.md"),

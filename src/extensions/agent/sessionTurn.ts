@@ -722,6 +722,53 @@ async function sendTurn(
               !!findCustomMode(customModes.peek(), session.turnMode ?? session.chatMode.peek())
                 ?.acceptEdits,
             ask: (req) => session.askForCall(call.name, args, req),
+            // A tool that runs other tools' steps itself (browser_batch) asks this for each:
+            // what would stop the step as a call of its own stops it inside the batch too
+            // (a hook, the command's disallowed-tools, an unattended run's deny list, the gates).
+            checkCall: async (name, stepArgs) => {
+              const pre = await session.runHook("PreToolUse", { tool: name, toolInput: stepArgs });
+              if (pre?.halt) session.stop("a hook ended the turn");
+              if (pre?.block || pre?.halt)
+                return {
+                  result: `A hook blocked this call: ${pre.reason}`,
+                  isError: true,
+                  summary: "blocked by a hook",
+                };
+              if (callDisallowed(disallowed, name, stepArgs, session.ruleContext()))
+                return {
+                  result:
+                    "The command the user ran doesn't allow this (its disallowed-tools). Do without it.",
+                  denied: true,
+                  summary: "disallowed",
+                };
+              const denied = deniedCall(
+                agentHost(session.services).permissions ?? null,
+                name,
+                stepArgs,
+              );
+              if (denied) {
+                session.toldDecision({
+                  title: name,
+                  kind: "tool",
+                  tool: name,
+                  answer: "deny",
+                  by: "policy",
+                  rule: denied,
+                });
+                return {
+                  result: `This run's permission policy refuses this (denied: ${denied}). Do without it.`,
+                  denied: true,
+                  summary: "denied by policy",
+                };
+              }
+              return runToolGate({
+                session: session.id,
+                name,
+                args: stepArgs,
+                ask: (req) => session.ask(req),
+                note: (text) => session.addNotice(text),
+              });
+            },
             output: (itemId, chunk) => {
               // The panel shows the live tail (the full result goes to the model).
               const next = (session.outputs.get(itemId) ?? "") + chunk;
@@ -1080,7 +1127,7 @@ From the user's hooks: ${words}`,
               session.clearRetryNotice();
               throw err;
             }
-            const delay = retryDelayMs(attempt + 1);
+            const delay = retryDelayMs(attempt + 1, message);
             session.showRetryNotice(
               `${choice.provider.name ?? choice.provider.id} didn't answer (${shortError(message)}) — retrying in ${Math.round(delay / 1000)} s (${attempt + 1}/3)`,
               message,

@@ -4640,3 +4640,28 @@ With an Anthropic key and at least one MCP server whose tools are deferred:
 ## D468 — A menu in a dialog
 1. In the web front end, File > Open folder, right-click a folder and move the pointer over
    the menu: it stays open and the items highlight. Escape closes the menu; the dialog stays.
+
+## D469 — After the audit
+1. Agent, allowlist `npm test`: ask it to run `npm test \" & echo hi \"`: a card asks. With
+   "Always allow" on `git -C . status`, a later `git push` still asks.
+2. Auto mode with deletion protection on: ask the agent to run `rm -rf dist` through the
+   terminal (terminal.runCommand): a card asks.
+3. Ask the agent to open `.env` in the browser preview: refused.
+4. Turn on auto-merge for a pull request in a chat, delete the chat: the watch is gone
+   (Agents > the PR shows no watch) and nothing merges later.
+5. Let the agent edit a file, close the window while it still writes, reopen: the chat shows
+   the edit, and Restore checkpoint puts the file back.
+6. Lock settings.json with another program (or make it unreadable), change a setting: an
+   error, and the file is as it was. Break keybindings.json (remove the closing `]`), use
+   "Change keybinding": refused with the line named.
+7. Search with a regex `foo.*` in a CRLF file and Replace all: the file is still CRLF.
+   Dismiss one match first: it is left alone.
+8. Source control: an untracked file `pages/[ab].txt` beside `pages/a.txt`; discard the
+   first: `a.txt` is still there.
+9. Leave a file unsaved, close the IDE, change the file with another program, reopen: the
+   tab shows "changed on disk"; saving asks.
+10. Install an extension from a .vsix over one that is installed: "Replace …?" first.
+11. Open `<scheme>://<an installed extension>/x` from a browser: the IDE asks before the
+    extension gets it.
+12. A Polish or German layout: AltGr characters type in the editor.
+13. Windows: New file named `nul`, or `a.`: refused.

@@ -319,13 +319,27 @@ const NEEDS_QUOTING = /[\s'"$`&|;()<>*?!#~^%,{}[\]\\]/;
 
 /** A word for the shell: quoted (or escaped) the shell's way when it has special characters. */
 export function shellWord(word: string, family: ShellFamily, openQuote: '"' | "'" | null): string {
-  if (openQuote) return word; // inside the user's quotes already
+  if (openQuote) return insideQuotes(word, family, openQuote);
   // PowerShell also reads typographic quotes and dashes as ' " - (a file named "it’s.txt").
   const special = family === "pwsh" && /[@–-―‘-„]/.test(word);
   if (!special && !NEEDS_QUOTING.test(word.replace(/[\\/]/g, ""))) return word;
   if (family === "pwsh") return `'${word.replace(/['‘’‚‛]/g, "$&$&")}'`;
-  if (family === "cmd") return `"${word}"`;
+  // cmd has no escape inside quotes; a doubled quote at least keeps `&` and `|` after it quoted.
+  if (family === "cmd") return `"${word.replaceAll('"', '""')}"`;
   return word.replace(/([\s'"$`&|;()<>*?!#~^%,{}[\]])/g, "\\$1");
+}
+
+/**
+ * A word typed inside quotes the user opened: what still acts there is escaped that quote's way
+ * (a file named `$(calc).txt` completed after `"` would otherwise run when Enter is pressed).
+ */
+function insideQuotes(word: string, family: ShellFamily, quote: '"' | "'"): string {
+  if (family === "cmd") return quote === '"' ? word.replaceAll('"', '""') : word;
+  if (family === "pwsh")
+    return quote === '"' ? word.replace(/[`$"“”„]/g, "`$&") : word.replace(/['‘’‚‛]/g, "$&$&");
+  if (quote === '"') return word.replace(/[\\"$`]/g, "\\$&");
+  // Single quotes: fish has \' and \\; POSIX shells have nothing, so the quote closes and reopens.
+  return family === "fish" ? word.replace(/[\\']/g, "\\$&") : word.replaceAll("'", "'\\''");
 }
 
 const MAX_SHOWN = 50;
@@ -402,7 +416,12 @@ export function rankSuggestions(
   if (needs.git === "subcommand")
     for (const g of GIT_SUBCOMMANDS) add(g, "git-command", g, ctx.tokenStart, ctx.token);
   if (needs.git === "branch")
-    for (const b of sources.branches ?? []) add(b, "git-branch", b, ctx.tokenStart, ctx.token);
+    for (const b of sources.branches ?? []) {
+      // A branch's name is someone else's text (a fetched `y$(calc)`): typed as one literal word.
+      const word = shellWord(b, family, ctx.quote);
+      const insert = ctx.quote ? `${ctx.quote}${word}${ctx.quote}` : word;
+      add(b, "git-branch", insert, ctx.tokenStart, ctx.token);
+    }
   if (needs.paths && sources.entries) {
     const { dir, base } = needs.paths;
     const sep = family === "pwsh" || family === "cmd" ? (dir.includes("/") ? "/" : "\\") : "/";

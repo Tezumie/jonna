@@ -9,9 +9,11 @@ import type { BuiltinExtension } from "../../core/extensions/index";
 import { fsIpc } from "../../core/ipc/fs";
 import { instancesIpc, type OpenRequest } from "../../core/ipc/instances";
 import { hasBackend, isDesktopShell } from "../../core/ipc/invoke";
+import { product } from "../../core/product";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
-import { confirmAction } from "../../ui/Dialog";
+import { confirmAction, confirmWithOption } from "../../ui/Dialog";
+import { parseIdeUri } from "../../workbench/extensionHooks";
 import { startupRestored, whenStartupRestored } from "../../workbench/restoreWindows";
 import type { WorkbenchServices } from "../../workbench/services";
 import { locationLabel } from "../../workbench/workspace";
@@ -89,14 +91,33 @@ export const windowsExtension: BuiltinExtension<WorkbenchServices> = {
       if (errors.length) notifications.show("error", errors.join("\n"), { title: "Command line" });
       return { tabs, errors };
     };
+    /** Extensions whose links are let through without asking, until the window closes. */
+    const linksAllowed = new Set<string>();
+    const linkAllowed = async (url: string): Promise<boolean> => {
+      const parsed = parseIdeUri(url, product.urlScheme);
+      // Not a link for an extension: the command says so.
+      if (!parsed) return true;
+      if (linksAllowed.has(parsed.authority)) return true;
+      const shown = url.length > 300 ? `${url.slice(0, 300)}…` : url;
+      const answer = await confirmWithOption(
+        "Open this link in an extension?",
+        `A link from outside the IDE asks the extension ${parsed.authority} to open:\n\n${shown}`,
+        "Open",
+        { label: "Don't ask again for this extension until the window closes" },
+      );
+      if (answer.option) linksAllowed.add(parsed.authority);
+      return answer.ok;
+    };
     if (hasBackend())
       void instancesIpc
         .listen((request) => {
           void (async () => {
             // The folder (and its layout) first: a tab opened before it's restored would go.
             await whenStartupRestored();
-            // A link to the IDE (D255): the extension it names handles it.
-            if (request.url)
+            // A link to the IDE (D255): the extension it names handles it. Asked first, as
+            // VS Code does: the link comes from outside (a web page, a mail) and names both
+            // the extension and what it is handed, so nothing reaches an extension unseen.
+            if (request.url && (await linkAllowed(request.url)))
               void dispatcher
                 .execute("extensions.openUri", { uri: request.url })
                 .catch((err: unknown) =>

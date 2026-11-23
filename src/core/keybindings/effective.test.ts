@@ -6,6 +6,7 @@ import {
   validateUserKeybindings,
   whensCanOverlap,
 } from "./effective";
+import { KeybindingResolver } from "./index";
 
 const d = (key: string, command: string, when?: string): SourcedRule => ({
   key,
@@ -79,4 +80,39 @@ test("validation reports bad entries and keeps the rest", () => {
   ]);
   assert.equal(rules.length, 1);
   assert.equal(problems.length, 2);
+});
+
+test("a removal without a key is valid and takes every binding of the command away", () => {
+  // What "Change keybinding" writes: the command's keys go, then the new one is added.
+  const file = [
+    { key: "", command: "-editor.save" },
+    { key: "ctrl+alt+w", command: "editor.save" },
+    { key: "  ", command: "-other" },
+    // A binding still needs a key.
+    { key: "", command: "editor.save" },
+  ];
+  const { rules, problems } = validateUserKeybindings(file);
+  assert.deepEqual(problems, ['entry 4: can\'t read key ""']);
+  assert.deepEqual(rules, [
+    { key: "", command: "-editor.save" },
+    { key: "ctrl+alt+w", command: "editor.save" },
+    { key: "", command: "-other" },
+  ]);
+  const defaults = [
+    d("ctrl+s", "editor.save"),
+    d("ctrl+k s", "editor.save", "editorFocus"),
+    d("ctrl+o", "other"),
+  ];
+  const all: SourcedRule[] = [
+    ...defaults,
+    ...rules.map((r) => ({ ...r, source: "user" as const })),
+  ];
+  assert.deepEqual(
+    effectiveBindings(all, "linux").map((b) => [b.command, b.label]),
+    [["editor.save", "Ctrl+Alt+W"]],
+  );
+  // The table that runs keys agrees with the one that is shown.
+  const resolver = new KeybindingResolver(all, "linux");
+  assert.deepEqual(resolver.keybindingFor("editor.save"), ["ctrl+alt+w"]);
+  assert.equal(resolver.keybindingFor("other"), undefined);
 });

@@ -155,6 +155,41 @@ test("ranked suggestions: commands, builtins, history, folders, git", () => {
   );
 });
 
+test("branch names and names completed inside quotes are typed as literal text", () => {
+  const branch = (line: string, family: "posix" | "pwsh" | "cmd") => {
+    const ctx = completionContext(line, line.length);
+    return rankSuggestions(
+      ctx,
+      suggestNeeds(ctx, family),
+      { branches: ["y$(calc)", "main"], entries: [] },
+      family,
+    ).find((s) => s.label === "y$(calc)")?.insert;
+  };
+  assert.equal(branch("git checkout y", "posix"), "y\\$\\(calc\\)");
+  assert.equal(branch("git checkout y", "pwsh"), "'y$(calc)'");
+  assert.equal(branch("git checkout y", "cmd"), '"y$(calc)"');
+  assert.equal(branch('git checkout "y', "posix"), '"y\\$(calc)"');
+  assert.equal(branch("git checkout 'y", "posix"), "'y$(calc)'");
+
+  const file = (line: string, family: "posix" | "pwsh", name: string) => {
+    const ctx = completionContext(line, line.length);
+    return rankSuggestions(
+      ctx,
+      suggestNeeds(ctx, family),
+      { entries: [{ name, dir: false }] },
+      family,
+    )[0]?.insert;
+  };
+  assert.equal(file('cat "', "posix", "$(calc).txt"), '"\\$(calc).txt"');
+  assert.equal(file('cat "', "posix", 'a`id`"b'), '"a\\`id\\`\\"b"');
+  assert.equal(file("cat '", "posix", "it's"), "'it'\\''s'");
+  assert.equal(file('cat "', "pwsh", "$(calc).txt"), '"`$(calc).txt"');
+  assert.equal(file("cat '", "pwsh", "it's"), "'it''s'");
+  // Plain names are untouched.
+  assert.equal(shellWord("a b", "posix", '"'), "a b");
+  assert.equal(shellWord('x"&calc&"', "cmd", null), '"x""&calc&"""');
+});
+
 test("accepting replaces what was typed, with the fewest keys", () => {
   const s = {
     label: "checkout",

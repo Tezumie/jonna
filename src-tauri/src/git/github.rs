@@ -31,7 +31,7 @@ pub struct GhArgs {
     pub path: Option<String>,
     /// A commit hash (fileAt, compareBase, prComment).
     pub rev: Option<String>,
-    /// Another commit hash (compareBase: the head).
+    /// Another commit hash (compareBase: the head; prMerge: the head the merge is pinned to).
     pub head: Option<String>,
     /// A GraphQL node id (prResolve: the review thread) or notification thread id.
     pub thread: Option<String>,
@@ -128,7 +128,7 @@ fn valid_repo_name(name: &str) -> bool {
 
 const PR_FIELDS: &str =
     "number,title,author,headRefName,baseRefName,isDraft,state,url,updatedAt,reviewDecision";
-const PR_DETAIL_FIELDS: &str = "number,title,body,author,headRefName,baseRefName,isDraft,state,url,updatedAt,reviewDecision,mergeable,additions,deletions,changedFiles,statusCheckRollup,comments,autoMergeRequest,mergeStateStatus";
+const PR_DETAIL_FIELDS: &str = "number,title,body,author,headRefName,baseRefName,isDraft,state,url,updatedAt,reviewDecision,mergeable,additions,deletions,changedFiles,statusCheckRollup,comments,autoMergeRequest,mergeStateStatus,headRefOid";
 const ISSUE_FIELDS: &str = "number,title,author,labels,state,url,updatedAt";
 
 /// The argument list for `op` (pure, so it is tested without gh).
@@ -184,12 +184,21 @@ pub fn args_for(op: &str, a: &GhArgs) -> Result<Vec<String>> {
                 m @ ("merge" | "squash" | "rebase") => m,
                 other => return Err(Error::Invalid(format!("unknown merge method {other}"))),
             };
-            vec![
+            let mut v = vec![
                 "pr".into(),
                 "merge".into(),
                 number()?,
                 format!("--{method}"),
-            ]
+            ];
+            // The commit the caller looked at: GitHub refuses the merge when the branch has
+            // moved since, so commits pushed after the checks were read aren't merged unseen.
+            if a.head.is_some() {
+                v.push(format!(
+                    "--match-head-commit={}",
+                    hex(a.head.as_deref(), "the head")?
+                ));
+            }
+            v
         }
         // D352: GitHub merges it once its requirements are met (auto-merge), or stops doing so.
         "prAutoMerge" => {
@@ -466,6 +475,12 @@ pub fn run(repo: &Path, op: &str, a: &GhArgs) -> Result<String> {
     let local = op != "authStatus"
         && crate::remote::of_dir(repo).is_none()
         && crate::wsl::of_dir(repo).is_none();
+    // Nor in a folder whose authors aren't trusted yet (trust.rs): the git that gh starts there
+    // reads the folder's own settings and runs what they name, like any other git. Checked on
+    // this machine or another, as `git::run` does; "status" stands for a command that is held.
+    if !runs_anywhere(op) {
+        super::trust::check(repo, &["status"])?;
+    }
     if local {
         super::guard::check(repo)?;
     }
@@ -632,6 +647,35 @@ mod tests {
     }
 
     #[test]
+    fn gh_stays_off_in_a_folder_that_is_not_trusted() {
+        let folder = std::env::temp_dir().join(format!("ide-gh-trust-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        super::super::trust::hold(std::slice::from_ref(&folder));
+        let n = GhArgs {
+            number: Some(1),
+            title: Some("t".into()),
+            name: Some("x".into()),
+            ..Default::default()
+        };
+        // Refused before gh is started (the message is the trust one, not gh's).
+        for op in [
+            "prList",
+            "prView",
+            "prCheckout",
+            "prCreate",
+            "prMerge",
+            "repoCreate",
+        ] {
+            match run(&folder, op, &n) {
+                Err(Error::Git(msg)) => assert!(msg.contains("trusted"), "{op}: {msg}"),
+                other => panic!("{op}: {other:?}"),
+            }
+        }
+        super::super::trust::release_for_test(&folder);
+        let _ = std::fs::remove_dir_all(folder);
+    }
+
+    #[test]
     fn unknown_values_are_refused() {
         assert!(args_for(
             "prList",
@@ -652,6 +696,25 @@ mod tests {
             args_for("prMerge", &merge).unwrap(),
             vec!["pr", "merge", "4", "--squash"]
         );
+        let pinned = |head: &str| GhArgs {
+            head: Some(head.into()),
+            ..merge.clone()
+        };
+        let oid = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            args_for("prMerge", &pinned(oid)).unwrap(),
+            vec![
+                "pr".to_string(),
+                "merge".into(),
+                "4".into(),
+                "--squash".into(),
+                format!("--match-head-commit={oid}")
+            ]
+        );
+        for bad in ["", "main", "--admin", "abc123 --admin"] {
+            assert!(args_for("prMerge", &pinned(bad)).is_err(), "{bad}");
+        }
+        assert!(PR_DETAIL_FIELDS.split(',').any(|f| f == "headRefOid"));
         assert_eq!(
             args_for("prAutoMerge", &merge).unwrap(),
             vec!["pr", "merge", "4", "--auto", "--squash"]

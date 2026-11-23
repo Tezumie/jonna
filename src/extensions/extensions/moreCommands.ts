@@ -228,8 +228,11 @@ export function registerMoreCommands(
       }
       let newId = id;
       if (fork) {
-        newId = `${id}-2`;
-        for (let n = 3; manager.get(newId); n++) newId = `${id}-${n}`;
+        // A copy of one of the IDE's own gets another publisher: ids like theirs only load for
+        // what the IDE seeded.
+        const stem = manager.isBundled(id) ? `local.${id.split(".").slice(1).join(".")}` : id;
+        newId = `${stem}-2`;
+        for (let n = 3; manager.get(newId); n++) newId = `${stem}-${n}`;
         const manifestPath = joinPath(target, record.manifestFile);
         const json = JSON.parse(new TextDecoder().decode(await fsIpc.read(manifestPath)));
         if (record.manifestFile === "package.json") json.name = newId.split(".").slice(1).join(".");

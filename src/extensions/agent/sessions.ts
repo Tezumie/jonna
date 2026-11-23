@@ -1,5 +1,6 @@
 // Agent sessions of this window: created per agent tab, restored from app data when a saved tab
 // comes back, the "active" one (last focused) for commands without a session id.
+import { setBusyChatSource } from "../../core/agent/busyChats";
 import { type Disposable, DisposableStore } from "../../core/lifecycle/index";
 import { effect, signal, untracked } from "../../core/reactive/index";
 import type { WorkbenchServices } from "../../workbench/services";
@@ -10,6 +11,9 @@ import type { AgentHooks } from "./hooks";
 import type { ProviderRegistry } from "./providers";
 import { AgentSession, chatTools } from "./session";
 import type { AgentTool } from "./tools";
+
+/** The longest closing the window waits for the chats' last saves. */
+const CLOSE_SAVE_MS = 5000;
 
 export class SessionManager implements Disposable {
   private readonly sessions = new Map<string, AgentSession>();
@@ -62,6 +66,32 @@ export class SessionManager implements Disposable {
         if (!keys.includes("agent.runCommands") || !this.fullAccess()) return;
         for (const s of this.sessions.values()) s.autoApply.value = true;
       }),
+    );
+    // The window is closing: every chat is written first. Saves wait up to 1.5 s (10 s while
+    // an answer streams), so a file the agent had just changed was on disk with no trace of the
+    // edit in the chat after a restart. Never in the way of closing: a few seconds at most.
+    this.contents.set(
+      "will-close",
+      services.workspace.onWillClose(async (reason) => {
+        if (reason !== "window") return true;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const giveUp = new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, CLOSE_SAVE_MS);
+        });
+        const saved = Promise.all(this.all().map((s) => s.save().catch(() => {})));
+        await Promise.race([saved, giveUp]);
+        clearTimeout(timer);
+        return true;
+      }),
+    );
+    // Sync leaves the chats being written alone for a pass (core/agent/busyChats.ts).
+    this.contents.set(
+      "busy-chats",
+      setBusyChatSource(() =>
+        this.all()
+          .filter((s) => s.busyNow())
+          .map((s) => s.id),
+      ),
     );
   }
 

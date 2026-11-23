@@ -467,3 +467,43 @@ fn browse_lists_a_folder_for_a_picker() -> Result<()> {
     let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
+
+#[test]
+fn names_windows_cannot_keep_are_refused_there() {
+    for bad in [
+        "CON",
+        "con",
+        "Nul",
+        "PRN",
+        "aux",
+        "COM1",
+        "com9",
+        "LPT1",
+        "lpt9",
+        "nul.txt",
+        "CON.tar.gz",
+        "con .txt",
+        "name.",
+        "name ",
+        "a..",
+    ] {
+        assert!(super::windows_refuses(bad), "{bad}");
+        assert_eq!(validate_name(bad).is_err(), cfg!(windows), "{bad}");
+    }
+    for fine in [
+        "console.log",
+        "nul1",
+        "COM0",
+        "COM10",
+        "LPT",
+        "com",
+        "auxiliary.rs",
+        ".gitignore",
+        "a.b.c",
+        "my con.txt",
+        "x.nul",
+    ] {
+        assert!(!super::windows_refuses(fine), "{fine}");
+        assert!(validate_name(fine).is_ok(), "{fine}");
+    }
+}

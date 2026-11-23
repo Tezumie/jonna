@@ -100,8 +100,7 @@ fn command_for(program: &str) -> Command {
     }
     if !has_ext {
         let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-        let paths = std::env::var_os("PATH").unwrap_or_default();
-        for dir in std::env::split_paths(&paths) {
+        for dir in crate::exec::path_search_dirs() {
             for ext in exts.split(';').filter(|e| !e.is_empty()) {
                 let candidate = dir.join(format!("{program}{ext}"));
                 if candidate.is_file() {

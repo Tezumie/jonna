@@ -102,6 +102,46 @@ export function parseAddress(input: string, roots: Roots): Address | null {
   return null;
 }
 
+/**
+ * The workspace files an address may show, for checks on what a caller may see (never for
+ * opening): the file a file address names (as typed, as a `file:` URL, without its `?…` / `#…`),
+ * and for a page on this machine the file its path names in each folder — static previews serve
+ * a folder at its paths, and so do most dev servers.
+ */
+export function addressFiles(input: string, roots: Roots): string[] {
+  const folders = foldersOf(roots);
+  const text = input.trim();
+  if (!text || !folders.length) return [];
+  const spellings = new Set([text, text.split(/[?#]/)[0] ?? text]);
+  if (/^file:/i.test(text)) {
+    try {
+      // "file:///C:/x/.env" → "C:/x/.env"; "file:///home/x/.env" stays absolute.
+      const path = decodeURIComponent(new URL(text).pathname);
+      spellings.add(path.replace(/^\/+(?=[A-Za-z]:[\\/])/, ""));
+    } catch {
+      spellings.add(text.replace(/^file:\/*/i, "/"));
+    }
+  }
+  const out = new Set<string>();
+  for (const spelling of spellings) {
+    const address = parseAddress(spelling, roots);
+    if (address?.kind === "file") out.add(address.path);
+    if (address?.kind !== "local") continue;
+    let rel: string;
+    try {
+      rel = decodeURIComponent(new URL(address.url).pathname).replace(/^\/+/, "");
+    } catch {
+      continue;
+    }
+    if (!rel) continue;
+    for (const folder of folders) {
+      const path = resolveInRoot(folder.path, rel);
+      if (isWithin(folder.path, path)) out.add(path);
+    }
+  }
+  return [...out];
+}
+
 /** The proxy URL for a workspace file (static previews serve the whole folder). */
 export function fileUrl(origin: string, root: string, path: string): string {
   const rel = relativePath(root, path).replaceAll("\\", "/");

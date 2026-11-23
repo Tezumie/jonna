@@ -62,17 +62,25 @@ pub fn session_version(data: &Path, id: &str) -> Result<Option<String>> {
     }
 }
 
-/// What a save did: the file's new version, or a conflict (nothing written).
+/// What a save did: the file's new version, a conflict, or a chat deleted elsewhere (nothing
+/// written in the last two).
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveOutcome {
     pub version: Option<String>,
     pub conflict: bool,
+    /// The caller had a saved version and the file is gone: another window deleted the chat.
+    pub deleted: bool,
 }
+
+/// What `expect` means when the caller has never saved the chat: no file is the expected state.
+const NOTHING_SAVED: &str = "none";
 
 /// Saves a transcript; with `expect`, only when the file is still at that version (D221: the
 /// same chat open in two windows: the second writer is told instead of overwriting). A file
-/// that's gone (deleted elsewhere) isn't a conflict.
+/// that's gone while the caller expected a version was deleted elsewhere: writing it would
+/// bring the chat back, so nothing is written and `deleted` says so. Without `expect`, or with
+/// "none" (nothing saved yet), a missing file is simply created.
 pub fn save_session_if(
     data: &Path,
     id: &str,
@@ -81,13 +89,22 @@ pub fn save_session_if(
 ) -> Result<SaveOutcome> {
     serde_json::from_str::<Value>(json)?;
     if let Some(expected) = expect {
-        if let Some(now) = session_version(data, id)? {
-            if now != expected {
+        match session_version(data, id)? {
+            Some(now) if now != expected => {
                 return Ok(SaveOutcome {
                     version: Some(now),
                     conflict: true,
+                    deleted: false,
                 });
             }
+            None if expected != NOTHING_SAVED => {
+                return Ok(SaveOutcome {
+                    version: None,
+                    conflict: false,
+                    deleted: true,
+                });
+            }
+            _ => {}
         }
     }
     let dir = sessions_dir(data);
@@ -96,6 +113,7 @@ pub fn save_session_if(
     Ok(SaveOutcome {
         version: session_version(data, id)?,
         conflict: false,
+        deleted: false,
     })
 }
 
@@ -295,9 +313,9 @@ mod tests {
     fn a_save_from_a_stale_window_is_a_conflict() {
         let dir = std::env::temp_dir().join(format!("ide-agent-ver-{}", std::process::id()));
         assert_eq!(session_version(&dir, "c1").unwrap(), None);
-        // No file yet: any expectation saves (nothing to overwrite).
-        let first = save_session_if(&dir, "c1", r#"{"a":1}"#, Some("x")).unwrap();
-        assert!(!first.conflict);
+        // No file yet and nothing saved yet ("none"): written.
+        let first = save_session_if(&dir, "c1", r#"{"a":1}"#, Some("none")).unwrap();
+        assert!(!first.conflict && !first.deleted);
         let v1 = first.version.clone().unwrap();
         assert_eq!(
             session_version(&dir, "c1").unwrap().as_deref(),
@@ -306,9 +324,9 @@ mod tests {
         // Window A saves on its version; window B still holds v1.
         std::thread::sleep(std::time::Duration::from_millis(20));
         let a = save_session_if(&dir, "c1", r#"{"a":22}"#, Some(&v1)).unwrap();
-        assert!(!a.conflict);
+        assert!(!a.conflict && !a.deleted);
         let b = save_session_if(&dir, "c1", r#"{"b":1}"#, Some(&v1)).unwrap();
-        assert!(b.conflict);
+        assert!(b.conflict && !b.deleted);
         assert_eq!(
             load_session(&dir, "c1").unwrap().as_deref(),
             Some(r#"{"a":22}"#)
@@ -322,6 +340,40 @@ mod tests {
         assert_eq!(
             load_session(&dir, "c1").unwrap().as_deref(),
             Some(r#"{"b":1}"#)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_chat_deleted_elsewhere_is_not_written_back() {
+        let dir = std::env::temp_dir().join(format!("ide-agent-del-{}", std::process::id()));
+        let saved = save_session_if(&dir, "d1", r#"{"a":1}"#, None).unwrap();
+        let v1 = saved.version.unwrap();
+        std::fs::remove_file(sessions_dir(&dir).join("d1.json")).unwrap();
+        // This window still holds v1: the file is gone, so the chat was deleted.
+        let gone = save_session_if(&dir, "d1", r#"{"a":2}"#, Some(&v1)).unwrap();
+        assert_eq!(
+            gone,
+            SaveOutcome {
+                version: None,
+                conflict: false,
+                deleted: true
+            }
+        );
+        assert_eq!(load_session(&dir, "d1").unwrap(), None);
+        assert_eq!(
+            serde_json::to_value(&gone).unwrap(),
+            serde_json::json!({ "version": null, "conflict": false, "deleted": true })
+        );
+        // A chat never saved ("none"), and a save without an expectation, still create it.
+        let fresh = save_session_if(&dir, "d1", r#"{"a":3}"#, Some("none")).unwrap();
+        assert!(!fresh.deleted && !fresh.conflict && fresh.version.is_some());
+        std::fs::remove_file(sessions_dir(&dir).join("d1.json")).unwrap();
+        let forced = save_session_if(&dir, "d1", r#"{"a":4}"#, None).unwrap();
+        assert!(!forced.deleted && !forced.conflict);
+        assert_eq!(
+            load_session(&dir, "d1").unwrap().as_deref(),
+            Some(r#"{"a":4}"#)
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

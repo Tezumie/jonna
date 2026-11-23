@@ -6,6 +6,8 @@
 // Limits: files over 2 MB and more than 10 MB in all aren't backed up (they ask on close).
 // Backups not applied yet stay in the saved state until the restore finishes; one that can't be
 // applied (the file is gone) opens as an untitled editor instead of being dropped (D203).
+// A backup remembers which disk text its edits were made on (a stamp): a file that changed while
+// the IDE was closed gets its edits back with the "changed on disk" banner, not a silent save.
 // An empty window (no folder) keeps its unsaved text in a backup of its own (the window
 // registry's, `instancesIpc.emptyBackups*`): closing the last window keeps it and the next start
 // reopens that window with it (VS Code restores empty windows with their untitled editors);
@@ -24,6 +26,13 @@ const MAX_TOTAL_CHARS = 10 * 1024 * 1024;
 export interface Backup {
   path: string;
   text: string;
+  /**
+   * `textStamp` of the file's text on disk that the unsaved edits were made on. A file that
+   * holds something else when the backup is put back changed while the IDE was closed (a pull,
+   * another editor): the edits come back with the "changed on disk" banner instead of being
+   * saved over it unseen. Absent for untitled documents and in backups from before this.
+   */
+  base?: string;
 }
 
 interface BackupCandidate {
@@ -31,6 +40,35 @@ interface BackupCandidate {
   dirty: boolean;
   /** Null when there's no text to back up (no model yet, or not a text editor). */
   text: string | null;
+  /** `textStamp` of the file's text as the IDE last read or wrote it (absent: unknown, no file). */
+  base?: string | undefined;
+}
+
+/**
+ * A short stamp of a text, to tell later whether a file still holds it: its length and two
+ * 32-bit hashes. Not a secret or a proof: a changed file that gets the same stamp (practically
+ * never) is treated as unchanged, which is how every file was treated before the stamp.
+ */
+export function textStamp(text: string): string {
+  let a = 0x811c9dc5;
+  let b = 5381;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = (Math.imul(b, 33) + c) | 0;
+  }
+  return `${text.length}:${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}`;
+}
+
+/**
+ * Whether a backup's edits were made on another text than the file holds now (`diskNow`).
+ * False when that can't be told: a backup without a stamp, or a document without a known disk
+ * text.
+ */
+export function madeOnOtherText(backup: Backup, diskNow: string | undefined): boolean {
+  return (
+    typeof backup.base === "string" && diskNow !== undefined && textStamp(diskNow) !== backup.base
+  );
 }
 
 export function hotExitEnabled(services: WorkbenchServices): boolean {
@@ -45,7 +83,11 @@ export function backupsOf(docs: readonly BackupCandidate[]): Backup[] {
     if (!d.dirty || d.text === null || d.text.length > MAX_FILE_CHARS) continue;
     if (total + d.text.length > MAX_TOTAL_CHARS) break;
     total += d.text.length;
-    out.push({ path: d.path, text: d.text });
+    out.push({
+      path: d.path,
+      text: d.text,
+      ...(d.base !== undefined && { base: d.base }),
+    });
   }
   return out;
 }
@@ -99,13 +141,30 @@ export function registerHotExit(
   services: WorkbenchServices,
   editors: EditorService,
 ): void {
+  // The stamp of each document's disk text, made again only when that text changed (backups are
+  // saved a moment after every edit; the disk text changes on a save or a reload).
+  const stamps = new WeakMap<EditorDocument, { of: string; stamp: string }>();
+  const baseOf = (doc: EditorDocument): string | undefined => {
+    const disk = doc.diskText;
+    if (disk === undefined) return undefined;
+    let known = stamps.get(doc);
+    if (known?.of !== disk) {
+      known = { of: disk, stamp: textStamp(disk) };
+      stamps.set(doc, known);
+    }
+    return known.stamp;
+  };
   const candidates = () =>
-    editors.documents.peek().map((doc) => ({
-      doc,
-      path: doc.path.peek(),
-      dirty: doc.dirty.peek(),
-      text: doc.kind === "text" ? (doc.model.peek()?.getText() ?? null) : null,
-    }));
+    editors.documents.peek().map((doc) => {
+      const dirty = doc.dirty.peek();
+      return {
+        doc,
+        path: doc.path.peek(),
+        dirty,
+        text: doc.kind === "text" ? (doc.model.peek()?.getText() ?? null) : null,
+        base: dirty ? baseOf(doc) : undefined,
+      };
+    });
   // A save while backups are still being applied (an edit's scheduled save, a folder switch)
   // must keep the ones not applied yet.
   const restore: RestoreState = { pending: [], generation: 0 };
@@ -150,7 +209,12 @@ export function registerHotExit(
         return ok;
       }
       const keeps =
-        reason === "window" && hotExitEnabled(services) && services.workspace.root.peek() !== null;
+        reason === "window" &&
+        hotExitEnabled(services) &&
+        services.workspace.root.peek() !== null &&
+        // The folder's state isn't being saved (its file couldn't be read): the backups
+        // wouldn't be kept, so every unsaved file is asked about.
+        !services.persistence.workspaceSavesHeld();
       if (!keeps) return editors.confirmCloseAll();
       const lost = withoutBackup(candidates()).map((c) => c.doc);
       return lost.length ? editors.confirmCloseAll(lost) : Promise.resolve(true);
@@ -276,8 +340,11 @@ async function restoreBackups(
       const doc = editors.find(b.path);
       const model = doc?.kind === "text" ? (doc.model.peek() ?? (await modelOf(doc))) : null;
       if (stale()) return;
-      if (model) {
+      if (doc && model) {
         if (model.getText() !== b.text) {
+          // The file holds another text than the edits were made on (changed while the IDE was
+          // closed): they come back as a conflict, never saved over it unseen.
+          if (madeOnOtherText(b, doc.diskText)) editors.restoredOverChangedFile(doc, b.text);
           model.replaceText(b.text);
         }
         applied = true;

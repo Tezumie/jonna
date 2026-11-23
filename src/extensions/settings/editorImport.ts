@@ -9,6 +9,7 @@ import type { Json } from "../../core/dock/index";
 import { h, on, replaceChildren } from "../../core/dom/index";
 import { extIpc } from "../../core/ipc/extensions";
 import { fsIpc } from "../../core/ipc/fs";
+import { IpcError } from "../../core/ipc/invoke";
 import { dialogIpc, type EditorProfile, settingsIpc } from "../../core/ipc/system";
 import { type DisposableStore, DisposableStore as Store } from "../../core/lifecycle/index";
 import { dirname, isAbsolute, joinPath } from "../../core/paths/index";
@@ -76,7 +77,16 @@ export interface ImportResult {
 }
 
 const decode = (b: Uint8Array) => new TextDecoder().decode(b).replace(/^﻿/, "");
-const readText = (path: string) => fsIpc.read(path).then(decode, () => "");
+/**
+ * A file's text; "" only when the file isn't there. Any other failed read (the file held by
+ * another program) is an error: what is read here is the base of what is written back, and an
+ * unreadable keybindings file taken for an empty one was replaced by the imported rules alone.
+ */
+const readText = (path: string) =>
+  fsIpc.read(path).then(decode, (err: unknown) => {
+    if (err instanceof IpcError && err.code === "NotFound") return "";
+    throw err;
+  });
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 function jsonc(text: string | null): unknown {

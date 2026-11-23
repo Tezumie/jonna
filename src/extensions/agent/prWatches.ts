@@ -15,6 +15,8 @@ import {
   type AutoMergeState,
   autoMergeAllowed,
   autoMergeLine,
+  headMoved,
+  judgedHead,
   type MergeMethod,
   mergeDecision,
   mergedByIdeText,
@@ -68,6 +70,11 @@ interface Watch {
   polling: Promise<void> | null;
   /** D352: merged automatically when ready (the user asked). */
   autoMerge: AutoMergeState | null;
+  /**
+   * It has had checks at some look. A look with none after that is a push whose checks haven't
+   * started, not a pull request with nothing to wait for (the IDE's own merge waits).
+   */
+  hadChecks: boolean;
 }
 
 /** What's saved with the folder: comment bodies aren't needed to tell new ones apart. */
@@ -77,7 +84,10 @@ interface SavedWatch {
   repo: string | null;
   last: PrSnapshot | null;
   autoMerge?: AutoMergeState | null;
+  hadChecks?: boolean;
 }
+
+const keyOf = (w: Pick<Watch, "repo" | "number">) => `${w.repo ?? ""}#${w.number}`;
 
 const validAutoMerge = (raw: unknown): AutoMergeState | null => {
   const a = raw as Partial<AutoMergeState> | null;
@@ -141,6 +151,7 @@ export class PrWatchService {
       timer: undefined,
       polling: null,
       autoMerge: null,
+      hadChecks: snapshot.checks.length > 0,
     };
     this.watches.set(session, w);
     this.services.persistence.scheduleSave();
@@ -158,10 +169,22 @@ export class PrWatchService {
     return w.number;
   }
 
+  /**
+   * Whether the chat a watch belongs to still exists: open in this window (and not being
+   * deleted), or saved. "unknown": the saved chats couldn't be read just now.
+   */
+  private async chatState(id: string): Promise<"here" | "gone" | "unknown"> {
+    const loaded = this.sessions.find(id);
+    if (loaded) return loaded.deleted ? "gone" : "here";
+    const stamps = await agentStoreIpc.stamps([id]).catch(() => null);
+    if (!stamps) return "unknown";
+    return stamps[0] ? "here" : "gone";
+  }
+
   /** The pull request chat `session` watches ("<repo>#<n>", the key auto-merge is confirmed by). */
   watchedKey(session: string): string | null {
     const w = this.watches.get(session);
-    return w ? `${w.repo ?? ""}#${w.number}` : null;
+    return w ? keyOf(w) : null;
   }
 
   /**
@@ -209,6 +232,9 @@ export class PrWatchService {
     if (!w?.autoMerge) return null;
     const was = w.autoMerge;
     w.autoMerge = null;
+    // The user's yes was for that time: turned off, the next auto_merge shows the card again
+    // (any chat's agent could otherwise turn it back on unasked).
+    this.confirmed.delete(keyOf(w));
     this.services.persistence.scheduleSave();
     this.publish();
     if (was.mode === "github")
@@ -242,6 +268,7 @@ export class PrWatchService {
         comments: w.last.comments.map((c) => ({ id: c.id, author: c.author, body: "" })),
       },
       autoMerge: w.autoMerge,
+      ...(w.hadChecks && { hadChecks: true }),
     }));
   }
 
@@ -252,17 +279,20 @@ export class PrWatchService {
     for (const raw of data.slice(0, 50)) {
       const d = raw as Partial<SavedWatch> | null;
       if (!d || typeof d.session !== "string" || typeof d.number !== "number") continue;
+      const last = d.last && typeof d.last === "object" ? (d.last as PrSnapshot) : null;
       const w: Watch = {
         session: d.session,
         number: d.number,
         repo: typeof d.repo === "string" ? d.repo : null,
-        last: d.last && typeof d.last === "object" ? (d.last as PrSnapshot) : null,
+        last,
         failures: 0,
         lastError: null,
         checkedAt: null,
         timer: undefined,
         polling: null,
         autoMerge: validAutoMerge(d.autoMerge),
+        // Saved before this was kept: what the last look saw says it.
+        hadChecks: d.hadChecks === true || (Array.isArray(last?.checks) && last.checks.length > 0),
       };
       this.watches.set(w.session, w);
       // A few seconds after the window settles, then every minute.
@@ -288,6 +318,8 @@ export class PrWatchService {
   private stop(session: string): void {
     const w = this.watches.get(session);
     if (!w) return;
+    // The user's yes to auto-merge ends with the watch: turning it on again asks again.
+    this.confirmed.delete(keyOf(w));
     clearTimeout(w.timer);
     this.watches.delete(session);
     this.services.persistence.scheduleSave();
@@ -310,32 +342,58 @@ export class PrWatchService {
     if (w.polling) return w.polling;
     w.polling = (async () => {
       try {
+        // A watch outlives its chat only by mistake (deleted here before watches went with
+        // chats, or deleted on another computer): it ends, and above all merges nothing.
+        const chat = await this.chatState(w.session);
+        if (this.watches.get(w.session) !== w) return;
+        if (chat === "gone") {
+          this.stop(w.session);
+          return;
+        }
         const gh = createGithubIpc(w.repo ?? undefined);
         const view = await gh.json<unknown>("prView", { number: w.number });
         const snapshot = prSnapshot(view, await this.threads(gh, w.number));
         if (this.watches.get(w.session) !== w) return;
         const events = diffPr(w.last, snapshot);
         w.last = snapshot;
+        if (snapshot.checks.length) w.hadChecks = true;
         w.failures = 0;
         w.lastError = null;
         w.checkedAt = Date.now();
         // D352: the IDE merges it now that it's ready; that message says it all.
         const auto = w.autoMerge;
         let failure = "";
-        if (auto?.mode === "ide" && mergeDecision(snapshot).ready) {
-          const error = await gh.run("prMerge", { number: w.number, method: auto.method }).then(
-            () => null,
-            (err: unknown) => (err instanceof Error ? err.message : String(err)),
-          );
+        // Not while the chat couldn't be looked up: a merge is only ever for a chat that's there
+        // (asked again right before, since the looks above take a while).
+        if (
+          auto?.mode === "ide" &&
+          mergeDecision(snapshot, w.hadChecks).ready &&
+          (await this.chatState(w.session)) === "here" &&
+          this.watches.get(w.session) === w &&
+          w.autoMerge === auto
+        ) {
+          // Pinned to the commit this look judged, where the view names it: a push in between
+          // makes the merge fail instead of merging what no check ran on.
+          const head = judgedHead(snapshot);
+          const error = await gh
+            .run("prMerge", { number: w.number, method: auto.method, ...(head && { head }) })
+            .then(
+              () => null,
+              (err: unknown) => (err instanceof Error ? err.message : String(err)),
+            );
           if (this.watches.get(w.session) !== w) return;
           if (error === null) {
             this.stop(w.session);
             await this.deliver(w.session, mergedByIdeText(snapshot, auto.method));
             return;
           }
-          // It goes off: a merge that fails once would fail at every look.
-          w.autoMerge = null;
-          failure = mergeFailedText(snapshot, error);
+          // A push landed between the look and the merge: the next look judges the new commit.
+          if (!(head && headMoved(error))) {
+            // It goes off: a merge that fails once would fail at every look.
+            w.autoMerge = null;
+            this.confirmed.delete(keyOf(w));
+            failure = mergeFailedText(snapshot, error);
+          }
         }
         const merged = auto && events.some((e) => e.kind === "merged");
         const news = [
@@ -392,7 +450,7 @@ export class PrWatchService {
       autoMerge: w.autoMerge && {
         method: w.autoMerge.method,
         by: w.autoMerge.mode,
-        status: autoMergeLine(w.autoMerge, w.last),
+        status: autoMergeLine(w.autoMerge, w.last, w.hadChecks),
       },
     };
   }
@@ -400,6 +458,17 @@ export class PrWatchService {
   private publish(): void {
     info.value = this.list();
   }
+}
+
+/** This window's service, for what isn't handed it (deleting a chat). */
+let current: PrWatchService | null = null;
+
+/**
+ * A chat is being deleted: its watch goes with it, auto-merge included. Left on, it stayed
+ * saved with the folder and merged the pull request days later with no chat to say so.
+ */
+export function forgetPrWatch(session: string): void {
+  current?.unwatch(session);
 }
 
 function watchTool(service: PrWatchService): AgentTool {
@@ -517,6 +586,8 @@ async function autoMergeAction(
         heading: "Merge automatically",
         detail: `Merge pull request #${w.number}${w.title ? ` (${w.title})` : ""} (${method}) once every check passed, it's approved (when reviews are required) and it merges cleanly: GitHub's auto-merge where the repository allows it, else the IDE merges it at its next look. You can turn it off from the chat's details or Background tasks.`,
         kind: "tool",
+        // A merge nobody at the window agreed to can't be undone: asked in Auto too (D352).
+        evenWithFullAccess: true,
       });
       if (answer === "deny")
         return {
@@ -545,7 +616,13 @@ export function registerPrWatches(
 ): PrWatchService {
   const { dispatcher, state, persistence, workspace } = services;
   const service = new PrWatchService(services, sessions);
-  sub.add({ dispose: () => service.dispose() });
+  current = service;
+  sub.add({
+    dispose: () => {
+      service.dispose();
+      if (current === service) current = null;
+    },
+  });
   sub.add(
     persistence.register("agent.prWatches", {
       save: () => service.save(),

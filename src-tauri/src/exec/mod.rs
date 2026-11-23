@@ -153,6 +153,37 @@ pub fn merge_path(first: &str, then: &str, sep: char) -> String {
     out.join(&sep.to_string())
 }
 
+/// The folders of a PATH value that a program may be looked up in: the absolute ones only.
+/// An empty entry (`a;;b`, a trailing `;`) or a relative one joins to a path under the
+/// process's working directory, so a file named like the program at the top of an opened
+/// folder would be taken for it.
+pub fn search_dirs(path: &std::ffi::OsStr) -> Vec<PathBuf> {
+    std::env::split_paths(path)
+        .filter(|dir| dir.is_absolute())
+        .collect()
+}
+
+/// `search_dirs` of this process's PATH.
+pub fn path_search_dirs() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
+        .map(|path| search_dirs(&path))
+        .unwrap_or_default()
+}
+
+/// Whether a PATH entry written the Windows way is absolute (`C:\bin`, `\\server\share`):
+/// `search_dirs`' rule for code that reads a Windows PATH as text on any system.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn windows_absolute(dir: &str) -> bool {
+    let bytes = dir.as_bytes();
+    let separator = |b: u8| b == b'\\' || b == b'/';
+    let drive = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && separator(bytes[2]);
+    let network = bytes.len() > 2 && separator(bytes[0]) && separator(bytes[1]);
+    drive || network
+}
+
 /// Windows (D200): reads PATH again as a new process would get it (the machine's, then the
 /// user's) and adds the entries that are new, so a tool winget or an installer just added is
 /// found without restarting the IDE.
@@ -924,6 +955,34 @@ mod path_tests {
         );
         // Case matters outside Windows.
         assert_eq!(merge_path("/A", "/a", ':'), "/A:/a");
+    }
+
+    #[test]
+    fn a_program_is_only_looked_up_in_absolute_path_folders() {
+        use super::{search_dirs, windows_absolute};
+        use std::path::PathBuf;
+        let (a, b) = if cfg!(windows) {
+            ("C:\\a", "C:\\b")
+        } else {
+            ("/a", "/b")
+        };
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        // Empty entries (doubled and trailing separators) and relative ones are left out.
+        let path = format!("{sep}{a}{sep}{sep}.{sep}bin{sep}{b}{sep}");
+        assert_eq!(
+            search_dirs(std::ffi::OsStr::new(&path)),
+            vec![PathBuf::from(a), PathBuf::from(b)]
+        );
+        assert!(search_dirs(std::ffi::OsStr::new("")).is_empty());
+        #[cfg(windows)]
+        assert!(search_dirs(std::ffi::OsStr::new("C:bin;\\bin;..\\x")).is_empty());
+
+        for yes in ["C:\\bin", "d:/tools", "\\\\server\\share\\bin"] {
+            assert!(windows_absolute(yes), "{yes}");
+        }
+        for no in ["", ".", "bin", "C:", "C:bin", "\\bin", "..\\x", "\\\\"] {
+            assert!(!windows_absolute(no), "{no}");
+        }
     }
 }
 

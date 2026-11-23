@@ -818,3 +818,123 @@ fn files_past_the_windows_path_limit_are_committed() {
     assert!(files.trim_end().ends_with("deep.txt"), "{files}");
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn paths_with_pattern_characters_name_one_file() {
+    let Some(dir) = repo("literal") else { return };
+    fs::create_dir_all(dir.join("pages")).unwrap();
+    write(&dir, "pages/a.txt", "a\n");
+    write(&dir, "pages/[ab].txt", "brackets\n");
+    // Staging the bracket file leaves its neighbour alone.
+    ops::stage(&dir, &["pages/[ab].txt".into()]).unwrap();
+    let staged = |dir: &Path| -> Vec<String> {
+        ops::status(dir)
+            .unwrap()
+            .files
+            .into_iter()
+            .filter(|f| f.index != '?' && f.index != '.' && f.index != ' ')
+            .map(|f| f.path)
+            .collect()
+    };
+    assert_eq!(staged(&dir), ["pages/[ab].txt"]);
+    ops::unstage(&dir, &["pages/[ab].txt".into()]).unwrap();
+    assert!(staged(&dir).is_empty());
+    // Discarding it (untracked) deletes that file only.
+    ops::discard(&dir, &[], &["pages/[ab].txt".into()]).unwrap();
+    assert!(!dir.join("pages/[ab].txt").exists());
+    assert!(dir.join("pages/a.txt").exists());
+    // The same for tracked files, and with a commit to restore from.
+    write(&dir, "pages/[ab].txt", "brackets\n");
+    ops::stage(&dir, &[]).unwrap();
+    ops::commit(&dir, "both", false, false, Default::default()).unwrap();
+    write(&dir, "pages/a.txt", "a changed\n");
+    write(&dir, "pages/[ab].txt", "brackets changed\n");
+    ops::stage(&dir, &["pages/[ab].txt".into()]).unwrap();
+    assert_eq!(staged(&dir), ["pages/[ab].txt"]);
+    ops::unstage(&dir, &["pages/[ab].txt".into()]).unwrap();
+    ops::discard(&dir, &["pages/[ab].txt".into()], &[]).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.join("pages/[ab].txt")).unwrap(),
+        "brackets\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("pages/a.txt")).unwrap(),
+        "a changed\n"
+    );
+    // A folder still names everything in it.
+    ops::stage(&dir, &["pages".into()]).unwrap();
+    assert_eq!(staged(&dir), ["pages/a.txt"]);
+    // Part of the bracket file staged: the index entry written is that file's.
+    write(&dir, "pages/[ab].txt", "brackets\nmore\n");
+    ops::write_index(&dir, "pages/[ab].txt", "brackets\nmore\n").unwrap();
+    assert_eq!(
+        ops::show(&dir, "", "pages/[ab].txt").unwrap().as_deref(),
+        Some("brackets\nmore\n")
+    );
+}
+
+#[test]
+fn exact_show_refuses_text_that_is_not_utf8() {
+    let Some(dir) = repo("exact") else { return };
+    write(&dir, "ok.txt", "caf\u{e9}\n");
+    fs::write(dir.join("latin1.txt"), b"caf\xe9\n").unwrap();
+    ops::stage(&dir, &[]).unwrap();
+    assert_eq!(
+        ops::show_exact(&dir, "", "ok.txt").unwrap().as_deref(),
+        Some("caf\u{e9}\n")
+    );
+    // Shown with a replacement character, but never handed out as the file's exact text.
+    assert_eq!(
+        ops::show(&dir, "", "latin1.txt").unwrap().as_deref(),
+        Some("caf\u{fffd}\n")
+    );
+    assert!(ops::show_exact(&dir, "", "latin1.txt").is_err());
+    assert_eq!(ops::show_exact(&dir, "", "missing.txt").unwrap(), None);
+}
+
+/// Needs a WSL distribution with git: `IDE_TEST_WSL_DISTRO=Ubuntu cargo test --lib wsl -- --ignored`.
+#[cfg(windows)]
+#[test]
+#[ignore = "needs a WSL distribution with git"]
+fn interactive_rebase_in_wsl_follows_the_plan() {
+    let Ok(distro) = std::env::var("IDE_TEST_WSL_DISTRO") else {
+        return;
+    };
+    let dir = PathBuf::from(format!(
+        r"\wsl.localhost\{distro}\tmp\ide-git-wsl-rebase-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    ops::init(&dir).unwrap();
+    for (k, v) in [
+        ("user.name", "Test"),
+        ("user.email", "test@example.com"),
+        ("commit.gpgsign", "false"),
+    ] {
+        run(&dir, &["config", k, v], None).unwrap();
+    }
+    commit_file(&dir, "base.txt", "base\n", "base");
+    let a = commit_file(&dir, "a.txt", "a\n", "add a");
+    let b = commit_file(&dir, "b.txt", "b\n", "add b");
+    let step = |action: &str, hash: &str, message: Option<&str>| super::rebase::RebaseStep {
+        action: action.into(),
+        hash: hash.into(),
+        message: message.map(String::from),
+    };
+    let git_dir = super::git_dir(&dir).unwrap();
+    super::rebase::interactive(
+        &dir,
+        &git_dir,
+        "HEAD~2",
+        &[
+            step("reword", &b, Some("add b (reworded)")),
+            step("drop", &a, None),
+        ],
+    )
+    .unwrap();
+    let log = ops::log(&dir, 10, None).unwrap();
+    let subjects: Vec<&str> = log.iter().map(|c| c.subject.as_str()).collect();
+    assert_eq!(subjects, ["add b (reworded)", "base"]);
+    let _ = fs::remove_dir_all(&dir);
+}

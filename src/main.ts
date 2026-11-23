@@ -15,7 +15,7 @@ import type { Platform } from "./core/keybindings/index";
 import { basename } from "./core/paths/index";
 import { perf } from "./core/perf";
 import { product } from "./core/product";
-import { computed, effect } from "./core/reactive/index";
+import { computed, effect, untracked } from "./core/reactive/index";
 import { builtinExtensions } from "./extensions/builtins";
 import { connectAtStartup } from "./extensions/remote/index";
 import { windowsStartupDone } from "./extensions/windows/index";
@@ -230,6 +230,13 @@ async function boot(): Promise<void> {
   // A multi-root workspace (D251): folders added or removed bring their own settings, and the
   // workspace file's settings are its workspace layer.
   workspace.onDidChangeFolders(() => void settings.load().catch(() => {}));
+  // No folder open any more (File → Close folder, or an open that failed after the old folder
+  // closed): its settings stop applying. A switch to another folder keeps them until the next
+  // one's are read (`onDidOpen`), so the look doesn't jump twice.
+  effect(() => {
+    if (workspace.root.value === null) untracked(() => settings.workspaceClosed());
+    return undefined;
+  });
   effect(() => {
     workspace.fileData.value;
     if (workspace.file.peek()) void settings.reload("workspace").catch(() => {});

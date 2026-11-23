@@ -2,22 +2,13 @@
 // (palette, context menu), the explorer selection and an input prompt fill it in.
 import { fsIpc } from "../../core/ipc/fs";
 import type { DisposableStore } from "../../core/lifecycle/index";
-import { basename, dirname, isWithin, samePath } from "../../core/paths/index";
+import { basename, dirname, isWithin, outermostPaths, samePath } from "../../core/paths/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
 import { updateImportsAfterMove } from "./importUpdates";
+import { hasWindowsNames, validateName } from "./names";
 import { createdOperation, deletedOperation, movedOperation, type UndoDeps } from "./undo";
 import type { ExplorerView } from "./view";
-
-const INVALID_NAME = /[\\/:*?"<>|\0]/;
-
-export function validateName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) return "A file or folder name must be provided.";
-  if (name === "." || name === "..") return "This name is not valid.";
-  if (INVALID_NAME.test(name)) return "Names can't contain \\ / : * ? \" < > |";
-  return undefined;
-}
 
 export function registerFileCommands(
   sub: DisposableStore,
@@ -60,7 +51,7 @@ export function registerFileCommands(
     }
     const selected = view?.tree?.selectedItems().map((e) => e.path) ?? [];
     const all = withNested === false || !view ? selected : view.withNestedFiles(selected);
-    return all.filter((p) => !all.some((q) => q !== p && isWithin(q, p)));
+    return outermostPaths(all);
   };
   const refreshDir = async (dir: string) => {
     await getView()?.refresh([dir]);
@@ -105,20 +96,22 @@ export function registerFileCommands(
       run: async ({ parent, name }, ctx) => {
         const folder = await targetFolder(parent);
         const view = getView();
+        // By the folder the name lands in: Windows' reserved names apply only there.
+        const validate = (v: string) => validateName(v, hasWindowsNames(folder));
         const chosen =
           name ??
           (view?.canEditInline()
-            ? await view.inline.start({ kind, path: folder, initial: "", validate: validateName })
+            ? await view.inline.start({ kind, path: folder, initial: "", validate })
             : await quickInput.prompt({
                 prompt:
                   kind === "file"
                     ? `New file in ${workspace.relative(folder) || basename(folder)}`
                     : "New folder name",
                 placeholder: kind === "file" ? "File name" : "Folder name",
-                validate: validateName,
+                validate,
               }));
         if (chosen === undefined) return { created: null };
-        const error = validateName(chosen);
+        const error = validate(chosen);
         if (error) throw new Error(error);
         const created =
           kind === "file"
@@ -171,6 +164,7 @@ export function registerFileCommands(
         const dot = current.lastIndexOf(".");
         const selection: [number, number] = [0, dot > 0 ? dot : current.length];
         const view = getView();
+        const validate = (v: string) => validateName(v, hasWindowsNames(target));
         const chosen =
           newName ??
           (view?.canEditInline()
@@ -179,16 +173,16 @@ export function registerFileCommands(
                 path: target,
                 initial: current,
                 selection,
-                validate: validateName,
+                validate,
               })
             : await quickInput.prompt({
                 prompt: `Rename ${current}`,
                 value: current,
                 selection,
-                validate: validateName,
+                validate,
               }));
         if (chosen === undefined || chosen.trim() === current) return { renamed: null };
-        const error = validateName(chosen);
+        const error = validate(chosen);
         if (error) throw new Error(error);
         const renamed = await fsIpc.rename(target, chosen.trim());
         events.emit("files.didRename", { from: target, to: renamed });

@@ -116,9 +116,24 @@ pub fn interactive(
     let todo_path = dir.join("todo");
     std::fs::write(&todo_path, list)?;
     super::trust::check(repo, &["rebase"])?;
+    let in_wsl = crate::wsl::of_dir(repo).is_some();
+    // The list's path as the git that runs spells it: inside WSL that is the Linux path.
+    let todo_for_git = if in_wsl {
+        linux_path(&todo_path).ok_or_else(|| {
+            Error::Invalid("An interactive rebase can't reach this repository's git folder.".into())
+        })?
+    } else {
+        todo_path.clone().into_os_string()
+    };
     let mut cmd = command(repo);
     cmd.env("GIT_SEQUENCE_EDITOR", "cp \"$IDE_REBASE_TODO\"")
-        .env("IDE_REBASE_TODO", &todo_path)
+        .env("IDE_REBASE_TODO", &todo_for_git);
+    if in_wsl {
+        // `command` listed the variables that cross into WSL before these two were set. Without
+        // them git there took its own list as written (`GIT_EDITOR=true`) and reported success.
+        crate::wsl::share_env(&mut cmd);
+    }
+    cmd
         // A commit missing from the list is an error, not a silent drop.
         .args([
             "-c",
@@ -153,6 +168,12 @@ pub fn interactive(
         let _ = std::fs::remove_dir_all(&dir);
         Err(Error::Git(text.trim().to_string()))
     }
+}
+
+/// The Linux path of a file in a WSL distribution (given by its Windows path); None for any
+/// other path.
+fn linux_path(path: &Path) -> Option<std::ffi::OsString> {
+    crate::wsl::parse(&path.to_string_lossy()).map(|at| at.linux.into())
 }
 
 /// Commits a rebase onto `base` would replay, oldest first (merges are dropped, as git does).
@@ -212,6 +233,20 @@ mod tests {
         assert_eq!(
             messages,
             vec![("msg-1".to_string(), "New subject\n".to_string())]
+        );
+    }
+
+    #[test]
+    fn the_todo_path_for_git_in_wsl_is_the_linux_one() {
+        assert_eq!(
+            linux_path(Path::new(
+                r"\\wsl.localhost\Ubuntu\home\me\app\.git\ide-rebase\todo"
+            )),
+            Some("/home/me/app/.git/ide-rebase/todo".into())
+        );
+        assert_eq!(
+            linux_path(Path::new(r"C:\code\app\.git\ide-rebase\todo")),
+            None
         );
     }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  lateShellCommand,
   parseTasksJson,
   quoteTaskArg,
   scriptTasks,
@@ -59,6 +60,41 @@ test("tasks.json", () => {
       ["all", "", false, null, null],
       ["win", "make", false, null, null],
     ],
+  );
+});
+
+test("an argument's ${input:…} value is quoted after it's filled in", () => {
+  const parse = (platform: "linux" | "windows") =>
+    parseTasksJson(
+      {
+        tasks: [
+          { label: "say", type: "shell", command: "git commit", args: ["-m", "${input:msg}"] },
+          { label: "plain", type: "shell", command: "echo", args: ["a b"] },
+          { label: "proc", type: "process", command: "echo", args: ["${input:msg}"] },
+        ],
+      },
+      ".vscode/tasks.json",
+      v,
+      platform,
+    );
+  const [say, plain, proc] = parse("linux");
+  assert.ok(say?.lateShell);
+  // Only tasks that need it carry the parts; a process task's args never pass a shell.
+  assert.equal(plain?.lateShell, undefined);
+  assert.equal(proc?.lateShell, undefined);
+  const value = (text: string) => new Map([["input:msg", text]]);
+  assert.equal(lateShellCommand(say.lateShell, value("don't")), "git commit -m 'don'\\''t'");
+  assert.equal(
+    lateShellCommand(say.lateShell, value("'; calc; '")),
+    "git commit -m ''\\''; calc; '\\'''",
+  );
+  assert.equal(lateShellCommand(say.lateShell, value("$(calc)")), "git commit -m '$(calc)'");
+  assert.equal(lateShellCommand(say.lateShell, value("fix")), "git commit -m fix");
+  const [winSay] = parse("windows");
+  assert.ok(winSay?.lateShell);
+  assert.equal(
+    lateShellCommand(winSay.lateShell, value("'; calc; '")),
+    "git commit -m '''; calc; '''",
   );
 });
 

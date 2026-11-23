@@ -474,3 +474,24 @@ async fn a_wrong_state_is_ignored_and_an_error_ends_the_sign_in() {
     assert_eq!(a.unwrap(), 400);
     assert_eq!(b.unwrap(), 400);
 }
+
+#[test]
+fn discovery_only_asks_addresses_the_server_itself_could_have() {
+    let remote = "https://mcp.example.com/mcp";
+    let local = "http://localhost:3000/mcp";
+    assert!(may_fetch("https://auth.example.com/.well-known/x", remote));
+    // A server on the internet can't point discovery at plain http, or at this computer.
+    assert!(!may_fetch("http://auth.example.com/.well-known/x", remote));
+    assert!(!may_fetch("http://127.0.0.1:8080/admin", remote));
+    assert!(!may_fetch("http://localhost:9200/_cat", remote));
+    assert!(!may_fetch(
+        "http://169.254.169.254/latest/meta-data",
+        remote
+    ));
+    assert!(!may_fetch("file:///etc/passwd", remote));
+    assert!(!may_fetch("not a url", remote));
+    // A server the user runs on this computer may name its own (local http) addresses.
+    assert!(may_fetch("http://localhost:3000/.well-known/x", local));
+    assert!(may_fetch("http://127.0.0.1:9000/.well-known/x", local));
+    assert!(!may_fetch("http://auth.example.com/x", local));
+}

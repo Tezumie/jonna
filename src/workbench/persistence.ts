@@ -9,6 +9,10 @@ import { type Disposable, DisposableStore, toDisposable } from "../core/lifecycl
 
 const STATE_VERSION = 1;
 const SAVE_DELAY_MS = 400;
+/** The waits before a failed read of the workspace state is tried again. */
+const LOAD_RETRY_DELAYS_MS = [100, 400];
+/** The key a workspace state file keeps an earlier, unrestored file's text under. */
+const UNRESTORED_KEY = "unrestored";
 
 export interface StateContributor {
   save(): unknown;
@@ -115,6 +119,14 @@ export class PersistenceService implements Disposable {
   private restoring = false;
   /** Workspace saves are only allowed while a workspace is open. */
   private workspaceOpen = false;
+  /** The open workspace's state file couldn't be read: nothing is saved over it until it can. */
+  private workspaceUnread = false;
+  /**
+   * The text of a workspace state file that restored nothing (not this version's JSON, or only
+   * readable after the folder had opened): saved along under `unrestored`, so the layout and the
+   * unsaved files' backups in it aren't replaced by this session's.
+   */
+  private unrestored: string | undefined;
   private global: GlobalState = {};
   /** Global writes, one after the other (each reads the file first). */
   private globalWrites: Promise<void> = Promise.resolve();
@@ -142,7 +154,23 @@ export class PersistenceService implements Disposable {
     clearTimeout(this.timer);
     this.timer = undefined;
     if (!this.workspaceOpen || this.restoring) return;
+    if (this.workspaceUnread) {
+      // The file couldn't be read when the folder opened: look again. Still unreadable: nothing
+      // is written over what can't be seen. Readable now: what it holds was never restored
+      // here, so it is kept inside the state written from now on.
+      let text: string | null;
+      try {
+        text = await this.backend.load("workspace");
+      } catch {
+        return;
+      }
+      // The folder closed, or another was opened, while the file was read.
+      if (!this.workspaceOpen || this.restoring || !this.workspaceUnread) return;
+      this.workspaceUnread = false;
+      this.unrestored = text || undefined;
+    }
     const data: Record<string, unknown> = { version: STATE_VERSION };
+    if (this.unrestored !== undefined) data[UNRESTORED_KEY] = this.unrestored;
     for (const [key, contributor] of this.contributors) {
       try {
         data[key] = contributor.save();
@@ -161,13 +189,65 @@ export class PersistenceService implements Disposable {
   closeWorkspace(): void {
     clearTimeout(this.timer);
     this.workspaceOpen = false;
+    this.workspaceUnread = false;
+    this.unrestored = undefined;
+  }
+
+  /**
+   * True while the open workspace's state isn't being saved because its file couldn't be read
+   * (`flush`). Who relies on the saved state for something that would otherwise be lost (hot
+   * exit's backups of unsaved files) must not count on it then.
+   */
+  workspaceSavesHeld(): boolean {
+    return this.workspaceUnread;
+  }
+
+  /**
+   * The workspace state file's text; a failed read is tried again a few times first (another
+   * window writing it, an antivirus scan: gone a moment later). Throws when it stays unreadable.
+   */
+  private async loadWorkspaceText(): Promise<string | null> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.backend.load("workspace");
+      } catch (err) {
+        if (attempt >= LOAD_RETRY_DELAYS_MS.length) throw err;
+        await new Promise((resolve) => setTimeout(resolve, LOAD_RETRY_DELAYS_MS[attempt]));
+      }
+    }
+  }
+
+  /**
+   * What a workspace state file held that wasn't restored (it isn't this version's JSON), from
+   * its text; undefined for an empty file or one that was restored. A file that already carries
+   * such a copy passes it on as it is (the copy isn't wrapped again on every start).
+   */
+  private unrestoredOf(text: string | null): string | undefined {
+    if (!text) return undefined;
+    const data = parseState(text);
+    if (!data) return text;
+    return typeof data[UNRESTORED_KEY] === "string" ? data[UNRESTORED_KEY] : undefined;
   }
 
   /** Loads the open workspace's state and hands each key to its contributor. */
   async restoreWorkspace(): Promise<void> {
     this.restoring = true;
+    this.workspaceUnread = false;
+    this.unrestored = undefined;
     try {
-      const text = await this.backend.load("workspace").catch(() => null);
+      let text: string | null = null;
+      try {
+        text = await this.loadWorkspaceText();
+      } catch (err) {
+        // Not "no state yet": the file may hold the layout and the backups of unsaved files,
+        // and a save now would replace them with this start's defaults. Saves wait until it
+        // can be read (`flush`).
+        this.workspaceUnread = true;
+        console.warn("workspace state couldn't be read; it isn't saved until it can be", err);
+      }
+      // A file that isn't this version's JSON (a newer build's after a downgrade, a damaged
+      // one) restores nothing, and is kept inside the state saved from here on.
+      this.unrestored = this.unrestoredOf(text);
       const data = parseState(text) ?? {};
       const ordered = [...this.contributors].sort(
         ([, a], [, b]) => Number(!!b.early) - Number(!!a.early),
@@ -269,6 +349,37 @@ export class PersistenceService implements Disposable {
   dispose(): void {
     this.store.dispose();
   }
+}
+
+/**
+ * A most-recent-first list with `id` put first, built on the list as stored now: for a
+ * `saveGlobal` function patch, so what another window recorded since stays in the list (this
+ * window's own copy of it would drop that).
+ */
+export function recentWith(
+  stored: readonly string[] | undefined,
+  id: string,
+  max: number,
+): string[] {
+  return [id, ...(stored ?? []).filter((other) => other !== id)].slice(0, max);
+}
+
+/**
+ * A record as stored now with only this window's changes applied (`before`: its values when it
+ * last saved or loaded them, `now`: its values at present): keys it set or changed take its
+ * value, keys it removed go, and every other key keeps what is stored, another window's change
+ * included. For a `saveGlobal` function patch.
+ */
+export function withOwnChanges<T>(
+  stored: Readonly<Record<string, T>> | undefined,
+  before: Readonly<Record<string, T>>,
+  now: Readonly<Record<string, T>>,
+): Record<string, T> {
+  const out: Record<string, T> = { ...(stored ?? {}) };
+  for (const key of Object.keys(before)) if (!Object.hasOwn(now, key)) delete out[key];
+  for (const [key, value] of Object.entries(now))
+    if (!Object.hasOwn(before, key) || before[key] !== value) out[key] = value;
+  return out;
 }
 
 /** The known keys of a global state file, each checked. */

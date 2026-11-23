@@ -393,3 +393,39 @@ test("mergeSettings: after the account's sync 'was set up again', this computer'
   assert.deepEqual(only.apply, [{ key: "fresh", value: 2 }]);
   assert.deepEqual(only.kept, []);
 });
+
+test("mergeSettings: names every object inherits aren't settings here", () => {
+  // The account knows "constructor" and "toString"; this computer never set them.
+  const remote = { keys: { constructor: { v: 1, t: 5 }, other: { v: 2, t: 5 } } };
+  const r = mergeSettings({
+    local: { other: 2 },
+    base: { other: "2", constructor: "1" },
+    remote,
+    localTime: 50,
+    localTimes: {},
+    skip: none,
+  });
+  // Removed here (it was in the base, it isn't set now): the account is told so, with a date.
+  assert.deepEqual(r.record.keys.constructor, { d: true, t: 50 });
+  assert.deepEqual(r.apply, []);
+  assert.deepEqual(Object.keys(r.base), ["other"]);
+  // Nothing anywhere: no entry is made up from what objects inherit.
+  const empty = mergeSettings({
+    local: {},
+    base: {},
+    remote: { keys: { toString: { v: "x", t: 1 } } },
+    localTime: 9,
+    skip: none,
+  });
+  assert.deepEqual(empty.apply, [{ key: "toString", value: "x" }]);
+  assert.equal(empty.recordChanged, false);
+  // `__proto__` is never a key (it would set the prototype of the objects built here).
+  const proto = mergeSettings({
+    local: JSON.parse('{"__proto__": 1, "a": 1}') as Record<string, unknown>,
+    base: {},
+    remote: null,
+    localTime: 1,
+    skip: none,
+  });
+  assert.deepEqual(Object.keys(proto.record.keys), ["a"]);
+});

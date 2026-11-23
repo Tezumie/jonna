@@ -12,6 +12,11 @@ export interface Registry {
   declined: Record<string, string>;
   /** Bundled extensions the backend has seeded once (D121): kept so they aren't seeded again. */
   bundled: string[];
+  /**
+   * Ids installed from the extension store. Only these take the store's updates: an extension
+   * installed from a file may share its id with a stranger's package published later.
+   */
+  fromStore: string[];
   /** id → the git repository it was installed from (D185), so it can be updated from there. */
   sources: Record<string, RepoSource>;
   /**
@@ -108,6 +113,7 @@ export function parseRegistry(text: string): Registry {
     granted,
     declined,
     bundled: strings(raw.bundled),
+    fromStore: strings(raw.fromStore),
     customized: strings(raw.customized),
     bisect: parseBisect(raw.bisect),
   };

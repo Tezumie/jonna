@@ -219,6 +219,19 @@ export class EditorService implements Disposable {
     this.saved.fire(path);
   }
 
+  /**
+   * Unsaved text from an earlier session is about to be put back (`text`, hot exit) over a file
+   * that changed on disk since those edits were made. Exactly the state of a file that changed
+   * on disk while it was open with unsaved edits: the banner shows (Reload / Keep my changes),
+   * auto save leaves it alone and a save is refused until the user chose. The text the IDE
+   * "last knew" becomes the restored one, since the file's present text is the one thing it
+   * must not take for known: `changedOnDisk` then finds the disk different and refuses.
+   */
+  restoredOverChangedFile(doc: EditorDocument, text: string): void {
+    doc.diskText = text;
+    doc.diskState.value = "changed";
+  }
+
   /** A new untitled document (Ctrl+N, D126), optionally with text. */
   createUntitled(text = ""): EditorDocument {
     const path = nextUntitled(this.documents.peek().map((d) => d.path.peek()));

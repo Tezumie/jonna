@@ -16,6 +16,7 @@ import {
   parseKeybinding,
   removalMatches,
   type SourcedRule,
+  typesWithAltGr,
 } from "../core/keybindings/index";
 import { type Disposable, DisposableStore, toDisposable } from "../core/lifecycle/index";
 import { type Signal, signal } from "../core/reactive/index";
@@ -254,8 +255,37 @@ export class KeyboardService implements Disposable {
   /** Keys in another window (an auxiliary window) go through the same bindings. */
   attachDisposable(target: Window): Disposable {
     const listener = (e: KeyboardEvent): void => this.onKeyDown(e);
+    // The layout may have been switched while another window had the keys.
+    const focused = (): void => this.readLayout(target);
     target.addEventListener("keydown", listener, { capture: true });
-    return toDisposable(() => target.removeEventListener("keydown", listener, { capture: true }));
+    target.addEventListener("focus", focused);
+    this.readLayout(target);
+    return toDisposable(() => {
+      target.removeEventListener("keydown", listener, { capture: true });
+      target.removeEventListener("focus", focused);
+    });
+  }
+
+  /**
+   * Each physical key's own (unshifted) character on the current layout, where the web view can
+   * tell (the Keyboard Map API): what tells an AltGr character from the key's own. Null: unknown.
+   */
+  private layoutKeys: { get(code: string): string | undefined } | null = null;
+
+  private readLayout(target: Window): void {
+    const keyboard = (
+      target.navigator as
+        | {
+            keyboard?: { getLayoutMap?: () => Promise<{ get(code: string): string | undefined }> };
+          }
+        | undefined
+    )?.keyboard;
+    void keyboard?.getLayoutMap?.().then(
+      (map) => {
+        this.layoutKeys = map;
+      },
+      () => {},
+    );
   }
 
   /** Keys a focused terminal takes for the program in it (set by the terminal, D192). */
@@ -277,6 +307,13 @@ export class KeyboardService implements Disposable {
     if (e.isComposing || this.suspended > 0 || this.modalDialogOpen()) return;
     const chord = chordFromEvent(e);
     if (!chord) return;
+    // AltGr typing a character ("ś", "@", "€") reaches Windows as Ctrl+Alt: the character is
+    // typed, no Ctrl+Alt binding runs (as in VS Code).
+    if (typesWithAltGr(e, this.platform, this.layoutKeys?.get(e.code))) {
+      // A layout switched since it was read would decide this wrongly: read it for the next key.
+      if (e.view) this.readLayout(e.view);
+      return;
+    }
     // A program in the terminal (Claude Code, nano, tmux) gets its own keys (Ctrl+K, Ctrl+B…),
     // unless a chord is already half typed.
     if (!this.pendingChord.peek() && this.shellKeys?.(chord)) return;

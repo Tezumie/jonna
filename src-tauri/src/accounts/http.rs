@@ -18,6 +18,23 @@ pub fn client() -> reqwest::Client {
         .unwrap_or_default()
 }
 
+/// `url` parsed, when a request may go there: https, or plain http to this computer itself.
+/// Read as a URL is read, not by how the text starts: `http://127.0.0.1:80@elsewhere.example`
+/// names `elsewhere.example` (what stands before the `@` is a sign-in name), so an address
+/// with a name or password in it is refused whole.
+pub fn secure_or_loopback(url: &str) -> Option<reqwest::Url> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    let loopback = matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    match parsed.scheme() {
+        "https" if parsed.host_str().is_some() => Some(parsed),
+        "http" if loopback => Some(parsed),
+        _ => None,
+    }
+}
+
 /// Why a body wasn't read.
 #[derive(Debug, PartialEq, Eq)]
 pub enum BodyError {
@@ -121,6 +138,35 @@ mod tests {
             run(collect_capped(never, Some(11), 10)),
             Err(BodyError::TooLarge)
         );
+    }
+
+    #[test]
+    fn an_address_is_read_as_a_url_not_by_its_first_letters() {
+        for ok in [
+            "https://accounts.example.com",
+            "https://accounts.example.com/x?y=1",
+            "http://127.0.0.1:5000",
+            "http://localhost/x",
+            "http://[::1]:8080/",
+        ] {
+            assert!(secure_or_loopback(ok).is_some(), "{ok}");
+        }
+        for bad in [
+            "http://example.com",
+            // What stands before the `@` is a name, the host comes after it.
+            "http://127.0.0.1:80@evil.example",
+            "http://localhost@evil.example/",
+            "http://127.0.0.1:80:pw@evil.example",
+            "https://github.com@evil.example/",
+            "http://127.0.0.1.evil.example",
+            "http://localhost.evil.example",
+            "ftp://127.0.0.1/",
+            "file:///etc/passwd",
+            "127.0.0.1",
+            "",
+        ] {
+            assert!(secure_or_loopback(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

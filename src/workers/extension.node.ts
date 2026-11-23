@@ -450,13 +450,24 @@ async function startVscode(
   extensions: { activate(id: string): Promise<void> },
 ): Promise<void> {
   const path = require("node:path") as { join(...parts: string[]): string };
-  const fs = require("node:fs") as { readFileSync(p: string, enc: string): string };
+  const fs = require("node:fs") as {
+    readFileSync(p: string, enc: string): string;
+    mkdirSync(p: string, options: { recursive: true }): unknown;
+  };
   const packageJSON = JSON.parse(
     fs.readFileSync(path.join(extensionPath, "package.json"), "utf8"),
   ) as Record<string, unknown>;
   const id = api.extension.id;
   const storage = path.join(__dirname, "storage", id);
   const root = api.workspace.workspaceFolders?.[0]?.path;
+  // As VS Code promises: the storage and log folders themselves may not exist, their parents do
+  // (`fs.mkdirSync(context.globalStoragePath)`, not recursive, threw ENOENT).
+  for (const parent of [storage, path.join(__dirname, "logs")])
+    try {
+      fs.mkdirSync(parent, { recursive: true });
+    } catch {
+      // A folder that can't be made: the extension's own write says why.
+    }
   // The list the IDE sends the shared host comes first; a host without one uses the init's.
   if (!registry.list().length && init.others) registry.setInstalled(init.others);
   const shim = createVscodeShim({

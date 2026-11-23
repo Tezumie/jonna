@@ -521,10 +521,15 @@ export function registerStore(
         const r = (await dispatcher.execute("extensions.installFromVsix", {
           file,
           quiet: true,
+          // The archive must be what was asked for: a package naming another id would replace
+          // that extension under its permissions.
+          expect: key,
           ...(along && { with: along }),
         })) as { id: string | null; cancelled?: boolean };
         storeUpdates.value = storeUpdates.peek().filter((u) => u.id !== r.id);
         if (!r.id) return { id: null, cancelled: true };
+        // From the store now: its updates apply to it from here on.
+        await manager.setFromStore(r.id);
         // What comes with it, under that answer (VS Code installs a pack's members and the
         // dependencies along, without asking again): allowed only if the user allowed its code.
         const allowed = await allGranted(r.id);
@@ -636,13 +641,17 @@ export function registerStore(
     title: "Update extensions from the store",
     category: "Extensions",
     description:
-      "Installs the newer version of every extension extensions.checkStoreUpdates found (or of `id` alone). Returns what was updated and what failed.",
+      "Installs the newer version of every extension extensions.checkStoreUpdates found that was installed from the store (or of `id` alone; one installed from a file or folder is asked about first). Returns what was updated and what failed.",
     input: s.object({ id: s.string().optional() }),
     effects: ["write"],
     agent: "discoverable",
     run: async ({ id }) => {
       if (!storeUpdates.peek().length) await dispatcher.execute("extensions.checkStoreUpdates", {});
-      const todo = storeUpdates.peek().filter((u) => !id || u.id === id);
+      // All of them: only what came from the store. One installed another way (a file, a
+      // folder) is updated from the store by name only, and asked about then.
+      const todo = storeUpdates
+        .peek()
+        .filter((u) => (id ? u.id === id : manager.isFromStore(u.id)));
       const updated: string[] = [];
       const failed: { id: string; error: string }[] = [];
       for (const u of todo) {

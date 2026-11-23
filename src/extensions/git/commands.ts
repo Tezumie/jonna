@@ -111,7 +111,16 @@ export function registerGitCommands(
       if (!choice) continue;
       if (choice === "delete") {
         // To the app trash (recoverable), then `git add -A` stages the deletion.
-        await fsIpc.trash(path).catch(() => {});
+        // A file that couldn't go (locked, no permission) is still there: staging it now would
+        // resolve the conflict as "keep". It's said and the file left as it is.
+        try {
+          await fsIpc.trash(path);
+        } catch (err) {
+          const why = `${c.rel} couldn't be deleted, so it wasn't staged: ${err instanceof Error ? err.message : String(err)}`;
+          if (!user) throw new Error(why);
+          services.notifications.show("error", why);
+          continue;
+        }
         services.events.emit("files.didDelete", { path });
       }
       out.push(path);

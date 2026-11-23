@@ -192,7 +192,8 @@ parses their manifests (ours, or a VS Code `package.json`: `vscodePackage.ts` tu
 into the IDE's commands, settings, keys, views and menus, D256; as VS Code reads them: keys for
 commands it doesn't declare keep VS Code's id and `resolveVscodeKeybindings` maps them when it
 loads — VS Code's own through `vscode/builtinCommands.ts`, others' declared ones, its code's
-through its hidden command, "-command" removals; `configurationDefaults`; views in another
+through its hidden command, "-command" removals; an IDE command by its own id only when it is
+harmless, and no `args` for what isn't its own; `configurationDefaults`; views in another
 extension's container, `placeInContainer`; no reserved setting names, `machine-overridable` and
 program paths `restricted`; `workspaceContains.ts` the index's quick-search terms for a glob) and maps commands to
 the permissions they need; `rpc.ts` is the worker ↔ IDE protocol and builds the `ide` object the

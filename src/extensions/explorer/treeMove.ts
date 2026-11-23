@@ -7,7 +7,7 @@
 import { on } from "../../core/dom/index";
 import type { DirEntry } from "../../core/ipc/fs";
 import { DisposableStore } from "../../core/lifecycle/index";
-import { dirname, isWithin, pathKey } from "../../core/paths/index";
+import { dirname, isWithin, outermostPaths, pathKey } from "../../core/paths/index";
 import type { Tree } from "../../ui/Tree";
 
 export interface TreeMoveHost {
@@ -34,10 +34,13 @@ export function armTreeMove(
     host.setTarget(null);
     scope.delete(drag);
   };
-  /** The selection if the drag started inside it, else just the dragged row. */
+  /**
+   * The selection if the drag started inside it, else just the dragged row. Rows inside a
+   * selected folder go with the folder (they'd fail as moves of their own once it has moved).
+   */
   const sources = () => {
     const selected = tree.selectedItems().map((e) => e.path);
-    return selected.includes(path) ? selected : [path];
+    return selected.includes(path) ? outermostPaths(selected) : [path];
   };
   let hoverDir: string | null = null;
   let springTimer: ReturnType<typeof setTimeout> | undefined;

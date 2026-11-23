@@ -208,16 +208,9 @@ pub fn parse_callback(
 /// The accounts server's address as it is used, or why it can't be.
 fn checked_base(base: &str) -> Result<String> {
     let base = base.trim_end_matches('/').to_string();
-    // Plain http only for this computer itself: the host exactly, not a name that starts
-    // like it ("127.0.0.1.example.com").
-    let local = ["http://127.0.0.1", "http://localhost"]
-        .iter()
-        .any(|prefix| {
-            base.strip_prefix(prefix).is_some_and(|rest| {
-                rest.is_empty() || rest.starts_with(':') || rest.starts_with('/')
-            })
-        });
-    if !(base.starts_with("https://") || local) {
+    // Plain http only for this computer itself: the host as a URL names it, not a name that
+    // starts like it ("127.0.0.1.example.com") or hides behind it ("127.0.0.1:80@example.com").
+    if http::secure_or_loopback(&base).is_none() {
         return Err(Error::Invalid("the accounts URL must be https".into()));
     }
     Ok(base)
@@ -567,6 +560,15 @@ mod tests {
     #[test]
     fn begin_refuses_plain_http_and_builds_the_url() {
         assert!(begin("http://example.com").is_err());
+        for bad in [
+            "http://127.0.0.1:80@evil.example",
+            "http://localhost@evil.example",
+            "http://127.0.0.1.evil.example",
+            "https://accounts.example.com@evil.example",
+        ] {
+            assert!(begin(bad).is_err(), "{bad}");
+        }
+        assert!(checked_base("http://localhost:8787/").is_ok());
         let p = begin("https://accounts.example.com/").unwrap();
         assert!(p
             .url

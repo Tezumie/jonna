@@ -70,6 +70,31 @@ export function parseIgnoreLine(line: string): Rule | null {
   }
 }
 
+/**
+ * A path's segments (`/` or `\`) as Windows opens them: `.env.`, `.env ` and `.env::$DATA` (a
+ * stream) are `.env`. A drive's `C:` and a name that is only dots or spaces stay as written.
+ */
+export function plainSegments(path: string): string[] {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((s) => s && s !== ".")
+    .map((s, i) =>
+      i === 0 && /^[A-Za-z]:$/.test(s) ? s : s.replace(/:.*$/, "").replace(/[. ]+$/, "") || s,
+    );
+}
+
+/**
+ * Whether a segment has the shape of a Windows 8.3 short name (`SECRET~1.JSO` opens
+ * `secrets.json`, `ENV~1` may open `.env`): which file it names can't be told from its spelling,
+ * so a rule on the long name can't be held against it.
+ */
+export function looksLikeShortName(segment: string): boolean {
+  return /^[^\s.~]{1,6}~\d{1,4}(?:\.[^\s.]{0,3})?$/.test(segment);
+}
+
 export class AgentIgnore {
   private readonly rules: Rule[];
 
@@ -87,15 +112,11 @@ export class AgentIgnore {
    */
   ignored(relative: string, isDir = false): boolean {
     // Windows spellings of the same file: `.env.`, `.env `, `.env::$DATA` (a stream) open `.env`.
-    const parts = relative
-      .replace(/\\/g, "/")
-      .replace(/^\.\/+/, "")
-      .replace(/^\/+/, "")
-      .split("/")
-      .filter((s) => s && s !== ".")
-      .map((s) => s.replace(/:.*$/, "").replace(/[. ]+$/, "") || s);
+    const parts = plainSegments(relative);
     const path = parts.join("/");
     if (!path) return false;
+    // An 8.3 short name could be any excluded file: excluded too (use the full name).
+    if (parts.some(looksLikeShortName)) return true;
     // The folders it's in, then itself.
     const candidates: { path: string; dir: boolean }[] = [];
     for (let i = 1; i < parts.length; i++)

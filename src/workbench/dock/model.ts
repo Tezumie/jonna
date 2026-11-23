@@ -32,6 +32,8 @@ interface LiveView {
 }
 
 export const STATE_VERSION = 1;
+/** The share a group takes when it's added above groups that are all hidden. */
+export const HIDDEN_BELOW_SHARE = 0.75;
 
 /** How tabs look and behave (VS Code's workbench.editor.* settings, D279). */
 export interface TabOptions {
@@ -196,7 +198,11 @@ export abstract class DockModel implements Disposable {
     return dock.regionGroups(this.root.peek(), region, this.isEditorLike);
   }
 
-  /** True while some group of the region is showing (title-bar toggle state). */
+  /**
+   * True while some group of the region is showing (title-bar toggle state). Each call makes a
+   * derived signal that stays subscribed to the tree for as long as the dock lives: make one and
+   * keep it. For the value right now, read `regionGroups(region)`.
+   */
   regionVisible(region: Region): ReadonlySignal<boolean> {
     return computed(() =>
       dock.regionGroups(this.root.value, region, this.isEditorLike).some((g) => !g.hidden),
@@ -231,7 +237,10 @@ export abstract class DockModel implements Disposable {
     const target =
       (preferredGroupId && dock.findGroup(root, preferredGroupId)) ||
       dock.mainGroup(root, this.isEditorLike);
-    return target ? dock.addTab(root, target.id, tab, 0, true) : root;
+    if (target) return dock.addTab(root, target.id, tab, 0, true);
+    // Only hidden groups are left (the terminal's, toggled away): Welcome gets a group of its
+    // own above them. They stay in the tree, and their views and shells alive.
+    return dock.splitRoot(root, "top", this.newGroup(tab), HIDDEN_BELOW_SHARE);
   }
 
   /** Adds the welcome tab to `groupId` as if `closing` were already gone (see closeTab). */

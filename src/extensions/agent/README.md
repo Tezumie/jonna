@@ -1403,6 +1403,20 @@ the three services (one line in index.ts).
   else, or when that fails, mode ide: a look where `mergeDecision` is ready runs `prMerge`, ends
   the watch and posts "merged by auto-merge" (a failed merge turns it off and says why). Saved
   with the watch.
+- What keeps a watch from merging unasked: the card is shown in Auto too (`evenWithFullAccess`),
+  and the user's yes ends when auto-merge goes off or the watch stops (`confirmed` is cleared);
+  a deleted chat's watch goes with it (`forgetPrWatch`, from Delete chat and Clear chats), and a
+  look first asks whether the chat still exists (`chatState`: gone ends the watch, and only a
+  chat that is there gets a merge). The IDE's own merge waits while a pull request that has had
+  checks shows none (`hadChecks`: a push whose checks haven't started), and passes the head
+  commit it judged to `prMerge` (`judgedHead`, once `prView` carries `headRefOid`).
+- Saving: a failed save is tried again by itself (`sessionStore.ts` `saveRetryDelay`, a warning
+  after three in a row); closing the window waits for every chat's save (`sessions.ts`, 5 s at
+  most); a turn is listed in `checkpoints` at its first snapshot and a snapshot that fails is
+  said once a turn (`sessionCheckpoints.ts`, told by `Changeset.onSnapshot`); a saved file that
+  can't be read whole blocks saves until "keep this version"; a save answered `deleted` (the
+  chat was deleted elsewhere) marks the session deleted. Sync reads the chats being written
+  from `core/agent/busyChats.ts`, set by `SessionManager`.
 - `subagents.ts` delegate `fork: true` (+ `core/agent/fork.ts`: `FORK_DEF`, `forkTranscript`,
   `forkBudget`, `forkSystem`): `agent` becomes optional (a copy of the agent: `FORK_DEF`); the
   conversation as a transcript (first request plus the newest messages, older tool results

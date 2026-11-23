@@ -36,7 +36,8 @@ export function registerFromRepo(
   /** Downloads, lets the user choose (or takes `path`), installs; the scratch folder goes. */
   const install = async (
     source: RepoSource,
-    options: { ask: boolean; title: string; choose: boolean },
+    /** `update`: the installed id this replaces (anything else found there isn't installed). */
+    options: { ask: boolean; title: string; choose: boolean; update?: string },
   ): Promise<{ id: string | null; from: string; path?: string; cancelled?: boolean }> => {
     const progress = signal(`Downloading ${source.repo}…`);
     const line = statusBar.add({
@@ -100,7 +101,12 @@ export function registerFromRepo(
       }
       if (!chosen) return { id: null, from: source.repo };
       progress.value = `Installing ${chosen.name}…`;
-      const id = await manager.installFrom(joinPath(download.folder, chosen.path), options.ask);
+      const id = await manager.installFrom(
+        joinPath(download.folder, chosen.path),
+        options.ask,
+        false,
+        options.update ? { expect: options.update, update: true } : {},
+      );
       // Cancelled when asked about its permissions (D259).
       if (!id) return { id: null, from: source.repo, cancelled: true };
       await manager.setSource(id, {
@@ -185,14 +191,10 @@ export function registerFromRepo(
         ask: ctx.caller.kind !== "test",
         title: "",
         choose: false,
+        // What is there now must still be this extension: another one isn't installed (it would
+        // replace whatever has that id).
+        update: id,
       });
-      if (result.id && result.id !== id) {
-        // The repository's folder now holds another extension: that one was installed instead.
-        await manager.setSource(id, undefined);
-        throw new Error(
-          `${source.repo} now has ${result.id} there instead of ${id}; it was installed beside it.`,
-        );
-      }
       const after = result.id ? manager.get(result.id)?.manifest?.version : undefined;
       notifications.show(
         "success",

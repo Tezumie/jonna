@@ -170,12 +170,10 @@ export class OutputFrame {
   ) {
     this.frame = h("iframe", {
       class: "nb-out-frame",
-      // Scripts only: no same-origin (it can't reach the IDE), no forms, no navigating the IDE.
-      // An extension's renderer gets no popups either (its links go through the IDE like
-      // everyone's): a popup would be a way around the network it was granted (D204 audit).
-      sandbox: renderer
-        ? "allow-scripts"
-        : "allow-scripts allow-popups allow-popups-to-escape-sandbox",
+      // Scripts only: no same-origin (it can't reach the IDE), no forms, no navigating the IDE,
+      // and no popups: a window an output opens would be a real one with the app's name on it
+      // and whatever page it then loads (D469 audit). Links in outputs go through the IDE.
+      sandbox: "allow-scripts",
       title: "Output",
       loading: "eager",
     }) as HTMLIFrameElement;

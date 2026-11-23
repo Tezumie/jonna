@@ -36,6 +36,8 @@ export class SearchModel {
   error: string | null = null;
   /** Bumped per search; events from an older search are ignored. */
   private generation = 0;
+  /** Files with a match dismissed by line: a replace there names the lines that are left. */
+  private readonly narrowed = new Set<string>();
   private readonly changed = new Emitter<void>();
   readonly onDidChange = this.changed.event;
   private waiters: (() => void)[] = [];
@@ -45,6 +47,7 @@ export class SearchModel {
     const generation = ++this.generation;
     this.options = options;
     this.files = [];
+    this.narrowed.clear();
     this.running = true;
     this.summary = null;
     this.error = null;
@@ -78,6 +81,7 @@ export class SearchModel {
     this.generation++;
     this.options = null;
     this.files = [];
+    this.narrowed.clear();
     this.running = false;
     this.summary = null;
     this.error = null;
@@ -103,9 +107,21 @@ export class SearchModel {
       file.matches = file.matches.filter((m) => m.line !== line);
       if (file.matches.length === before) return false;
       if (file.matches.length === 0) this.files = this.files.filter((f) => f !== file);
+      else this.narrowed.add(path);
     }
     this.changed.fire();
     return true;
+  }
+
+  /**
+   * The lines a replace in `path` must keep to: those of the matches still listed, when one of the
+   * file's matches was dismissed (a replace of the whole file would change that one too).
+   * Undefined when the file is listed whole, or isn't listed.
+   */
+  replaceLines(path: string): number[] | undefined {
+    if (!this.narrowed.has(path)) return undefined;
+    const file = this.files.find((f) => f.path === path);
+    return file && [...new Set(file.matches.map((m) => m.line))];
   }
 
   /**

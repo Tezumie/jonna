@@ -20,6 +20,7 @@ import { registerAgentConfig } from "./agentConfig";
 import { registerAgentEditor } from "./agentEditorCommands";
 import { agentHost } from "./agentHost";
 import { registerAiFeatures } from "./aiFeatures";
+import { approveRules } from "./approveDecisions";
 import {
   browserDecision,
   browserUrl,
@@ -70,7 +71,7 @@ import { registerModelChoices } from "./modelChoices";
 import { registerNewChatMenu } from "./newChatMenu";
 import { registerOpenedTracking } from "./opened";
 import { registerOutputStyles } from "./outputStyles";
-import { commandDenied, DEFAULT_DENIED_COMMANDS } from "./permissions";
+import { commandDenied, DEFAULT_DENIED_COMMANDS, shellLineAsks } from "./permissions";
 import { registerPhoneNotify } from "./phoneNotify";
 import { registerPlugins } from "./plugins";
 import { registerPluginsPage } from "./pluginsPage";
@@ -409,12 +410,15 @@ export function activateAgentCore(
         decided("deny", refused);
         return "deny";
       }
-      // With a policy, a command that runs a command line is decided call by call: "for this
-      // session" would let the next line through without the lists.
-      const runsLine =
-        request.commandId in SHELL_LINE_INPUT || asksForIndirectLine(policy, request.commandId);
+      // A command that types a command line is decided call by call, with a policy or without:
+      // "for this session" is kept by the command's id, so one `ls` allowed would let every
+      // later line through (`rm -rf ~`). With a policy, so is one that runs a line from a file.
       const perCall = (answer: "once" | "session" | "deny") =>
-        policy && answer === "session" && runsLine ? "once" : answer;
+        answer === "session" &&
+        (request.commandId in SHELL_LINE_INPUT ||
+          (policy && asksForIndirectLine(policy, request.commandId)))
+          ? "once"
+          : answer;
       // A command line from a file (a task, a launch configuration) can't be held against the
       // deny list's command patterns: an allow entry naming the command or the person decides,
       // whatever the mode.
@@ -428,6 +432,40 @@ export function activateAgentCore(
             detail:
               "It runs a command line from a file, which this run's deny list can't check: allow the command by its id to let it run.",
             danger,
+            evenWithFullAccess: true,
+          },
+          call,
+        );
+        return answer === "always" ? "once" : answer;
+      }
+      // A command line typed into a terminal is a command run: deletion protection and
+      // agent.autoApprove's Ask patterns ask about it even with full access, as run_command's
+      // do (`terminal.runCommand {command: "rm -rf src"}` was a way around both). A trailing
+      // Enter is part of typing it, not a second command.
+      const lineField = SHELL_LINE_INPUT[request.commandId];
+      const typed = lineField
+        ? (request.input as Record<string, unknown> | null)?.[lineField]
+        : undefined;
+      const shellLine = typeof typed === "string" ? typed.replace(/[\r\n]+$/, "") : null;
+      const lineAsks =
+        shellLine === null
+          ? null
+          : shellLineAsks(shellLine, {
+              deleteProtection: settings.peek<boolean>("agent.deleteProtection") === true,
+              rules: approveRules(services),
+            });
+      if (shellLine !== null && lineAsks) {
+        const answer = await session.ask(
+          {
+            title: `Run \`${shellLine}\` in a terminal`,
+            heading: "Run a command",
+            code: shellLine,
+            kind: "command",
+            detail:
+              lineAsks === "delete"
+                ? `Deletion protection is on (${request.commandId}).`
+                : `agent.autoApprove says to ask before this command (${request.commandId}).`,
+            danger: danger || lineAsks === "delete",
             evenWithFullAccess: true,
           },
           call,
@@ -522,12 +560,10 @@ export function activateAgentCore(
         settings.peek<string>("agent.runCommands") === "auto" &&
         services.trust.trusted
       ) {
-        const field = SHELL_LINE_INPUT[request.commandId];
-        if (!field) return "once";
-        const line = (request.input as Record<string, unknown> | null)?.[field];
+        if (!lineField) return "once";
         if (
-          typeof line === "string" &&
-          !commandDenied(line, [
+          shellLine !== null &&
+          !commandDenied(shellLine, [
             ...DEFAULT_DENIED_COMMANDS,
             ...(settings.peek<string[]>("agent.deniedCommands") ?? []),
           ])
@@ -542,7 +578,8 @@ export function activateAgentCore(
           kind: "ide",
           ...(request.confirmMessage && { detail: request.confirmMessage }),
           // A page's command: Always is for its site (saved, D207); others for this session.
-          ...(!danger && { always: site ?? "this session" }),
+          // Not one that types a command line: the next line is another command.
+          ...(!danger && !lineField && { always: site ?? "this session" }),
           danger,
         },
         // The call, for a run's lists: a command line typed into a terminal is allowed and

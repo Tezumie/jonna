@@ -9,7 +9,7 @@ import { Emitter } from "../../core/events/index";
 import { fsIpc } from "../../core/ipc/fs";
 import { remoteImages } from "../../core/ipc/remoteImage";
 import { DisposableStore } from "../../core/lifecycle/index";
-import { basename, dirname, resolveInRoot } from "../../core/paths/index";
+import { basename, dirname, isNetworkPath, resolveInRoot } from "../../core/paths/index";
 import { fileIconTint } from "../../ui/fileTint";
 import { fileIcon } from "../../ui/Icon";
 import { isMarkdownControl, markdownNodes } from "../../ui/markdown/render";
@@ -541,14 +541,18 @@ export class MarkdownPreview extends FileView {
     const [file, fragment] = href.split("#");
     if (!file) return;
     // A UNC or "//host" link would make Windows connect to that host when it's read (D161).
-    if (/^[\\/]{2}/.test(file.trim())) return;
+    if (isNetworkPath(file)) return;
     let rel = file;
     try {
       rel = decodeURI(file);
     } catch {
       // as written
     }
+    // Again once decoded: "%5C%5Chost%5Cshare" passes as written and is "\\host\share" after.
+    if (isNetworkPath(rel)) return;
     const target = resolveInRoot(this.dir(), rel);
+    // However it was spelled: a link never leads from a local document to a network path.
+    if (isNetworkPath(target) && !isNetworkPath(this.dir())) return;
     // Markdown links stay in the preview (VS Code's default); other files open in the editor.
     if (/\.(md|markdown|mdx)$/i.test(target)) this.retarget(target, fragment);
     else this.run("editor.openFile", { path: target });

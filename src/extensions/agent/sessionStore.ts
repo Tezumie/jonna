@@ -135,6 +135,63 @@ export function saveSessionNow(session: AgentSession): Promise<void> {
 
 const savesInFlight = new WeakMap<AgentSession, Promise<void>>();
 
+/** A failed save is told about once it failed this many times in a row. */
+const TELL_AFTER_FAILURES = 3;
+
+/** The wait before a failed save is tried again: 2 s, doubled per failure in a row, up to a minute. */
+export function saveRetryDelay(failures: number): number {
+  return Math.min(60_000, 2000 * 2 ** Math.max(0, Math.min(failures, 10) - 1));
+}
+
+/** Chats whose last save failed: how often in a row, and the timer of the next try. */
+const saveRetries = new WeakMap<
+  AgentSession,
+  { failures: number; timer: ReturnType<typeof setTimeout> | undefined }
+>();
+
+/**
+ * A save couldn't be written (the disk is full, antivirus holds the file). Nothing else would
+ * try again until the chat next changed, and a turn's last save has no "next": it is tried
+ * again by itself, backing off, and the user is told once it keeps failing.
+ */
+function saveFailed(session: AgentSession, error: string): void {
+  const retry = saveRetries.get(session) ?? { failures: 0, timer: undefined };
+  saveRetries.set(session, retry);
+  retry.failures++;
+  clearTimeout(retry.timer);
+  retry.timer = undefined;
+  const why = error ? ` (${error.trim().slice(0, 200)})` : "";
+  const name = session.title.peek();
+  // Put away or the window closing: nothing owns a timer any more, so it is said now.
+  if (session.disposed) {
+    session.services.notifications.show(
+      "warning",
+      `The chat "${name}" couldn't be saved${why}. What happened in it since its last save may be lost.`,
+    );
+    return;
+  }
+  retry.timer = setTimeout(() => {
+    retry.timer = undefined;
+    if (!session.deleted && !session.disposed) void session.save().catch(() => {});
+  }, saveRetryDelay(retry.failures));
+  if (retry.failures === TELL_AFTER_FAILURES)
+    session.services.notifications.show(
+      "warning",
+      `The chat "${name}" can't be saved${why}. It's tried again by itself; until that works, closing the window loses what happened since its last save.`,
+    );
+}
+
+/** A save landed, or the chat is going (deleted, disposed): no try is waiting any more. */
+export function endSaveRetry(session: AgentSession): void {
+  const retry = saveRetries.get(session);
+  if (!retry) return;
+  clearTimeout(retry.timer);
+  saveRetries.delete(session);
+}
+
+/** Chats whose saved file couldn't be read whole: a reload that fails again keeps saves blocked. */
+const unreadable = new WeakSet<AgentSession>();
+
 async function writeSession(session: AgentSession): Promise<void> {
   if (session.items.length === 0 || session.deleted || session.conflict.peek()) return;
   // New images get their compressed previews first (only those still missing); the chat's own
@@ -142,10 +199,32 @@ async function writeSession(session: AgentSession): Promise<void> {
   await addPreviews(session.items).catch(() => false);
   await keepChatImages(session.id, session.items).catch(() => false);
   if (session.deleted || session.conflict.peek()) return;
+  let failure = "";
   const saved = await agentStoreIpc
     .save(session.id, JSON.stringify(session), session.savedVersion)
-    .catch(() => null);
-  if (!saved) return;
+    .catch((err: unknown) => {
+      failure = err instanceof Error ? err.message : String(err);
+      return null;
+    });
+  if (!saved) {
+    saveFailed(session, failure);
+    return;
+  }
+  endSaveRetry(session);
+  // Deleted meanwhile, in another window or by sync from another computer: writing it would
+  // bring it back. It stops here, and says why nothing is kept any more.
+  if (saved.deleted) {
+    if (session.deleted) return;
+    session.items.push({
+      type: "notice",
+      id: newId("n"),
+      text: "This chat was deleted in another window or on another of your computers. Nothing more is saved here.",
+      tone: "error",
+    });
+    session.markDeleted();
+    session.bump();
+    return;
+  }
   if (!saved.conflict) {
     session.savedVersion = saved.version;
     return;
@@ -174,10 +253,12 @@ export async function resolveSaveConflict(
     try {
       await session.hydrate();
     } finally {
-      session.conflict.value = false;
+      // A file that still can't be read stays protected from this window's saves.
+      if (!unreadable.has(session)) session.conflict.value = false;
     }
     return;
   }
+  unreadable.delete(session);
   session.conflict.value = false;
   // Without an expectation: written whatever the file holds now.
   session.savedVersion = null;
@@ -207,6 +288,8 @@ export async function updateSavedMeta<M extends object>(
     change(meta);
     saved.meta = meta;
     const done = await agentStoreIpc.save(id, JSON.stringify(saved), version);
+    // Deleted between the read and the write: not written back.
+    if (done.deleted) throw new Error("That chat no longer exists.");
     if (!done.conflict) return meta;
     // A chat saved again and again while this runs is at work somewhere: said, not forced.
     if (attempt >= 4)
@@ -233,11 +316,15 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
     return false;
   }
   session.savedVersion = version;
+  unreadable.delete(session);
   // Loaded again (the other window's version, D221): nothing of this window's chat stays.
   session.attachedRules.clear();
   session.toldSkills.clear();
   try {
-    const data = JSON.parse(text) as {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("not a saved chat");
+    const data = parsed as {
       meta?: {
         title?: string;
         model?: string;
@@ -259,7 +346,9 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
       checkpoints?: number[];
       plan?: PlanStep[];
     };
-    session.title.value = data.meta?.title ?? "Session";
+    // Every field is checked as it is read: a damaged one takes its default, it doesn't end the
+    // load halfway (what was read until then was later saved over the file).
+    session.title.value = typeof data.meta?.title === "string" ? data.meta.title : "Session";
     if (typeof data.meta?.updated === "number") session.updated = data.meta.updated;
     session.pinned = data.meta?.pinned === true;
     session.archived = data.meta?.archived === true;
@@ -270,12 +359,12 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
     // took that folder's place without anyone asking.
     session.workspaceRoot = typeof data.meta?.workspace === "string" ? data.meta.workspace : null;
     restoreChatWorktree(session.id, data.meta?.worktree);
-    session.model.value = data.meta?.model ?? null;
+    session.model.value = typeof data.meta?.model === "string" ? data.meta.model : null;
     // Saved by an older or damaged file: only well-formed items (one bad item broke rendering of
     // the whole chat, D160).
     session.items = Array.isArray(data.items) ? data.items.flatMap(validItem) : [];
     session.textProtocol = data.textProtocol === true;
-    session.turn = data.turn ?? 0;
+    session.turn = typeof data.turn === "number" && Number.isFinite(data.turn) ? data.turn : 0;
     // Auto (full access) is on: nothing waits on review, whatever the chat had (D273).
     session.autoApply.value =
       data.autoApply === true ||
@@ -285,7 +374,7 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
       data.chatMode === "plan" ||
       // A custom mode (D227) comes back even when it's gone; its next message says so and goes
       // in Agent mode (until then it gets read-only tools).
-      data.chatMode?.startsWith("custom:")
+      (typeof data.chatMode === "string" && data.chatMode.startsWith("custom:"))
     )
       session.chatMode.value = data.chatMode as ChatMode;
     // Plan or Ask on one of the user's agents (D249).
@@ -294,7 +383,9 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
       session.chatMode.peek().startsWith("custom:") && (work === "plan" || work === "ask")
         ? work
         : null;
-    session.checkpoints = Array.isArray(data.checkpoints) ? data.checkpoints : [];
+    session.checkpoints = Array.isArray(data.checkpoints)
+      ? data.checkpoints.filter((t): t is number => typeof t === "number" && Number.isFinite(t))
+      : [];
     const limit = (data as { toolLimit?: unknown }).toolLimit;
     session.toolLimit = Array.isArray(limit)
       ? limit.filter((t): t is string => typeof t === "string")
@@ -376,6 +467,22 @@ export async function loadSaved(session: AgentSession): Promise<boolean> {
     session.version.value = session.version.peek() + 1;
     return true;
   } catch {
+    // The file is there and couldn't be read whole. What this window holds now is less than
+    // the file: it isn't saved over it (saves wait as in a two-window conflict) until the user
+    // says to keep what is shown.
+    unreadable.add(session);
+    session.conflict.value = true;
+    session.items = session.items.filter(
+      (it) => !(it.type === "notice" && it.actions?.includes("keepHere")),
+    );
+    session.items.push({
+      type: "notice",
+      id: newId("n"),
+      text: "This chat's saved file is damaged and couldn't be read whole. Nothing is saved over it unless you keep what is shown here.",
+      tone: "error",
+      actions: ["keepHere"],
+    });
+    session.version.value = session.version.peek() + 1;
     return false;
   }
 }

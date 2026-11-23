@@ -22,6 +22,9 @@ pub(super) const WRITES_AT_ONCE: usize = 4;
 pub(super) const MAX_BUNDLE_CHAIN: usize = 24;
 /// A snapshot's list of files (its index and every part) is at most this large when read.
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024 * 1024;
+/// What was staged is one patch, held in memory whole when a restore applies it: a larger
+/// one is left out of the restore (the files themselves are still written).
+pub(super) const MAX_STAGED_BYTES: u64 = 256 * 1024 * 1024;
 /// The list is stored in at most this many parts (`shard_count`).
 const MAX_SHARDS: usize = 1024;
 /// Everything a copy of a shared snapshot brings (its files, its bundles, its staged patch)

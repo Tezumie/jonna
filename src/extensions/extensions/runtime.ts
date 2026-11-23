@@ -7,6 +7,7 @@
 // settings and storage (runtimeSettings.ts), and the rest of the API.
 
 import type { Caller } from "../../core/dispatcher/types";
+import { RestartBudget } from "../../core/extensions/activation";
 import { commandCallerKind, commandInputSchema } from "../../core/extensions/commandInput";
 import {
   activatesOn,
@@ -78,6 +79,9 @@ function envIds(services: WorkbenchServices): { machineId: string; sessionId: st
   }
   return { machineId, sessionId: SESSION_ID };
 }
+
+/** Crashes of its own worker or process within 5 minutes after which it stays stopped. */
+const CRASH_LIMIT = 3;
 
 /** `workspaceContains:` for a folder just added: checked again this often, this many times. */
 const ADDED_FOLDER_RECHECK_MS = 3000;
@@ -253,6 +257,8 @@ export class ExtensionRuntime implements Disposable {
     this.env = new ExtensionEnvHost({
       services: host.services,
       need: (permission, what) => this.need(permission, what),
+      has: (permission) => hasPermission(host.granted(), permission),
+      name: manifest.displayName,
     });
     this.hooks = new ExtensionHooksHost({
       manifest,
@@ -528,6 +534,9 @@ export class ExtensionRuntime implements Disposable {
     // Refused for its dependencies (D295): not tried again on every event, as in VS Code, until
     // what it depends on changes (the manager clears it).
     if (this.refused) return Promise.reject(new Error(this.refused));
+    // Crashed again and again: an activation event (the next file opened) mustn't start it once
+    // more. A reload, or enabling it again, makes a new runtime.
+    if (this.crashBlocked) return Promise.reject(new Error(this.crashBlocked));
     // A start still under way is shared, unless a stop overtook it (D285): that one ends in
     // "stopped", and a resume right after the stop (the folder's trust flipping as it opens)
     // used to be handed it, so nothing started again ("Not started yet").
@@ -598,7 +607,14 @@ export class ExtensionRuntime implements Disposable {
           this.worker = null;
           this.activationError = null;
           this.workerGone();
-          this.host.crashed(error);
+          // The shared host's crashes are counted by the manager (`stayStopped`); its own worker
+          // or process here, by the same rule.
+          const shared = this.manifest.format === "vscode" && this.manifest.host === "node";
+          if (!shared && !this.crashes.take(Date.now()))
+            this.stayStopped(
+              `${this.manifest.displayName} crashed ${CRASH_LIMIT + 1} times within 5 minutes: it stays stopped until you reload it.`,
+            );
+          this.host.crashed(this.crashBlocked ?? error);
         },
         transport,
       );
@@ -677,6 +693,15 @@ export class ExtensionRuntime implements Disposable {
   /** Its `activate` threw (D295): the error, while the worker keeps what it registered. */
   activationError: string | null = null;
 
+  /** Why its code stays stopped after crashing repeatedly (until this runtime is replaced). */
+  private crashBlocked: string | null = null;
+  private readonly crashes = new RestartBudget(CRASH_LIMIT);
+
+  /** Its code isn't started again by this runtime: it (or the host it shares) keeps crashing. */
+  stayStopped(reason: string): void {
+    this.crashBlocked = reason;
+  }
+
   /** What it depends on changed (installed, enabled): a refused activation may run now. */
   clearRefusal(): void {
     this.refused = null;
@@ -689,7 +714,7 @@ export class ExtensionRuntime implements Disposable {
    */
   startIfDue(fired?: (activation: readonly string[]) => boolean): void {
     const { manifest } = this;
-    if (this.worker || this.starting || !manifest.main || this.refused) return;
+    if (this.worker || this.starting || !manifest.main || this.refused || this.crashBlocked) return;
     if (activatesOn(manifest, "onStartup") || fired?.(manifest.activation))
       void this.ensureWorker().catch(() => {});
   }
@@ -839,6 +864,8 @@ export class ExtensionRuntime implements Disposable {
     });
     const resolved = resolveVscodeKeybindings(rules, {
       has: (id) => this.services.dispatcher.has(id),
+      harmless: (id) =>
+        this.services.dispatcher.info(id)?.effects.every((effect) => effect === "read") === true,
       declaredElsewhere: (id) => {
         const target = this.host.vscodeCommand?.(id, []);
         return target && "command" in target ? target.command : undefined;
@@ -928,14 +955,18 @@ export class ExtensionRuntime implements Disposable {
   private readonly declaredRoots = new Set<string>();
 
   /**
-   * Tells its proxy which folders its pages may read besides its own: the workspace's folders
-   * and the declared roots (the native side keeps those inside the workspace only).
+   * Tells its proxy which folders its pages may read besides its own: with the "fs.read"
+   * permission, the workspace's folders and the declared roots (the native side keeps those
+   * inside the workspace only).
    */
   private syncRoots(closing = false): void {
     if (!this.proxyOrigin || this.store.isDisposed) return;
-    const roots = closing
-      ? []
-      : [...this.services.workspace.folders.peek().map((f) => f.path), ...this.declaredRoots];
+    // Only with "fs.read": a page fetching the folder's files reads them as its code would
+    // (the declared roots are inside the workspace too).
+    const roots =
+      closing || !hasPermission(this.host.granted(), "fs.read")
+        ? []
+        : [...this.services.workspace.folders.peek().map((f) => f.path), ...this.declaredRoots];
     void extIpc.webviewRoots(this.root, roots).catch(() => {});
   }
 

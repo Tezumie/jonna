@@ -107,6 +107,31 @@ test("Welcome closes beside a chat; the next file gets an editor area of its own
   assert.equal(dock.tabs("welcome").length, 1);
 });
 
+test("the last tab on screen closing beside a hidden group: Welcome shows, the hidden views live", async () => {
+  const { dock, created } = setup();
+  const terminal = dock.tabs("terminal")[0];
+  assert.ok(terminal);
+  const shell = dock.view(terminal) as FakeView;
+  assert.equal(dock.toggleRegion("bottom"), true);
+  assert.equal(dock.findGroup("bottom")?.hidden, true);
+  for (const w of dock.tabs("welcome")) await dock.closeTab(w.id, true);
+  for (const a of dock.tabs("agent")) await dock.closeTab(a.id, true);
+  // Not blank: Welcome in a group of its own, the hidden terminal still in the tree.
+  const welcome = dock.tabs("welcome")[0];
+  assert.ok(welcome);
+  assert.notEqual(dock.findTab(welcome.id)?.group.hidden, true);
+  assert.equal(dock.findGroup("bottom")?.hidden, true);
+  // A file opened now joins that group; the terminal's view is never disposed.
+  const editor = dock.openView("editor", { path: "/a.ts" });
+  assert.notEqual(dock.findTab(editor)?.group.id, "bottom");
+  assert.ok(dock.findTab(terminal.id));
+  assert.equal(shell.disposed, false);
+  assert.equal(created.includes(shell), true);
+  // Shown again, the terminal is still the bottom region.
+  assert.equal(dock.toggleRegion("bottom"), true);
+  assert.equal(dock.regionGroups("bottom")[0]?.id, "bottom");
+});
+
 test("a view can veto closing (unsaved changes)", async () => {
   const { dock } = setup({ dirtyAsk: async () => false });
   const editor = dock.openView("editor", { path: "/a.ts" });

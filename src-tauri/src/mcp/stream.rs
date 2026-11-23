@@ -196,6 +196,11 @@ pub async fn listen(req: ListenRequest, cancel: CancellationToken, emit: impl Fn
                     for data in parser.feed(&chunk) {
                         emit(StreamEvent::Message { text: data });
                     }
+                    // An event larger than a message may be: the stream is let go of (and
+                    // counted as one that failed, so a server that keeps doing it is given up on).
+                    if parser.too_large() {
+                        break;
+                    }
                     if parser.last_id.is_some() {
                         last_id.clone_from(&parser.last_id);
                     }

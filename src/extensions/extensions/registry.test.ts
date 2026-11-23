@@ -16,3 +16,11 @@ test("workspace disables and auto update choices are read, junk dropped", () => 
   assert.deepEqual(r.autoUpdate, { "e.f": true });
   assert.deepEqual(parseRegistry("{").disabledIn, {});
 });
+
+test("fromStore: the ids installed from the store; none in a registry from before it was kept", () => {
+  assert.deepEqual(parseRegistry(JSON.stringify({ fromStore: ["a.b", 3, null] })).fromStore, [
+    "a.b",
+  ]);
+  assert.deepEqual(parseRegistry(JSON.stringify({ granted: { "a.b": ["node"] } })).fromStore, []);
+  assert.deepEqual(parseRegistry("{").fromStore, []);
+});

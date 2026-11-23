@@ -342,11 +342,9 @@ fn registry_git_install() -> Option<PathBuf> {
     None
 }
 
-/// The directories of PATH.
+/// The directories of PATH a program is looked up in (the absolute ones).
 pub fn path_dirs() -> Vec<PathBuf> {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default()
+    crate::exec::path_search_dirs()
 }
 
 /// The shells installed on this machine (runs `wsl.exe` and `reg` on Windows: call off the main

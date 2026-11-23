@@ -139,16 +139,21 @@ export function mergeSettings(input: SettingsMergeInput): SettingsMergeResult {
     ...Object.keys(record.keys),
   ]);
   for (const key of keys) {
-    if (input.skip(key)) continue;
-    const local = key in input.local ? canonical(input.local[key]) : undefined;
-    const before = input.base[key];
-    const entry = record.keys[key];
+    // Own keys only: `constructor` or `toString` as a setting's name must not read what every
+    // object inherits, and `__proto__` can't be a key of the plain objects built here.
+    if (key === "__proto__" || input.skip(key)) continue;
+    const local = Object.hasOwn(input.local, key) ? canonical(input.local[key]) : undefined;
+    const before = Object.hasOwn(input.base, key) ? input.base[key] : undefined;
+    const entry = Object.hasOwn(record.keys, key) ? record.keys[key] : undefined;
     // The account's value: what it says, or (when it never heard of the key) no opinion.
     const remote = entry ? (entry.d ? undefined : canonical(entry.v)) : before;
     const localChanged = local !== before;
     const remoteChanged = entry !== undefined && remote !== before;
     // When the change here was made: its own date when it has one, else the file's.
-    const localTime = input.localTimes?.[key] ?? input.localTime;
+    const localTime =
+      (input.localTimes && Object.hasOwn(input.localTimes, key)
+        ? input.localTimes[key]
+        : undefined) ?? input.localTime;
     const takeLocal = () => {
       record.keys[key] =
         local === undefined ? { d: true, t: localTime } : { v: input.local[key], t: localTime };

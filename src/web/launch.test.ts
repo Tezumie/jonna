@@ -5,6 +5,7 @@ import {
   challengeOf,
   fromOwnLaunch,
   LAUNCH_WITHIN_MS,
+  launchCookie,
   launchUrl,
   randomToken,
   readArrival,
@@ -87,6 +88,24 @@ test("launch: the trip's address, and what is kept of it", () => {
   assert.equal(readPending("{"), null);
   assert.equal(readPending(JSON.stringify({ nonce: "x y", at: 5 })), null);
   assert.equal(readPending(JSON.stringify({ nonce: "abcdefgh12" })), null);
+});
+
+test("launch: the cookie is only for a launch page on this page's own domain, over https", () => {
+  const digest = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+  assert.equal(
+    launchCookie("app.example.com", "https://example.com/workspace", digest),
+    `launch_n=${digest}; Domain=example.com; Path=/workspace; Max-Age=120; Secure; SameSite=Strict`,
+  );
+  assert.match(launchCookie("example.com", "https://example.com/go#x", digest) ?? "", /Path=\/go;/);
+  // Another domain, a look-alike, plain http, this computer, an address: no cookie.
+  assert.equal(launchCookie("app.example.com", "https://other.example/workspace", digest), null);
+  assert.equal(launchCookie("app.badexample.com", "https://example.com/workspace", digest), null);
+  assert.equal(launchCookie("app.example.com", "http://example.com/workspace", digest), null);
+  assert.equal(launchCookie("localhost", "https://localhost/workspace", digest), null);
+  assert.equal(launchCookie("127.0.0.1", "https://127.0.0.1/workspace", digest), null);
+  assert.equal(launchCookie("app.example.com", "not an address", digest), null);
+  // A value that could carry a second attribute is refused.
+  assert.equal(launchCookie("app.example.com", "https://example.com/w", "x; Domain=evil"), null);
 });
 
 test("launch: tokens are plain text, and the challenge is PKCE's", async () => {

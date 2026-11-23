@@ -62,6 +62,7 @@ unless noted.
 | · Workspace machines: an image, a host that strangers can't hold, and a picker like a file manager | D466 |
 | · The web page comes to the account's machine by itself, signs it in, and its picker makes folders | D467 |
 | · A menu opened from a dialog stays open; 0.1.14 | D468 |
+| · A full audit: what six independent readers found, what was fixed, what was left; 0.1.15 | D469 |
 
 ## Seeded from PLAN §19
 
@@ -16756,3 +16757,164 @@ host: the menu stays, and Escape closes the menu and not the dialog.
 **0.1.14** is D462 to D468: fewer notifications, an agent's download that shows, and what the
 web front end and hosted machines needed. The release notes say only what an installed app's
 user sees (the web front end and the machines are not offered to anyone yet).
+
+## D469 — A full audit: what six independent readers found, what was fixed, what was left
+
+The owner asked for a full audit of the IDE and the website ("edge cases, the VS Code shim,
+go through it all"). Six readers that hadn't written the code each took an area (the Rust
+backend, the agent, the extension system and VS Code shim, the rest of the front end, the
+website's service, the website's pages) and reported defects with a failing scenario; each
+finding was read again against the code before it was changed, by a second set of fixers
+working on separate files, with unit tests. Nothing critical was found. The website's part is
+in its own repository's `docs/audit-2026-11.md`. What follows is this repository's.
+
+### The agent
+
+- **A command allowlist could be stretched by quoting.** The checks looked for `&`, redirects,
+  groups and newlines outside quotes with one pairing of `'…'` and `"…"`; bash's `\"` and
+  PowerShell's typographic quotes pair differently, so `npm test \" & rm -rf ~ \"` was
+  "allowed". A line whose quoting can't be trusted (an escaped quote, a typographic quote, one
+  left open) is never allowed by a pattern, and the denylist reads it whole
+  (`core/agent/shellQuotes.ts`). An allowed program made to run another (`git -c alias.x=!…`)
+  isn't the allowed command either.
+- **"Always allow" keeps the line when the first argument is a flag** (`git -C web status`
+  was remembered as `git`), and for a prefix that runs the rest (`env`, `nohup`).
+- **`terminal.runCommand` / `sendText` / `start` through `call_command`** now meet what
+  run_command meets: deletion protection and the Ask patterns ask whatever the mode, and the
+  answer is for that line only (`shellLineAsks`).
+- **A file excluded from the agent can't be read through the browser.** `url` is among the
+  inputs checked (`addressFiles`, by the browser's own address parsing), and every browser
+  tool of the agent refuses ignored files.
+- **`browser_batch` checks each step** as a call of its own would be: the hook, the
+  command's disallowed-tools, an unattended run's deny list, the gates (`ToolHost.checkCall`).
+- **Ask rules for reads and edits see Windows' other spellings** (`x.tfvars::$DATA`, a
+  trailing dot or space), and an 8.3-shaped name asks.
+- **An external agent's request is "the IDE's own tool" only when its title is exactly the
+  tool's name** and its kind isn't execute, edit, delete or move.
+- **Pull request watches:** deleting a chat ends its watch; nothing merges for a chat that is
+  gone; the auto-merge card can't be skipped in Auto and is asked again after it was turned
+  off; a PR that had checks isn't ready while its newest commit shows none; the merge names
+  the commit that was looked at (`--match-head-commit`).
+- **Chats on disk:** closing the window waits (five seconds at most) for chats to be saved; a
+  turn's checkpoint is listed at its first snapshot; a snapshot that fails is said once a
+  turn; a save that fails is retried and said; a damaged chat file isn't saved over; a chat
+  deleted in another window, or by sync, is not written back (`SaveOutcome.deleted`); sync
+  leaves a chat alone while a turn runs in it; a killed monitor delivers nothing more.
+- **`exit_worktree` remove asks** when the worktree's start commit isn't known.
+- **Providers:** tool-call arguments that aren't an object are sent as `{}` (OpenAI-compatible
+  and Ollama: one cut-off call made every later request fail); parallel tool calls that
+  reuse an index are kept apart; a `retry-after` is waited for (a minute at most); a 400
+  that names `thinking`, the effort setting, `max_tokens` or `temperature` is tried once more
+  without it.
+- **Web fetch** follows at most five redirects itself and checks each; link-local addresses
+  (a cloud's metadata service) are refused at every step. This computer and the local
+  network stay reachable: developers fetch their own servers.
+
+### Extensions and the VS Code shim
+
+- **An extension could write user-only settings by choosing its id** (`acme.remote` →
+  `remote.containers.dockerPath`; an id starting `bundled.` skipped the reserved names). A
+  setting is an extension's own only when it registered it; an id starting `bundled.` that
+  doesn't come with the IDE is refused.
+- **`ide://settings` gave any extension every setting's value.** For an extension it holds
+  only what the extension may read; `ide://lsp/settings` is refused.
+- **The worker lockdown** also removes `navigator.storageBuckets` (a way to the network with
+  no permission), `locks`, `usb`, `serial`, `hid` and `Notification`.
+- **A VS Code package's keybinding reaches an IDE command only when the command is
+  harmless**, and never with arguments that aren't its own command's.
+- **Installing over an installed id asks**; a store download with another id than asked for
+  is refused; only extensions recorded as installed from the store update from it (those
+  installed before this have no record: each needs one confirmed update).
+- **A webview page reads workspace files only with "fs.read"**; the local server keeps an
+  extension's pages to its own origin.
+- **An extension that keeps crashing stays stopped**; one uncaught error in a sandboxed
+  extension is logged, not taken for a crash.
+- **A link from outside that names an extension asks first** (VS Code's own question), and
+  an extension without "network" asks before opening a site in the browser, once per site.
+- **A notebook's scripted outputs can't open windows.**
+- **The registry of installed extensions is never rewritten from a failed read.**
+- **Shim:** `onDidChangeConfiguration` fires for editor, files and workbench settings;
+  `activeTextEditor.selection` is right after a tab switch; `TextEditor.options` is the
+  file's indentation; `workspace.fs.writeFile` creates missing folders and the storage
+  folders' parents exist; `getConfiguration("a").b.c` works and values are copies.
+
+### Files and the workbench
+
+- **A settings or keybindings file that couldn't be read was taken for an empty one**, and
+  the next change wrote a one-entry file over it. Only "not there" is empty; every write is
+  made on the file as it is read then (`SettingsService.edit`); appending to a keybindings
+  file that isn't a closed array is refused. The same for the settings import and the
+  workspace state file (kept under `unrestored` when it can't be read as this version's).
+- **Regex replace in files** replaces line by line with each line's ending held back when the
+  search isn't multi-line, so it changes what the search showed and no line ending; dismissed
+  matches are left out of Replace all.
+- **git paths are literal** (`--literal-pathspecs`): discarding untracked `pages/[ab].txt`
+  deleted `pages/a.txt`.
+- **Hot exit** stores a stamp of the disk text an unsaved edit was made on; restored over a
+  file that changed since, it shows "changed on disk".
+- **Hunk staging refuses text that isn't UTF-8** (`git_show` with `exact`).
+- Interactive rebase follows its plan in a WSL repository; `gh` stays off in a folder that
+  isn't trusted; a search shows a file's matches when one line isn't UTF-8.
+- Closing a folder drops its workspace settings; removal rules with an empty key are valid;
+  removing the last property keeps the comments above it; AltGr characters type instead of
+  running Ctrl+Alt bindings (the Keyboard Map API says what a key types); a dock left with
+  only hidden groups gets a Welcome group beside them; a folder selected with rows inside it
+  is copied or moved once; task inputs are quoted after they are filled in; terminal
+  suggestions quote; the markdown preview tests a link again after decoding it; an effect
+  disposed during its own run is cleaned up.
+
+### The backend
+
+- **A shared snapshot could place a bare repository at the top of the restored folder**
+  (`HEAD/.`, `objects\x` passed the check and were written as `HEAD`, `objects/x`): a path
+  with a backslash, an empty part or a `.` part is refused, and the check reads paths as the
+  file system does. Its staged patch is capped.
+- **A program is looked up only in absolute PATH folders** (`exec::search_dirs`): an empty
+  entry made Windows find `pwsh.exe` in the folder the app was started from.
+- **Addresses are parsed, not matched by their first letters** (`secure_or_loopback`):
+  `http://127.0.0.1:80@evil.example` passed as this computer.
+- Remote MCP answers and sign-in discovery are capped and checked; the picker's commands
+  refuse network paths; the host's TCP path gives its one place only after a first message,
+  as its WebSocket path does; trash ids carry the process; a folder with links in it is
+  copied without following them; session logs of running windows aren't rotated away;
+  reserved Windows names are refused where names are made.
+- **Dependencies:** `cargo audit` reported 11 advisories; `rmcp`, `rustls-webpki`, `url`,
+  `rustix` and `tauri-plugin-updater` (which brought an old `zip`) were updated and none is
+  left. What remains are "unmaintained" notices in Linux GUI libraries Tauri depends on.
+
+### Left, with reasons
+
+- **A webview made with scripts off still runs scripts.** The backend takes the option now
+  (`ext_webview_page` `scripts`); the front end doesn't pass it yet, because the page's own
+  messaging and theme are scripts too and each kind of panel must be checked.
+- **A static preview serves any file of the folder to the page shown**, ignored ones too, as
+  the project's own server would; the agent is kept from opening them, a page isn't.
+- **`terminal.sendText` in pieces** is checked a piece at a time.
+- **A hung shared extension host isn't noticed** (no heartbeat), and an extension's process
+  that prints without end isn't slowed.
+- **`inspect()` and `visibleTextEditors` in the shim** still say less than VS Code's.
+- **Stash apply and pop** go by position, as drop did.
+- **`atomic_write` has no fallback** when Windows refuses the rename over a file another
+  program holds open; the save fails and says so.
+- **`session.ts` and `manager.ts` are past the soft size limit** and due a split.
+- Areas the readers named as not covered: most of the turn loop (`sessionTurn.ts`,
+  `compact.ts`), MCP in depth, the command sandbox, the sync crypto, the terminal's own key
+  handling, debug and testing views.
+
+### Found by the tests themselves
+
+- **The command-line agent could stay running after it had finished** (one run in ten of
+  `scripts/headless-e2e.mjs`, and the same before the audit's changes): the host had exited,
+  but on Windows the console of a command it ran outlived it holding the host's error pipe,
+  and the process waited for that pipe to close. The pipes are closed from this side a moment
+  after the host exits (`core/ipc/node/hostProcess.ts`). Forty runs in a row, none left over.
+- `agent-plan-m7-45` looked at the plan card before the frame that draws its last tick; it
+  now looks until the card shows it. The card was right.
+
+**Tried:** unit tests (2,653, with new ones for nearly every fix), Rust tests (608 for the
+app, 640 for the host), clippy for both builds, `npm run check`, `cargo audit`; every UI
+script (296 pass; the rest are for other systems); `web-e2e`, `host-smoke`, `headless-e2e`,
+`cli-e2e`, and `sync-e2e` against the service's emulators. Not tried by hand in the app: the
+new confirmations and notices read as written; the fixes have unit tests, no new UI scripts.
+
+**0.1.15** is this entry.

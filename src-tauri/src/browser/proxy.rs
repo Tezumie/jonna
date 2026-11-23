@@ -79,6 +79,9 @@ pub struct Shared {
     /// code set, by the extension folder and the panel's page name, served on that folder's
     /// origin at `/__webview-<name>.html` with the folder's CSP.
     pub webview_pages: Mutex<HashMap<(PathBuf, String), Vec<u8>>>,
+    /// Those of `webview_pages` made without scripts (VS Code's `enableScripts: false`): served
+    /// with `script-src 'none'`.
+    pub webview_scriptless: Mutex<std::collections::HashSet<(PathBuf, String)>>,
     /// Folders an extension's webview pages may read files from besides its own (VS Code's
     /// localResourceRoots: the workspace's folders, declared roots inside them), by the extension
     /// folder; canonical. Served at `/__fs/<absolute path>` on that folder's origin.
@@ -835,6 +838,28 @@ pub fn resolve_static(root: &Path, url_path: &str) -> Option<PathBuf> {
     canonical.is_file().then_some(canonical)
 }
 
+/// Whether a folder's files are for its own pages only: an extension's webview folder, which
+/// also serves the workspace's files at `/__fs/`. A website open in the user's ordinary
+/// browser could otherwise name `http://localhost:<port>/__fs/…` as its script or picture
+/// while a panel is open; with these headers the browser refuses to hand it over, and reads
+/// no file as a script that isn't one. Not a notebook's output folder: its frame has no
+/// origin of its own (sandboxed), so its own files would count as another site's. Not a
+/// preview either: it answers as the project's own server would.
+fn same_origin_only(csp: Option<&'static str>) -> bool {
+    csp.is_some_and(|policy| policy != super::NOTEBOOK_OUTPUT_CSP)
+}
+
+/// A content policy with its `script-src` replaced by one that lets no script run.
+fn without_scripts(csp: &str) -> String {
+    let mut directives: Vec<&str> = csp
+        .split(';')
+        .map(str::trim)
+        .filter(|d| !d.is_empty() && !d.starts_with("script-src"))
+        .collect();
+    directives.push("script-src 'none'");
+    directives.join("; ")
+}
+
 async fn serve_file(
     req: Request<Incoming>,
     root: &Path,
@@ -849,9 +874,31 @@ async fn serve_file(
     };
     let (mut response, body) = static_response(&req, root, tag, shared, csp.is_some()).await;
     if let Some(csp) = csp {
+        // A panel's page made without scripts runs none, inline ones included.
+        let scriptless = webview_page_name(req.uri().path()).is_some_and(|name| {
+            shared
+                .webview_scriptless
+                .lock()
+                .is_ok_and(|pages| pages.contains(&(root.to_path_buf(), name.to_string())))
+        });
+        let policy = if scriptless {
+            HeaderValue::from_str(&without_scripts(csp))
+                .unwrap_or(HeaderValue::from_static("default-src 'none'"))
+        } else {
+            HeaderValue::from_static(csp)
+        };
+        response
+            .headers_mut()
+            .insert(header::CONTENT_SECURITY_POLICY, policy);
+    }
+    if same_origin_only(csp) {
         response.headers_mut().insert(
-            header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static(csp),
+            "cross-origin-resource-policy",
+            HeaderValue::from_static("same-origin"),
+        );
+        response.headers_mut().insert(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
         );
     }
     shared
@@ -940,6 +987,29 @@ async fn static_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_without_scripts_gets_a_policy_that_runs_none() {
+        for csp in [super::super::WEBVIEW_CSP, super::super::WEBVIEW_EMBED_CSP] {
+            let policy = without_scripts(csp);
+            assert!(policy.contains("script-src 'none'"), "{policy}");
+            assert_eq!(policy.matches("script-src").count(), 1, "{policy}");
+            // The rest stays: styles in the page, its own files, no forms.
+            assert!(policy.contains("style-src 'self' 'unsafe-inline'"));
+            assert!(policy.contains("default-src 'self' data: blob:"));
+            assert!(policy.contains("form-action 'none'"));
+            assert!(HeaderValue::from_str(&policy).is_ok());
+        }
+    }
+
+    #[test]
+    fn only_an_extensions_folder_is_kept_to_its_own_pages() {
+        assert!(same_origin_only(Some(super::super::WEBVIEW_CSP)));
+        assert!(same_origin_only(Some(super::super::WEBVIEW_EMBED_CSP)));
+        // A notebook's output frame has no origin; a preview is the project's own site.
+        assert!(!same_origin_only(Some(super::super::NOTEBOOK_OUTPUT_CSP)));
+        assert!(!same_origin_only(None));
+    }
 
     #[test]
     fn webview_page_names() {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  addressFiles,
   displayAddress,
   fileUrl,
   isLocalUrl,
@@ -105,4 +106,40 @@ test("multi-root addresses name the folder first (D251)", () => {
   assert.equal(displayAddress({ kind: "file", path: "/work/app/x.html" }, rootsOf(one)), "x.html");
   const two = { root: { peek: () => "/work/app" }, folders: { peek: () => folders } };
   assert.equal(rootsOf(two), folders);
+});
+
+test("the files an address may show (what a caller may see is checked on these)", () => {
+  assert.deepEqual(addressFiles(".env", root), ["/work/app/.env"]);
+  assert.deepEqual(
+    addressFiles("config/.env?x=1#top", root).includes("/work/app/config/.env"),
+    true,
+  );
+  assert.deepEqual(addressFiles("/work/app/keys/id_rsa", root), ["/work/app/keys/id_rsa"]);
+  assert.equal(addressFiles("file:///work/app/.env", root).includes("/work/app/.env"), true);
+  assert.equal(
+    addressFiles("file:///C:/work/app/.env", "C:\\work\\app").includes("C:/work/app/.env"),
+    true,
+  );
+  // A page on this machine: static previews and dev servers serve the folder at its paths.
+  assert.deepEqual(addressFiles("http://127.0.0.1:4173/sub/.env?raw", root), [
+    "/work/app/sub/.env",
+  ]);
+  assert.deepEqual(addressFiles("localhost:5173/%2Eenv", root), ["/work/app/.env"]);
+  assert.deepEqual(addressFiles("http://localhost:5173/", root), []);
+  assert.deepEqual(addressFiles("http://localhost:5173/../../etc/passwd", root), [
+    "/work/app/etc/passwd",
+  ]);
+  // The web names no workspace file; nothing open, nothing to check.
+  assert.deepEqual(addressFiles("https://example.com/.env", root), []);
+  assert.deepEqual(addressFiles("example.com/.env", root), []);
+  assert.deepEqual(addressFiles(".env", null), []);
+  const folders = [
+    { path: "/work/app", name: "app" },
+    { path: "/work/api", name: "api" },
+  ];
+  assert.deepEqual(addressFiles("api/.env", folders), ["/work/api/.env"]);
+  assert.deepEqual(addressFiles("http://localhost:3000/.env", folders), [
+    "/work/app/.env",
+    "/work/api/.env",
+  ]);
 });

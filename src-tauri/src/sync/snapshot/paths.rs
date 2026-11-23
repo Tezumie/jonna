@@ -22,10 +22,21 @@ pub(in crate::sync) fn unsafe_name(text: &str) -> bool {
     // No repository's own folder at any depth, either.
     let plain = text.trim_end_matches(['.', ' ']).to_ascii_lowercase();
     let stem = plain.split('.').next().unwrap_or("");
-    let reserved = matches!(stem, "con" | "prn" | "aux" | "nul")
-        || (stem.len() == 4
-            && (stem.starts_with("com") || stem.starts_with("lpt"))
-            && stem.ends_with(|c: char| c.is_ascii_digit()));
+    // (The superscript digits count as a port's number there too, and the console's two
+    // ends are devices as well.)
+    let numbered = |prefix: &str| {
+        stem.strip_prefix(prefix).is_some_and(|rest| {
+            let mut digits = rest.chars();
+            matches!(
+                (digits.next(), digits.next()),
+                (Some(digit), None)
+                    if digit.is_ascii_digit() || matches!(digit, '\u{b9}' | '\u{b2}' | '\u{b3}')
+            )
+        })
+    };
+    let reserved = matches!(stem, "con" | "prn" | "aux" | "nul" | "conin$" | "conout$")
+        || numbered("com")
+        || numbered("lpt");
     plain == ".git"
         || reserved
         || plain.starts_with("git~")
@@ -35,6 +46,20 @@ pub(in crate::sync) fn unsafe_name(text: &str) -> bool {
 
 /// A manifest's path as a place under `root`; refuses anything that climbs out or into `.git`.
 pub(super) fn safe_join(root: &Path, relative: &str) -> Result<PathBuf> {
+    // Only a path that is written exactly as it is spelled: `Path::components` drops a
+    // trailing `/` or `/.` and on Windows splits on `\` too, so `HEAD/.` or `objects\x`
+    // would be written somewhere other than where the checks on the text saw it.
+    if relative.contains('\\')
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part == ".")
+    {
+        return Err(sync_error(if relative.is_empty() {
+            "a snapshot names an empty path".to_string()
+        } else {
+            format!("a snapshot names a path that isn't a plain one: {relative}")
+        }));
+    }
     let path = Path::new(relative);
     let mut out = root.to_path_buf();
     let mut first = true;
@@ -81,10 +106,13 @@ impl RepositoryParts {
     /// `config` at the top, or anything under `objects/` or `refs/` there.
     pub(super) fn of(path: &str) -> Self {
         let mut parts = Self::default();
-        let (top, inside) = match path.split_once('/') {
-            Some((top, _)) => (top, true),
-            None => (path, false),
-        };
+        // Read as the file system reads it, not as it is spelled: `HEAD/.`, `config//` and
+        // (on Windows) `objects\x` are HEAD, config and something under objects.
+        let mut names = path
+            .split(['/', '\\'])
+            .filter(|part| !part.is_empty() && *part != ".");
+        let top = names.next().unwrap_or("");
+        let inside = names.next().is_some();
         match (top.to_ascii_lowercase().as_str(), inside) {
             ("head", false) => parts.head = true,
             ("config", false) => parts.config = true,

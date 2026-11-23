@@ -11,6 +11,7 @@ import {
 import type { DisposableStore } from "../../core/lifecycle/index";
 import { effect } from "../../core/reactive/index";
 import { s } from "../../core/schema/index";
+import { withOwnChanges } from "../../workbench/persistence";
 import type { WorkbenchServices } from "../../workbench/services";
 
 const LABELS: Record<LogLevelName, string> = {
@@ -31,13 +32,18 @@ export function registerLogLevelCommands(sub: DisposableStore, services: Workben
   // it), then saved whenever they change.
   let loaded = false;
   let saving = false;
+  /** The levels as this window last loaded or saved them: what it changed since is what it saves. */
+  let known: Record<string, LogLevelName> = {};
   void persistence
     .refreshGlobal()
     .catch(() => persistence.globalState())
     .then((global) => {
       if (sub.isDisposed) return;
-      // Picked meanwhile: what the user picked wins.
-      if (!levels.all.peek().size) levels.load(global.logLevels);
+      // Picked meanwhile: what the user picked wins (and is saved as a change, below).
+      if (!levels.all.peek().size) {
+        levels.load(global.logLevels);
+        known = levels.toJSON();
+      }
       loaded = true;
     });
   sub.add(
@@ -47,7 +53,14 @@ export function registerLogLevelCommands(sub: DisposableStore, services: Workben
       saving = true;
       queueMicrotask(() => {
         saving = false;
-        void persistence.saveGlobal({ logLevels: levels.toJSON() });
+        const before = known;
+        const now = levels.toJSON();
+        known = now;
+        // Only this window's changes, on the levels as stored now: a level another window set
+        // since this one loaded them isn't undone by writing this window's whole copy.
+        void persistence.saveGlobal((stored) => ({
+          logLevels: withOwnChanges(stored.logLevels, before, now),
+        }));
       });
       return undefined;
     }),

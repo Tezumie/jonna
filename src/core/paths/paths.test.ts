@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { basename, dirname, isWithin, joinPath, relativePath, upperDrive } from "./index";
+import {
+  basename,
+  dirname,
+  isNetworkPath,
+  isWithin,
+  joinPath,
+  outermostPaths,
+  relativePath,
+  upperDrive,
+} from "./index";
+
+test("isNetworkPath: a link is judged as written and again once decoded", () => {
+  assert.equal(isNetworkPath("\\\\host\\share\\x.md"), true);
+  assert.equal(isNetworkPath(" //host/share"), true);
+  assert.equal(isNetworkPath("/\\host/share"), true);
+  // Percent-encoded backslashes pass as written; decoded, they're the network path they name.
+  const encoded = "%5C%5Chost%5Cshare%5Cx.md";
+  assert.equal(isNetworkPath(encoded), false);
+  assert.equal(isNetworkPath(decodeURI(encoded)), true);
+  assert.equal(isNetworkPath("docs/x.md"), false);
+  assert.equal(isNetworkPath("C:\\w\\x.md"), false);
+});
+
+test("outermostPaths: a folder covers what's listed inside it", () => {
+  assert.deepEqual(outermostPaths(["/w/a/b.ts", "/w/a", "/w/a/c.ts", "/w/ab.ts", "/w/a"]), [
+    "/w/a",
+    "/w/ab.ts",
+  ]);
+  assert.deepEqual(outermostPaths(["C:\\w\\a", "c:\\W\\A\\b.ts", "C:\\w\\d.ts"]), [
+    "C:\\w\\a",
+    "C:\\w\\d.ts",
+  ]);
+  assert.deepEqual(outermostPaths([]), []);
+});
 
 test("posix paths", () => {
   assert.equal(basename("/a/b/c.ts"), "c.ts");

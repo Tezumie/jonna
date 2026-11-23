@@ -1,6 +1,7 @@
 // Sync as the app runs it (D435): where it stands, the loop's passes, the open project and its
 // snapshots. No view code: the Sync view and the commands both go through this.
 
+import { busyChatIds } from "../../core/agent/busyChats";
 import { agentStoreIpc } from "../../core/ipc/agent";
 import { fsIpc } from "../../core/ipc/fs";
 import {
@@ -199,8 +200,12 @@ export class SyncController implements Disposable {
   private readonly namedAt = new Map<string, number>();
   /** The "keep" marks this window set (snapshot id to the mark), until the account says so too. */
   private readonly keepSet = new Map<string, boolean>();
-  /** Chats this window is writing (ids), given by the agent's own state. */
-  private busyChats: () => ReadonlySet<string> = () => new Set();
+  /**
+   * Chats this window is writing (ids), from the agent's own state (core/agent/busyChats.ts:
+   * the agent sets it there, whichever of the two starts first). It was never set before, so
+   * every chat counted as idle.
+   */
+  private busyChats: () => ReadonlySet<string> = busyChatIds;
 
   constructor(private readonly services: WorkbenchServices) {
     this.sharing = this.store.add(

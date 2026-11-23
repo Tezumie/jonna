@@ -40,6 +40,27 @@ const REQUESTS: ReadonlySet<string> = new Set([
   "storage.set",
 ]);
 
+/**
+ * The keys whose changes an extension hears: its own (`own`) and what `readsSettings` names; a
+ * VS Code package (`everyReadable`) also every known setting it may read, since VS Code's
+ * onDidChangeConfiguration fires for all of them (a formatter follows `editor.tabSize`, a file
+ * tree `files.exclude`: they kept the value from when they started). DOM-free; tested.
+ */
+export function watchedSettingKeys(
+  own: readonly string[],
+  readsSettings: readonly string[],
+  known: readonly string[],
+  everyReadable: boolean,
+): string[] {
+  const exact = readsSettings.filter((r) => !r.endsWith(".*"));
+  const listed = [...new Set([...exact, ...known])].filter(
+    (k) =>
+      (everyReadable || matchesReadsSettings(readsSettings, k)) &&
+      canReadSetting(own, readsSettings, k),
+  );
+  return [...new Set([...own, ...listed])];
+}
+
 export class ExtensionSettingsHost {
   private storage: Record<string, unknown> | null = null;
   private storageTimer = 0;
@@ -157,17 +178,18 @@ export class ExtensionSettingsHost {
     );
   }
 
-  /** The keys `settings.onChange` reports: its own, and what `readsSettings` names (D202). */
+  /** The keys `settings.onChange` reports (D202). */
   private watchedSettingKeys(): string[] {
-    const own = Object.keys(this.deps.manifest.contributes.settings);
-    const reads = this.deps.manifest.readsSettings;
-    if (!reads.length) return own;
-    const known = this.deps.services.settings.registry.all().map((s) => s.key);
-    const exact = reads.filter((r) => !r.endsWith(".*"));
-    const listed = [...new Set([...exact, ...known])].filter(
-      (k) => matchesReadsSettings(reads, k) && this.readableSetting(k),
+    const { manifest, services } = this.deps;
+    const own = Object.keys(manifest.contributes.settings);
+    // The registry is only walked when something beyond its own settings can be listed.
+    if (!manifest.readsSettings.length && manifest.format !== "vscode") return own;
+    return watchedSettingKeys(
+      own,
+      manifest.readsSettings,
+      services.settings.registry.all().map((s) => s.key),
+      manifest.format === "vscode",
     );
-    return [...new Set([...own, ...listed])];
   }
 
   private watchSettings(): void {

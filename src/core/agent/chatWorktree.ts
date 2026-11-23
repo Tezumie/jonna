@@ -67,6 +67,16 @@ export function changedFiles(porcelain: string): number {
 }
 
 /**
+ * The commit a worktree's record says it started from, when it names one: commits are counted
+ * from it before a removal. A record without one, or with "HEAD" (the start couldn't be read
+ * when it was made), gives null: "HEAD..HEAD" always counts none, so committed work would be
+ * removed unasked. Only a hash also keeps anything else out of the git command line.
+ */
+export function startCommit(base: unknown): string | null {
+  return typeof base === "string" && /^[0-9a-f]{7,64}$/i.test(base) ? base : null;
+}
+
+/**
  * What removing the worktree would lose, for the question asked first: null when nothing (no
  * uncommitted change and no commit the branch has beyond where it started).
  */

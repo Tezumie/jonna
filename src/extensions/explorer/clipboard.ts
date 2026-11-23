@@ -3,11 +3,18 @@
 import { fsIpc } from "../../core/ipc/fs";
 import { clipboardIpc } from "../../core/ipc/system";
 import type { DisposableStore } from "../../core/lifecycle/index";
-import { basename, dirname, joinPath, pathKey, samePath } from "../../core/paths/index";
+import {
+  basename,
+  dirname,
+  joinPath,
+  outermostPaths,
+  pathKey,
+  samePath,
+} from "../../core/paths/index";
 import { s } from "../../core/schema/index";
 import type { WorkbenchServices } from "../../workbench/services";
-import { validateName } from "./fileCommands";
 import { updateImportsAfterMove } from "./importUpdates";
+import { hasWindowsNames, validateName } from "./names";
 import { createdOperation, movedOperation } from "./undo";
 import type { ExplorerView } from "./view";
 
@@ -38,10 +45,13 @@ export function registerClipboardCommands(
     const picked = given
       ? (paths ?? []).map((p) => workspace.resolve(p))
       : (view?.tree?.selectedItems().map((e) => e.path) ?? []);
-    const list =
+    // A folder and rows inside it both picked (shift-select over an expanded folder): the folder
+    // takes them along; copying them again would leave strays, moving them would fail.
+    const list = outermostPaths(
       view && (given ? withNested === true : withNested !== false)
         ? view.withNestedFiles(picked)
-        : picked;
+        : picked,
+    );
     // Inside a workspace folder (any, D251), and never one of them itself.
     for (const p of list)
       if (!workspace.contains(p) || workspace.folders.peek().some((f) => samePath(f.path, p)))
@@ -216,7 +226,7 @@ export function registerClipboardCommands(
     const view = getView();
     const initial = await freeName(folder, proposal(c));
     const dot = initial.lastIndexOf(".");
-    const validate = (v: string) => validateName(v);
+    const validate = (v: string) => validateName(v, hasWindowsNames(folder));
     const name = view?.canEditInline()
       ? await view.inline.start({
           kind: "file",

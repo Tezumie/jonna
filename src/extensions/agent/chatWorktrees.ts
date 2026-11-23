@@ -17,6 +17,7 @@ import {
   leftText,
   parseChatWorktree,
   removalLoss,
+  startCommit,
 } from "../../core/agent/chatWorktree";
 import type { ToolOutcome } from "../../core/agent/loop";
 import { portSettings, worktreeEnv } from "../../core/agent/worktrees";
@@ -260,10 +261,11 @@ export function registerChatWorktrees(
         };
       await fsIpc.allowRoot(w.folder).catch(() => {});
       const status = await gitIn(w.folder, "status --porcelain");
-      const base = registry.find(w.agent)?.base;
-      const ahead =
-        base && base !== "HEAD" ? await gitIn(w.folder, `rev-list --count ${base}..HEAD`) : "0";
-      // Can't tell (git failed): asked as if it had changes.
+      // No start commit on record (or just "HEAD"): its commits can't be counted, which is not
+      // the same as none.
+      const base = startCommit(registry.find(w.agent)?.base);
+      const ahead = base ? await gitIn(w.folder, `rev-list --count ${base}..HEAD`) : null;
+      // Can't tell (git failed, the start isn't known): asked as if it had changes.
       const loss =
         status === null || ahead === null
           ? "Its changes couldn't be checked: removing it may delete work."

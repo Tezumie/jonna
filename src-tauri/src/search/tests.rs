@@ -330,3 +330,100 @@ fn one_search_runs_every_folder_with_paths_relative_to_each() -> Result<()> {
     std::fs::remove_dir_all(&second)?;
     Ok(())
 }
+
+fn replaced(o: &SearchOptions, replacement: &str, text: &str) -> (String, usize) {
+    let re = replace_regex(o).unwrap();
+    replace_in_text(&re, o, replacement, text)
+}
+
+#[test]
+fn a_replace_within_lines_never_touches_a_line_ending() {
+    let regex = |query: &str| {
+        let mut o = opts(query);
+        o.is_regex = true;
+        o
+    };
+    // `.` took the `\r` and the file's line ending with it.
+    assert_eq!(
+        replaced(&regex("foo.*"), "bar", "a foo 1\r\nb\r\n"),
+        ("a bar\r\nb\r\n".to_string(), 1)
+    );
+    // `\s+$` ate blank lines and the final newline.
+    assert_eq!(
+        replaced(&regex(r"\s+$"), "", "a  \n\n\nb\t\r\n\r\nc\n"),
+        ("a\n\n\nb\r\n\r\nc\n".to_string(), 2)
+    );
+    // Mixed endings stay as they are, line by line; no ending on the last line stays none.
+    assert_eq!(
+        replaced(&regex(r"x\s*$"), "y", "x \r\nx\nx\r\nx"),
+        ("y\r\ny\ny\r\ny".to_string(), 4)
+    );
+    assert_eq!(
+        replaced(&regex(r"[^a]+"), "-", "ab\r\ncd\n"),
+        ("a-\r\n-\n".to_string(), 2)
+    );
+    // Only the lines asked for, counted from 1.
+    let mut one = regex("x");
+    one.lines = Some(vec![2]);
+    assert_eq!(
+        replaced(&one, "y", "x\r\nx\r\nx\r\n"),
+        ("x\r\ny\r\nx\r\n".to_string(), 1)
+    );
+    // Groups and plain text still work.
+    assert_eq!(
+        replaced(&regex(r"(\w+)=(\w+)"), "$2=$1", "a=b\r\nc=d\n"),
+        ("b=a\r\nd=c\n".to_string(), 2)
+    );
+    assert_eq!(
+        replaced(&opts("a.b"), "$1", "a.b\r\naxb\n"),
+        ("$1\r\naxb\n".to_string(), 1)
+    );
+}
+
+#[test]
+fn a_replace_across_lines_keeps_windows_line_endings() {
+    let mut o = opts(r"foo.*\nb");
+    o.is_regex = true;
+    // `.` stops before the `\r`; the `\n` in the pattern stands for the whole line break.
+    assert_eq!(
+        replaced(&o, "X", "a foo 1\r\nb\r\nc\r\n"),
+        ("a X\r\nc\r\n".to_string(), 1)
+    );
+    let mut end = opts(r"one$\n");
+    end.is_regex = true;
+    assert_eq!(
+        replaced(&end, "", "one\r\ntwo\r\n"),
+        ("two\r\n".to_string(), 1)
+    );
+}
+
+#[test]
+fn a_line_that_is_not_utf8_does_not_hide_the_files_other_matches() -> Result<()> {
+    let dir = std::env::temp_dir().join(format!("ide-search-lossy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(
+        dir.join("a.txt"),
+        b"needle one\n// caf\xe9 needle\nneedle three\n",
+    )?;
+    let events = collect(&dir, opts("needle"))?;
+    let lines: Vec<(u64, String)> = events
+        .iter()
+        .filter_map(|e| match e {
+            SearchEvent::File { matches, .. } => Some(matches),
+            _ => None,
+        })
+        .flatten()
+        .map(|m| (m.line, m.text.clone()))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            (1, "needle one".to_string()),
+            (2, "// caf\u{fffd} needle".to_string()),
+            (3, "needle three".to_string()),
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}

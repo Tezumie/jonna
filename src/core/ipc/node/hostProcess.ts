@@ -119,7 +119,19 @@ export async function spawnHost(
       options.onExit?.(code, signal);
       resolve({ code, signal });
     };
-    child.once("exit", (code, signal) => finish(code, signal));
+    child.once("exit", (code, signal) => {
+      finish(code, signal);
+      // The host is gone, but its pipes close only when nothing else holds their other end,
+      // and on Windows the console of a command it ran can outlive it holding the error pipe:
+      // this process then never ended (one run in ten of the end-to-end test, D469). A moment
+      // for what the host last wrote, then the pipes are closed from here.
+      const closePipes = setTimeout(() => {
+        stdin.destroy();
+        stdout.destroy();
+        stderr.destroy();
+      }, 250);
+      closePipes.unref();
+    });
     // Never started: there is no exit event.
     child.once("error", () => finish(null, null));
   });
